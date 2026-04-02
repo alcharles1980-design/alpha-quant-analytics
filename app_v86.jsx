@@ -3255,12 +3255,15 @@ function BuildDataSetPage(p){
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching ticks...');
         var allP=[];var allS=[];var allTs=[];
         var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
-        var pgCnt=0;
+        var pgCnt=0;var retries=0;
         while(url){
+          if(pgCnt>0)await new Promise(function(w){setTimeout(w,400);});
           var r=await fetch(url);
-          if(r.status===429){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Rate limited, waiting 12s...');await new Promise(function(w){setTimeout(w,12000);});continue;}
+          if(r.status===429||r.status===403){retries++;if(retries>5)throw new Error('Rate limited too many times on '+day);setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Rate limited ('+r.status+'), waiting 15s... (retry '+retries+')');await new Promise(function(w){setTimeout(w,15000);});continue;}
           if(!r.ok)throw new Error('Polygon error '+r.status+' on '+day);
           var d2=await r.json();
+          if(d2.status==='ERROR'||d2.error){retries++;if(retries>5)throw new Error('API error on '+day+': '+(d2.error||d2.status));setProg('Day '+(di+1)+'/'+days.length+': '+day+' | API error, waiting 10s...');await new Promise(function(w){setTimeout(w,10000);});continue;}
+          retries=0;
           if(d2.results)for(var i=0;i<d2.results.length;i++){
             allP.push(d2.results[i].price);
             allS.push(d2.results[i].size||0);
@@ -3268,9 +3271,9 @@ function BuildDataSetPage(p){
           }
           url=d2.next_url?(d2.next_url+'&apiKey='+p.apiKey):null;
           pgCnt++;
-          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+')');
-          if(url)await new Promise(function(w){setTimeout(w,500);});
+          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+(url?' ...':' DONE')+')');
         }
+        await new Promise(function(w){setTimeout(w,1500);});
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Extracting features from '+allP.length.toLocaleString()+' ticks...');
