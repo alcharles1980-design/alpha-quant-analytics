@@ -3269,7 +3269,7 @@ function BuildDataSetPage(p){
           url=d2.next_url?(d2.next_url+'&apiKey='+p.apiKey):null;
           pgCnt++;
           setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+')');
-          if(url)await new Promise(function(w){setTimeout(w,250);});
+          if(url)await new Promise(function(w){setTimeout(w,500);});
         }
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
@@ -3315,7 +3315,7 @@ function BuildDataSetPage(p){
         var vixClose=null;
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching VIX...');
         try{
-          var vixR=await fetch('https://api.polygon.io/v2/aggs/ticker/VIX/range/1/day/'+day+'/'+day+'?adjusted=true&apiKey='+p.apiKey);
+          var vixR=await fetch('https://api.polygon.io/v2/aggs/ticker/I:VIX/range/1/day/'+day+'/'+day+'?adjusted=true&apiKey='+p.apiKey);
           if(vixR.ok){var vixD=await vixR.json();if(vixD.results&&vixD.results.length)vixClose=vixD.results[0].c;}
         }catch(e){}
 
@@ -3520,7 +3520,7 @@ function BuildDataSetPage(p){
           <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>Why:</span> Overnight gap signals catalyst events (earnings, news) that change volatility regime for the day. Large gaps typically mean wider TP% early, tighter TP% as catalyst is absorbed. VIX is the market-wide fear gauge -- VIX above 20 = elevated volatility regime across all stocks = wider TP% tends to be optimal.</p>
           <p><span style={{color:C.blue,fontWeight:700}}>Calculation:</span> Previous close fetched from Polygon /v1/open-close/ endpoint for the prior trading day (skipping weekends). Gap% = (Today Open - Prev Close) / Prev Close x 100. VIX fetched from Polygon /v2/aggs/ for the current date.</p>
         </div>
-        <div style={cS}>{'// Previous day close (Polygon OHLC endpoint)\nvar prevResp = await fetch(\n  "https://api.polygon.io/v1/open-close/" + ticker\n  + "/" + prevDate + "?adjusted=true&apiKey=" + key\n);\nvar prevData = await prevResp.json();\nvar prevClose = prevData.close;\n\n// Overnight gap\nvar gapPct = ((todayOpen - prevClose) / prevClose) * 100;\n\n// VIX (Polygon aggregates)\nvar vixResp = await fetch(\n  "https://api.polygon.io/v2/aggs/ticker/VIX/range/1/day/"\n  + date + "/" + date + "?apiKey=" + key\n);\nvar vixData = await vixResp.json();\nvar vixClose = vixData.results[0].c;'}</div>
+        <div style={cS}>{'// Previous day close (Polygon OHLC endpoint)\nvar prevResp = await fetch(\n  "https://api.polygon.io/v1/open-close/" + ticker\n  + "/" + prevDate + "?adjusted=true&apiKey=" + key\n);\nvar prevData = await prevResp.json();\nvar prevClose = prevData.close;\n\n// Overnight gap\nvar gapPct = ((todayOpen - prevClose) / prevClose) * 100;\n\n// VIX (Polygon aggregates)\nvar vixResp = await fetch(\n  "https://api.polygon.io/v2/aggs/ticker/I:VIX/range/1/day/"\n  + date + "/" + date + "?apiKey=" + key\n);\nvar vixData = await vixResp.json();\nvar vixClose = vixData.results[0].c;'}</div>
       </div>
     </CollapseStage>
 
