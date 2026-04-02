@@ -3257,7 +3257,9 @@ function BuildDataSetPage(p){
         var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
         var pgCnt=0;
         while(url){
-          var r=await fetch(url);if(!r.ok)throw new Error('Polygon error '+r.status+' on '+day);
+          var r=await fetch(url);
+          if(r.status===429){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Rate limited, waiting 12s...');await new Promise(function(w){setTimeout(w,12000);});continue;}
+          if(!r.ok)throw new Error('Polygon error '+r.status+' on '+day);
           var d2=await r.json();
           if(d2.results)for(var i=0;i<d2.results.length;i++){
             allP.push(d2.results[i].price);
@@ -3266,7 +3268,8 @@ function BuildDataSetPage(p){
           }
           url=d2.next_url?(d2.next_url+'&apiKey='+p.apiKey):null;
           pgCnt++;
-          if(pgCnt%2===0)setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+')');
+          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+')');
+          if(url)await new Promise(function(w){setTimeout(w,250);});
         }
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
