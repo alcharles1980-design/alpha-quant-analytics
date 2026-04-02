@@ -19,11 +19,17 @@ jobs:
       - name: Build
         run: npm run build
       
-      - name: Verify build output
-        run: ls -la dist/
+      - name: Verify build
+        run: ls -la dist/ && echo "Build size:" && wc -c dist/index.html
+      
+      - name: Create Pages project (if needed)
+        run: npx wrangler@latest pages project create alpha-quant-analytics --production-branch=main 2>&1 || echo "Project may already exist, continuing..."
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       
       - name: Deploy to Cloudflare Pages
-        run: npx wrangler@latest pages deploy dist --project-name=alpha-quant-analytics --commit-dirty=true
+        run: npx wrangler@latest pages deploy dist --project-name=alpha-quant-analytics --branch=main 2>&1
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
