@@ -2586,6 +2586,7 @@ function Splash(p){
       {pwError&&<div style={{color:C.warn,fontSize:10,textAlign:'center',marginTop:8}}>Invalid access code</div>}
     </div>}
     {unlocked&&<div style={{color:C.accent,fontSize:10,marginTop:10,animation:'pulse 1s infinite'}}>Initializing...</div>}
+    <div style={{position:'absolute',bottom:20,color:'#2a3a4a',fontSize:8,fontFamily:F,letterSpacing:0.5,textAlign:'center'}}>{typeof BUILD_TS!=='undefined'?BUILD_TS:'dev'}</div>
   </div>;
 }
 

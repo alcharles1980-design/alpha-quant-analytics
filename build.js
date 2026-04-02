@@ -12,6 +12,13 @@ const jsx = fs.readFileSync(path.join(__dirname, srcFile), 'utf8');
 const result = babel.transformSync(jsx, { presets: ['@babel/preset-react'] });
 try { new Function(result.code); } catch (e) { console.error('SYNTAX ERROR:', e.message); process.exit(1); }
 
+// Inject build timestamp
+const now = new Date();
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const buildTS = months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear() + ' ' + 
+  now.toTimeString().slice(0,5) + ' UTC';
+const finalCode = 'var BUILD_TS="v86 | Built: ' + buildTS + '";\n' + result.code;
+
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,7 +47,7 @@ var rs=document.createElement("script");rs.src="https://cdn.jsdelivr.net/npm/rec
 rs.onload=function(){go();};rs.onerror=function(){var s2=document.createElement("script");s2.src="https://unpkg.com/recharts@2.7.3/umd/Recharts.js";s2.crossOrigin="anonymous";s2.onload=function(){go();};s2.onerror=function(){go();};document.head.appendChild(s2);};
 document.head.appendChild(rs);
 function go(){try{
-${result.code}
+${finalCode}
 }catch(e){document.getElementById("root").style.cssText="color:#ff5c3a;padding:20px;font-family:monospace";document.getElementById("root").textContent="Error: "+e.message;}}
 </script>
 </body>
