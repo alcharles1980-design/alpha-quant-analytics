@@ -1841,6 +1841,9 @@ function DbManagePage(p){
   var s4=useState(null),detail=s4[0],setDetail=s4[1];
   var s5=useState(null),confirmDel=s5[0],setConfirmDel=s5[1];
   var s6=useState(null),dbSize=s6[0],setDbSize=s6[1];
+  var s7=useState(null),featData=s7[0],setFeatData=s7[1];
+  var s8=useState(null),featDetail=s8[0],setFeatDetail=s8[1];
+  var s9=useState(null),confirmFeatDel=s9[0],setConfirmFeatDel=s9[1];
 
   var loadData=async function(){
     setLoading(true);setErr(null);
@@ -1889,6 +1892,27 @@ function DbManagePage(p){
       var r4=await fetch(SB_URL+'/rest/v1/cached_analyses?select=id&limit=1&head=true',{method:'HEAD',headers:h});
 
       setData({stocks:arr,totalAnalyses:rows.length,totalSeasonality:seasRows.length});
+
+      // Load Stage 3 feature data
+      var rf=await fetch(SB_URL+'/rest/v1/hourly_features?select=ticker,trade_date,hour,hour_trades,hour_volume,hour_atr_pct,hour_vwap,vix_close,day_of_week&order=ticker.asc,trade_date.asc,hour.asc',{headers:h});
+      var featRows=rf.ok?await rf.json():[];
+      var featStocks={};
+      for(var fi=0;fi<featRows.length;fi++){
+        var fr=featRows[fi];var fk=fr.ticker;
+        if(!featStocks[fk])featStocks[fk]={ticker:fk,dates:{},totalRows:0};
+        if(!featStocks[fk].dates[fr.trade_date])featStocks[fk].dates[fr.trade_date]=[];
+        featStocks[fk].dates[fr.trade_date].push(fr);
+        featStocks[fk].totalRows++;
+      }
+      var featArr=Object.values(featStocks).map(function(fs){
+        var dateKeys=Object.keys(fs.dates).sort();
+        fs.dayCount=dateKeys.length;
+        fs.earliest=dateKeys[0];
+        fs.latest=dateKeys[dateKeys.length-1];
+        fs.dateList=dateKeys;
+        return fs;
+      });
+      setFeatData({stocks:featArr,totalRows:featRows.length});
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -1908,11 +1932,26 @@ function DbManagePage(p){
       await fetch(SB_URL+'/rest/v1/cached_analyses?ticker=eq.'+ticker,{method:'DELETE',headers:h});
       await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker,{method:'DELETE',headers:h});
       await fetch(SB_URL+'/rest/v1/cached_sessions?ticker=eq.'+ticker,{method:'DELETE',headers:h});
+      await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker,{method:'DELETE',headers:h});
       setConfirmDel(null);setDetail(null);
       loadData();
     }catch(e){setErr('Delete failed: '+e.message);}
   };
 
+  var deleteFeatStock=async function(ticker){
+    try{
+      var h=getSbHeaders();
+      await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker,{method:'DELETE',headers:h});
+      setConfirmFeatDel(null);setFeatDetail(null);loadData();
+    }catch(e){setErr('Delete features failed: '+e.message);}
+  };
+  var deleteAllFeatures=async function(){
+    try{
+      var h=getSbHeaders();
+      await fetch(SB_URL+'/rest/v1/hourly_features?id=gt.0',{method:'DELETE',headers:h});
+      setConfirmFeatDel(null);setFeatDetail(null);loadData();
+    }catch(e){setErr('Delete all features failed: '+e.message);}
+  };
   var deleteAll=async function(){
     try{
       var h=getSbHeaders();
@@ -2004,6 +2043,75 @@ function DbManagePage(p){
         </div>:
         <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Cached Data</button>}
       </Cd>}
+      {featData&&<div style={{marginTop:16}}>
+        <Cd glow={true}>
+          <SectionHead title="Stage 3: Feature Data" sub="Hourly features from Build Data Set pipeline" info="Features extracted from Polygon trade ticks for ML correlation analysis. Each row contains 22 market microstructure features for one hour of one trading day."/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
+            <Mt label="Stocks" value={featData.stocks.length} color={C.purple} size="lg"/>
+            <Mt label="Total Rows" value={featData.totalRows} color={C.blue} size="md"/>
+            <Mt label="Fields/Row" value="22" color={C.gold} size="md"/>
+          </div>
+        </Cd>
+        {featData.stocks.length===0&&<Cd><div style={{color:C.txtDim,fontSize:10,fontFamily:F,textAlign:'center',padding:16}}>No feature data. Use Build Data Set (Stage 3) to generate.</div></Cd>}
+        {featData.stocks.map(function(fs){
+          var isOpen=featDetail===fs.ticker;
+          return <Cd key={'feat-'+fs.ticker}>
+            <div onClick={function(){setFeatDetail(isOpen?null:fs.ticker);}} style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{color:C.purple,fontSize:14,fontWeight:800,fontFamily:F}}>{fs.ticker}</span>
+                  <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{fs.dayCount+' day'+(fs.dayCount>1?'s':'')}</span>
+                  <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{fs.totalRows+' rows'}</span>
+                </div>
+                <div style={{color:C.txt,fontSize:9,fontFamily:F}}>{fs.earliest+' to '+fs.latest}</div>
+              </div>
+              <div style={{color:C.purple,fontSize:18,fontWeight:300,transform:isOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</div>
+            </div>
+            {isOpen&&<div style={{marginTop:12}}>
+              <div style={{overflowX:'auto',maxHeight:400,marginBottom:10}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+                  <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Hours</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trades</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Volume</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg ATR%</th>
+                  </tr></thead>
+                  <tbody>{fs.dateList.map(function(dt){
+                    var dayRows=fs.dates[dt];
+                    var tTrades=0;var tVol=0;var tATR=0;var atrCnt=0;
+                    for(var di=0;di<dayRows.length;di++){
+                      tTrades+=dayRows[di].hour_trades||0;
+                      tVol+=parseInt(dayRows[di].hour_volume)||0;
+                      if(dayRows[di].hour_atr_pct){tATR+=parseFloat(dayRows[di].hour_atr_pct);atrCnt++;}
+                    }
+                    var avgATR=atrCnt>0?(tATR/atrCnt):0;
+                    return <tr key={dt} style={{borderBottom:'1px solid '+C.grid}}>
+                      <td style={{padding:'4px 3px',color:C.txtBright}}>{dt}</td>
+                      <td style={{padding:'4px 3px',color:C.purple,textAlign:'right',fontWeight:700}}>{dayRows.length}</td>
+                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{tTrades.toLocaleString()}</td>
+                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{(tVol/1e6).toFixed(1)+'M'}</td>
+                      <td style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>{avgATR.toFixed(3)+'%'}</td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+              {confirmFeatDel===fs.ticker?<div style={{display:'flex',gap:8}}>
+                <button onClick={function(){deleteFeatStock(fs.ticker);}} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete {fs.ticker} Features</button>
+                <button onClick={function(){setConfirmFeatDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
+              </div>:
+              <button onClick={function(){setConfirmFeatDel(fs.ticker);}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Delete {fs.ticker} Feature Data</button>}
+            </div>}
+          </Cd>;
+        })}
+        {featData.stocks.length>0&&<Cd>
+          {confirmFeatDel==='ALL_FEAT'?<div style={{display:'flex',gap:8}}>
+            <button onClick={deleteAllFeatures} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete All Feature Data</button>
+            <button onClick={function(){setConfirmFeatDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
+          </div>:
+          <button onClick={function(){setConfirmFeatDel('ALL_FEAT');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Feature Data</button>}
+        </Cd>}
+      </div>}
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:'8px 0',marginTop:4}}>
         <button onClick={loadData} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontFamily:F,fontSize:8,padding:'4px 12px',cursor:'pointer'}}>Refresh</button>
       </div>
