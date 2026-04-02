@@ -2,6 +2,7 @@ const{useState,useEffect,useRef}=React;
 var RC=typeof Recharts!=="undefined"?Recharts:{};
 var C={bg:"#060a10",bgCard:"#0c1219",bgInput:"#0a0f16",border:"#1a2538",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#d0dce8",txtDim:"#7088a0",txtBright:"#f0f6fc",grid:"#141e2e"};
 var F="'JetBrains Mono',monospace";
+var hourLabels={'4':'4AM','5':'5AM','6':'6AM','7':'7AM','8':'8AM','9':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
 
 var SB_URL='https://haeqzegdlwryvaecanrn.supabase.co';
 var SB_URL_DEFAULT=SB_URL;
@@ -554,7 +555,6 @@ function TrendPage(p){
   var s5=useState(false),loading=s5[0],setLoading=s5[1];
   var s6=useState(null),err=s6[0],setErr=s6[1];
 
-  var hourLabels={'4':'4AM','5':'5AM','6':'6AM','7':'7AM','8':'8AM','9':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
 
   var run=async function(){
     if(!SB_URL||!SB_KEY){setErr('No Supabase config. Set in Settings.');return;}
@@ -3109,7 +3109,6 @@ function HourlyOptimalPage(p){
   var s7=useState(null),results=s7[0],setResults=s7[1];
   var s8=useState(null),err=s8[0],setErr=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
-  var hourLabels={'4':'4AM','5':'5AM','6':'6AM','7':'7AM','8':'8AM','9':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
