@@ -1844,6 +1844,7 @@ function DbManagePage(p){
   var s7=useState(null),featData=s7[0],setFeatData=s7[1];
   var s8=useState(null),featDetail=s8[0],setFeatDetail=s8[1];
   var s9=useState(null),confirmFeatDel=s9[0],setConfirmFeatDel=s9[1];
+  var s10=useState(null),expandedFeatDay=s10[0],setExpandedFeatDay=s10[1];
 
   var loadData=async function(){
     setLoading(true);setErr(null);
@@ -1894,7 +1895,7 @@ function DbManagePage(p){
       setData({stocks:arr,totalAnalyses:rows.length,totalSeasonality:seasRows.length});
 
       // Load Stage 3 feature data
-      var rf=await fetch(SB_URL+'/rest/v1/hourly_features?select=ticker,trade_date,hour,hour_trades,hour_volume,hour_atr_pct,hour_vwap,vix_close,day_of_week&order=ticker.asc,trade_date.asc,hour.asc',{headers:h});
+      var rf=await fetch(SB_URL+'/rest/v1/hourly_features?select=ticker,trade_date,hour,hour_open,hour_close,hour_high,hour_low,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,vix_close,day_of_week,prev_day_close,overnight_gap_pct,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct&order=ticker.asc,trade_date.asc,hour.asc',{headers:h});
       var featRows=rf.ok?await rf.json():[];
       var featStocks={};
       for(var fi=0;fi<featRows.length;fi++){
@@ -2068,33 +2069,78 @@ function DbManagePage(p){
               <div style={{color:C.purple,fontSize:18,fontWeight:300,transform:isOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</div>
             </div>
             {isOpen&&<div style={{marginTop:12}}>
-              <div style={{overflowX:'auto',maxHeight:400,marginBottom:10}}>
-                <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
-                  <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
-                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Hours</th>
-                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trades</th>
-                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Volume</th>
-                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg ATR%</th>
-                  </tr></thead>
-                  <tbody>{fs.dateList.map(function(dt){
-                    var dayRows=fs.dates[dt];
-                    var tTrades=0;var tVol=0;var tATR=0;var atrCnt=0;
-                    for(var di=0;di<dayRows.length;di++){
-                      tTrades+=dayRows[di].hour_trades||0;
-                      tVol+=parseInt(dayRows[di].hour_volume)||0;
-                      if(dayRows[di].hour_atr_pct){tATR+=parseFloat(dayRows[di].hour_atr_pct);atrCnt++;}
-                    }
-                    var avgATR=atrCnt>0?(tATR/atrCnt):0;
-                    return <tr key={dt} style={{borderBottom:'1px solid '+C.grid}}>
-                      <td style={{padding:'4px 3px',color:C.txtBright}}>{dt}</td>
-                      <td style={{padding:'4px 3px',color:C.purple,textAlign:'right',fontWeight:700}}>{dayRows.length}</td>
-                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{tTrades.toLocaleString()}</td>
-                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{(tVol/1e6).toFixed(1)+'M'}</td>
-                      <td style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>{avgATR.toFixed(3)+'%'}</td>
-                    </tr>;
-                  })}</tbody>
-                </table>
+              <div style={{marginBottom:10}}>
+                <div style={{display:'flex',borderBottom:'1px solid '+C.border,paddingBottom:4,marginBottom:4}}>
+                  <div style={{flex:2,fontSize:8,color:C.txtDim,fontFamily:F}}>Date</div>
+                  <div style={{flex:1,fontSize:8,color:C.txtDim,fontFamily:F,textAlign:'right'}}>Hours</div>
+                  <div style={{flex:1.5,fontSize:8,color:C.txtDim,fontFamily:F,textAlign:'right'}}>Trades</div>
+                  <div style={{flex:1,fontSize:8,color:C.txtDim,fontFamily:F,textAlign:'right'}}>Volume</div>
+                  <div style={{flex:1.2,fontSize:8,color:C.txtDim,fontFamily:F,textAlign:'right'}}>Avg ATR%</div>
+                  <div style={{width:16}}></div>
+                </div>
+                {fs.dateList.map(function(dt){
+                  var dayRows=fs.dates[dt];
+                  var tTrades=0;var tVol=0;var tATR=0;var atrCnt=0;
+                  for(var di=0;di<dayRows.length;di++){
+                    tTrades+=dayRows[di].hour_trades||0;
+                    tVol+=parseInt(dayRows[di].hour_volume)||0;
+                    if(dayRows[di].hour_atr_pct){tATR+=parseFloat(dayRows[di].hour_atr_pct);atrCnt++;}
+                  }
+                  var avgATR=atrCnt>0?(tATR/atrCnt):0;
+                  var dayKey=fs.ticker+':'+dt;
+                  var isDayOpen=expandedFeatDay===dayKey;
+                  var hoursPresent=dayRows.map(function(r){return r.hour;}).sort(function(a,b){return a-b;});
+                  var allHours=[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19];
+                  var missingHours=allHours.filter(function(h){return hoursPresent.indexOf(h)===-1;});
+                  return <div key={dt}>
+                    <div onClick={function(){setExpandedFeatDay(isDayOpen?null:dayKey);}} style={{display:'flex',alignItems:'center',cursor:'pointer',padding:'3px 0',borderBottom:'1px solid '+C.grid}}>
+                      <div style={{flex:2,fontSize:8,color:C.txtBright,fontFamily:F}}>{dt}</div>
+                      <div style={{flex:1,fontSize:8,color:dayRows.length===16?C.accent:C.warn,fontFamily:F,textAlign:'right',fontWeight:700}}>{dayRows.length}{dayRows.length<16?'/16':''}</div>
+                      <div style={{flex:1.5,fontSize:8,color:C.txt,fontFamily:F,textAlign:'right'}}>{tTrades.toLocaleString()}</div>
+                      <div style={{flex:1,fontSize:8,color:C.txt,fontFamily:F,textAlign:'right'}}>{(tVol/1e6).toFixed(1)+'M'}</div>
+                      <div style={{flex:1.2,fontSize:8,color:C.gold,fontFamily:F,textAlign:'right'}}>{avgATR.toFixed(3)+'%'}</div>
+                      <div style={{width:16,textAlign:'center',color:C.purple,fontSize:12,fontWeight:300,transform:isDayOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</div>
+                    </div>
+                    {isDayOpen&&<div style={{background:'#080e16',border:'1px solid '+C.border,borderRadius:6,margin:'4px 0 8px 0',padding:8}}>
+                      {missingHours.length>0&&<div style={{color:C.warn,fontSize:8,fontFamily:F,marginBottom:6,padding:'4px 6px',background:C.warnDim,borderRadius:4}}>Missing hours: {missingHours.map(function(mh){return hourLabels[String(mh)]||mh;}).join(', ')}</div>}
+                      <div style={{display:'flex',borderBottom:'1px solid '+C.border,paddingBottom:3,marginBottom:3}}>
+                        <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600}}>Hour</div>
+                        <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>Open</div>
+                        <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>High</div>
+                        <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>Low</div>
+                        <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>Close</div>
+                        <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>ATR%</div>
+                        <div style={{flex:1.2,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>Trades</div>
+                        <div style={{flex:1.2,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600,textAlign:'right'}}>Volume</div>
+                      </div>
+                      {allHours.map(function(hr){
+                        var hRow=null;
+                        for(var hi=0;hi<dayRows.length;hi++){if(dayRows[hi].hour===hr){hRow=dayRows[hi];break;}}
+                        var isRTH=hr>=9&&hr<16;
+                        if(!hRow)return <div key={hr} style={{display:'flex',padding:'2px 0',borderBottom:'1px solid '+C.grid}}>
+                          <div style={{width:36,fontSize:7,color:'#5a6a7a',fontFamily:F}}>{hourLabels[String(hr)]||hr}</div>
+                          <div style={{flex:1,fontSize:7,color:C.warn,fontFamily:F,fontStyle:'italic'}}>No data</div>
+                        </div>;
+                        return <div key={hr} style={{display:'flex',alignItems:'center',padding:'2px 0',borderBottom:'1px solid '+C.grid}}>
+                          <div style={{width:36,fontSize:7,color:isRTH?'#c0d4e8':'#5a6a7a',fontFamily:F,fontWeight:isRTH?600:400}}>{hourLabels[String(hr)]||hr}</div>
+                          <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_open).toFixed(2)}</div>
+                          <div style={{flex:1,fontSize:7,color:C.accent,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_high).toFixed(2)}</div>
+                          <div style={{flex:1,fontSize:7,color:C.warn,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_low).toFixed(2)}</div>
+                          <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_close).toFixed(2)}</div>
+                          <div style={{flex:1,fontSize:7,color:C.gold,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_atr_pct).toFixed(3)+'%'}</div>
+                          <div style={{flex:1.2,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right'}}>{(hRow.hour_trades||0).toLocaleString()}</div>
+                          <div style={{flex:1.2,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right'}}>{((parseInt(hRow.hour_volume)||0)/1000).toFixed(0)+'K'}</div>
+                        </div>;
+                      })}
+                      {dayRows[0]&&<div style={{display:'flex',gap:8,marginTop:6,flexWrap:'wrap'}}>
+                        {dayRows[0].vix_close&&<div style={{fontSize:7,color:C.blue,fontFamily:F}}>VIX: {dayRows[0].vix_close}</div>}
+                        {dayRows[0].overnight_gap_pct&&<div style={{fontSize:7,color:C.gold,fontFamily:F}}>Gap: {parseFloat(dayRows[0].overnight_gap_pct).toFixed(2)}%</div>}
+                        {dayRows[0].prev_day_close&&<div style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Prev Close: ${parseFloat(dayRows[0].prev_day_close).toFixed(2)}</div>}
+                        <div style={{fontSize:7,color:C.txtDim,fontFamily:F}}>DOW: {['','Mon','Tue','Wed','Thu','Fri','Sat','Sun'][dayRows[0].day_of_week]||dayRows[0].day_of_week}</div>
+                      </div>}
+                    </div>}
+                  </div>;
+                })}
               </div>
               {confirmFeatDel===fs.ticker?<div style={{display:'flex',gap:8}}>
                 <button onClick={function(){deleteFeatStock(fs.ticker);}} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete {fs.ticker} Features</button>
