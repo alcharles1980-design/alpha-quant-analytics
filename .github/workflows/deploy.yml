@@ -13,23 +13,33 @@ jobs:
         with:
           node-version: '22'
       
-      - name: Install dependencies
-        run: npm install
+      - name: Install & Build
+        run: npm install && npm run build && ls -la dist/
       
-      - name: Build
-        run: npm run build
+      - name: Create Pages project if needed
+        continue-on-error: true
+        run: |
+          curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"alpha-quant-analytics","production_branch":"main"}' | tee /tmp/create_resp.json
+          echo ""
+          echo "Project creation response above (may fail if already exists - that is OK)"
       
-      - name: Verify build
-        run: ls -la dist/ && echo "Build size:" && wc -c dist/index.html
-      
-      - name: Create Pages project (if needed)
-        run: npx wrangler@latest pages project create alpha-quant-analytics --production-branch=main 2>&1 || echo "Project may already exist, continuing..."
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      
-      - name: Deploy to Cloudflare Pages
-        run: npx wrangler@latest pages deploy dist --project-name=alpha-quant-analytics --branch=main 2>&1
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy via Direct Upload
+        run: |
+          echo "Creating deployment..."
+          DEPLOY_RESP=$(curl -s -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/alpha-quant-analytics/deployments" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -F "index.html=@dist/index.html")
+          echo "$DEPLOY_RESP" | head -200
+          
+          SUCCESS=$(echo "$DEPLOY_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null || echo "false")
+          if [ "$SUCCESS" = "True" ] || [ "$SUCCESS" = "true" ]; then
+            URL=$(echo "$DEPLOY_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['url'])" 2>/dev/null || echo "unknown")
+            echo "✅ Deployed successfully to: $URL"
+          else
+            echo "❌ Deploy failed. Full response above."
+            exit 1
+          fi
