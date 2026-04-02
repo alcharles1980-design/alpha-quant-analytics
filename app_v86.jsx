@@ -4156,9 +4156,16 @@ function App(){
   var AreaChart=RC.AreaChart||null,Area=RC.Area||null,XAxis=RC.XAxis||null,YAxis=RC.YAxis||null,CartesianGrid=RC.CartesianGrid||null,RTooltip=RC.Tooltip||null,ResponsiveContainer=RC.ResponsiveContainer||null;
   var hasCharts=!!RC.AreaChart;
   var rawTradesRef=useRef([]);
-  var ss=useState(true),showSplash=ss[0],setShowSplash=ss[1];
+  var setPage=function(p){setPageRaw(p);window.location.hash=p;};
+  useEffect(function(){
+    var onPop=function(){var h=window.location.hash.slice(1);if(h)setPageRaw(h);else setPageRaw('main');};
+    window.addEventListener('popstate',onPop);
+    if(!window.location.hash)window.location.hash='main';
+    return function(){window.removeEventListener('popstate',onPop);};
+  },[]);
+  var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
-  var ps=useState('main'),page=ps[0],setPage=ps[1];
+  var ps=useState(function(){var h=window.location.hash.slice(1);return h||'main';}),page=ps[0],setPageRaw=ps[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
@@ -4239,7 +4246,7 @@ function App(){
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
   var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'}];
-  if(showSplash)return <Splash onDone={function(){setShowSplash(false);window.scrollTo(0,0);}}/>;
+  if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
       <div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,letterSpacing:1.5}}>ALPHA QUANT</div><div style={{color:C.accent,fontSize:8,letterSpacing:1.5}}>BETA GROWTH HOLDINGS</div></div>
