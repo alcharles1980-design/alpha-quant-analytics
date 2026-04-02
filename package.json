@@ -1,0 +1,12 @@
+{
+  "name": "alpha-quant-analytics",
+  "version": "0.86.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  }
+}
