@@ -25,3 +25,4 @@ Output: `dist/index.html`
 - **Data:** Polygon.io (trade ticks)
 
 
+<!-- deployed -->
