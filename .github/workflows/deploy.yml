@@ -6,9 +6,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    permissions:
+      contents: read
+      deployments: write
     steps:
       - uses: actions/checkout@v4
       
@@ -19,14 +19,14 @@ jobs:
       - name: Install dependencies
         run: npm install
       
-      - name: Build app
+      - name: Build
         run: node build.js
       
-      - name: Install Wrangler
-        run: npm install -g wrangler@latest
-      
-      - name: Create Pages project
-        run: wrangler pages project create alpha-quant-analytics --production-branch=main || true
-      
-      - name: Deploy to Pages
-        run: wrangler pages deploy dist --project-name=alpha-quant-analytics --branch=main
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: alpha-quant-analytics
+          directory: dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
