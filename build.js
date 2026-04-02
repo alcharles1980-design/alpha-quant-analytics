@@ -15,8 +15,13 @@ try { new Function(result.code); } catch (e) { console.error('SYNTAX ERROR:', e.
 // Inject build timestamp
 const now = new Date();
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const buildTS = months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear() + ' ' + 
-  now.toTimeString().slice(0,5) + ' UTC';
+const est = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+const estH = est.getUTCHours();
+const ampm = estH >= 12 ? 'PM' : 'AM';
+const h12 = estH % 12 || 12;
+const mm = String(est.getUTCMinutes()).padStart(2, '0');
+const buildTS = months[est.getUTCMonth()] + ' ' + est.getUTCDate() + ', ' + est.getUTCFullYear() + ' ' + 
+  h12 + ':' + mm + ' ' + ampm + ' EST';
 const finalCode = 'var BUILD_TS="v86 | Built: ' + buildTS + '";\n' + result.code;
 
 const html = `<!DOCTYPE html>
