@@ -4182,8 +4182,6 @@ function App(){
   },[]);
   var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
-  var ts2=useState(CURRENT_THEME),theme=ts2[0],setThemeState=ts2[1];
-  var toggleTheme=function(){var nt=theme==='dark'?'light':'dark';applyTheme(nt);setThemeState(nt);};
   var ps=useState(function(){var h=window.location.hash.slice(1);return h||'main';}),page=ps[0],setPageRaw=ps[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
