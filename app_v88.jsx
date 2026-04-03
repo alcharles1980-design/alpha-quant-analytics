@@ -159,7 +159,23 @@ var SB={
   }
 };
 
+function filterOutlierTicks(trades){
+  if(!trades||trades.length<100)return trades;
+  var step=Math.max(1,Math.floor(trades.length/2000));
+  var sample=[];for(var i=0;i<trades.length;i+=step)sample.push(trades[i].price);
+  sample.sort(function(a,b){return a-b;});
+  var q1=sample[Math.floor(sample.length*0.25)];
+  var q3=sample[Math.floor(sample.length*0.75)];
+  var iqr=q3-q1;if(iqr<0.01)iqr=q1*0.02;
+  var lo=q1-5*iqr,hi=q3+5*iqr;
+  var filtered=[];
+  for(var i=0;i<trades.length;i++){var p=trades[i].price;if(p>=lo&&p<=hi)filtered.push(trades[i]);}
+  return filtered;
+}
+
 function analyzePriceLevels(trades,tpPct){
+  if(!trades.length)return{levels:[],summary:{}};
+  trades=filterOutlierTicks(trades);
   if(!trades.length)return{levels:[],summary:{}};
   var tf=tpPct/100;
   var minP=Infinity,maxP=-Infinity;
@@ -209,6 +225,8 @@ function analyzePriceLevels(trades,tpPct){
 
 function computeHourlyCycles(trades,tpPct){
   if(!trades||trades.length<2)return[];
+  trades=filterOutlierTicks(trades);
+  if(!trades||trades.length<2)return[];
   var tf=tpPct/100;
   var minP=Infinity,maxP=-Infinity;
   for(var i=0;i<trades.length;i++){if(trades[i].price<minP)minP=trades[i].price;if(trades[i].price>maxP)maxP=trades[i].price;}
@@ -232,6 +250,8 @@ function computeHourlyCycles(trades,tpPct){
 }
 
 function computeCycleHoldTimes(trades,tpPct){
+  if(!trades||trades.length<2)return[];
+  trades=filterOutlierTicks(trades);
   if(!trades||trades.length<2)return[];
   var tf=tpPct/100;
   var minP=Infinity,maxP=-Infinity;
