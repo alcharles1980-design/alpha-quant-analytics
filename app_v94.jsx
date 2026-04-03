@@ -11,10 +11,18 @@ applyTheme(CURRENT_THEME);
 var F="'JetBrains Mono',monospace";
 var hourLabels={'4':'4AM','5':'5AM','6':'6AM','7':'7AM','8':'8AM','9':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
 function getETOffset(dateStr){
-  var y=parseInt(dateStr.slice(0,4)),m=parseInt(dateStr.slice(5,7)),d=parseInt(dateStr.slice(8,10));
-  if(m>3&&m<11)return 4;if(m<3||m>11)return 5;
-  if(m===3){var w=new Date(Date.UTC(y,2,1)).getUTCDay();var s=w===0?8:8+((7-w)%7);return d>=s?4:5;}
-  var w2=new Date(Date.UTC(y,10,1)).getUTCDay();var s2=w2===0?1:1+((7-w2)%7);return d<s2?4:5;
+  // Use Intl API for definitive EST/EDT detection
+  var d=new Date(dateStr+'T12:00:00Z');
+  var utcHour=d.getUTCHours();
+  var etStr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(d);
+  var etHour=parseInt(etStr);if(isNaN(etHour))etHour=12;
+  return utcHour-etHour;
+}
+var _etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+function getETHourFromMs(ms){
+  var h=parseInt(_etFmt.format(new Date(ms)));
+  if(h===24)h=0;
+  return isNaN(h)?0:h;
 }
 function verifyFetchIntegrity(trades,dateStr,etOff){
   var warnings=[];
@@ -22,7 +30,7 @@ function verifyFetchIntegrity(trades,dateStr,etOff){
   var hourMap={};for(var h=4;h<20;h++)hourMap[h]={trades:0,volume:0};
   for(var i=0;i<trades.length;i++){
     var ts=trades[i].ts;var ms=ts>1e15?ts/1e6:ts>1e12?ts/1e3:ts;
-    var d=new Date(ms);var eh=d.getUTCHours()-etOff;if(eh<0)eh+=24;
+    var eh=getETHourFromMs(ms);
     if(hourMap[eh]){hourMap[eh].trades++;hourMap[eh].volume+=trades[i].size||0;}
   }
   var rthH=[9,10,11,12,13,14,15];var rthMiss=[];
@@ -274,7 +282,7 @@ function computeHourlyCycles(trades,tpPct){
   var active=new Uint8Array(cnt),target=new Float64Array(cnt);
   for(var c=0;c<cnt;c++){target[c]=Math.ceil((minC+c)/100*(1+tf)*100)/100;active[c]=(minC+c>=openC&&minC+c<=psC)?1:0;}
   var hourCycles={};for(var h=4;h<20;h++)hourCycles[h]=0;
-  var firstMs=trades[0].ts>1e15?trades[0].ts/1e6:trades[0].ts>1e12?trades[0].ts/1e3:trades[0].ts;var etOff3=getETOffset(new Date(firstMs).toISOString().slice(0,10));var toHour=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var d=new Date(ms);var h2=d.getUTCHours()-etOff3;if(h2<0)h2+=24;return h2;};
+var toHour=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;return getETHourFromMs(ms);};
   for(var i=1;i<trades.length;i++){
     var p=trades[i].price;var hr=toHour(trades[i].ts);
     for(var j=0;j<cnt;j++){if(active[j]===1&&p>=target[j]){active[j]=0;if(hourCycles[hr]!==undefined)hourCycles[hr]++;}}
@@ -286,7 +294,6 @@ function computeHourlyCycles(trades,tpPct){
 }
 
 function computeCycleHoldTimes(trades,tpPct){
-  var firstMs2=trades[0].ts>1e15?trades[0].ts/1e6:trades[0].ts>1e12?trades[0].ts/1e3:trades[0].ts;var etOff4=getETOffset(new Date(firstMs2).toISOString().slice(0,10));
   if(!trades||trades.length<2)return[];
   var tf=tpPct/100;
   var minP=Infinity,maxP=-Infinity;
@@ -302,7 +309,7 @@ function computeCycleHoldTimes(trades,tpPct){
   var hourDur={};for(var h=4;h<20;h++)hourDur[h]=[];
   for(var i=1;i<trades.length;i++){
     var p=trades[i].price;var ts=trades[i].ts;var ms=ts>1e15?ts/1e6:ts>1e12?ts/1e3:ts;
-    var hr=new Date(ms).getUTCHours()-etOff4;if(hr<0)hr+=24;
+    var hr=getETHourFromMs(ms);
     for(var j=0;j<cnt;j++){if(active[j]===1&&p>=target[j]){active[j]=0;if(hr>=4&&hr<20&&buyMs[j]>0){var dur=(ms-buyMs[j])/60000;if(dur>0&&dur<960)hourDur[hr].push(dur);}buyMs[j]=0;}}
     var idx=Math.floor(p*100)-minC;if(idx>=0&&idx<cnt&&active[idx]===0){active[idx]=1;buyMs[idx]=ms;}
   }
@@ -401,7 +408,7 @@ async function fetchOHLC(ticker,date,apiKey){
 
 function formatTS(tsRaw){
   var tsMs;if(tsRaw>1e15)tsMs=tsRaw/1e6;else if(tsRaw>1e12)tsMs=tsRaw/1e3;else tsMs=tsRaw;
-  var dt=new Date(tsMs);var hh=dt.getUTCHours()-getETOffset(dt.toISOString().slice(0,10));if(hh<0)hh+=24;
+  var dt=new Date(tsMs);var hh=getETHourFromMs(tsMs);
   return String(hh).padStart(2,'0')+':'+String(dt.getUTCMinutes()).padStart(2,'0')+':'+String(dt.getUTCSeconds()).padStart(2,'0')+'.'+String(dt.getUTCMilliseconds()).padStart(3,'0');
 }
 
@@ -477,7 +484,7 @@ function BatchPage(p){
     if(!allTrades.length)return{error:'No trades found'};
     // Filter by session
     var trades=allTrades;
-    var etOffB=getETOffset(day);if(session==='rth'){trades=allTrades.filter(function(t){var ms=t.ts>1e15?t.ts/1e6:t.ts>1e12?t.ts/1e3:t.ts;var d2=new Date(ms);var etMin=(d2.getUTCHours()-etOffB)*60+d2.getUTCMinutes();return etMin>=570&&etMin<960;});}
+    if(session==='rth'){var _etFmt2=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false});trades=allTrades.filter(function(t){var ms=t.ts>1e15?t.ts/1e6:t.ts>1e12?t.ts/1e3:t.ts;var parts=_etFmt2.format(new Date(ms)).split(':');var etMin=parseInt(parts[0])*60+parseInt(parts[1]);return etMin>=570&&etMin<960;});}
     if(!trades.length)return{error:'No trades in session'};
     // Run cycle analysis
     var res=analyzePriceLevels(trades,tpVal);
@@ -486,7 +493,7 @@ function BatchPage(p){
     var hourly={};for(var h=4;h<20;h++)hourly[h]={high:-Infinity,low:Infinity,vol:0,trades:0};
     var sessions2={pre:{min:Infinity,max:-Infinity,vol:0,trades:0},reg:{min:Infinity,max:-Infinity,vol:0,trades:0},post:{min:Infinity,max:-Infinity,vol:0,trades:0}};
     for(var i2=0;i2<allTrades.length;i2++){
-      var tt=allTrades[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=d3.getUTCHours()-etOffB;if(eh<0)eh+=24;var em=eh*60+d3.getUTCMinutes();
+      var tt=allTrades[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=getETHourFromMs(ms2);var em=eh*60+d3.getUTCMinutes();
       if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}
       if(em<570){sessions2.pre.trades++;sessions2.pre.vol+=tt.size;if(tt.price<sessions2.pre.min)sessions2.pre.min=tt.price;if(tt.price>sessions2.pre.max)sessions2.pre.max=tt.price;}
       else if(em<960){sessions2.reg.trades++;sessions2.reg.vol+=tt.size;if(tt.price<sessions2.reg.min)sessions2.reg.min=tt.price;if(tt.price>sessions2.reg.max)sessions2.reg.max=tt.price;}
@@ -1072,7 +1079,7 @@ function SeasonalityPage(p){
       await new Promise(function(r){setTimeout(r,50);});
 
       // Convert timestamps and bucket
-      var etOffS=getETOffset(date);var toET=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var d2=new Date(ms);var h=d2.getUTCHours()-etOffS;if(h<0)h+=24;var m=d2.getUTCMinutes();return{h:h,m:m,totalMin:h*60+m};};
+      var toET=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var h=getETHourFromMs(ms);var m=new Date(ms).getUTCMinutes();return{h:h,m:m,totalMin:h*60+m};};
 
       // Session ranges
       var sessions={pre:{min:Infinity,max:-Infinity,vol:0,trades:0},reg:{min:Infinity,max:-Infinity,vol:0,trades:0},post:{min:Infinity,max:-Infinity,vol:0,trades:0}};
@@ -3716,7 +3723,7 @@ function HourlyOptimalPage(p){
           var wPrices=new Float64Array(allTrades.length);var wTs=new Float64Array(allTrades.length);
           for(var wi=0;wi<allTrades.length;wi++){wPrices[wi]=allTrades[wi].price;wTs[wi]=allTrades[wi].ts;}
           allTrades=null;
-          var bgCode='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.capPerLevel;var fee=d.feePerShare;var ticker=d.ticker;var date=d.date;var hours=new Int8Array(N);var ts2=new Float64Array(d.timestamps);for(var i=0;i<N;i++){var ts=ts2[i];var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var h=new Date(ms).getUTCHours()-4;if(h<0)h+=24;hours[i]=h;}ts2=null;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var rows=[];var bph={};var at=0;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var hc=new Int32Array(20);for(var i=1;i<N;i++){var p=prices[i],hr=hours[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;if(hr>=4&&hr<20)hc[hr]++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;for(var h=4;h<20;h++){var cy=hc[h],np=Math.round(cy*npc*10000)/10000;rows.push({ticker:ticker,trade_date:date,hour:h,tp_pct:tpPct,session_type:"all",cycles:cy,tp_dollar:td,net_profit:np});if(!bph[h]||np>bph[h].netProfit)bph[h]={tpPct:tpPct,tpDollar:td,cycles:cy,netProfit:np};}if(ti%5===0)self.postMessage({type:"progress",tpInt:ti,levels:cnt});}for(var h=4;h<20;h++)if(bph[h])at+=bph[h].netProfit;self.postMessage({type:"result",rows:rows,adaptiveTotal:at,tradeCount:N,sharePrice:sp,levels:cnt});};';
+          var bgCode='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.capPerLevel;var fee=d.feePerShare;var ticker=d.ticker;var date=d.date;var hours=new Int8Array(N);var ts2=new Float64Array(d.timestamps);for(var i=0;i<N;i++){var ts=ts2[i];var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var h=new Date(ms).getUTCHours()-d.etOffset;if(h<0)h+=24;hours[i]=h;}ts2=null;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var rows=[];var bph={};var at=0;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var hc=new Int32Array(20);for(var i=1;i<N;i++){var p=prices[i],hr=hours[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;if(hr>=4&&hr<20)hc[hr]++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;for(var h=4;h<20;h++){var cy=hc[h],np=Math.round(cy*npc*10000)/10000;rows.push({ticker:ticker,trade_date:date,hour:h,tp_pct:tpPct,session_type:"all",cycles:cy,tp_dollar:td,net_profit:np});if(!bph[h]||np>bph[h].netProfit)bph[h]={tpPct:tpPct,tpDollar:td,cycles:cy,netProfit:np};}if(ti%5===0)self.postMessage({type:"progress",tpInt:ti,levels:cnt});}for(var h=4;h<20;h++)if(bph[h])at+=bph[h].netProfit;self.postMessage({type:"result",rows:rows,adaptiveTotal:at,tradeCount:N,sharePrice:sp,levels:cnt});};';
           var bgBlob=new Blob([bgCode],{type:'application/javascript'});var bgUrl=URL.createObjectURL(bgBlob);
           var diRef=di,daysRef=days.length,dayRef=day;
           var bgResult=await new Promise(function(resolve,reject){
@@ -3921,7 +3928,7 @@ function BuildDataSetPage(p){
     return days;
   };
 
-  var toETHour=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var d2=new Date(ms);var h=d2.getUTCHours()-getETOffset(d2.toISOString().slice(0,10));if(h<0)h+=24;return h;};
+  var toETHour=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;return getETHourFromMs(ms);};
 
   var run=async function(){
     if(!p.apiKey){setErr('No Polygon API key set');return;}
@@ -5049,7 +5056,7 @@ function App(){
         if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip'});continue;}
         allTrades=filterOutlierTicks(allTrades);
         var filtered=allTrades;
-        if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-etOff)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var etH=getETHourFromMs(tsMs);return etH>=10&&etH<16;});}
         if(!filtered.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip',warnings:['No trades']});continue;}
         var fetchCheck=verifyFetchIntegrity(filtered,day,etOff);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+filtered.length.toLocaleString()+' trades...');
@@ -5071,7 +5078,7 @@ function App(){
         // Compute and save seasonality (hourly trades/volume)
         var hourly={};for(var h=4;h<20;h++)hourly[h]={high:-Infinity,low:Infinity,vol:0,trades:0};var etOff2=getETOffset(day);
         var sess2={pre:{min:Infinity,max:-Infinity,vol:0,trades:0},reg:{min:Infinity,max:-Infinity,vol:0,trades:0},post:{min:Infinity,max:-Infinity,vol:0,trades:0}};
-        for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=d3.getUTCHours()-etOff;if(eh<0)eh+=24;var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
+        for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=getETHourFromMs(ms2);var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
         var chartData=[];for(var h2=4;h2<20;h2++){var hd=hourly[h2];var atr=(hd.high>-Infinity&&hd.low<Infinity)?hd.high-hd.low:0;var atrPct=(hd.low>0&&atr>0)?(atr/hd.low)*100:0;chartData.push({atr:atr,atrPct:atrPct,volume:hd.vol,trades:hd.trades,high:hd.high>-Infinity?hd.high:null,low:hd.low>-Infinity?hd.low:null});}
         await SB.saveSeasonality(ticker.toUpperCase(),day,chartData,sess2);
         var hcSum=0;for(var hci=0;hci<hcDay.length;hci++)hcSum+=hcDay[hci].cycles;if(hcSum!==res.summary.totalCycles)fetchCheck.warnings.push('CYCLE MISMATCH: hr='+hcSum+' total='+res.summary.totalCycles);
@@ -5101,7 +5108,7 @@ function App(){
       var pages=0;
       while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('API error');var d=await r2.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=d.next_url?(d.next_url+'&apiKey='+pgKey):null;pages++;setProg('Fetching... '+allTrades.length.toLocaleString()+' trades (page '+pages+')');}
       var filtered=allTrades;
-      if(session==='rth'){var etOffL=getETOffset(date);filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-etOffL)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+      if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var etH=getETHourFromMs(tsMs);return etH>=10&&etH<16;});}
       filtered=filterOutlierTicks(filtered);rawTradesRef.current=filtered;setTickCount(filtered.length);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,parseFloat(tpStr)||1));if(filtered.length<500000){setHoldTimes(computeCycleHoldTimes(filtered,parseFloat(tpStr)||1));}else{setHoldTimes([]);}
       setDataSource('live');setProg('');
     }catch(e){setProg('Error: '+e.message);}finally{setLd(false);}
@@ -5155,7 +5162,7 @@ function App(){
       if(!allTrades.length)throw new Error('No trades. Check ticker/date.');
       var filtered=allTrades;
       if(session==='rth'){
-        filtered=allTrades.filter(function(t){var tsR=t.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-etOff)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});
+        filtered=allTrades.filter(function(t){var tsR=t.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var etH=getETHourFromMs(tsMs);return etH>=10&&etH<16;});
         if(!filtered.length)throw new Error('No trades in regular hours.');
       }
       filtered=filterOutlierTicks(filtered);rawTradesRef.current=filtered;setTickCount(filtered.length);
