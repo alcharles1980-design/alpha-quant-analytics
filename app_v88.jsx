@@ -4316,7 +4316,7 @@ function App(){
       while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('API error');var d=await r2.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=d.next_url?(d.next_url+'&apiKey='+pgKey):null;pages++;setProg('Fetching... '+allTrades.length.toLocaleString()+' trades (page '+pages+')');}
       var filtered=allTrades;
       if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-      filtered=filterOutlierTicks(filtered);rawTradesRef.current=filtered;setTickCount(filtered.length);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,parseFloat(tpStr)||1));setHoldTimes(computeCycleHoldTimes(filtered,parseFloat(tpStr)||1));
+      filtered=filterOutlierTicks(filtered);rawTradesRef.current=filtered;setTickCount(filtered.length);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,parseFloat(tpStr)||1));if(filtered.length<500000){setHoldTimes(computeCycleHoldTimes(filtered,parseFloat(tpStr)||1));}else{setHoldTimes([]);}
       setDataSource('live');setProg('');
     }catch(e){setProg('Error: '+e.message);}finally{setLd(false);}
   };
@@ -4353,7 +4353,10 @@ function App(){
       setProg('Analyzing '+filtered.length.toLocaleString()+' trades at '+tp+'% TP...');
       // Yield to UI before heavy computation
       await new Promise(function(r){setTimeout(r,50);});
-      var res=analyzePriceLevels(filtered,tp);setResult(res);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,tp));setHoldTimes(computeCycleHoldTimes(filtered,tp));
+      var res=analyzePriceLevels(filtered,tp);setResult(res);setPriceData(buildPriceData(filtered));
+      setProg('Computing hourly cycles...');await new Promise(function(r){setTimeout(r,100);});
+      setHourlyCycles(computeHourlyCycles(filtered,tp));
+      if(filtered.length<500000){setProg('Computing holding times...');await new Promise(function(r){setTimeout(r,100);});setHoldTimes(computeCycleHoldTimes(filtered,tp));}else{setHoldTimes([]);}
       setDataSource('polygon');
       // Compute min/max for saving
       var svMin=Infinity,svMax=-Infinity;for(var sv=0;sv<filtered.length;sv++){if(filtered[sv].price<svMin)svMin=filtered[sv].price;if(filtered[sv].price>svMax)svMax=filtered[sv].price;}
