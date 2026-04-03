@@ -4218,7 +4218,7 @@ function AIAgentsOverviewPage(p){
     <Cd glow={true}>
       <SectionHead title="Why AI Agents for Algorithmic Trading" sub="Moving from static rules to intelligent adaptive systems" info="AI agents are autonomous software entities that observe, reason, decide, and act in a continuous loop. Unlike static rule engines, agents can handle novel situations, weigh conflicting signals, explain their reasoning, and improve over time."/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
-        <p style={{marginBottom:8}}>The Edge Detection system currently operates in two modes: <span style={{color:C.accent,fontWeight:700}}>backward-looking analysis</span> (Stages 1-3: measuring what happened, finding what was optimal, discovering correlations) and <span style={{color:C.blue,fontWeight:700}}>static execution</span> (the Go/Redis bot with fixed TP% parameters).</p>
+        <p style={{marginBottom:8}}>The Edge Detection system currently operates in two modes: <span style={{color:C.accent,fontWeight:700}}>backward-looking analysis</span> (Stages 1-3: measuring what happened, finding what was optimal, discovering correlations) and <span style={{color:C.blue,fontWeight:700}}>static execution</span> (the current automated trading system with static rules).</p>
         <p style={{marginBottom:8}}>The gap between these two is where AI agents live. Stages 1-3 produce a lookup table: "in this regime, use this TP%." That is valuable but <span style={{color:C.warn,fontWeight:700}}>static</span>. It cannot reason about context, handle novel situations, weigh conflicting signals, or improve from experience.</p>
         <p>AI agents close this gap by adding an intelligent decision layer that translates analysis into real-time adaptive action.</p>
       </div>
@@ -4252,7 +4252,7 @@ function AIAgentsOverviewPage(p){
           <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Agent 1: Market Observer</p>
           <p style={{marginBottom:6}}>Continuously monitors live data streams from Polygon.io, the broker platform, and external sources. Unlike a simple data feed, the observer agent <span style={{color:C.txtBright,fontWeight:700}}>interprets</span> the data contextually.</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Volume is 3x normal but ATR is low" -- a rule engine sees two conflicting signals. The observer agent reasons: "This looks like institutional accumulation before a directional move. I should alert the TP% Decision Agent to widen TP% preemptively before the move starts."</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Implementation:</span> LLM with structured tool access to Polygon WebSocket, broker API, VIX feed. Runs on GCP alongside the Go bot. Publishes observations to a Redis pub/sub channel every 60 seconds.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Implementation:</span> LLM with structured tool access to Polygon WebSocket, broker API, VIX feed. Runs alongside the current trading system. Publishes observations every 60 seconds.</p>
           <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> Structured observation object: (atr_pct, volume_ratio, vix, price_position, regime_signals, anomaly_flags, confidence)</p>
         </div>
 
@@ -4269,7 +4269,7 @@ function AIAgentsOverviewPage(p){
           <p style={{marginBottom:6}}>The core agent. Takes the regime classification, the Stage 3 correlation coefficients, the live market data, and makes the actual TP% recommendation. This is where the intelligence lives.</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Reasoning under uncertainty:</span> "Stage 3 says 0.15% for this regime but I only have 3 training examples from this exact regime-hour combination. I will use 0.20% as a conservative buffer and tighten to 0.15% once I have seen 10+ confirmations."</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Multi-factor synthesis:</span> Weighs 22 features simultaneously with contextual understanding. Not just correlation coefficients but understanding of WHY those correlations exist.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Confidence scoring:</span> "I am 85% confident in 0.15% TP for the next hour" vs "I am 40% confident -- use the flat daily rate instead." The Go bot can use the confidence score to decide how aggressively to act.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Confidence scoring:</span> "I am 85% confident in 0.15% TP for the next hour" vs "I am 40% confident -- use the flat daily rate instead." The trading system can use the confidence score to decide how aggressively to act.</p>
           <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> recommended_tp_pct, confidence, reasoning_chain, alternative_tp_pct, fallback_to_flat</p>
         </div>
 
@@ -4357,7 +4357,7 @@ function AIAgentsOverviewPage(p){
     </Cd>
 
     <Cd>
-      <SectionHead title="System Architecture" sub="How the agents integrate with the existing Go/Redis/GCP infrastructure"/>
+      <SectionHead title="System Architecture" sub="How the agents integrate with the existing trading system infrastructure"/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
         <div style={{padding:'12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10,fontFamily:F,fontSize:7,lineHeight:2.2}}>
           <p style={{color:C.warn,fontWeight:700,textAlign:'center',marginBottom:4}}>STAGE 5: RL META-AGENT</p>
@@ -4373,13 +4373,13 @@ function AIAgentsOverviewPage(p){
           <p style={{color:C.txtDim,textAlign:'center',marginBottom:4}}>Observer -> Classifier -> TP% Decider -> Risk Guardian</p>
           <div style={{borderTop:'1px solid '+C.border,paddingTop:8,marginTop:4}}>
             <p style={{color:C.blue,fontWeight:700,textAlign:'center',marginBottom:4}}>EXECUTION LAYER</p>
-            <p style={{color:C.txtDim,textAlign:'center'}}>broker API | Go Bot | Redis Trade Log | GCP Compute</p>
+            <p style={{color:C.txtDim,textAlign:'center'}}>Broker API | Trading System | Trade Log | Cloud Compute</p>
           </div>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Practical Implementation Path</p>
-          <p style={{marginBottom:6,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>Phase 1 (Stage 4 -- Near-term):</span> Deploy a single LLM-based agent on GCP. It reads Stage 3 correlation outputs + live market data from broker/Polygon. Makes TP% recommendations and logs reasoning to Redis. The Go bot checks the agent's recommendation before each hour and adjusts TP% accordingly. Start as an <span style={{color:C.gold}}>advisor</span> (logs recommendations but does not auto-execute), then graduate to auto-execution once the track record is trusted.</p>
+          <p style={{marginBottom:6,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>Phase 1 (Stage 4 -- Near-term):</span> Deploy a single LLM-based agent on GCP. It reads Stage 3 correlation outputs + live market data from broker/Polygon. Makes TP% recommendations and logs reasoning to Redis. The trading system checks the agent's recommendation before each hour and adjusts TP% accordingly. Start as an <span style={{color:C.gold}}>advisor</span> (logs recommendations but does not auto-execute), then graduate to auto-execution once the track record is trusted.</p>
           <p style={{paddingLeft:8}}><span style={{color:C.purple,fontWeight:700}}>Phase 2 (Stage 5 -- Longer-term):</span> Add RL training loop. The reward signal is simple: net profit per hour divided by capital deployed (capital efficiency). Every completed trading day becomes a training episode. The agent learns which actions (TP% choices) in which states (market conditions) produced the highest rewards. Over weeks of live trading, it develops a policy calibrated to YOUR specific system's execution characteristics -- something no backtest can capture.</p>
         </div>
 
