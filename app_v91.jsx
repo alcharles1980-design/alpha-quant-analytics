@@ -1872,6 +1872,9 @@ function DbManagePage(p){
   var s8=useState(null),featDetail=s8[0],setFeatDetail=s8[1];
   var s9=useState(null),confirmFeatDel=s9[0],setConfirmFeatDel=s9[1];
   var s10=useState(null),expandedFeatDay=s10[0],setExpandedFeatDay=s10[1];
+  var s11=useState(null),optData=s11[0],setOptData=s11[1];
+  var s12=useState(null),optDetail=s12[0],setOptDetail=s12[1];
+  var s13=useState(null),confirmOptDel=s13[0],setConfirmOptDel=s13[1];
 
   var loadData=async function(){
     setLoading(true);setErr(null);
@@ -1941,6 +1944,33 @@ function DbManagePage(p){
         return fs;
       });
       setFeatData({stocks:featArr,totalRows:featRows.length});
+
+      // Load Stage 2 optimal TP% data
+      var rh3=getSbHeaders();rh3['Range']='0-49999';
+      var ro=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date,hour,tp_pct,net_profit&order=ticker.asc,trade_date.asc',{headers:rh3});
+      var optRows=ro.ok?await ro.json():[];
+      var optStocks={};
+      for(var oi=0;oi<optRows.length;oi++){
+        var or2=optRows[oi];var ok2=or2.ticker;
+        if(!optStocks[ok2])optStocks[ok2]={ticker:ok2,dates:{},totalRows:0};
+        var odKey=or2.trade_date;
+        if(!optStocks[ok2].dates[odKey])optStocks[ok2].dates[odKey]={hours:new Set(),rows:0,bestByHour:{}};
+        optStocks[ok2].dates[odKey].hours.add(or2.hour);
+        optStocks[ok2].dates[odKey].rows++;
+        optStocks[ok2].totalRows++;
+        var np=parseFloat(or2.net_profit)||0;
+        if(!optStocks[ok2].dates[odKey].bestByHour[or2.hour]||np>optStocks[ok2].dates[odKey].bestByHour[or2.hour].np){
+          optStocks[ok2].dates[odKey].bestByHour[or2.hour]={tp:or2.tp_pct,np:np};
+        }
+      }
+      var optArr=Object.values(optStocks).map(function(os){
+        var dk=Object.keys(os.dates).sort();
+        os.dayCount=dk.length;
+        os.earliest=dk[0];os.latest=dk[dk.length-1];os.dateList=dk;
+        for(var di2=0;di2<dk.length;di2++){os.dates[dk[di2]].hours=os.dates[dk[di2]].hours.size;}
+        return os;
+      });
+      setOptData({stocks:optArr,totalRows:optRows.length});
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -1966,6 +1996,20 @@ function DbManagePage(p){
     }catch(e){setErr('Delete failed: '+e.message);}
   };
 
+  var deleteOptStock=async function(ticker){
+    try{
+      var h=getSbHeaders();
+      await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker,{method:'DELETE',headers:h});
+      setConfirmOptDel(null);setOptDetail(null);loadData();
+    }catch(e){setErr('Delete optimal data failed: '+e.message);}
+  };
+  var deleteAllOptimal=async function(){
+    try{
+      var h=getSbHeaders();
+      await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?id=gt.0',{method:'DELETE',headers:h});
+      setConfirmOptDel(null);setOptDetail(null);loadData();
+    }catch(e){setErr('Delete all optimal data failed: '+e.message);}
+  };
   var deleteFeatStock=async function(ticker){
     try{
       var h=getSbHeaders();
@@ -2071,6 +2115,61 @@ function DbManagePage(p){
         </div>:
         <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Cached Data</button>}
       </Cd>}
+      {optData&&<div style={{marginTop:16}}>
+        <Cd glow={true}>
+          <SectionHead title="Stage 2: Optimal TP% Data" sub="Hourly TP% scan results from Stage 2 scanner" info="Results from the Hourly Optimal TP% Finder. Each stock-day has 1,600 rows (100 TP% values x 16 hours). Used as the target variable (Y) for Stage 3 correlation analysis."/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
+            <Mt label="Stocks" value={optData.stocks.length} color={C.blue} size="lg"/>
+            <Mt label="Total Rows" value={optData.totalRows.toLocaleString()} color={C.accent} size="md"/>
+            <Mt label="Rows/Day" value="1,600" color={C.gold} size="md"/>
+          </div>
+        </Cd>
+        {optData.stocks.length===0&&<Cd><div style={{color:C.txtDim,fontSize:10,fontFamily:F,textAlign:'center',padding:16}}>No optimal TP% data. Use Hourly Optimal TP% Finder (Stage 2) to generate.</div></Cd>}
+        {optData.stocks.map(function(os){
+          var isOpen=optDetail===os.ticker;
+          return <Cd key={'opt-'+os.ticker}>
+            <div onClick={function(){setOptDetail(isOpen?null:os.ticker);}} style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{color:C.blue,fontSize:14,fontWeight:800,fontFamily:F}}>{os.ticker}</span>
+                  <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{os.dayCount+' day'+(os.dayCount>1?'s':'')}</span>
+                  <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{os.totalRows.toLocaleString()+' rows'}</span>
+                </div>
+                <div style={{color:C.txt,fontSize:9,fontFamily:F}}>{os.earliest+' to '+os.latest}</div>
+              </div>
+              <div style={{color:C.blue,fontSize:18,fontWeight:300,transform:isOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</div>
+            </div>
+            {isOpen&&<div style={{marginTop:12}}>
+              <div style={{marginBottom:10}}>
+                {os.dateList.map(function(dt){
+                  var dd=os.dates[dt];
+                  var bestFlat={tp:0,total:0};
+                  var bestHours=dd.bestByHour;
+                  var adaptiveTotal=0;
+                  for(var bh in bestHours){adaptiveTotal+=bestHours[bh].np;}
+                  return <div key={dt} style={{display:'flex',alignItems:'center',padding:'4px 0',borderBottom:'1px solid '+C.grid}}>
+                    <div style={{flex:2,fontSize:8,color:C.txtBright,fontFamily:F}}>{dt}</div>
+                    <div style={{flex:1,fontSize:8,color:dd.hours===16?C.accent:C.warn,fontFamily:F,textAlign:'right',fontWeight:700}}>{dd.hours+'/16 hrs'}</div>
+                    <div style={{flex:1.5,fontSize:8,color:C.txt,fontFamily:F,textAlign:'right'}}>{dd.rows.toLocaleString()+' rows'}</div>
+                  </div>;
+                })}
+              </div>
+              {confirmOptDel===os.ticker?<div style={{display:'flex',gap:8}}>
+                <button onClick={function(){deleteOptStock(os.ticker);}} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete {os.ticker} Optimal Data</button>
+                <button onClick={function(){setConfirmOptDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
+              </div>:
+              <button onClick={function(){setConfirmOptDel(os.ticker);}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Delete {os.ticker} Optimal Data</button>}
+            </div>}
+          </Cd>;
+        })}
+        {optData.stocks.length>0&&<Cd>
+          {confirmOptDel==='ALL_OPT'?<div style={{display:'flex',gap:8}}>
+            <button onClick={deleteAllOptimal} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete All Optimal Data</button>
+            <button onClick={function(){setConfirmOptDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
+          </div>:
+          <button onClick={function(){setConfirmOptDel('ALL_OPT');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Optimal TP% Data</button>}
+        </Cd>}
+      </div>}
       {featData&&<div style={{marginTop:16}}>
         <Cd glow={true}>
           <SectionHead title="Stage 3: Feature Data" sub="Hourly features from Build Data Set pipeline" info="Features extracted from Polygon trade ticks for ML correlation analysis. Each row contains 22 market microstructure features for one hour of one trading day."/>
