@@ -4253,7 +4253,7 @@ function AIAgentsOverviewPage(p){
           <p style={{marginBottom:6}}>Continuously monitors live data streams from Polygon.io, Alpaca Markets, and external sources. Unlike a simple data feed, the observer agent <span style={{color:C.txtBright,fontWeight:700}}>interprets</span> the data contextually.</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Volume is 3x normal but ATR is low" -- a rule engine sees two conflicting signals. The observer agent reasons: "This looks like institutional accumulation before a directional move. I should alert the TP% Decision Agent to widen TP% preemptively before the move starts."</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Implementation:</span> LLM with structured tool access to Polygon WebSocket, Alpaca API, VIX feed. Runs on GCP alongside the Go bot. Publishes observations to a Redis pub/sub channel every 60 seconds.</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> Structured observation object: {atr_pct, volume_ratio, vix, price_position, regime_signals, anomaly_flags, confidence}</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> Structured observation object: (atr_pct, volume_ratio, vix, price_position, regime_signals, anomaly_flags, confidence)</p>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
@@ -4261,7 +4261,7 @@ function AIAgentsOverviewPage(p){
           <p style={{marginBottom:6}}>Takes the Market Observer's output and classifies the current market regime. Uses the Stage 3 correlation data as its knowledge base, but can also detect <span style={{color:C.txtBright,fontWeight:700}}>novel regimes</span> that do not fit any historical category.</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Current conditions match the High Volatility + Mean-Reverting regime with 78% confidence. However, the overnight gap is 4x larger than any gap in my training data. I am flagging this as a potential novel regime and reducing my confidence to 45%."</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>vs Rule Engine:</span> A rule engine would classify this as "High Volatility" and blindly apply the historical TP%. The agent recognizes the unprecedented gap size and adjusts accordingly.</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> {regime_type, sub_regime, confidence, novel_flag, recommended_caution_level}</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> regime_type, sub_regime, confidence, novel_flag, recommended_caution_level</p>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.purple,marginBottom:10}}>
@@ -4270,7 +4270,7 @@ function AIAgentsOverviewPage(p){
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Reasoning under uncertainty:</span> "Stage 3 says 0.15% for this regime but I only have 3 training examples from this exact regime-hour combination. I will use 0.20% as a conservative buffer and tighten to 0.15% once I have seen 10+ confirmations."</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Multi-factor synthesis:</span> Weighs 22 features simultaneously with contextual understanding. Not just correlation coefficients but understanding of WHY those correlations exist.</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Confidence scoring:</span> "I am 85% confident in 0.15% TP for the next hour" vs "I am 40% confident -- use the flat daily rate instead." The Go bot can use the confidence score to decide how aggressively to act.</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> {recommended_tp_pct, confidence, reasoning_chain, alternative_tp_pct, fallback_to_flat}</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> recommended_tp_pct, confidence, reasoning_chain, alternative_tp_pct, fallback_to_flat</p>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
@@ -4278,7 +4278,7 @@ function AIAgentsOverviewPage(p){
           <p style={{marginBottom:6}}>Monitors portfolio-level risk continuously. Has veto power over the TP% Decision Agent. This is the safety layer that prevents the system from over-extending.</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "The TP% Decision Agent recommends 0.08% TP which would require 500 active levels at $1 each = $500 deployed. That is 70% of available capital and exceeds the 50% maximum deployment rule. I am capping at 300 levels and widening TP% to 0.13% to maintain the deployment limit."</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Three consecutive hourly TP% changes have all been in the widening direction. This pattern historically precedes a drawdown. I am pausing TP% changes for the next hour and holding the current setting."</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> {approved, modified_tp_pct, override_reason, portfolio_utilization, risk_score}</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> approved, modified_tp_pct, override_reason, portfolio_utilization, risk_score</p>
         </div>
       </div>
     </Cd>
