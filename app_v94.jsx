@@ -4912,10 +4912,20 @@ function App(){
           grandTotalCycles+=ca.total_cycles;grandTotalTrades+=(ca.total_trades||0);
           continue;
         }
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
-        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-        var pages=0;
-        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        // 3-window fetch to prevent Polygon next_url data loss (same fix as Build Data Set v87)
+        var fetchWin=async function(dayStr,tsFrom,tsTo,label){
+          var trades2=[],u2='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+dayStr+tsFrom+'&timestamp.lt='+dayStr+tsTo+'&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+          while(u2){var r3=await fetch(u2);if(!r3.ok)throw new Error('Polygon error '+r3.status+' on '+dayStr);var d4=await r3.json();if(d4.results)for(var j=0;j<d4.results.length;j++){var t2=d4.results[j];trades2.push({price:t2.price,size:t2.size,ts:t2.sip_timestamp||t2.participant_timestamp});}u2=d4.next_url?(d4.next_url+'&apiKey='+pgKey):null;setProg('Day '+(di+1)+'/'+days.length+': '+day+' '+label+' '+trades2.length.toLocaleString()+' trades');}
+          return trades2;
+        };
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching 3 windows...');
+        var w1=await fetchWin(day,'T08:00:00.000Z','T13:30:00.000Z','[1/3 pre]');
+        await new Promise(function(r){setTimeout(r,200);});
+        var w2=await fetchWin(day,'T13:30:00.000Z','T17:00:00.000Z','[2/3 morn]');
+        await new Promise(function(r){setTimeout(r,200);});
+        var w3=await fetchWin(day,'T17:00:00.000Z','T23:59:59.000Z','[3/3 aftn]');
+        var allTrades=w1.concat(w2).concat(w3);
+        allTrades.sort(function(a,b){return a.ts-b.ts;});
         if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip'});continue;}
         allTrades=filterOutlierTicks(allTrades);
         var filtered=allTrades;
@@ -4943,6 +4953,8 @@ function App(){
         for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=d3.getUTCHours()-4;if(eh<0)eh+=24;var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
         var chartData=[];for(var h2=4;h2<20;h2++){var hd=hourly[h2];var atr=(hd.high>-Infinity&&hd.low<Infinity)?hd.high-hd.low:0;var atrPct=(hd.low>0&&atr>0)?(atr/hd.low)*100:0;chartData.push({atr:atr,atrPct:atrPct,volume:hd.vol,trades:hd.trades,high:hd.high>-Infinity?hd.high:null,low:hd.low>-Infinity?hd.low:null});}
         await SB.saveSeasonality(ticker.toUpperCase(),day,chartData,sess2);
+        // Delay between days to prevent Supabase rate limiting
+        if(di<days.length-1)await new Promise(function(r){setTimeout(r,500);});
       }
       var validDays=allDays.filter(function(d2){return d2.cycles>0;});
       var totalNet=0;var totalGross=0;var totalFees=0;
@@ -4989,10 +5001,18 @@ function App(){
         if(cachedHC)setHourlyCycles(cachedHC);
         setDataSource('cache');setProg('');setLd(false);return;
       }
-      setProg('Fetching trades...');
-      var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+date+'T04:00:00.000Z&timestamp.lt='+date+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-      var pages=0;
-      while(url){var r=await fetch(url);if(!r.ok)throw new Error('Polygon API error '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=d.next_url?(d.next_url+'&apiKey='+pgKey):null;pages++;setProg('Fetching... '+allTrades.length.toLocaleString()+' trades (page '+pages+')');}
+      // 3-window fetch to prevent Polygon next_url pre-market data loss
+      var fetchW=async function(tsFrom,tsTo,label){
+        var tr2=[],u2='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+date+tsFrom+'&timestamp.lt='+date+tsTo+'&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        while(u2){var r=await fetch(u2);if(!r.ok)throw new Error('Polygon API error '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];tr2.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}u2=d.next_url?(u2.next_url+'&apiKey='+pgKey):null;setProg(label+' '+tr2.length.toLocaleString()+' trades');}
+        return tr2;
+      };
+      setProg('Fetching trades (3 windows)...');
+      var fw1=await fetchW('T08:00:00.000Z','T13:30:00.000Z','[1/3 pre-market]');
+      var fw2=await fetchW('T13:30:00.000Z','T17:00:00.000Z','[2/3 morning]');
+      var fw3=await fetchW('T17:00:00.000Z','T23:59:59.000Z','[3/3 afternoon]');
+      var allTrades=fw1.concat(fw2).concat(fw3);
+      allTrades.sort(function(a,b){return a.ts-b.ts;});
       if(!allTrades.length)throw new Error('No trades. Check ticker/date.');
       var filtered=allTrades;
       if(session==='rth'){
