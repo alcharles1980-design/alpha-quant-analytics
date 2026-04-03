@@ -1873,6 +1873,8 @@ function DbManagePage(p){
   var s8=useState(null),featDetail=s8[0],setFeatDetail=s8[1];
   var s9=useState(null),confirmFeatDel=s9[0],setConfirmFeatDel=s9[1];
   var s10=useState(null),expandedFeatDay=s10[0],setExpandedFeatDay=s10[1];
+  var s14=useState(null),expandedS1Day=s14[0],setExpandedS1Day=s14[1];
+  var s15=useState(null),s1HourlyData=s15[0],setS1HourlyData=s15[1];
   var s11=useState(null),optData=s11[0],setOptData=s11[1];
   var s12=useState(null),optDetail=s12[0],setOptDetail=s12[1];
   var s13=useState(null),confirmOptDel=s13[0],setConfirmOptDel=s13[1];
@@ -2012,6 +2014,17 @@ function DbManagePage(p){
       setConfirmOptDel(null);setOptDetail(null);loadData();
     }catch(e){setErr('Delete all optimal data failed: '+e.message);}
   };
+  var loadS1Hourly=async function(ticker,date,tpPct,sessionType){
+    var key=ticker+'_'+date+'_'+tpPct+'_'+sessionType;
+    if(expandedS1Day===key){setExpandedS1Day(null);setS1HourlyData(null);return;}
+    setExpandedS1Day(key);setS1HourlyData(null);
+    try{
+      var h=getSbHeaders();
+      var r=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+sessionType+'&select=hour,cycles&order=hour.asc',{headers:h});
+      var rows=r.ok?await r.json():[];
+      setS1HourlyData(rows);
+    }catch(e){setS1HourlyData([]);}
+  };
   var deleteFeatStock=async function(ticker){
     try{
       var h=getSbHeaders();
@@ -2092,14 +2105,47 @@ function DbManagePage(p){
                   <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Session</th>
                 </tr></thead>
                 <tbody>{s.days.map(function(d){
-                  return <tr key={d.trade_date+d.tp_pct+d.session_type} style={{borderBottom:'1px solid '+C.grid}}>
-                    <td style={{padding:'4px 3px',color:C.txtBright}}>{d.trade_date}</td>
-                    <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{d.tp_pct+'%'}</td>
-                    <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{d.total_cycles}</td>
-                    <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{d.active_levels+'/'+d.total_levels}</td>
-                    <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{d.total_trades.toLocaleString()}</td>
-                    <td style={{padding:'4px 3px',color:C.txtDim}}>{d.session_type}</td>
-                  </tr>;
+                  var dayKey=d.ticker+'_'+d.trade_date+'_'+d.tp_pct+'_'+d.session_type;
+                  var isDayOpen=expandedS1Day===dayKey;
+                  return <React.Fragment key={dayKey}>
+                    <tr onClick={function(){loadS1Hourly(d.ticker||s.ticker,d.trade_date,d.tp_pct,d.session_type);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:isDayOpen?C.accentDim:'transparent'}}>
+                      <td style={{padding:'4px 3px',color:C.txtBright}}>{d.trade_date}<span style={{color:C.accent,fontSize:8,marginLeft:3}}>{isDayOpen?'\u25B2':'\u25BC'}</span></td>
+                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{d.tp_pct+'%'}</td>
+                      <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{d.total_cycles}</td>
+                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{d.active_levels+'/'+d.total_levels}</td>
+                      <td style={{padding:'4px 3px',color:C.txt,textAlign:'right'}}>{d.total_trades.toLocaleString()}</td>
+                      <td style={{padding:'4px 3px',color:C.txtDim}}>{d.session_type}</td>
+                    </tr>
+                    {isDayOpen&&<tr><td colSpan="6" style={{padding:0}}>
+                      <div style={{padding:'8px 4px',background:C.bgDeep,borderBottom:'2px solid '+C.accent}}>
+                        {!s1HourlyData&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>Loading hourly data...</div>}
+                        {s1HourlyData&&s1HourlyData.length===0&&<div style={{color:C.warn,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>No hourly cycle data found for this day.</div>}
+                        {s1HourlyData&&s1HourlyData.length>0&&<div>
+                          <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:4,fontWeight:700,letterSpacing:1}}>HOURLY CYCLES: {d.trade_date}</div>
+                          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:2}}>
+                            {s1HourlyData.map(function(h){
+                              var maxCy=0;for(var q=0;q<s1HourlyData.length;q++){if(s1HourlyData[q].cycles>maxCy)maxCy=s1HourlyData[q].cycles;}
+                              var pct=maxCy>0?(h.cycles/maxCy*100):0;
+                              var hrLabel=hourLabels[h.hour]||h.hour+'h';
+                              return <div key={h.hour} style={{background:C.bg,borderRadius:3,padding:'3px 4px',border:'1px solid '+C.grid}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                                  <span style={{fontSize:6,color:C.txtDim,fontFamily:F}}>{hrLabel}</span>
+                                  <span style={{fontSize:8,color:h.cycles>0?C.accent:C.txtDim,fontFamily:F,fontWeight:700}}>{h.cycles}</span>
+                                </div>
+                                <div style={{height:3,background:C.grid,borderRadius:2,marginTop:2}}>
+                                  <div style={{height:3,background:h.cycles>0?C.accent:C.grid,borderRadius:2,width:pct+'%'}}></div>
+                                </div>
+                              </div>;
+                            })}
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+                            <span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Hours with cycles: {s1HourlyData.filter(function(h){return h.cycles>0;}).length+'/16'}</span>
+                            <span style={{fontSize:7,color:C.accent,fontFamily:F}}>Total: {s1HourlyData.reduce(function(a,h){return a+h.cycles;},0)}</span>
+                          </div>
+                        </div>}
+                      </div>
+                    </td></tr>}
+                  </React.Fragment>;
                 })}</tbody>
               </table>
             </div>
