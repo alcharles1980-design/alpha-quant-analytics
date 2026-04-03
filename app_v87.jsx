@@ -2754,10 +2754,20 @@ function Splash(p){
 
 function PriceLevelTable(p){
   var ls=useState(true),showActive=ls[0],setShowActive=ls[1];
+  var ss=useState('cycles'),sortCol=ss[0],setSortCol=ss[1];
+  var sd=useState('desc'),sortDir=sd[0],setSortDir=sd[1];
   var s=p.summary;
-  var data=showActive?p.levels.filter(function(l){return l.cycles>0;}):p.levels;
+  var filtered=showActive?p.levels.filter(function(l){return l.cycles>0;}):p.levels;
+  var data=filtered.slice().sort(function(a,b){
+    var va=sortCol==='price'?a.price:sortCol==='target'?a.target:a.cycles;
+    var vb=sortCol==='price'?b.price:sortCol==='target'?b.target:b.cycles;
+    return sortDir==='asc'?(va-vb):(vb-va);
+  });
+  var toggleSort=function(col){if(sortCol===col){setSortDir(sortDir==='asc'?'desc':'asc');}else{setSortCol(col);setSortDir(col==='cycles'?'desc':'asc');}};
+  var arrow=function(col){if(sortCol!==col)return ' \u2195';return sortDir==='asc'?' \u25B2':' \u25BC';};
+  var hdrStyle=function(col){return{padding:'5px 4px',color:sortCol===col?C.accent:C.txtDim,textAlign:'right',fontWeight:700,cursor:'pointer',userSelect:'none',fontSize:9};};
   return <Cd>
-    <SectionHead title="Price Level Cycles" sub={"Each $0.01 level @ "+s.tpPct+"% take profit"} info="Every $0.01 price point the stock touched becomes an independent trading unit. It buys at that price and sells when price rises by your TP%. After selling, it waits for price to return to buy again. 'Active' = completed at least one cycle."/>
+    <SectionHead title="Price Level Cycles" sub={"Each $0.01 level @ "+s.tpPct+"% take profit"} info="Every $0.01 price point the stock touched becomes an independent trading unit. It buys at that price and sells when price rises by your TP%. After selling, it waits for price to return to buy again. 'Active' = completed at least one cycle. Tap column headers to sort."/>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10,marginBottom:12}}>
       <Mt label="Total Cycles" value={s.totalCycles} color={C.accent} size="lg"/>
       <Mt label="Active Levels" value={s.activeLevels} color={C.blue} size="md"/>
@@ -2770,7 +2780,9 @@ function PriceLevelTable(p){
     <div style={{overflowX:'auto',maxHeight:400}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:F}}>
         <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-          {['Level','Target','Cycles'].map(function(h){return <th key={h} style={{padding:'5px 4px',color:C.txtDim,textAlign:'right',fontWeight:600}}>{h}</th>;})}
+          <th onClick={function(){toggleSort('price');}} style={hdrStyle('price')}>{'Level'+arrow('price')}</th>
+          <th onClick={function(){toggleSort('target');}} style={hdrStyle('target')}>{'Target'+arrow('target')}</th>
+          <th onClick={function(){toggleSort('cycles');}} style={hdrStyle('cycles')}>{'Cycles'+arrow('cycles')}</th>
         </tr></thead>
         <tbody>{data.slice(0,500).map(function(l){return <tr key={l.price} style={{borderBottom:'1px solid '+C.grid}}>
           <td style={{padding:'5px 4px',textAlign:'right',color:C.txtBright,fontWeight:700}}>{'$'+l.price.toFixed(2)}</td>
