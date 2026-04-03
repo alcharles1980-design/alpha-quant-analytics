@@ -2777,6 +2777,39 @@ function PriceLevelTable(p){
       <button onClick={function(){setShowActive(true);}} style={Object.assign({},bB,{flex:1,padding:'6px 4px',fontSize:8,background:showActive?C.accentDim:'transparent',border:'1px solid '+(showActive?C.accent:C.border),color:showActive?C.accent:C.txt})}>Active Only</button>
       <button onClick={function(){setShowActive(false);}} style={Object.assign({},bB,{flex:1,padding:'6px 4px',fontSize:8,background:!showActive?C.accentDim:'transparent',border:'1px solid '+(!showActive?C.accent:C.border),color:!showActive?C.accent:C.txt})}>All Levels</button>
     </div>
+    {(function(){
+      var activeLevels=p.levels.filter(function(l){return l.cycles>0;});
+      if(!activeLevels.length)return null;
+      var minP=Infinity,maxP=-Infinity;
+      for(var ci=0;ci<activeLevels.length;ci++){if(activeLevels[ci].price<minP)minP=activeLevels[ci].price;if(activeLevels[ci].price>maxP)maxP=activeLevels[ci].price;}
+      var range=maxP-minP;
+      var bucketSize=range>10?1.00:range>5?0.50:0.25;
+      var bucketStart=Math.floor(minP/bucketSize)*bucketSize;
+      var bucketEnd=Math.ceil(maxP/bucketSize)*bucketSize;
+      var buckets=[];
+      for(var bp=bucketStart;bp<bucketEnd+0.001;bp=Math.round((bp+bucketSize)*100)/100){
+        var bKey=bp;var bCycles=0;var bLevels=0;
+        for(var ci=0;ci<activeLevels.length;ci++){
+          if(activeLevels[ci].price>=bp&&activeLevels[ci].price<bp+bucketSize){bCycles+=activeLevels[ci].cycles;bLevels++;}
+        }
+        if(bCycles>0)buckets.push({price:bKey,cycles:bCycles,levels:bLevels});
+      }
+      var maxBCycles=0;for(var ci=0;ci<buckets.length;ci++){if(buckets[ci].cycles>maxBCycles)maxBCycles=buckets[ci].cycles;}
+      return <div style={{marginBottom:12,padding:'8px 0',borderBottom:'1px solid '+C.border}}>
+        <div style={{color:C.txt,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:6}}>Cycle Distribution by Price</div>
+        {buckets.map(function(b){
+          var pct=maxBCycles>0?(b.cycles/maxBCycles)*100:0;
+          return <div key={b.price} style={{display:'flex',alignItems:'center',marginBottom:2}}>
+            <div style={{width:60,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'right',paddingRight:6}}>{'$'+b.price.toFixed(2)}</div>
+            <div style={{flex:1,position:'relative',height:16}}>
+              <div style={{position:'absolute',left:0,top:1,bottom:1,width:pct+'%',background:'linear-gradient(90deg,'+C.accent+'90,'+C.blue+'90)',borderRadius:'0 3px 3px 0',minWidth:b.cycles>0?3:0}}></div>
+            </div>
+            <div style={{width:50,fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,textAlign:'right',paddingLeft:4}}>{b.cycles.toLocaleString()}</div>
+            <div style={{width:30,fontSize:6,color:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:2}}>{b.levels+'lv'}</div>
+          </div>;
+        })}
+      </div>;
+    })()}
     <div style={{overflowX:'auto',maxHeight:400}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:F}}>
         <thead><tr style={{borderBottom:'1px solid '+C.border}}>
