@@ -22,7 +22,7 @@ const h12 = estH % 12 || 12;
 const mm = String(est.getUTCMinutes()).padStart(2, '0');
 const buildTS = months[est.getUTCMonth()] + ' ' + est.getUTCDate() + ', ' + est.getUTCFullYear() + ' ' + 
   h12 + ':' + mm + ' ' + ampm + ' EST';
-const finalCode = 'var BUILD_TS="v92 | Built: ' + buildTS + '";\n' + result.code;
+const finalCode = 'var BUILD_TS="v93 | Built: ' + buildTS + '";\n' + result.code;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
