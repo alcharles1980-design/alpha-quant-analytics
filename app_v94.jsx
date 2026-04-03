@@ -5020,16 +5020,29 @@ function App(){
         // 4AM ET to 8PM ET in UTC, split into 4 windows for reliability
         var pad=function(n){return String(n).padStart(2,'0');};
         var nextDay=new Date(new Date(day+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
-        // 3 independent windows with wide overlap to prevent ANY boundary data loss
-        // Each window overlaps 2 hours into the next
-        var hPre=4+etOff;var hMid=10+etOff;var hAft=15+etOff;var hEnd=20+etOff;
-        var wEndTs=hEnd<24?day+'T'+pad(hEnd)+':30:00.000Z':nextDay+'T'+pad(hEnd-24)+':30:00.000Z';
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching (UTC-'+etOff+')...');
-        var wa=await fetchWin(day+'T'+pad(hPre)+':00:00.000Z',day+'T'+pad(hMid+2)+':00:00.000Z','[1/3 pre+open]');await new Promise(function(r){setTimeout(r,200);});
-        var wb=await fetchWin(day+'T'+pad(hMid-1)+':00:00.000Z',day+'T'+pad(hAft+2)+':00:00.000Z','[2/3 midday]');await new Promise(function(r){setTimeout(r,200);});
-        var wc=await fetchWin(day+'T'+pad(hAft-1)+':00:00.000Z',wEndTs,'[3/3 close+post]');
+        // 3 focused windows split at market boundaries with EST/EDT-aware UTC times
+        // Each window overlaps 30min into the next for safety
+        var preOpen=day+'T'+pad(4+etOff)+':00:00.000Z'; // 4AM ET
+        var mktOpen=day+'T'+pad(9+etOff)+':30:00.000Z'; // 9:30AM ET
+        var midDay=day+'T'+pad(13+etOff)+':00:00.000Z'; // 1PM ET
+        var mktClose;
+        if(20+etOff<24){mktClose=day+'T'+pad(20+etOff)+':30:00.000Z';}
+        else{mktClose=nextDay+'T'+pad(20+etOff-24)+':30:00.000Z';}
+        // Window 1: pre-market (4AM to 10AM ET) - low volume, no pagination issues
+        var w1End=day+'T'+pad(10+etOff)+':00:00.000Z';
+        // Window 2: morning RTH (9AM to 1:30PM ET) - overlaps 1hr with W1 and 30min with W3
+        var w2Start=day+'T'+pad(9+etOff)+':00:00.000Z';
+        var w2End=day+'T'+pad(13+etOff)+':30:00.000Z';
+        // Window 3: afternoon RTH + post (1PM to 8:30PM ET)
+        var w3Start=day+'T'+pad(13+etOff)+':00:00.000Z';
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching [1/3 pre-mkt]...');
+        var wa=await fetchWin(preOpen,w1End,'[1/3 pre-mkt]');await new Promise(function(r){setTimeout(r,200);});
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching [2/3 morning]...');
+        var wb=await fetchWin(w2Start,w2End,'[2/3 morning]');await new Promise(function(r){setTimeout(r,200);});
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching [3/3 afternoon]...');
+        var wc=await fetchWin(w3Start,mktClose,'[3/3 afternoon]');
         var allRaw=wa.concat(wb).concat(wc);
-        // Dedup by timestamp
+        // Dedup by timestamp (overlapping windows produce duplicates)
         allRaw.sort(function(a,b){return a.ts-b.ts;});
         var allTrades=[];var lastTs=-1;
         for(var di2=0;di2<allRaw.length;di2++){if(allRaw[di2].ts!==lastTs){allTrades.push(allRaw[di2]);lastTs=allRaw[di2].ts;}}
@@ -5120,12 +5133,21 @@ function App(){
       };
       var pad=function(n){return String(n).padStart(2,'0');};
       var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
-      var hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;
-      var wEndTs=hEnd<24?date+'T'+pad(hEnd)+':30:00.000Z':nextDay+'T'+pad(hEnd-24)+':30:00.000Z';
-      setProg('Fetching trades (UTC-'+etOff+')...');
-      var fw1=await fetchW(date+'T'+pad(hPre)+':00:00.000Z',date+'T'+pad(hMid+2)+':00:00.000Z','[1/3 pre+open]');
-      var fw2=await fetchW(date+'T'+pad(hMid-1)+':00:00.000Z',date+'T'+pad(hAft+2)+':00:00.000Z','[2/3 midday]');
-      var fw3=await fetchW(date+'T'+pad(hAft-1)+':00:00.000Z',wEndTs,'[3/3 close+post]');
+      // 3 focused windows split at market boundaries
+      var preOpen=date+'T'+pad(4+etOff)+':00:00.000Z';
+      var w1End=date+'T'+pad(10+etOff)+':00:00.000Z';
+      var w2Start=date+'T'+pad(9+etOff)+':00:00.000Z';
+      var w2End=date+'T'+pad(13+etOff)+':30:00.000Z';
+      var w3Start=date+'T'+pad(13+etOff)+':00:00.000Z';
+      var mktClose;
+      if(20+etOff<24){mktClose=date+'T'+pad(20+etOff)+':30:00.000Z';}
+      else{mktClose=nextDay+'T'+pad(20+etOff-24)+':30:00.000Z';}
+      setProg('Fetching [1/3 pre-market]...');
+      var fw1=await fetchW(preOpen,w1End,'[1/3 pre-mkt]');
+      setProg('Fetching [2/3 morning]...');
+      var fw2=await fetchW(w2Start,w2End,'[2/3 morning]');
+      setProg('Fetching [3/3 afternoon]...');
+      var fw3=await fetchW(w3Start,mktClose,'[3/3 afternoon]');
       var allRaw=fw1.concat(fw2).concat(fw3);
       allRaw.sort(function(a,b){return a.ts-b.ts;});
       var allTrades=[];var lastTs2=-1;
