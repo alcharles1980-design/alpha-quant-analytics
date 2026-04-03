@@ -2784,7 +2784,7 @@ function PriceLevelTable(p){
           <th onClick={function(){toggleSort('target');}} style={hdrStyle('target')}>{'Target'+arrow('target')}</th>
           <th onClick={function(){toggleSort('cycles');}} style={hdrStyle('cycles')}>{'Cycles'+arrow('cycles')}</th>
         </tr></thead>
-        <tbody>{data.slice(0,500).map(function(l){return <tr key={l.price} style={{borderBottom:'1px solid '+C.grid}}>
+        <tbody>{data.map(function(l){return <tr key={l.price} style={{borderBottom:'1px solid '+C.grid}}>
           <td style={{padding:'5px 4px',textAlign:'right',color:C.txtBright,fontWeight:700}}>{'$'+l.price.toFixed(2)}</td>
           <td style={{padding:'5px 4px',textAlign:'right',color:C.txt}}>{'$'+l.target.toFixed(2)}</td>
           <td style={{padding:'5px 4px',textAlign:'right',color:l.cycles>0?C.accent:C.txtDim,fontWeight:l.cycles>0?700:400}}>{l.cycles}</td>
