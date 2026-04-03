@@ -3064,6 +3064,10 @@ function OptimalTPPage(p){
   var s6=useState(null),results=s6[0],setResults=s6[1];
   var s7=useState(null),err=s7[0],setErr=s7[1];
   var s8=useState(''),prog=s8[0],setProg=s8[1];
+  var sm=useState('single'),mode=sm[0],setMode=sm[1];
+  var sd1=useState(''),startDate=sd1[0],setStartDate=sd1[1];
+  var sd2=useState(''),endDate=sd2[0],setEndDate=sd2[1];
+  var mr=useState(null),multiResults=mr[0],setMultiResults=mr[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
 
@@ -3085,6 +3089,63 @@ function OptimalTPPage(p){
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
 
+  var runMulti=async function(){
+    if(!p.apiKey){setErr('No Polygon API key set');return;}
+    if(!startDate||!endDate){setErr('Select start and end dates');return;}
+    setLoading(true);setErr(null);setMultiResults(null);setProg('Preparing date range...');
+    try{
+      var capVal=parseFloat(cap)||1;var feeVal=parseFloat(fee)||0.005;
+      var days=[];var d=new Date(startDate+'T12:00:00Z');var e=new Date(endDate+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLoading(false);return;}
+      var allDayResults=[];
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching trades...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
+        var pages=0;
+        while(url){var r=await fetch(url);if(!r.ok)throw new Error('Polygon error '+r.status+' on '+day);var dd=await r.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+p.apiKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (page '+pages+')');}
+        if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,100);});
+        var scan=scanOptimalTP(allTrades,capVal,feeVal);
+        allDayResults.push({day:day,trades:allTrades.length,scan:scan,sharePrice:allTrades[0].price});
+      }
+      var validDays=allDayResults.filter(function(d2){return d2.scan&&d2.scan.results.length>0;});
+      if(!validDays.length){setErr('No valid results');setLoading(false);return;}
+      var tpMap={};
+      for(var vi=0;vi<validDays.length;vi++){
+        var vd=validDays[vi];
+        for(var ri=0;ri<vd.scan.results.length;ri++){
+          var r2=vd.scan.results[ri];
+          var k=r2.tpPct.toFixed(2);
+          if(!tpMap[k])tpMap[k]={tpPct:r2.tpPct,totalNet:0,totalGross:0,totalCycles:0,days:0};
+          tpMap[k].totalNet+=r2.netTotal;tpMap[k].totalGross+=r2.grossTotal;tpMap[k].totalCycles+=r2.cycles;tpMap[k].days++;
+        }
+      }
+      var flatRanked=Object.values(tpMap).sort(function(a,b){return b.totalNet-a.totalNet;});
+      var bestFlat=flatRanked[0];
+      var dayAdjustedTotal=0;var dayBests=[];
+      for(var vi=0;vi<validDays.length;vi++){
+        var best=validDays[vi].scan.results[0];
+        dayBests.push({day:validDays[vi].day,trades:validDays[vi].trades,sharePrice:validDays[vi].sharePrice,bestTp:best.tpPct,bestNet:best.netTotal,bestCycles:best.cycles,bestROI:best.roi});
+        dayAdjustedTotal+=best.netTotal;
+      }
+      var flatDayProfits=[];
+      for(var vi=0;vi<validDays.length;vi++){
+        var vd2=validDays[vi];var flatProfit=0;
+        for(var ri=0;ri<vd2.scan.results.length;ri++){
+          if(Math.abs(vd2.scan.results[ri].tpPct-bestFlat.tpPct)<0.001){flatProfit=vd2.scan.results[ri].netTotal;break;}
+        }
+        dayBests[vi].flatProfit=flatProfit;
+        flatDayProfits.push(flatProfit);
+      }
+      var edge=dayAdjustedTotal-bestFlat.totalNet;var edgePct=bestFlat.totalNet>0?(edge/bestFlat.totalNet*100):0;
+      setMultiResults({flatBest:bestFlat,flatRanked:flatRanked,dayBests:dayBests,dayAdjustedTotal:dayAdjustedTotal,edge:edge,edgePct:edgePct,totalDays:validDays.length,ticker:ticker.toUpperCase(),cap:capVal,fee:feeVal});
+      setProg('');setLoading(false);
+    }catch(e2){setErr(e2.message);setProg('');setLoading(false);}
+  };
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
 
   return <div>
@@ -3093,17 +3154,37 @@ function OptimalTPPage(p){
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Optimal TP% Finder</div>
     </div>
     <Cd>
-      <SectionHead title="TP% Scanner" sub="Find the most profitable take-profit percentage" info="Scans up to 100 TP% values from 0.01% to 1.00%. Each value runs the full cycle engine against every tick for the selected day. Profit uses actual dollar spread with Math.ceil rounding. Ranked by net profit after fractional fees. This is a per-day analysis -- not hourly. Requires fetching raw tick data from Polygon."/>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
-        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
-        <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
+      <SectionHead title="TP% Scanner" sub="Find the most profitable take-profit percentage" info="Single Day: scans up to 100 TP% values for one day. Multi-Day: scans a date range and compares best flat TP% (one setting for all days) vs day-adjusted (optimal per day). Shows the edge gained from daily adjustment."/>
+      <div style={{display:'flex',gap:4,marginTop:10,marginBottom:10}}>
+        <button onClick={function(){setMode('single');setMultiResults(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='single'?C.goldDim:'transparent',border:'1px solid '+(mode==='single'?C.gold:C.border),color:mode==='single'?C.gold:C.txt})}>Single Day</button>
+        <button onClick={function(){setMode('multi');setResults(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='multi'?C.blueDim:'transparent',border:'1px solid '+(mode==='multi'?C.blue:C.border),color:mode==='multi'?C.blue:C.txt})}>Multi-Day Range</button>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:12}}>
-        <div><label style={lS}>$/Level</label><input type="text" inputMode="decimal" value={cap} onChange={function(e){setCap(e.target.value);}} style={iS}/></div>
-        <div><label style={lS}>Fee/Share</label><input type="text" inputMode="decimal" value={fee} onChange={function(e){setFee(e.target.value);}} style={iS}/></div>
-      </div>
-      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#ffb020,#ff8800)',color:loading?C.txtDim:C.bg})}>{loading?'Scanning...':'Scan All TP% Values'}</button>
-      {prog&&<div style={{marginTop:8,color:C.gold,fontSize:10}}>{prog}</div>}
+      {mode==='single'&&<div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+          <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:12}}>
+          <div><label style={lS}>$/Level</label><input type="text" inputMode="decimal" value={cap} onChange={function(e){setCap(e.target.value);}} style={iS}/></div>
+          <div><label style={lS}>Fee/Share</label><input type="text" inputMode="decimal" value={fee} onChange={function(e){setFee(e.target.value);}} style={iS}/></div>
+        </div>
+        <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#ffb020,#ff8800)',color:loading?C.txtDim:C.bg})}>{loading?'Scanning...':'Scan All TP% Values'}</button>
+      </div>}
+      {mode==='multi'&&<div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8}}>
+          <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <div><label style={lS}>Start Date</label><input type="date" value={startDate} onChange={function(e){setStartDate(e.target.value);}} style={iS}/></div>
+          <div><label style={lS}>End Date</label><input type="date" value={endDate} onChange={function(e){setEndDate(e.target.value);}} style={iS}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:12}}>
+          <div><label style={lS}>$/Level</label><input type="text" inputMode="decimal" value={cap} onChange={function(e){setCap(e.target.value);}} style={iS}/></div>
+          <div><label style={lS}>Fee/Share</label><input type="text" inputMode="decimal" value={fee} onChange={function(e){setFee(e.target.value);}} style={iS}/></div>
+        </div>
+        <button onClick={runMulti} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#3d9eff,#2070d0)',color:loading?C.txtDim:'#fff'})}>{loading?'Scanning...':'Scan Multi-Day Range'}</button>
+      </div>}
+      {prog&&<div style={{marginTop:8,color:mode==='multi'?C.blue:C.gold,fontSize:10}}>{prog}</div>}
       {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
     </Cd>
     {results&&<div>
@@ -3147,6 +3228,98 @@ function OptimalTPPage(p){
                 <td style={{padding:'5px 2px',color:C.txt,textAlign:'right'}}>{r.cycles}</td>
                 <td style={{padding:'5px 2px',color:r.netTotal>0?C.accent:C.warn,textAlign:'right',fontWeight:isTop5?700:400}}>{'$'+r.netTotal.toFixed(2)}</td>
                 <td style={{padding:'5px 2px',color:r.roi>0?C.accent:C.warn,textAlign:'right'}}>{r.roi.toFixed(1)}%</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </Cd>
+    </div>}
+    {multiResults&&<div>
+      <Cd glow={true}>
+        <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>MULTI-DAY COMPARISON | {multiResults.ticker} | {multiResults.totalDays} DAYS</div>
+        <SectionHead title="Flat vs Day-Adjusted" sub="Is daily TP% adjustment worth the complexity?"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
+          <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,textAlign:'center'}}>
+            <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Best Flat TP%</div>
+            <div style={{color:C.gold,fontSize:22,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</div>
+            <div style={{color:C.accent,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+multiResults.flatBest.totalNet.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Total Net Profit</div>
+          </div>
+          <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.accent,textAlign:'center'}}>
+            <div style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Day-Adjusted</div>
+            <div style={{color:C.accent,fontSize:22,fontWeight:800,fontFamily:F}}>{'$'+multiResults.dayAdjustedTotal.toFixed(2)}</div>
+            <div style={{color:multiResults.edge>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{(multiResults.edge>=0?'+':'')+multiResults.edgePct.toFixed(1)+'%'}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Edge vs Flat</div>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
+          <Mt label="Edge $" value={(multiResults.edge>=0?'+$':'$')+multiResults.edge.toFixed(2)} color={multiResults.edge>0?C.accent:C.warn} size="md"/>
+          <Mt label="Flat Cycles" value={multiResults.flatBest.totalCycles} color={C.gold} size="md"/>
+          <Mt label="Days" value={multiResults.totalDays} color={C.blue} size="md"/>
+        </div>
+      </Cd>
+      <Cd>
+        <SectionHead title="Per-Day Breakdown" sub="Each day's optimal TP% vs the flat rate" info={"Best flat TP% across all "+multiResults.totalDays+" days is "+multiResults.flatBest.tpPct.toFixed(2)+"%. Green = day-adjusted outperformed flat. Red = flat was better that day."}/>
+        <div style={{overflowX:'auto',maxHeight:400}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Adjusted $</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat $</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge</th>
+            </tr></thead>
+            <tbody>{multiResults.dayBests.map(function(db){
+              var dayEdge=db.bestNet-db.flatProfit;
+              return <tr key={db.day} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'5px 3px',color:C.txtBright}}>{db.day}</td>
+                <td style={{padding:'5px 3px',color:C.gold,textAlign:'right',fontWeight:700}}>{db.bestTp.toFixed(2)+'%'}</td>
+                <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+db.bestNet.toFixed(2)}</td>
+                <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{'$'+db.flatProfit.toFixed(2)}</td>
+                <td style={{padding:'5px 3px',color:dayEdge>0?C.accent:dayEdge<0?C.warn:C.txtDim,textAlign:'right',fontWeight:700}}>{(dayEdge>=0?'+$':'$')+dayEdge.toFixed(2)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </Cd>
+      <Cd>
+        <SectionHead title="Daily Profit: Flat vs Adjusted" sub="Visual comparison per day"/>
+        <div style={{marginTop:8}}>{multiResults.dayBests.map(function(db){
+          var maxP=0;for(var q=0;q<multiResults.dayBests.length;q++){var mp=Math.max(multiResults.dayBests[q].bestNet,multiResults.dayBests[q].flatProfit);if(mp>maxP)maxP=mp;}
+          var adjPct=maxP>0?(db.bestNet/maxP*100):0;
+          var flatPct=maxP>0?(db.flatProfit/maxP*100):0;
+          return <div key={db.day} style={{marginBottom:6}}>
+            <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:2}}>{db.day}</div>
+            <div style={{position:'relative',height:10,marginBottom:1}}>
+              <div style={{position:'absolute',left:0,top:0,bottom:0,width:adjPct+'%',background:C.accent,borderRadius:'0 3px 3px 0',opacity:0.8,minWidth:adjPct>0?3:0}}></div>
+            </div>
+            <div style={{position:'relative',height:10}}>
+              <div style={{position:'absolute',left:0,top:0,bottom:0,width:flatPct+'%',background:C.gold,borderRadius:'0 3px 3px 0',opacity:0.6,minWidth:flatPct>0?3:0}}></div>
+            </div>
+          </div>;
+        })}
+        <div style={{display:'flex',gap:16,marginTop:6}}>
+          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:8,background:C.accent,borderRadius:2,opacity:0.8}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Day-Adjusted</span></div>
+          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:8,background:C.gold,borderRadius:2,opacity:0.6}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{'Flat ('+multiResults.flatBest.tpPct.toFixed(2)+'%)'}</span></div>
+        </div>
+        </div>
+      </Cd>
+      <Cd>
+        <SectionHead title="All Flat TP% Ranked" sub="Top 10 TP% values across all days"/>
+        <div style={{maxHeight:300,overflowY:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'left'}}>#</th>
+              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>TP%</th>
+              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>Total Net $</th>
+              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>Total Cycles</th>
+            </tr></thead>
+            <tbody>{multiResults.flatRanked.slice(0,10).map(function(fr,idx){
+              return <tr key={fr.tpPct} style={{borderBottom:'1px solid '+C.grid,background:idx===0?'rgba(255,176,32,0.1)':'transparent'}}>
+                <td style={{padding:'5px 2px',color:idx===0?C.gold:C.txtDim}}>{idx+1}</td>
+                <td style={{padding:'5px 2px',color:idx===0?C.gold:C.txt,textAlign:'right',fontWeight:idx===0?700:400}}>{fr.tpPct.toFixed(2)+'%'}</td>
+                <td style={{padding:'5px 2px',color:fr.totalNet>0?C.accent:C.warn,textAlign:'right',fontWeight:idx<3?700:400}}>{'$'+fr.totalNet.toFixed(2)}</td>
+                <td style={{padding:'5px 2px',color:C.txt,textAlign:'right'}}>{fr.totalCycles}</td>
               </tr>;
             })}</tbody>
           </table>
