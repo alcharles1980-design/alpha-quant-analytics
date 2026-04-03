@@ -231,6 +231,35 @@ function computeHourlyCycles(trades,tpPct){
   return result;
 }
 
+function computeCycleHoldTimes(trades,tpPct){
+  if(!trades||trades.length<2)return[];
+  var tf=tpPct/100;
+  var minP=Infinity,maxP=-Infinity;
+  for(var i=0;i<trades.length;i++){if(trades[i].price<minP)minP=trades[i].price;if(trades[i].price>maxP)maxP=trades[i].price;}
+  var minLvl=Math.floor(minP*100)/100,maxLvl=Math.ceil(maxP*100)/100;
+  var openLvl=Math.floor(trades[0].price*100)/100;
+  var preSeedMax=Math.round(openLvl*1.01*100)/100;
+  var minC=Math.round(minLvl*100),maxC=Math.round(maxLvl*100),cnt=maxC-minC+1;
+  var openC=Math.round(openLvl*100),psC=Math.round(preSeedMax*100);
+  var active=new Uint8Array(cnt),target=new Float64Array(cnt),buyMs=new Float64Array(cnt);
+  var t0=trades[0].ts;var t0ms=t0>1e15?t0/1e6:t0>1e12?t0/1e3:t0;
+  for(var c=0;c<cnt;c++){target[c]=Math.ceil((minC+c)/100*(1+tf)*100)/100;if(minC+c>=openC&&minC+c<=psC){active[c]=1;buyMs[c]=t0ms;}}
+  var hourDur={};for(var h=4;h<20;h++)hourDur[h]=[];
+  for(var i=1;i<trades.length;i++){
+    var p=trades[i].price;var ts=trades[i].ts;var ms=ts>1e15?ts/1e6:ts>1e12?ts/1e3:ts;
+    var hr=new Date(ms).getUTCHours()-4;if(hr<0)hr+=24;
+    for(var j=0;j<cnt;j++){if(active[j]===1&&p>=target[j]){active[j]=0;if(hr>=4&&hr<20&&buyMs[j]>0){var dur=(ms-buyMs[j])/60000;if(dur>0&&dur<960)hourDur[hr].push(dur);}buyMs[j]=0;}}
+    var idx=Math.floor(p*100)-minC;if(idx>=0&&idx<cnt&&active[idx]===0){active[idx]=1;buyMs[idx]=ms;}
+  }
+  var result=[];
+  for(var h=4;h<20;h++){
+    var durations=hourDur[h];var avg=0,mn=0,mx=0,cnt2=durations.length;
+    if(cnt2>0){var sum=0;mn=Infinity;mx=-Infinity;for(var d=0;d<cnt2;d++){sum+=durations[d];if(durations[d]<mn)mn=durations[d];if(durations[d]>mx)mx=durations[d];}avg=sum/cnt2;}
+    result.push({hour:hourLabels[String(h)],hourNum:h,avg:Math.round(avg*10)/10,min:Math.round(mn*10)/10,max:Math.round(mx*10)/10,count:cnt2,isRTH:(h>=9&&h<16)?1:0});
+  }
+  return result;
+}
+
 function scanOptimalTP(trades,capPerLevel,feePerShare){
   if(!trades||trades.length<2)return{results:[],minTpPct:0,maxTpPct:0,sharePrice:0};
   var sharePrice=trades[0].price;
@@ -4244,6 +4273,7 @@ function App(){
   var s14=useState(null),ohlc=s14[0],setOhlc=s14[1];
   var s18=useState(''),dataSource=s18[0],setDataSource=s18[1];
   var s21=useState([]),hourlyCycles=s21[0],setHourlyCycles=s21[1];
+  var s26=useState([]),holdTimes=s26[0],setHoldTimes=s26[1];
   var s22=useState('1'),capPerLevel=s22[0],setCapPerLevel=s22[1];
   var s23=useState('0.005'),feePerCycle=s23[0],setFeePerCycle=s23[1];
   var s24=useState(null),optResults=s24[0],setOptResults=s24[1];
@@ -4258,14 +4288,14 @@ function App(){
       while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('API error');var d=await r2.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=d.next_url?(d.next_url+'&apiKey='+pgKey):null;pages++;setProg('Fetching... '+allTrades.length.toLocaleString()+' trades (page '+pages+')');}
       var filtered=allTrades;
       if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-      rawTradesRef.current=filtered;setTickCount(filtered.length);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,parseFloat(tpStr)||1));
+      rawTradesRef.current=filtered;setTickCount(filtered.length);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,parseFloat(tpStr)||1));setHoldTimes(computeCycleHoldTimes(filtered,parseFloat(tpStr)||1));
       setDataSource('live');setProg('');
     }catch(e){setProg('Error: '+e.message);}finally{setLd(false);}
   };
   var run=async function(){
     if(!pgKey){setErr('Set your Polygon API key in Settings (tap menu)');return;}
     var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
-    setLd(true);setErr(null);setResult(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setProg('Checking cache...');
+    setLd(true);setErr(null);setResult(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Checking cache...');
     try{
       // Check Supabase cache first
       var cached=await SB.loadAnalysis(ticker.toUpperCase(),date,tp,session);
@@ -4295,7 +4325,7 @@ function App(){
       setProg('Analyzing '+filtered.length.toLocaleString()+' trades at '+tp+'% TP...');
       // Yield to UI before heavy computation
       await new Promise(function(r){setTimeout(r,50);});
-      var res=analyzePriceLevels(filtered,tp);setResult(res);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,tp));
+      var res=analyzePriceLevels(filtered,tp);setResult(res);setPriceData(buildPriceData(filtered));setHourlyCycles(computeHourlyCycles(filtered,tp));setHoldTimes(computeCycleHoldTimes(filtered,tp));
       setDataSource('polygon');
       // Compute min/max for saving
       var svMin=Infinity,svMax=-Infinity;for(var sv=0;sv<filtered.length;sv++){if(filtered[sv].price<svMin)svMin=filtered[sv].price;if(filtered[sv].price>svMax)svMax=filtered[sv].price;}
@@ -4524,6 +4554,29 @@ function App(){
           <div style={{display:'flex',justifyContent:'space-between',marginTop:6,padding:'6px 0',borderTop:'1px solid '+C.border}}>
             <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Total: <span style={{color:C.accent,fontWeight:700}}>{hourlyCycles.reduce(function(a,b){return a+b.cycles;},0)}</span></div>
             <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Peak: <span style={{color:C.accent,fontWeight:700}}>{(function(){var mx=0,mh='';for(var q=0;q<hourlyCycles.length;q++){if(hourlyCycles[q].cycles>mx){mx=hourlyCycles[q].cycles;mh=hourlyCycles[q].hour;}}return mx+' ('+mh+')';})()}</span></div>
+          </div>
+        </Cd>}
+        {holdTimes.length>0&&<Cd>
+          <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>HOLDING TIME @ {tpStr}% TAKE PROFIT</div>
+          <SectionHead title="Avg Cycle Holding Time by Hour" sub={ticker+' · '+date} info="Average time between BUY (level activation) and SELL (cycle completion) for each hour. Shorter holding times mean faster cycle turnover. Pre-market hours often show longer holding times due to lower liquidity. This data is only available when running live analysis (not from cache)."/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10,marginBottom:10}}>
+            <Mt label="Overall Avg" value={(function(){var ts=0,tc=0;for(var q=0;q<holdTimes.length;q++){ts+=holdTimes[q].avg*holdTimes[q].count;tc+=holdTimes[q].count;}return tc>0?(ts/tc).toFixed(1)+'m':'--';})()}  color={C.blue} size="md"/>
+            <Mt label="Fastest Hour" value={(function(){var mn=Infinity,mh='';for(var q=0;q<holdTimes.length;q++){if(holdTimes[q].count>0&&holdTimes[q].avg<mn){mn=holdTimes[q].avg;mh=holdTimes[q].hour;}}return mn<Infinity?mn.toFixed(1)+'m':'--';})()}  color={C.accent} size="md"/>
+            <Mt label="Slowest Hour" value={(function(){var mx=0,mh='';for(var q=0;q<holdTimes.length;q++){if(holdTimes[q].count>0&&holdTimes[q].avg>mx){mx=holdTimes[q].avg;mh=holdTimes[q].hour;}}return mx>0?mx.toFixed(1)+'m':'--';})()}  color={C.gold} size="md"/>
+          </div>
+          <div style={{marginTop:8}}>{holdTimes.map(function(d){
+            var maxAvg=0;for(var q=0;q<holdTimes.length;q++){if(holdTimes[q].avg>maxAvg)maxAvg=holdTimes[q].avg;}
+            var pct=maxAvg>0?(d.avg/maxAvg*100):0;
+            return <div key={d.hourNum} style={{display:'flex',alignItems:'center',marginBottom:2}}>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
+              <div style={{flex:1,position:'relative',height:18}}>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.blue:C.txtDim,borderRadius:'0 3px 3px 0',minWidth:d.count>0?4:0,opacity:0.8}}></div>
+              </div>
+              <div style={{width:44,fontSize:8,color:d.count>0?C.blue:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.count>0?d.avg.toFixed(1)+'m':''}</div>
+              <div style={{width:32,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:2,flexShrink:0}}>{d.count>0?d.count+'c':''}</div>
+            </div>;})}</div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:6,padding:'6px 0',borderTop:'1px solid '+C.border}}>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Minutes per cycle (m) | Cycle count (c)</div>
           </div>
         </Cd>}
         {rawTradesRef.current.length>0&&<TradeAudit trades={rawTradesRef.current} tpPct={parseFloat(tpStr)||1}/>}
