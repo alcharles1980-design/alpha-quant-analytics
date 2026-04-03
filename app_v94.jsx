@@ -3168,8 +3168,8 @@ function OptimalTPPage(p){
     <Cd>
       <SectionHead title="TP% Scanner" sub="Find the most profitable take-profit percentage" info="Single Day: scans up to 100 TP% values for one day. Multi-Day: scans a date range and compares best flat TP% (one setting for all days) vs day-adjusted (optimal per day). Shows the edge gained from daily adjustment."/>
       <div style={{display:'flex',gap:4,marginTop:10,marginBottom:10}}>
-        <button onClick={function(){setMode('single');setMultiResults(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='single'?C.goldDim:'transparent',border:'1px solid '+(mode==='single'?C.gold:C.border),color:mode==='single'?C.gold:C.txt})}>Single Day</button>
-        <button onClick={function(){setMode('multi');setResults(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='multi'?C.blueDim:'transparent',border:'1px solid '+(mode==='multi'?C.blue:C.border),color:mode==='multi'?C.blue:C.txt})}>Multi-Day Range</button>
+        <button onClick={function(){setMode('single');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='single'?C.goldDim:'transparent',border:'1px solid '+(mode==='single'?C.gold:C.border),color:mode==='single'?C.gold:C.txt})}>Single Day</button>
+        <button onClick={function(){setMode('multi');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='multi'?C.blueDim:'transparent',border:'1px solid '+(mode==='multi'?C.blue:C.border),color:mode==='multi'?C.blue:C.txt})}>Multi-Day Range</button>
       </div>
       {mode==='single'&&<div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
@@ -3199,7 +3199,7 @@ function OptimalTPPage(p){
       {prog&&<div style={{marginTop:8,color:mode==='multi'?C.blue:C.gold,fontSize:10}}>{prog}</div>}
       {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
     </Cd>
-    {results&&<div>
+    {mode==='single'&&results&&<div>
       <Cd glow={true}>
         <div style={{display:'inline-block',background:C.goldDim,border:'1px solid '+C.gold,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>OPTIMAL TP% | {results.ticker} | {results.date} | ${results.cap}/LEVEL</div>
         <SectionHead title={'Best: '+results.scan.results[0].tpPct.toFixed(2)+'% TP'} sub={results.trades.toLocaleString()+' trades | '+results.scan.scanned+' TP% values (min: '+results.scan.minTpPct.toFixed(2)+'%)'}/>
@@ -3246,7 +3246,7 @@ function OptimalTPPage(p){
         </div>
       </Cd>
     </div>}
-    {multiResults&&<div>
+    {mode==='multi'&&multiResults&&<div>
       <Cd glow={true}>
         <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>MULTI-DAY COMPARISON | {multiResults.ticker} | {multiResults.totalDays} DAYS</div>
         <SectionHead title="Flat vs Day-Adjusted" sub="Is daily TP% adjustment worth the complexity?"/>
