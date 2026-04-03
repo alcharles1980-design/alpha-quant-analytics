@@ -1991,6 +1991,7 @@ function DbManagePage(p){
       await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker,{method:'DELETE',headers:h});
       await fetch(SB_URL+'/rest/v1/cached_sessions?ticker=eq.'+ticker,{method:'DELETE',headers:h});
       await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker,{method:'DELETE',headers:h});
+      await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker,{method:'DELETE',headers:h});
       setConfirmDel(null);setDetail(null);
       loadData();
     }catch(e){setErr('Delete failed: '+e.message);}
@@ -2031,6 +2032,7 @@ function DbManagePage(p){
       await fetch(SB_URL+'/rest/v1/cached_analyses?id=gt.0',{method:'DELETE',headers:h});
       await fetch(SB_URL+'/rest/v1/cached_seasonality?id=gt.0',{method:'DELETE',headers:h});
       await fetch(SB_URL+'/rest/v1/cached_sessions?id=gt.0',{method:'DELETE',headers:h});
+      await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?id=gt.0',{method:'DELETE',headers:h});
       setConfirmDel(null);setDetail(null);
       loadData();
     }catch(e){setErr('Delete all failed: '+e.message);}
@@ -2045,7 +2047,7 @@ function DbManagePage(p){
     {err&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:10,fontFamily:F}}>{err}</div></Cd>}
     {data&&<div>
       <Cd glow={true}>
-        <SectionHead title="Storage Overview" sub="Cached analysis and seasonality data"/>
+        <SectionHead title="Stage 1: Cycle Analysis Data" sub="Cached analysis, levels, seasonality, and hourly cycles"/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
           <Mt label="Stocks" value={data.stocks.length} color={C.accent} size="lg"/>
           <Mt label="Analysis Days" value={data.totalAnalyses} color={C.blue} size="md"/>
@@ -2110,10 +2112,10 @@ function DbManagePage(p){
       })}
       {data.stocks.length>0&&<Cd>
         {confirmDel==='ALL'?<div style={{display:'flex',gap:8}}>
-          <button onClick={deleteAll} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete Everything</button>
+          <button onClick={deleteAll} style={Object.assign({},bB,{flex:1,background:C.warn,color:C.bg,fontSize:9})}>Yes, Delete All Stage 1 Data</button>
           <button onClick={function(){setConfirmDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
         </div>:
-        <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Cached Data</button>}
+        <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Stage 1 Data</button>}
       </Cd>}
       {optData&&<div style={{marginTop:16}}>
         <Cd glow={true}>
