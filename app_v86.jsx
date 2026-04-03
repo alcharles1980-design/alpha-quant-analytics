@@ -3408,33 +3408,30 @@ function BuildDataSetPage(p){
         // Step 1: Fetch all ticks from Polygon
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching ticks...');
         var allP=[];var allS=[];var allTs=[];
-        var fetchDay=async function(dayStr,attempt){
+        var fetchWindow=async function(dayStr,tsFrom,tsTo,label){
           var arr={p:[],s:[],ts:[]};
-          var url3='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+dayStr+'T04:00:00.000Z&timestamp.lt='+dayStr+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
+          var fUrl='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+dayStr+tsFrom+'&timestamp.lt='+dayStr+tsTo+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
           var pg=0;
-          while(url3){
-            var r3=await fetch(url3);
-            if(r3.status===429){setProg('Day '+(di+1)+'/'+days.length+': '+dayStr+' | Rate limited, waiting 12s...');await new Promise(function(w){setTimeout(w,12000);});continue;}
-            if(!r3.ok)throw new Error('Polygon error '+r3.status);
-            var d3=await r3.json();
-            if(d3.results)for(var j=0;j<d3.results.length;j++){arr.p.push(d3.results[j].price);arr.s.push(d3.results[j].size||0);arr.ts.push(d3.results[j].sip_timestamp||d3.results[j].participant_timestamp);}
-            url3=d3.next_url?(d3.next_url+'&apiKey='+p.apiKey):null;
+          while(fUrl){
+            var fr=await fetch(fUrl);
+            if(fr.status===429){setProg('Day '+(di+1)+'/'+days.length+': '+dayStr+' '+label+' | Rate limited, waiting 12s...');await new Promise(function(w){setTimeout(w,12000);});continue;}
+            if(!fr.ok)throw new Error('Polygon error '+fr.status+' on '+dayStr);
+            var fd=await fr.json();
+            if(fd.results)for(var j=0;j<fd.results.length;j++){arr.p.push(fd.results[j].price);arr.s.push(fd.results[j].size||0);arr.ts.push(fd.results[j].sip_timestamp||fd.results[j].participant_timestamp);}
+            fUrl=fd.next_url?(fd.next_url+'&apiKey='+p.apiKey):null;
             pg++;
-            setProg('Day '+(di+1)+'/'+days.length+': '+dayStr+(attempt>1?' (retry '+attempt+')':'')+' | '+arr.p.length.toLocaleString()+' ticks (page '+pg+(url3?' ...':' DONE')+')');
+            setProg('Day '+(di+1)+'/'+days.length+': '+dayStr+' '+label+' | '+arr.p.length.toLocaleString()+' ticks (page '+pg+(fUrl?' ...':' done')+')');
           }
           return arr;
         };
-        var fetchResult=await fetchDay(day,1);
-        allP=fetchResult.p;allS=fetchResult.s;allTs=fetchResult.ts;
-        var hasPreMarket=false;
-        for(var ci=0;ci<allTs.length;ci++){var ch=toETHour(allTs[ci]);if(ch>=4&&ch<9){hasPreMarket=true;break;}}
-        if(!hasPreMarket&&allP.length>0){
-          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Missing pre-market, waiting 10s and retrying...');
-          await new Promise(function(w){setTimeout(w,10000);});
-          var retry2=await fetchDay(day,2);
-          if(retry2.p.length>allP.length){allP=retry2.p;allS=retry2.s;allTs=retry2.ts;}
-        }
-        await new Promise(function(w){setTimeout(w,3000);});
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching pre-market (4AM-9:30AM)...');
+        var w1=await fetchWindow(day,'T08:00:00.000Z','T13:30:00.000Z','[pre-mkt]');
+        await new Promise(function(w){setTimeout(w,1000);});
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching regular+post (9:30AM-8PM)...');
+        var w2=await fetchWindow(day,'T13:30:00.000Z','T23:59:59.000Z','[reg+post]');
+        allP=w1.p.concat(w2.p);allS=w1.s.concat(w2.s);allTs=w1.ts.concat(w2.ts);
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Total: '+allP.length.toLocaleString()+' ticks (pre:'+w1.p.length.toLocaleString()+' + reg:'+w2.p.length.toLocaleString()+')');
+        await new Promise(function(w){setTimeout(w,2000);});
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Extracting features from '+allP.length.toLocaleString()+' ticks...');
