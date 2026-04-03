@@ -26,7 +26,7 @@ var SB={
       if(!r.ok)return null;var d=await r.json();if(!d.length)return null;
       var a=d[0];
       // Load levels
-      var r2=await fetch(SB_URL+'/rest/v1/cached_levels?analysis_id=eq.'+a.id+'&select=level_price,target_price,cycles&order=cycles.desc',{headers:getSbHeaders()});
+      var rh2=getSbHeaders();rh2['Range']='0-9999';var r2=await fetch(SB_URL+'/rest/v1/cached_levels?analysis_id=eq.'+a.id+'&select=level_price,target_price,cycles&order=cycles.desc',{headers:rh2});
       var levels=r2.ok?await r2.json():[];
       return{analysis:a,levels:levels};
     }catch(e){console.error('SB load error:',e);return null;}
