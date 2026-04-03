@@ -4833,7 +4833,7 @@ function App(){
     if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
     var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
     if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
-    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    setLd(true);setErr(null);setRangeResults(null);setProg('Preparing date range...');
     try{
       var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
       while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
@@ -4842,31 +4842,56 @@ function App(){
       var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
       for(var di=0;di<days.length;di++){
         var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Checking cache...');
+        var cached=await SB.loadAnalysis(ticker.toUpperCase(),day,tp,session);
+        if(cached){
+          var ca=cached.analysis;
+          var sp2=parseFloat(ca.open_price)||parseFloat(ca.ohlc_open)||0;
+          var fq2=sp2>0?capVal/sp2:0;var af2=feeVal*fq2;
+          var tpD2=sp2>0?Math.round((Math.ceil(sp2*(1+tp/100)*100)/100-sp2)*100)/100:0.01;if(tpD2<0.01)tpD2=0.01;
+          var gPC2=fq2*tpD2;var nPC2=gPC2-af2;
+          allDays.push({day:day,trades:ca.total_trades||0,cycles:ca.total_cycles,activeLevels:ca.active_levels,totalLevels:ca.total_levels,sharePrice:sp2,netProfit:ca.total_cycles*nPC2,grossProfit:ca.total_cycles*gPC2,fees:ca.total_cycles*af2,source:'cache'});
+          grandTotalCycles+=ca.total_cycles;grandTotalTrades+=(ca.total_trades||0);
+          continue;
+        }
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
         var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
         var pages=0;
         while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
-        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip'});continue;}
         allTrades=filterOutlierTicks(allTrades);
-        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        var filtered=allTrades;
+        if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        if(!filtered.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip'});continue;}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+filtered.length.toLocaleString()+' trades...');
         await new Promise(function(r){setTimeout(r,50);});
-        var res=analyzePriceLevels(allTrades,tp);
-        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var res=analyzePriceLevels(filtered,tp);
+        var sp=filtered[0].price;var fq=capVal/sp;var af=feeVal*fq;
         var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
         var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
-        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
-        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+        allDays.push({day:day,trades:filtered.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:res.summary.totalCycles*netPC,grossProfit:res.summary.totalCycles*grossPC,fees:res.summary.totalCycles*af,source:'polygon'});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=filtered.length;
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Saving...');
+        var svMin=Infinity,svMax=-Infinity;for(var sv=0;sv<filtered.length;sv++){if(filtered[sv].price<svMin)svMin=filtered[sv].price;if(filtered[sv].price>svMax)svMax=filtered[sv].price;}
+        var svOpen=Math.floor(filtered[0].price*100)/100;var svPSM=Math.round(svOpen*1.01*100)/100;
+        res.summary.totalTrades=filtered.length;
+        var ohlcDay=null;try{ohlcDay=await fetchOHLC(ticker,day,pgKey);}catch(oe){}
+        await SB.saveAnalysis(ticker.toUpperCase(),day,tp,session,res.summary,res.levels,ohlcDay,svMin,svMax,svOpen,svPSM);
+        var hcDay=computeHourlyCycles(filtered,tp);
+        await SB.saveHourlyCycles(ticker.toUpperCase(),day,tp,session,hcDay);
       }
       var validDays=allDays.filter(function(d2){return d2.cycles>0;});
       var totalNet=0;var totalGross=0;var totalFees=0;
       for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
       var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
-      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      var cachedCount=allDays.filter(function(d2){return d2.source==='cache';}).length;
+      var fetchedCount=allDays.filter(function(d2){return d2.source==='polygon';}).length;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal,cachedCount:cachedCount,fetchedCount:fetchedCount});
       setProg('');
     }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
   };
+
+
 
 
   var loadFullData=async function(){
@@ -5001,7 +5026,7 @@ function App(){
       </Cd>
       {analysisMode==='range'&&rangeResults&&<div>
         <Cd glow={true}>
-          <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>DATE RANGE | {rangeResults.ticker} | {rangeResults.tp}% TP | {rangeResults.totalDays} DAYS</div>
+          <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>DATE RANGE | {rangeResults.ticker} | {rangeResults.tp}% TP | {rangeResults.totalDays} DAYS | {(rangeResults.cachedCount||0)+' cached / '+(rangeResults.fetchedCount||0)+' fetched'}</div>
           <SectionHead title="Aggregated Results" sub={rangeResults.ticker+' · '+rangeResults.totalDays+' days · '+rangeResults.tp+'% flat TP'}/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
             <Mt label="Total Cycles" value={rangeResults.totalCycles.toLocaleString()} color={C.accent} size="lg"/>
@@ -5031,7 +5056,7 @@ function App(){
               <tbody>{rangeResults.days.map(function(rd){
                 var maxCy=0;for(var q=0;q<rangeResults.days.length;q++){if(rangeResults.days[q].cycles>maxCy)maxCy=rangeResults.days[q].cycles;}
                 return <tr key={rd.day} style={{borderBottom:'1px solid '+C.grid}}>
-                  <td style={{padding:'5px 3px',color:C.txtBright}}>{rd.day}</td>
+                  <td style={{padding:'5px 3px',color:C.txtBright}}>{rd.day}<span style={{color:rd.source==='cache'?C.blue:rd.source==='polygon'?C.accent:C.txtDim,fontSize:6,marginLeft:3}}>{rd.source==='cache'?' (cached)':rd.source==='polygon'?' (live)':''}</span></td>
                   <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{rd.trades.toLocaleString()}</td>
                   <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{rd.cycles.toLocaleString()}</td>
                   <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{rd.activeLevels||0}</td>
