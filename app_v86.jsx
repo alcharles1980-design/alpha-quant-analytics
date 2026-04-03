@@ -3408,26 +3408,34 @@ function BuildDataSetPage(p){
         // Step 1: Fetch all ticks from Polygon
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching ticks...');
         var allP=[];var allS=[];var allTs=[];
-        var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
-        var pgCnt=0;var retries=0;
-        while(url){
-          if(pgCnt>0)await new Promise(function(w){setTimeout(w,400);});
+        var baseUrl='https://api.polygon.io/v3/trades/'+ticker.toUpperCase();
+        var tsGte=day+'T04:00:00.000Z';var tsLt=day+'T23:59:59.000Z';
+        var pgCnt=0;var retries=0;var done=false;
+        while(!done){
+          if(pgCnt>0)await new Promise(function(w){setTimeout(w,500);});
+          var url=baseUrl+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
           var r=await fetch(url);
-          if(r.status===429||r.status===403){retries++;if(retries>5)throw new Error('Rate limited too many times on '+day);setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Rate limited ('+r.status+'), waiting 15s... (retry '+retries+')');await new Promise(function(w){setTimeout(w,15000);});continue;}
+          if(r.status===429||r.status===403){retries++;if(retries>8)throw new Error('Rate limited too many times on '+day);setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Rate limited ('+r.status+'), waiting 15s... (retry '+retries+')');await new Promise(function(w){setTimeout(w,15000);});continue;}
           if(!r.ok)throw new Error('Polygon error '+r.status+' on '+day);
           var d2=await r.json();
-          if(d2.status==='ERROR'||d2.error){retries++;if(retries>5)throw new Error('API error on '+day+': '+(d2.error||d2.status));setProg('Day '+(di+1)+'/'+days.length+': '+day+' | API error, waiting 10s...');await new Promise(function(w){setTimeout(w,10000);});continue;}
+          if(d2.status==='ERROR'||d2.error){retries++;if(retries>8)throw new Error('API error on '+day);setProg('Day '+(di+1)+'/'+days.length+': '+day+' | API error, waiting 10s...');await new Promise(function(w){setTimeout(w,10000);});continue;}
           retries=0;
-          if(d2.results)for(var i=0;i<d2.results.length;i++){
-            allP.push(d2.results[i].price);
-            allS.push(d2.results[i].size||0);
-            allTs.push(d2.results[i].sip_timestamp||d2.results[i].participant_timestamp);
+          var pageLen=d2.results?d2.results.length:0;
+          if(pageLen===0){done=true;break;}
+          var lastTs=null;
+          for(var i=0;i<d2.results.length;i++){
+            var tk=d2.results[i];
+            allP.push(tk.price);
+            allS.push(tk.size||0);
+            var ts=tk.sip_timestamp||tk.participant_timestamp;
+            allTs.push(ts);
+            lastTs=ts;
           }
-          url=d2.next_url?(d2.next_url+'&apiKey='+p.apiKey):null;
           pgCnt++;
-          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+(url?' ...':' DONE')+')');
+          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+(pageLen<50000?' DONE':' ...')+')');
+          if(pageLen<50000){done=true;}else{tsGte=lastTs;}
         }
-        await new Promise(function(w){setTimeout(w,1500);});
+        await new Promise(function(w){setTimeout(w,2000);});
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Extracting features from '+allP.length.toLocaleString()+' ticks...');
