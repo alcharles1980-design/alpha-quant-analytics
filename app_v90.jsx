@@ -1583,7 +1583,16 @@ function ObjectivesPage(p){
           <p style={{fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Question answered:</span> Given the conditions we can observe RIGHT NOW, what TP% should we use for the next hour?</p>
         </div>
 
-        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Why Two Parts?</p>
+        <div style={{padding:'12px',background:C.goldDim,border:'1px solid '+C.gold,borderRadius:8,marginBottom:14}}>
+          <p style={{color:C.gold,fontWeight:800,fontSize:12,marginBottom:8}}>Classification Layer: Regime Detection</p>
+          <p style={{marginBottom:8,fontSize:9}}>Enriches both Part 1 and Part 2 by classifying market conditions into discrete regimes before predicting optimal TP%.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Volatility Regimes:</span> Low / Normal / High / Extreme (from ATR% percentiles). Each regime has a different optimal TP% profile.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Trend Regimes:</span> Mean-Reverting / Trending Up / Trending Down / Breakout (from price direction and VWAP proximity). Grid bots thrive in mean-reversion; trends require wider TP%.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>VIX Regimes:</span> Low Fear / Normal / Elevated / Crisis (from market-wide volatility index). Sets the macro context for all stocks.</p>
+          <p style={{fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Key insight:</span> Instead of predicting a precise TP% number, classify the regime first, then look up what TP% historically performed best in that regime. More robust with limited training data than pure regression.</p>
+        </div>
+
+        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Why This Structure?</p>
         <p style={{marginBottom:14}}>Part 1 is the simpler question with fewer features but provides a baseline. If the flat best TP% is predictable from day-level features, the system can set a good starting point before the market opens. Part 2 is the harder question with more features but captures the intraday dynamics that Stage 2 proved exist. The combination gives the system both a strong opening position and the ability to adapt throughout the day.</p>
 
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Data Pipeline</p>
@@ -4031,6 +4040,57 @@ function CorrAnalysisPage(p){
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 3:</span> Compute Pearson correlation between each hourly feature and best hourly TP%</p>
           <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 4:</span> Compare with Part 1: does hourly adjustment add predictive power beyond the flat daily rate?</p>
           <p style={{paddingLeft:8}}><span style={{color:C.blue}}>Step 5:</span> Feature importance ranking. If time-of-day alone explains most variance, the Stage 2 schedule IS the model. If other features add power, those become live engine inputs.</p>
+        </div>
+      </div>
+    </Cd>
+    <Cd>
+      <div style={{display:'inline-block',background:C.goldDim,border:'1px solid '+C.gold,borderRadius:4,padding:'3px 10px',fontSize:8,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>CLASSIFICATION LAYER</div>
+      <SectionHead title="Regime and Volatility Classification" sub="Categorical detection that enriches both Part 1 and Part 2" info="Instead of treating features as continuous numbers only, the classification layer groups market conditions into discrete regimes. The optimal TP% is then looked up PER REGIME rather than predicted from a single linear model. This captures non-linear relationships that raw correlation misses."/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>Why Classification?</p>
+          <p style={{marginBottom:6}}>Linear correlation assumes a smooth relationship: higher ATR% = proportionally higher optimal TP%. But real markets have <span style={{color:C.accent,fontWeight:700}}>regime breaks</span> -- thresholds where behavior changes abruptly. Below ATR% 1.0, optimal TP% might be 0.08%. Above ATR% 3.0, it might jump to 0.40%. Between 1.0-3.0, it might be unpredictable. Classification captures these non-linear jumps.</p>
+          <p>By classifying FIRST and then looking up historical TP% performance within each regime, we build a lookup table rather than a regression model. This is more robust with limited data.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:8,color:C.gold,fontWeight:700}}>Volatility Regimes (from ATR%)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Low Volatility:</span> Hourly ATR% below 25th percentile of historical data. Tight oscillations, many small cycles. Tends to favor tighter TP% (more cycles at smaller targets).</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>Normal Volatility:</span> ATR% between 25th-75th percentile. Baseline regime. TP% from Stage 2 averages likely optimal.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold,fontWeight:700}}>High Volatility:</span> ATR% between 75th-95th percentile. Wider swings, fewer but larger cycles. May favor wider TP% to capture larger moves.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.warn,fontWeight:700}}>Extreme Volatility:</span> ATR% above 95th percentile. Rare events (earnings, macro shocks). Behavior may be unpredictable or strongly favor wide TP%.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:8,color:C.gold,fontWeight:700}}>Trend Regimes (from price direction)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Mean-Reverting:</span> Price oscillates around VWAP, hourly close near hourly open. The ideal regime for grid bots. Tight TP% captures maximum cycles.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>Trending Up:</span> Price consistently moves higher. Each hour closes above the previous. Wider TP% may capture the trend while still cycling. But levels below current price become dormant.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.purple,fontWeight:700}}>Trending Down:</span> Price moves consistently lower. New levels activate as price drops, but existing levels may not reach targets. Wider TP% increases risk of uncompleted cycles.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.warn,fontWeight:700}}>Breakout/Breakdown:</span> Sharp directional move exceeding 2x normal ATR. Usually happens at market open or on news. Short-lived but can produce or destroy many cycles rapidly.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:8,color:C.gold,fontWeight:700}}>VIX Regimes (from market-wide fear index)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent}}>Low Fear (VIX below 15):</span> Calm markets, tight ranges, many small cycles</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Normal (VIX 15-20):</span> Standard market conditions</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Elevated (VIX 20-30):</span> Increased uncertainty, wider swings</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.warn}}>Crisis (VIX above 30):</span> High fear, extreme moves, wide spreads</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:8,color:C.gold,fontWeight:700}}>Session Regimes (from time + volume patterns)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.txtDim}}>Pre-market (4-8AM):</span> Low liquidity, wide spreads, news-driven spikes. Optimal TP% is typically highest here.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.warn}}>Market Open (9-10AM):</span> Highest volume, fastest price discovery. TP% drops sharply as oscillations accelerate.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent}}>Mid-day (11AM-2PM):</span> Lower volume, tighter ranges, mean-reverting. Tightest TP% often optimal.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Power Hour (3-4PM):</span> Volume rises, institutional rebalancing. Intermediate TP%.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.txtDim}}>Post-market (4-7PM):</span> Returns to low liquidity. TP% widens again.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>How Classification Integrates with Parts 1 and 2</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent}}>Part 1 + Classification:</span> Classify the day into a volatility regime (from pre-market ATR, VIX, overnight gap) THEN look up the best flat TP% historically for that regime class. More robust than pure correlation with small sample sizes.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Part 2 + Classification:</span> Classify each hour into a trend + volatility regime THEN look up the best TP% for that regime-hour combination. Captures the session-based TP% patterns already observed in Stage 2 data.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Regime transitions:</span> When the classification changes mid-day (e.g., from mean-reverting to trending), the system detects the transition and adjusts TP% accordingly. This is the core of real-time adaptation.</p>
         </div>
       </div>
     </Cd>
