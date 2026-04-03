@@ -3286,17 +3286,18 @@ function TradeAudit(p){
 }
 
 function OptimalTPPage(p){
-  var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
-  var s2=useState(''),date=s2[0],setDate=s2[1];
-  var s3=useState('1'),cap=s3[0],setCap=s3[1];
-  var s4=useState('0.005'),fee=s4[0],setFee=s4[1];
+  var ini=p.init||{};
+  var s1=useState(ini.ticker||'SOXL'),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(ini.date||''),date=s2[0],setDate=s2[1];
+  var s3=useState(ini.cap||'1'),cap=s3[0],setCap=s3[1];
+  var s4=useState(ini.fee||'0.005'),fee=s4[0],setFee=s4[1];
   var s5=useState(false),loading=s5[0],setLoading=s5[1];
   var s6=useState(null),results=s6[0],setResults=s6[1];
   var s7=useState(null),err=s7[0],setErr=s7[1];
   var s8=useState(''),prog=s8[0],setProg=s8[1];
-  var sm=useState('single'),mode=sm[0],setMode=sm[1];
-  var sd1=useState(''),startDate=sd1[0],setStartDate=sd1[1];
-  var sd2=useState(''),endDate=sd2[0],setEndDate=sd2[1];
+  var sm=useState(ini.mode||'single'),mode=sm[0],setMode=sm[1];
+  var sd1=useState(ini.startDate||''),startDate=sd1[0],setStartDate=sd1[1];
+  var sd2=useState(ini.endDate||''),endDate=sd2[0],setEndDate=sd2[1];
   var mr=useState(null),multiResults=mr[0],setMultiResults=mr[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
@@ -5022,6 +5023,7 @@ function App(){
   var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
   var ps=useState(function(){var h=window.location.hash.slice(1);return h||'main';}),page=ps[0],setPageRaw=ps[1];
+  var opi=useState(null),optPageInit=opi[0],setOptPageInit=opi[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
@@ -5257,7 +5259,7 @@ function App(){
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='adaptive'&&<AdaptiveOptPage onBack={function(){setPage('main');}}/>}
-    {page==='optimal'&&<OptimalTPPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
+    {page==='optimal'&&<OptimalTPPage apiKey={pgKey} init={optPageInit} onBack={function(){setOptPageInit(null);setPage('main');}}/>}
     {page==='trends'&&<TrendPage onBack={function(){setPage('main');}}/>}
     {page==='seasonality'&&<SeasonalityPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
@@ -5329,6 +5331,7 @@ function App(){
           <div style={{marginTop:8,padding:'6px 10px',borderRadius:4,background:(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?C.accentDim:C.warnDim;})(),border:'1px solid '+(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?C.accent:C.warn;})()}}>
             <span style={{fontSize:8,fontFamily:F,fontWeight:700,color:(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?C.accent:C.warn;})()}}>{(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?'\u2713 ALL DAYS PASS INTEGRITY CHECK':'\u26A0 '+w+' DAY'+(w>1?'S':'')+' WITH WARNINGS - tap \u26A0 for details';})()}</span>
           </div>
+          <button onClick={function(){setOptPageInit({ticker:ticker.toUpperCase(),mode:'range',startDate:rangeStart,endDate:rangeEnd,cap:capPerLevel,fee:feePerCycle});setPage('optimal');}} style={Object.assign({},bB,{marginTop:10,background:'linear-gradient(135deg,'+C.accent+','+C.blue+')',color:C.bg,fontSize:10,fontWeight:800,letterSpacing:1})}>{'\u{1F50D} FIND OPTIMAL DAILY TP%'}</button>
         </Cd>
         <Cd>
           <SectionHead title="Per-Day Breakdown" sub={"Cycles and profit for each trading day at flat "+rangeResults.tp+"% TP"}/>
