@@ -4171,6 +4171,8 @@ function App(){
   var AreaChart=RC.AreaChart||null,Area=RC.Area||null,XAxis=RC.XAxis||null,YAxis=RC.YAxis||null,CartesianGrid=RC.CartesianGrid||null,RTooltip=RC.Tooltip||null,ResponsiveContainer=RC.ResponsiveContainer||null;
   var hasCharts=!!RC.AreaChart;
   var rawTradesRef=useRef([]);
+  var ts2=useState(CURRENT_THEME),theme=ts2[0],setThemeState=ts2[1];
+  var toggleTheme=function(){var nt=theme==='dark'?'light':'dark';applyTheme(nt);setThemeState(nt);};
   var setPage=function(p){setPageRaw(p);window.location.hash=p;};
   useEffect(function(){
     var onPop=function(){var h=window.location.hash.slice(1);if(h)setPageRaw(h);else setPageRaw('main');};
