@@ -4962,8 +4962,8 @@ function App(){
       <Cd>
         <SectionHead title="Parameters" sub="Ticker, date, take-profit %, capital, and fees" info="Single Day: analyze one day of tick data. Date Range: aggregate cycle analysis across multiple days with a flat TP%, showing per-day breakdown and totals."/>
         <div style={{display:'flex',gap:4,marginTop:10,marginBottom:10}}>
-          <button onClick={function(){setAnalysisMode('single');setRangeResults(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:analysisMode==='single'?C.accentDim:'transparent',border:'1px solid '+(analysisMode==='single'?C.accent:C.border),color:analysisMode==='single'?C.accent:C.txt})}>Single Day</button>
-          <button onClick={function(){setAnalysisMode('range');setResult(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:analysisMode==='range'?C.blueDim:'transparent',border:'1px solid '+(analysisMode==='range'?C.blue:C.border),color:analysisMode==='range'?C.blue:C.txt})}>Date Range</button>
+          <button onClick={function(){setAnalysisMode('single');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:analysisMode==='single'?C.accentDim:'transparent',border:'1px solid '+(analysisMode==='single'?C.accent:C.border),color:analysisMode==='single'?C.accent:C.txt})}>Single Day</button>
+          <button onClick={function(){setAnalysisMode('range');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:analysisMode==='range'?C.blueDim:'transparent',border:'1px solid '+(analysisMode==='range'?C.blue:C.border),color:analysisMode==='range'?C.blue:C.txt})}>Date Range</button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:analysisMode==='single'?'1fr 1fr':'1fr',gap:8,marginBottom:8}}>
           <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
@@ -4999,7 +4999,7 @@ function App(){
         {prog&&<div style={{marginTop:8,color:C.accent,fontSize:10}}>{prog}</div>}
         {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
       </Cd>
-      {rangeResults&&<div>
+      {analysisMode==='range'&&rangeResults&&<div>
         <Cd glow={true}>
           <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>DATE RANGE | {rangeResults.ticker} | {rangeResults.tp}% TP | {rangeResults.totalDays} DAYS</div>
           <SectionHead title="Aggregated Results" sub={rangeResults.ticker+' · '+rangeResults.totalDays+' days · '+rangeResults.tp+'% flat TP'}/>
@@ -5056,7 +5056,7 @@ function App(){
           })}</div>
         </Cd>
       </div>}
-      {result&&<div>
+      {analysisMode==='single'&&result&&<div>
         <Cd glow={true}>
           <SectionHead title="Results" sub={ticker+' · '+date+' · '+tpStr+'% TP'+(dataSource==='cache'?' · From Cache':dataSource==='polygon'?' · Live Data':'')} info="Total cycles across all levels, how many levels had at least one cycle, total levels in the price range, and how many individual trade ticks were analyzed."/>
           <div style={{display:'grid',gridTemplateColumns:'1fr',gap:4,marginTop:12,marginBottom:14}}>
