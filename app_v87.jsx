@@ -1,6 +1,13 @@
 const{useState,useEffect,useRef}=React;
 var RC=typeof Recharts!=="undefined"?Recharts:{};
-var C={bg:"#060a10",bgCard:"#0c1219",bgInput:"#0a0f16",border:"#1a2538",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#d0dce8",txtDim:"#7088a0",txtBright:"#f0f6fc",grid:"#141e2e"};
+var THEMES={
+  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#d0dce8",txtDim:"#7088a0",txtBright:"#f0f6fc",grid:"#14203a"},
+  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00b880",accentDim:"#00b88015",warn:"#e04030",warnDim:"#e0403015",blue:"#2070d0",blueDim:"#2070d015",purple:"#7040c0",gold:"#d09010",goldDim:"#d0901015",txt:"#2a3040",txtDim:"#6878a0",txtBright:"#101828",grid:"#e0e4e8"}
+};
+var CURRENT_THEME=(function(){try{return localStorage.getItem('aq_theme')||'dark';}catch(e){return 'dark';}})();
+var C=Object.assign({},THEMES[CURRENT_THEME]);
+function applyTheme(t){CURRENT_THEME=t;var th=THEMES[t];for(var k in th)C[k]=th[k];try{localStorage.setItem('aq_theme',t);}catch(e){}document.documentElement.style.background=t==='dark'?'#0a1628':'#f0f2f5';document.body.style.background=t==='dark'?'#0a1628':'#f0f2f5';}
+applyTheme(CURRENT_THEME);
 var F="'JetBrains Mono',monospace";
 var hourLabels={'4':'4AM','5':'5AM','6':'6AM','7':'7AM','8':'8AM','9':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
 
@@ -348,7 +355,7 @@ function SectionHead(p){
 
 function LiveClock(){var s=useState(new Date()),now=s[0],setNow=s[1];useEffect(function(){var id=setInterval(function(){setNow(new Date());},1000);return function(){clearInterval(id);};},[]);var days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d=days[now.getDay()]+' '+months[now.getMonth()]+' '+now.getDate()+', '+now.getFullYear();var h=now.getHours(),m=now.getMinutes(),sec=now.getSeconds();var ampm=h>=12?'PM':'AM';h=h%12;if(h===0)h=12;var t=h+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+' '+ampm;return <div style={{textAlign:'right'}}><div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{t}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F,color:'#c8d8e8'}}>{d}</div></div>;}
 function MenuIcon(p){return <div onClick={p.onClick} style={{cursor:'pointer',padding:8}}><div style={{width:20,height:2,background:C.txtBright,marginBottom:4,borderRadius:1}}></div><div style={{width:14,height:2,background:C.txtBright,marginBottom:4,borderRadius:1}}></div><div style={{width:18,height:2,background:C.txtBright,borderRadius:1}}></div></div>;}
-function MenuDropdown(p){var ref=useRef(null);useEffect(function(){function h(e){if(ref.current&&!ref.current.contains(e.target))p.onClose();}document.addEventListener('touchstart',h);document.addEventListener('mousedown',h);return function(){document.removeEventListener('touchstart',h);document.removeEventListener('mousedown',h);};},[]);if(!p.open)return null;return <div ref={ref} style={{position:'absolute',top:44,right:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',zIndex:100,minWidth:180,overflow:'hidden',maxHeight:'80vh',overflowY:'auto'}}>{p.items.map(function(item){if(item.type==='divider')return <div key={item.key} style={{height:1,background:C.accent,opacity:0.2,margin:'0 12px'}}></div>;if(item.type==='header')return <div key={item.key} style={{padding:'10px 16px 4px',color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,background:'rgba(255,176,32,0.05)'}}>{item.label}</div>;return <div key={item.key} onClick={function(){p.onSelect(item.key);p.onClose();}} style={{padding:(item.indent?'10px 16px 10px 32px':'12px 16px'),color:C.txtBright,fontSize:item.indent?10:11,fontFamily:F,fontWeight:600,letterSpacing:0.8,textTransform:'uppercase',cursor:'pointer',borderBottom:'1px solid '+C.border,display:'flex',alignItems:'center',gap:10}}><span style={{color:item.indent?C.accent:C.accent,fontSize:item.indent?12:14}}>{item.icon}</span>{item.label}</div>;})}</div>;}
+function MenuDropdown(p){var ref=useRef(null);useEffect(function(){function h(e){if(ref.current&&!ref.current.contains(e.target))p.onClose();}document.addEventListener('touchstart',h);document.addEventListener('mousedown',h);return function(){document.removeEventListener('touchstart',h);document.removeEventListener('mousedown',h);};},[]);if(!p.open)return null;return <div ref={ref} style={{position:'absolute',top:44,right:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,boxShadow:CURRENT_THEME==='dark'?'0 8px 32px rgba(0,0,0,0.6)':'0 8px 32px rgba(0,0,0,0.15)',zIndex:100,minWidth:180,overflow:'hidden',maxHeight:'80vh',overflowY:'auto'}}>{p.items.map(function(item){if(item.type==='divider')return <div key={item.key} style={{height:1,background:C.accent,opacity:0.2,margin:'0 12px'}}></div>;if(item.type==='header')return <div key={item.key} style={{padding:'10px 16px 4px',color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,background:'rgba(255,176,32,0.05)'}}>{item.label}</div>;return <div key={item.key} onClick={function(){p.onSelect(item.key);p.onClose();}} style={{padding:(item.indent?'10px 16px 10px 32px':'12px 16px'),color:C.txtBright,fontSize:item.indent?10:11,fontFamily:F,fontWeight:600,letterSpacing:0.8,textTransform:'uppercase',cursor:'pointer',borderBottom:'1px solid '+C.border,display:'flex',alignItems:'center',gap:10}}><span style={{color:item.indent?C.accent:C.accent,fontSize:item.indent?12:14}}>{item.icon}</span>{item.label}</div>;})}</div>;}
 function BatchPage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -2101,7 +2108,7 @@ function DbManagePage(p){
                       <div style={{flex:1.2,fontSize:8,color:C.gold,fontFamily:F,textAlign:'right'}}>{avgATR.toFixed(3)+'%'}</div>
                       <div style={{width:16,textAlign:'center',color:C.purple,fontSize:12,fontWeight:300,transform:isDayOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</div>
                     </div>
-                    {isDayOpen&&<div style={{background:'#080e16',border:'1px solid '+C.border,borderRadius:6,margin:'4px 0 8px 0',padding:8}}>
+                    {isDayOpen&&<div style={{background:C.bgDeep,border:'1px solid '+C.border,borderRadius:6,margin:'4px 0 8px 0',padding:8}}>
                       {missingHours.length>0&&<div style={{color:C.warn,fontSize:8,fontFamily:F,marginBottom:6,padding:'4px 6px',background:C.warnDim,borderRadius:4}}>Missing hours: {missingHours.map(function(mh){return hourLabels[String(mh)]||mh;}).join(', ')}</div>}
                       <div style={{display:'flex',borderBottom:'1px solid '+C.border,paddingBottom:3,marginBottom:3}}>
                         <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,fontWeight:600}}>Hour</div>
@@ -3385,7 +3392,7 @@ function BuildDataSetPage(p){
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
   var fS={padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10};
-  var cS={padding:'8px 10px',background:'#0a1018',borderRadius:4,border:'1px solid '+C.border,fontFamily:F,fontSize:8,color:C.txtDim,lineHeight:1.6,overflowX:'auto',whiteSpace:'pre-wrap',marginTop:6};
+  var cS={padding:'8px 10px',background:C.bgDeep,borderRadius:4,border:'1px solid '+C.border,fontFamily:F,fontSize:8,color:C.txtDim,lineHeight:1.6,overflowX:'auto',whiteSpace:'pre-wrap',marginTop:6};
 
   var getTradingDays=function(start,end){
     var days=[];var d=new Date(start+'T12:00:00Z');var e=new Date(end+'T12:00:00Z');
@@ -3704,7 +3711,7 @@ function BuildDataSetPage(p){
 
 function FeaturesListPage(p){
   var fS={padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10};
-  var cS={padding:'8px 10px',background:'#0a1018',borderRadius:4,border:'1px solid '+C.border,fontFamily:F,fontSize:8,color:C.txtDim,lineHeight:1.6,overflowX:'auto',whiteSpace:'pre-wrap',marginTop:6};
+  var cS={padding:'8px 10px',background:C.bgDeep,borderRadius:4,border:'1px solid '+C.border,fontFamily:F,fontSize:8,color:C.txtDim,lineHeight:1.6,overflowX:'auto',whiteSpace:'pre-wrap',marginTop:6};
 
   var features=[
     {
@@ -4173,6 +4180,8 @@ function App(){
   },[]);
   var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
+  var ts2=useState(CURRENT_THEME),theme=ts2[0],setThemeState=ts2[1];
+  var toggleTheme=function(){var nt=theme==='dark'?'light':'dark';applyTheme(nt);setThemeState(nt);};
   var ps=useState(function(){var h=window.location.hash.slice(1);return h||'main';}),page=ps[0],setPageRaw=ps[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
@@ -4255,10 +4264,10 @@ function App(){
   };
   var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
-  return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto'}}>
+  return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
       <div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,letterSpacing:1.5}}>ALPHA QUANT</div><div style={{color:C.accent,fontSize:8,letterSpacing:1.5}}>BETA GROWTH HOLDINGS</div></div>
-      <div style={{display:'flex',alignItems:'center',gap:6}}><LiveClock/><MenuIcon onClick={function(){setMenuOpen(!menuOpen);}}/></div>
+      <div style={{display:'flex',alignItems:'center',gap:6}}><LiveClock/><div onClick={toggleTheme} style={{cursor:'pointer',padding:6,fontSize:14,opacity:0.7,transition:'opacity 0.2s'}}>{theme==='dark'?'\u2600':'\u263E'}</div><MenuIcon onClick={function(){setMenuOpen(!menuOpen);}}/></div>
     </div>
     <div style={{borderBottom:'1px solid '+C.border,marginBottom:12}}></div>
     <MenuDropdown open={menuOpen} items={menuItems} onSelect={function(k){if(k==='logout'){try{sessionStorage.removeItem('aq_auth');}catch(e){}setShowSplash(true);window.location.hash='';return;}setPage(k);}} onClose={function(){setMenuOpen(false);}}/>

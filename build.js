@@ -34,7 +34,7 @@ const html = `<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html{background:#040810}body{background:#060a10;overflow-x:hidden}
+html,body{transition:background 0.3s;overflow-x:hidden}
 input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
 input:focus{border-color:#1e3050 !important}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
