@@ -4208,6 +4208,219 @@ function CorrAnalysisPage(p){
   </div>;
 }
 
+function AIAgentsOverviewPage(p){
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>AI Agents Overview</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Why AI Agents for Algorithmic Trading" sub="Moving from static rules to intelligent adaptive systems" info="AI agents are autonomous software entities that observe, reason, decide, and act in a continuous loop. Unlike static rule engines, agents can handle novel situations, weigh conflicting signals, explain their reasoning, and improve over time."/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <p style={{marginBottom:8}}>The Edge Detection system currently operates in two modes: <span style={{color:C.accent,fontWeight:700}}>backward-looking analysis</span> (Stages 1-3: measuring what happened, finding what was optimal, discovering correlations) and <span style={{color:C.blue,fontWeight:700}}>static execution</span> (the Go/Redis bot on Alpaca with fixed TP% parameters).</p>
+        <p style={{marginBottom:8}}>The gap between these two is where AI agents live. Stages 1-3 produce a lookup table: "in this regime, use this TP%." That is valuable but <span style={{color:C.warn,fontWeight:700}}>static</span>. It cannot reason about context, handle novel situations, weigh conflicting signals, or improve from experience.</p>
+        <p>AI agents close this gap by adding an intelligent decision layer that translates analysis into real-time adaptive action.</p>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="What Is an AI Agent?" sub="Observe, Reason, Decide, Act -- in a continuous loop"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>The Agent Loop</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>1. Observe:</span> Read live market data streams -- current ATR%, volume, VIX, price position, order book depth, Alpaca portfolio state</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>2. Reason:</span> Interpret the data contextually. Not just "ATR is 2.3%" but "ATR is 2.3% which is above the 75th percentile for this stock at this hour, suggesting elevated volatility that typically favors wider TP%"</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>3. Decide:</span> Select an action -- adjust TP%, modify grid spacing, pause trading, increase/decrease position size -- with a confidence level attached</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>4. Act:</span> Execute the decision via API calls to Alpaca, log the reasoning chain to Redis, and observe the outcome to learn from it</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Agent vs Rule Engine</p>
+          <p style={{marginBottom:4}}>A <span style={{color:C.warn}}>rule engine</span> says: IF ATR > 2.0 THEN TP% = 0.30</p>
+          <p style={{marginBottom:4}}>An <span style={{color:C.accent}}>agent</span> says: "ATR is 2.3% but volume is unusually low and VIX just spiked. High ATR with low volume usually means a gap move, not sustained oscillation. I am setting TP% to 0.45% with 60% confidence. If volume picks up in the next 15 minutes, I will tighten to 0.25%."</p>
+          <p>The agent reasons about <span style={{color:C.txtBright,fontWeight:700}}>WHY</span> the numbers are what they are, not just what they are.</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <div style={{display:'inline-block',background:C.goldDim,border:'1px solid '+C.gold,borderRadius:4,padding:'3px 10px',fontSize:8,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>STAGE 4</div>
+      <SectionHead title="Live Adaptive Engine -- Agent Architecture" sub="Four specialized agents working together in real-time"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Agent 1: Market Observer</p>
+          <p style={{marginBottom:6}}>Continuously monitors live data streams from Polygon.io, Alpaca Markets, and external sources. Unlike a simple data feed, the observer agent <span style={{color:C.txtBright,fontWeight:700}}>interprets</span> the data contextually.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Volume is 3x normal but ATR is low" -- a rule engine sees two conflicting signals. The observer agent reasons: "This looks like institutional accumulation before a directional move. I should alert the TP% Decision Agent to widen TP% preemptively before the move starts."</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Implementation:</span> LLM with structured tool access to Polygon WebSocket, Alpaca API, VIX feed. Runs on GCP alongside the Go bot. Publishes observations to a Redis pub/sub channel every 60 seconds.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> Structured observation object: {atr_pct, volume_ratio, vix, price_position, regime_signals, anomaly_flags, confidence}</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:11}}>Agent 2: Regime Classifier</p>
+          <p style={{marginBottom:6}}>Takes the Market Observer's output and classifies the current market regime. Uses the Stage 3 correlation data as its knowledge base, but can also detect <span style={{color:C.txtBright,fontWeight:700}}>novel regimes</span> that do not fit any historical category.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Current conditions match the High Volatility + Mean-Reverting regime with 78% confidence. However, the overnight gap is 4x larger than any gap in my training data. I am flagging this as a potential novel regime and reducing my confidence to 45%."</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>vs Rule Engine:</span> A rule engine would classify this as "High Volatility" and blindly apply the historical TP%. The agent recognizes the unprecedented gap size and adjusts accordingly.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> {regime_type, sub_regime, confidence, novel_flag, recommended_caution_level}</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.purple,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:11}}>Agent 3: TP% Decision Agent</p>
+          <p style={{marginBottom:6}}>The core agent. Takes the regime classification, the Stage 3 correlation coefficients, the live market data, and makes the actual TP% recommendation. This is where the intelligence lives.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Reasoning under uncertainty:</span> "Stage 3 says 0.15% for this regime but I only have 3 training examples from this exact regime-hour combination. I will use 0.20% as a conservative buffer and tighten to 0.15% once I have seen 10+ confirmations."</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Multi-factor synthesis:</span> Weighs 22 features simultaneously with contextual understanding. Not just correlation coefficients but understanding of WHY those correlations exist.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key advantage -- Confidence scoring:</span> "I am 85% confident in 0.15% TP for the next hour" vs "I am 40% confident -- use the flat daily rate instead." The Go bot can use the confidence score to decide how aggressively to act.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> {recommended_tp_pct, confidence, reasoning_chain, alternative_tp_pct, fallback_to_flat}</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.warn,fontWeight:700,fontSize:11}}>Agent 4: Risk Guardian</p>
+          <p style={{marginBottom:6}}>Monitors portfolio-level risk continuously. Has veto power over the TP% Decision Agent. This is the safety layer that prevents the system from over-extending.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "The TP% Decision Agent recommends 0.08% TP which would require 500 active levels at $1 each = $500 deployed. That is 70% of available capital and exceeds the 50% maximum deployment rule. I am capping at 300 levels and widening TP% to 0.13% to maintain the deployment limit."</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "Three consecutive hourly TP% changes have all been in the widening direction. This pattern historically precedes a drawdown. I am pausing TP% changes for the next hour and holding the current setting."</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Output:</span> {approved, modified_tp_pct, override_reason, portfolio_utilization, risk_score}</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <div style={{display:'inline-block',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:4,padding:'3px 10px',fontSize:8,color:C.warn,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>STAGE 5</div>
+      <SectionHead title="Reinforcement Learning -- Multi-Agent Architecture" sub="Agents that learn from experience and self-improve"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>Why RL? From Lookup Tables to Learned Policies</p>
+          <p style={{marginBottom:6}}>Stage 4 agents use Stage 3 correlations as their knowledge base -- essentially a sophisticated lookup table. But what if the correlations change? What if new market regimes emerge? What if the execution characteristics of your specific Alpaca setup create patterns that no backtest could predict?</p>
+          <p>Reinforcement Learning agents <span style={{color:C.txtBright,fontWeight:700}}>learn from live experience</span>. Every completed trading day becomes a training episode. The agent discovers what works in YOUR specific system, not what worked in a backtest.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Regime Specialist Agents (one per regime)</p>
+          <p style={{marginBottom:6}}>Instead of one agent trying to learn optimal TP% for all conditions, create specialist agents that each master ONE regime type.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Low Volatility Agent:</span> Becomes an expert in calm, range-bound markets. Learns that in low-vol conditions on NIO, 0.08% TP with maximum level density produces the best capital efficiency.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>High Volatility Agent:</span> Specializes in fast-moving markets. Learns that during high-vol on SOXL, 0.35% TP with fewer levels but faster cycling produces better risk-adjusted returns.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.purple}}>Mean-Reversion Agent:</span> Masters the ideal grid bot regime. Learns the exact TP% curve that maximizes cycles in oscillating markets.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.warn}}>Breakout Agent:</span> Handles sharp directional moves. Learns when to pause grid trading entirely and when to widen TP% to ride the trend.</p>
+          <p style={{marginTop:6,color:C.txtBright,fontWeight:700}}>Why specialists beat generalists:</p>
+          <p>A single RL agent controlling all regimes has an enormous action space (100 TP% values x 16 hours x N stocks x 4 regimes). Learning is slow and the agent may never converge. By splitting into specialists, each agent has a much smaller domain and learns faster. This is analogous to having a different trading strategy for different market conditions rather than one strategy that tries to handle everything.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:11}}>Meta-Agent (Orchestrator)</p>
+          <p style={{marginBottom:6}}>Decides WHICH specialist agent gets control based on the current regime classification. This is like a sports coach choosing which player to put in based on the game situation.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Key capability -- Regime transitions:</span> The hardest problem in multi-regime trading is the transition. When the market shifts from mean-reverting to trending, the Meta-Agent must decide: switch specialists immediately (risking a false signal) or wait for confirmation (risking missed adaptation)?</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>RL reward signal:</span> The Meta-Agent's reward is the portfolio-level return. It learns not just which specialist to use, but WHEN to switch and how to blend during transitions (e.g., 70% mean-reversion agent, 30% trend agent during an ambiguous period).</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Example:</span> "The Low Volatility Agent has been in control for 3 hours. ATR just jumped 2x. I am giving 50% weight to the High Volatility Agent while keeping 50% on the Low Vol Agent. If ATR stays elevated for 30 more minutes, I will fully switch."</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.purple,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:11}}>Execution Agent</p>
+          <p style={{marginBottom:6}}>Takes the TP% decision and translates it into actual Alpaca API calls. Handles the mechanical details that affect real-world performance.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Learned behaviors:</span> "Modifying orders during the first 30 seconds of a new hour causes more slippage than waiting 2 minutes for the opening volatility to settle."</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Learned behaviors:</span> "Cancelling and replacing all 200 limit orders simultaneously triggers Alpaca rate limits. Batching in groups of 20 with 100ms delays is optimal."</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Learned behaviors:</span> "When switching from 0.15% to 0.30% TP, it is better to update sell orders first (widening targets) before updating buy orders, to avoid a brief window where both old sells and new buys are active."</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.gold,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:11}}>Self-Improvement Agent</p>
+          <p style={{marginBottom:6}}>Periodically reviews all other agents' performance and identifies degradation, drift, or opportunities.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent}}>Drift detection:</span> "The Mean-Reversion Agent's hit rate has dropped from 72% to 54% over the last 2 weeks. The market structure may have changed. Triggering retraining with the last 30 days of data."</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent}}>Feature discovery:</span> "The correlation between cumulative volume percentage and optimal TP% has strengthened from 0.12 to 0.34 over the last month. Recommending this feature be promoted to Tier 1 in the Regime Classifier."</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.accent}}>Hyperparameter tuning:</span> "The Meta-Agent's regime transition threshold is set at 2x ATR change. Testing whether 1.5x produces faster adaptation without too many false switches."</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Agents vs Traditional Approach -- Detailed Comparison" sub="Why agents beat rules, heuristics, and static models"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+              <th style={{padding:'6px 4px',color:C.txtBright,textAlign:'left',fontWeight:700}}>Dimension</th>
+              <th style={{padding:'6px 4px',color:C.warn,textAlign:'left',fontWeight:700}}>Rule Engine</th>
+              <th style={{padding:'6px 4px',color:C.accent,textAlign:'left',fontWeight:700}}>AI Agent</th>
+            </tr></thead>
+            <tbody>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Novel situations</td><td style={{padding:'5px 4px',color:C.warn}}>Fails silently or crashes</td><td style={{padding:'5px 4px',color:C.accent}}>Reasons about uncertainty, adjusts confidence</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Conflicting signals</td><td style={{padding:'5px 4px',color:C.warn}}>First-match or arbitrary priority</td><td style={{padding:'5px 4px',color:C.accent}}>Weighs contextually with reasoning chain</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Regime transitions</td><td style={{padding:'5px 4px',color:C.warn}}>Binary switch (instant flip)</td><td style={{padding:'5px 4px',color:C.accent}}>Gradual confidence blending over time</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Explainability</td><td style={{padding:'5px 4px',color:C.warn}}>"Rule 47 fired"</td><td style={{padding:'5px 4px',color:C.accent}}>"I widened TP% because ATR spiked with low volume suggesting gap move"</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Self-improvement</td><td style={{padding:'5px 4px',color:C.warn}}>Manual tuning by developer</td><td style={{padding:'5px 4px',color:C.accent}}>Automatic via RL reward signals</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Adaptability</td><td style={{padding:'5px 4px',color:C.warn}}>Retrain from scratch when markets change</td><td style={{padding:'5px 4px',color:C.accent}}>Continuous online learning</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.grid}}><td style={{padding:'5px 4px',color:C.txtBright}}>Edge cases</td><td style={{padding:'5px 4px',color:C.warn}}>Unhandled = undefined behavior</td><td style={{padding:'5px 4px',color:C.accent}}>Degrades gracefully with conservative defaults</td></tr>
+              <tr><td style={{padding:'5px 4px',color:C.txtBright}}>Execution learning</td><td style={{padding:'5px 4px',color:C.warn}}>Cannot learn from slippage or fill rates</td><td style={{padding:'5px 4px',color:C.accent}}>Learns YOUR system's execution characteristics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="System Architecture" sub="How the agents integrate with the existing Go/Redis/GCP infrastructure"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10,fontFamily:F,fontSize:7,lineHeight:2.2}}>
+          <p style={{color:C.warn,fontWeight:700,textAlign:'center',marginBottom:4}}>STAGE 5: RL META-AGENT</p>
+          <p style={{color:C.txtDim,textAlign:'center',marginBottom:8}}>Selects specialist | Manages transitions | Learns from outcomes</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:4,marginBottom:8}}>
+            <div style={{background:C.accentDim,border:'1px solid '+C.accent,borderRadius:4,padding:4,textAlign:'center',color:C.accent,fontSize:6}}>Low Vol Agent</div>
+            <div style={{background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:4,textAlign:'center',color:C.blue,fontSize:6}}>High Vol Agent</div>
+            <div style={{background:'#9d5cff20',border:'1px solid '+C.purple,borderRadius:4,padding:4,textAlign:'center',color:C.purple,fontSize:6}}>Mean Revert Agent</div>
+            <div style={{background:C.goldDim,border:'1px solid '+C.gold,borderRadius:4,padding:4,textAlign:'center',color:C.gold,fontSize:6}}>Trend Agent</div>
+            <div style={{background:C.warnDim,border:'1px solid '+C.warn,borderRadius:4,padding:4,textAlign:'center',color:C.warn,fontSize:6}}>Breakout Agent</div>
+          </div>
+          <p style={{color:C.gold,fontWeight:700,textAlign:'center',marginBottom:4}}>STAGE 4: LIVE ENGINE</p>
+          <p style={{color:C.txtDim,textAlign:'center',marginBottom:4}}>Observer -> Classifier -> TP% Decider -> Risk Guardian</p>
+          <div style={{borderTop:'1px solid '+C.border,paddingTop:8,marginTop:4}}>
+            <p style={{color:C.blue,fontWeight:700,textAlign:'center',marginBottom:4}}>EXECUTION LAYER</p>
+            <p style={{color:C.txtDim,textAlign:'center'}}>Alpaca API | Go Bot | Redis Trade Log | GCP Compute</p>
+          </div>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Practical Implementation Path</p>
+          <p style={{marginBottom:6,paddingLeft:8}}><span style={{color:C.blue,fontWeight:700}}>Phase 1 (Stage 4 -- Near-term):</span> Deploy a single LLM-based agent on GCP. It reads Stage 3 correlation outputs + live market data from Alpaca/Polygon. Makes TP% recommendations and logs reasoning to Redis. The Go bot checks the agent's recommendation before each hour and adjusts TP% accordingly. Start as an <span style={{color:C.gold}}>advisor</span> (logs recommendations but does not auto-execute), then graduate to auto-execution once the track record is trusted.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.purple,fontWeight:700}}>Phase 2 (Stage 5 -- Longer-term):</span> Add RL training loop. The reward signal is simple: net profit per hour divided by capital deployed (capital efficiency). Every completed trading day becomes a training episode. The agent learns which actions (TP% choices) in which states (market conditions) produced the highest rewards. Over weeks of live trading, it develops a policy calibrated to YOUR specific system's execution characteristics -- something no backtest can capture.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>The RL Reward Signal</p>
+          <p style={{marginBottom:6}}>The simplest and most aligned reward for the RL agent:</p>
+          <p style={{marginBottom:4,paddingLeft:8,color:C.txtBright,fontWeight:700}}>Reward = (Net Profit This Hour) / (Capital Deployed This Hour)</p>
+          <p style={{marginBottom:6}}>This is capital efficiency per hour. It rewards both higher profits AND lower capital deployment. An agent that produces $5 profit with $100 deployed scores 5%. An agent that produces $3 profit with $50 deployed scores 6% -- and is preferred despite lower absolute profit.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>State:</span> The 22 features from hourly_features + current regime classification + portfolio utilization</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Action:</span> TP% to use for the next hour (discrete: 0.01% to 1.00% in 0.01% steps = 100 possible actions)</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Episode:</span> One complete trading day. Agent receives 16 rewards (one per hour) and learns which state-action pairs maximize cumulative reward.</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Concrete Implementation Examples" sub="How agents handle real scenarios vs traditional approaches"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Scenario 1: Earnings Surprise</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.warn}}>Rule engine:</span> ATR > threshold, sets wide TP%. Keeps it wide all day even after the initial move settles. Misses the post-earnings consolidation oscillations.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.accent}}>Agent:</span> "ATR spiked on earnings but is now declining. Volume is still 2x normal. The stock has found a new range $2 higher. I am transitioning from Breakout Agent to Mean-Reversion Agent with tighter TP% to capture oscillations in the new range."</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>Scenario 2: Flash Crash Recovery</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.warn}}>Rule engine:</span> ATR extreme, widens TP% to maximum. During the recovery bounce, the wide TP% means fewer cycles captured. Misses the most profitable oscillation period.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.accent}}>Agent:</span> "Price dropped 8% in 3 minutes but is now bouncing. Historical flash crashes show a V-shaped recovery with intense oscillation in the first 30 minutes. I am aggressively tightening TP% to 0.05% for the recovery window, then widening back to normal after 30 minutes."</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.gold}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>Scenario 3: Low Confidence Situation</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.warn}}>Rule engine:</span> Features do not match any rule clearly. Falls through to a default TP%. No indication that the system is uncertain.</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.accent}}>Agent:</span> "Current conditions do not match any historical regime with confidence above 50%. VIX is at 19 (borderline), ATR is near the 50th percentile (ambiguous), and volume is normal. I am defaulting to the flat daily best TP% from Part 1 analysis and flagging this hour as low-confidence. The Self-Improvement Agent will review this case to determine if a new regime category should be created."</p>
+        </div>
+      </div>
+    </Cd>
+  </div>;
+}
+
 function RawDataPage(p){
   var s1=useState('NIO'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -4487,7 +4700,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -4499,6 +4712,7 @@ function App(){
     {page==='batch'&&<BatchPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='corrlogic'&&<CorrAnalysisPage onBack={function(){setPage('objectives');}}/>}
     {page==='features'&&<FeaturesListPage onBack={function(){setPage('objectives');}}/>}
+    {page==='aiagents'&&<AIAgentsOverviewPage onBack={function(){setPage('objectives');}}/>}
     {page==='builddata'&&<BuildDataSetPage apiKey={pgKey} onBack={function(){setPage('objectives');}}/>}
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
