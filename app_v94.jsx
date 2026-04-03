@@ -3080,6 +3080,44 @@ function OptimalTPPage(p){
   var sd1=useState(''),startDate=sd1[0],setStartDate=sd1[1];
   var sd2=useState(''),endDate=sd2[0],setEndDate=sd2[1];
   var mr=useState(null),multiResults=mr[0],setMultiResults=mr[1];
+  var runRange=async function(){
+    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
+    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
+    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
+    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    try{
+      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLd(false);return;}
+      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
+      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        var pages=0;
+        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,50);});
+        var res=analyzePriceLevels(allTrades,tp);
+        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
+        var grossPC=fq*tpDollar;var netPC=grossPC-af;
+        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
+        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+      }
+      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
+      var totalNet=0;var totalGross=0;var totalFees=0;
+      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
+      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      setProg('');
+    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
+  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
 
@@ -3342,6 +3380,44 @@ function OptimalTPPage(p){
 }
 
 function AdaptiveOptPage(p){
+  var runRange=async function(){
+    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
+    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
+    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
+    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    try{
+      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLd(false);return;}
+      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
+      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        var pages=0;
+        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,50);});
+        var res=analyzePriceLevels(allTrades,tp);
+        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
+        var grossPC=fq*tpDollar;var netPC=grossPC-af;
+        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
+        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+      }
+      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
+      var totalNet=0;var totalGross=0;var totalFees=0;
+      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
+      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      setProg('');
+    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
+  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -3482,6 +3558,44 @@ function HourlyOptimalPage(p){
   var s7=useState(null),results=s7[0],setResults=s7[1];
   var s8=useState(null),err=s8[0],setErr=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
+  var runRange=async function(){
+    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
+    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
+    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
+    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    try{
+      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLd(false);return;}
+      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
+      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        var pages=0;
+        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,50);});
+        var res=analyzePriceLevels(allTrades,tp);
+        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
+        var grossPC=fq*tpDollar;var netPC=grossPC-af;
+        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
+        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+      }
+      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
+      var totalNet=0;var totalGross=0;var totalFees=0;
+      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
+      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      setProg('');
+    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
+  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -3753,6 +3867,44 @@ function BuildDataSetPage(p){
   var s5=useState(null),err=s5[0],setErr=s5[1];
   var s6=useState(''),prog=s6[0],setProg=s6[1];
   var s7=useState(null),stats=s7[0],setStats=s7[1];
+  var runRange=async function(){
+    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
+    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
+    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
+    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    try{
+      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLd(false);return;}
+      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
+      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        var pages=0;
+        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,50);});
+        var res=analyzePriceLevels(allTrades,tp);
+        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
+        var grossPC=fq*tpDollar;var netPC=grossPC-af;
+        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
+        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+      }
+      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
+      var totalNet=0;var totalGross=0;var totalFees=0;
+      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
+      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      setProg('');
+    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
+  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -4616,6 +4768,44 @@ function RawDataPage(p){
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState(''),prog=s5[0],setProg=s5[1];
   var s6=useState(null),stats=s6[0],setStats=s6[1];
+  var runRange=async function(){
+    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
+    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
+    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
+    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    try{
+      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLd(false);return;}
+      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
+      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        var pages=0;
+        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,50);});
+        var res=analyzePriceLevels(allTrades,tp);
+        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
+        var grossPC=fq*tpDollar;var netPC=grossPC-af;
+        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
+        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+      }
+      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
+      var totalNet=0;var totalGross=0;var totalFees=0;
+      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
+      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      setProg('');
+    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
+  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -4825,6 +5015,10 @@ function App(){
   var s23=useState('0.005'),feePerCycle=s23[0],setFeePerCycle=s23[1];
   var s24=useState(null),optResults=s24[0],setOptResults=s24[1];
   var s25=useState(false),optScanning=s25[0],setOptScanning=s25[1];
+  var s27=useState('single'),analysisMode=s27[0],setAnalysisMode=s27[1];
+  var s28=useState(''),rangeStart=s28[0],setRangeStart=s28[1];
+  var s29=useState(''),rangeEnd=s29[0],setRangeEnd=s29[1];
+  var s30=useState(null),rangeResults=s30[0],setRangeResults=s30[1];
 
   var loadFullData=async function(){
     if(!pgKey)return;
@@ -4917,11 +5111,19 @@ function App(){
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}
       <div style={{color:C.txt,fontSize:11,fontFamily:F,marginBottom:12,lineHeight:1.5}}>Enter ticker and parameters for the stock you'd like to analyze</div>
       <Cd>
-        <SectionHead title="Parameters" sub="Ticker, date, take-profit %, capital, and fees" info="Enter the stock ticker, date, take-profit %, capital per level, and fee per cycle. The app fetches every trade that day, counts cycles at each $0.01 level, and estimates profit with proportional fractional share fees."/>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10,marginBottom:8}}>
-          <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
-          <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
+        <SectionHead title="Parameters" sub="Ticker, date, take-profit %, capital, and fees" info="Single Day: analyze one day of tick data. Date Range: aggregate cycle analysis across multiple days with a flat TP%, showing per-day breakdown and totals."/>
+        <div style={{display:'flex',gap:4,marginTop:10,marginBottom:10}}>
+          <button onClick={function(){setAnalysisMode('single');setRangeResults(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:analysisMode==='single'?C.accentDim:'transparent',border:'1px solid '+(analysisMode==='single'?C.accent:C.border),color:analysisMode==='single'?C.accent:C.txt})}>Single Day</button>
+          <button onClick={function(){setAnalysisMode('range');setResult(null);}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:analysisMode==='range'?C.blueDim:'transparent',border:'1px solid '+(analysisMode==='range'?C.blue:C.border),color:analysisMode==='range'?C.blue:C.txt})}>Date Range</button>
         </div>
+        <div style={{display:'grid',gridTemplateColumns:analysisMode==='single'?'1fr 1fr':'1fr',gap:8,marginBottom:8}}>
+          <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+          {analysisMode==='single'&&<div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>}
+        </div>
+        {analysisMode==='range'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+          <div><label style={lS}>Start Date</label><input type="date" value={rangeStart} onChange={function(e){setRangeStart(e.target.value);}} style={iS}/></div>
+          <div><label style={lS}>End Date</label><input type="date" value={rangeEnd} onChange={function(e){setRangeEnd(e.target.value);}} style={iS}/></div>
+        </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
           <div>
             <div style={{display:'flex',alignItems:'center',marginBottom:4}}><label style={Object.assign({},lS,{marginBottom:0})}>TP %</label><Info>The % gain needed to sell. 1% on $5.00 = sell at $5.06 (always rounds up to next penny). Smaller = more cycles, larger = fewer but bigger cycles.</Info></div>
@@ -4944,10 +5146,67 @@ function App(){
           </div>
           <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:3}}>{session==='all'?'Pre-market + Regular + After hours':'9:30 AM - 4:00 PM ET'}</div>
         </div>
-        <button onClick={run} disabled={ld} style={Object.assign({},bB,{background:ld?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:ld?C.txtDim:C.bg})}>{ld?'Running...':'Analyze'}</button>
+        <button onClick={analysisMode==='range'?runRange:run} disabled={ld} style={Object.assign({},bB,{background:ld?C.border:analysisMode==='range'?'linear-gradient(135deg,#3d9eff,#2070d0)':'linear-gradient(135deg,#00e5a0,#00c488)',color:ld?C.txtDim:analysisMode==='range'?'#fff':C.bg})}>{ld?'Running...':analysisMode==='range'?'Analyze Date Range':'Analyze'}</button>
         {prog&&<div style={{marginTop:8,color:C.accent,fontSize:10}}>{prog}</div>}
         {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
       </Cd>
+      {rangeResults&&<div>
+        <Cd glow={true}>
+          <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>DATE RANGE | {rangeResults.ticker} | {rangeResults.tp}% TP | {rangeResults.totalDays} DAYS</div>
+          <SectionHead title="Aggregated Results" sub={rangeResults.ticker+' · '+rangeResults.totalDays+' days · '+rangeResults.tp+'% flat TP'}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
+            <Mt label="Total Cycles" value={rangeResults.totalCycles.toLocaleString()} color={C.accent} size="lg"/>
+            <Mt label="Avg Cycles/Day" value={rangeResults.avgCycles.toLocaleString()} color={C.blue} size="lg"/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
+            <Mt label="Net Profit" value={'$'+rangeResults.totalNet.toFixed(2)} color={C.accent} size="md"/>
+            <Mt label="Gross Profit" value={'$'+rangeResults.totalGross.toFixed(2)} color={C.gold} size="md"/>
+            <Mt label="Total Fees" value={'$'+rangeResults.totalFees.toFixed(2)} color={C.warn} size="md"/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+            <Mt label="Total Trades" value={rangeResults.totalTrades.toLocaleString()} color={C.txtDim} size="md"/>
+            <Mt label="Trading Days" value={rangeResults.validDays+'/'+rangeResults.totalDays} color={C.blue} size="md"/>
+          </div>
+        </Cd>
+        <Cd>
+          <SectionHead title="Per-Day Breakdown" sub={"Cycles and profit for each trading day at flat "+rangeResults.tp+"% TP"}/>
+          <div style={{overflowX:'auto',maxHeight:400}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+              <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+                <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+                <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trades</th>
+                <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
+                <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Levels</th>
+                <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net $</th>
+              </tr></thead>
+              <tbody>{rangeResults.days.map(function(rd){
+                var maxCy=0;for(var q=0;q<rangeResults.days.length;q++){if(rangeResults.days[q].cycles>maxCy)maxCy=rangeResults.days[q].cycles;}
+                return <tr key={rd.day} style={{borderBottom:'1px solid '+C.grid}}>
+                  <td style={{padding:'5px 3px',color:C.txtBright}}>{rd.day}</td>
+                  <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{rd.trades.toLocaleString()}</td>
+                  <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{rd.cycles.toLocaleString()}</td>
+                  <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{rd.activeLevels||0}</td>
+                  <td style={{padding:'5px 3px',color:(rd.netProfit||0)>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+(rd.netProfit||0).toFixed(2)}</td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        </Cd>
+        <Cd>
+          <SectionHead title="Daily Cycles Distribution" sub={"Cycles per day at flat "+rangeResults.tp+"% TP"}/>
+          <div style={{marginTop:8}}>{rangeResults.days.map(function(rd){
+            var maxCy=0;for(var q=0;q<rangeResults.days.length;q++){if(rangeResults.days[q].cycles>maxCy)maxCy=rangeResults.days[q].cycles;}
+            var pct=maxCy>0?(Math.sqrt(rd.cycles)/Math.sqrt(maxCy)*100):0;
+            return <div key={rd.day} style={{display:'flex',alignItems:'center',marginBottom:2}}>
+              <div style={{width:60,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'right',paddingRight:4}}>{rd.day.slice(5)}</div>
+              <div style={{flex:1,position:'relative',height:18}}>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:'linear-gradient(90deg,'+C.blue+'90,'+C.accent+'90)',borderRadius:'0 3px 3px 0',minWidth:rd.cycles>0?4:0}}></div>
+              </div>
+              <div style={{width:50,fontSize:8,color:C.accent,fontFamily:F,fontWeight:700,textAlign:'right',paddingLeft:4}}>{rd.cycles>0?rd.cycles.toLocaleString():''}</div>
+            </div>;
+          })}</div>
+        </Cd>
+      </div>}
       {result&&<div>
         <Cd glow={true}>
           <SectionHead title="Results" sub={ticker+' · '+date+' · '+tpStr+'% TP'+(dataSource==='cache'?' · From Cache':dataSource==='polygon'?' · Live Data':'')} info="Total cycles across all levels, how many levels had at least one cycle, total levels in the price range, and how many individual trade ticks were analyzed."/>
