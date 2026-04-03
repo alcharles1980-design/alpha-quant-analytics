@@ -3424,13 +3424,16 @@ function BuildDataSetPage(p){
           }
           return arr;
         };
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching pre-market (4AM-9:30AM)...');
-        var w1=await fetchWindow(day,'T08:00:00.000Z','T13:30:00.000Z','[pre-mkt]');
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching pre-market (4-9:30AM ET)...');
+        var w1=await fetchWindow(day,'T08:00:00.000Z','T13:30:00.000Z','[1/3 pre]');
         await new Promise(function(w){setTimeout(w,1000);});
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching regular+post (9:30AM-8PM)...');
-        var w2=await fetchWindow(day,'T13:30:00.000Z','T23:59:59.000Z','[reg+post]');
-        allP=w1.p.concat(w2.p);allS=w1.s.concat(w2.s);allTs=w1.ts.concat(w2.ts);
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Total: '+allP.length.toLocaleString()+' ticks (pre:'+w1.p.length.toLocaleString()+' + reg:'+w2.p.length.toLocaleString()+')');
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching morning (9:30AM-1PM ET)...');
+        var w2=await fetchWindow(day,'T13:30:00.000Z','T17:00:00.000Z','[2/3 morn]');
+        await new Promise(function(w){setTimeout(w,1000);});
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching afternoon+post (1-8PM ET)...');
+        var w3=await fetchWindow(day,'T17:00:00.000Z','T23:59:59.000Z','[3/3 aftn]');
+        allP=w1.p.concat(w2.p).concat(w3.p);allS=w1.s.concat(w2.s).concat(w3.s);allTs=w1.ts.concat(w2.ts).concat(w3.ts);
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Total: '+allP.length.toLocaleString()+' ticks');
         await new Promise(function(w){setTimeout(w,2000);});
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
