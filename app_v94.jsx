@@ -2020,9 +2020,18 @@ function DbManagePage(p){
     setExpandedS1Day(key);setS1HourlyData(null);
     try{
       var h=getSbHeaders();
-      var r=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+sessionType+'&select=hour,cycles&order=hour.asc',{headers:h});
-      var rows=r.ok?await r.json():[];
-      setS1HourlyData(rows);
+      var r1=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&select=hour,trades,volume,high,low,atr_pct&order=hour.asc',{headers:h});
+      var seasonRows=r1.ok?await r1.json():[];
+      var r2=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+sessionType+'&select=hour,cycles&order=hour.asc',{headers:h});
+      var cycleRows=r2.ok?await r2.json():[];
+      var cycleMap={};for(var ci=0;ci<cycleRows.length;ci++)cycleMap[cycleRows[ci].hour]=cycleRows[ci].cycles;
+      var merged=[];
+      if(seasonRows.length>0){
+        for(var si=0;si<seasonRows.length;si++){var sr=seasonRows[si];merged.push({hour:sr.hour,trades:sr.trades,volume:Math.round(sr.volume),cycles:cycleMap[sr.hour]||0,atrPct:parseFloat(sr.atr_pct)||0});}
+      }else{
+        for(var ci2=0;ci2<cycleRows.length;ci2++){merged.push({hour:cycleRows[ci2].hour,trades:0,volume:0,cycles:cycleRows[ci2].cycles,atrPct:0});}
+      }
+      setS1HourlyData(merged);
     }catch(e){setS1HourlyData([]);}
   };
   var deleteFeatStock=async function(ticker){
@@ -2121,26 +2130,29 @@ function DbManagePage(p){
                         {!s1HourlyData&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>Loading hourly data...</div>}
                         {s1HourlyData&&s1HourlyData.length===0&&<div style={{color:C.warn,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>No hourly cycle data found for this day.</div>}
                         {s1HourlyData&&s1HourlyData.length>0&&<div>
-                          <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:4,fontWeight:700,letterSpacing:1}}>HOURLY CYCLES: {d.trade_date}</div>
-                          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:2}}>
-                            {s1HourlyData.map(function(h){
-                              var maxCy=0;for(var q=0;q<s1HourlyData.length;q++){if(s1HourlyData[q].cycles>maxCy)maxCy=s1HourlyData[q].cycles;}
-                              var pct=maxCy>0?(h.cycles/maxCy*100):0;
+                          <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:4,fontWeight:700,letterSpacing:1}}>HOURLY DATA INTEGRITY: {d.trade_date}</div>
+                          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+                            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+                              <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+                              <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Trades</th>
+                              <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Volume</th>
+                              <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
+                            </tr></thead>
+                            <tbody>{s1HourlyData.map(function(h){
                               var hrLabel=hourLabels[h.hour]||h.hour+'h';
-                              return <div key={h.hour} style={{background:C.bg,borderRadius:3,padding:'3px 4px',border:'1px solid '+C.grid}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                                  <span style={{fontSize:6,color:C.txtDim,fontFamily:F}}>{hrLabel}</span>
-                                  <span style={{fontSize:8,color:h.cycles>0?C.accent:C.txtDim,fontFamily:F,fontWeight:700}}>{h.cycles}</span>
-                                </div>
-                                <div style={{height:3,background:C.grid,borderRadius:2,marginTop:2}}>
-                                  <div style={{height:3,background:h.cycles>0?C.accent:C.grid,borderRadius:2,width:pct+'%'}}></div>
-                                </div>
-                              </div>;
-                            })}
-                          </div>
+                              var hasTrades=h.trades>0;
+                              return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid,background:hasTrades?'transparent':C.warnDim}}>
+                                <td style={{padding:'2px 2px',color:hasTrades?C.txtBright:C.warn,fontWeight:700}}>{hrLabel}</td>
+                                <td style={{padding:'2px 2px',color:hasTrades?C.blue:C.warn,textAlign:'right',fontWeight:hasTrades?700:400}}>{h.trades>0?h.trades.toLocaleString():'-'}</td>
+                                <td style={{padding:'2px 2px',color:hasTrades?C.txt:C.warn,textAlign:'right'}}>{h.volume>0?h.volume.toLocaleString():'-'}</td>
+                                <td style={{padding:'2px 2px',color:h.cycles>0?C.accent:C.txtDim,textAlign:'right',fontWeight:h.cycles>0?700:400}}>{h.cycles}</td>
+                              </tr>;
+                            })}</tbody>
+                          </table>
                           <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
-                            <span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Hours with cycles: {s1HourlyData.filter(function(h){return h.cycles>0;}).length+'/16'}</span>
-                            <span style={{fontSize:7,color:C.accent,fontFamily:F}}>Total: {s1HourlyData.reduce(function(a,h){return a+h.cycles;},0)}</span>
+                            <span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Hours with trades: {s1HourlyData.filter(function(h){return h.trades>0;}).length+'/16'}</span>
+                            <span style={{fontSize:7,color:C.blue,fontFamily:F}}>Total trades: {s1HourlyData.reduce(function(a,h){return a+h.trades;},0).toLocaleString()}</span>
+                            <span style={{fontSize:7,color:C.accent,fontFamily:F}}>Cycles: {s1HourlyData.reduce(function(a,h){return a+(h.cycles||0);},0)}</span>
                           </div>
                         </div>}
                       </div>
@@ -4925,6 +4937,12 @@ function App(){
         await SB.saveAnalysis(ticker.toUpperCase(),day,tp,session,res.summary,res.levels,ohlcDay,svMin,svMax,svOpen,svPSM);
         var hcDay=computeHourlyCycles(filtered,tp);
         await SB.saveHourlyCycles(ticker.toUpperCase(),day,tp,session,hcDay);
+        // Compute and save seasonality (hourly trades/volume)
+        var hourly={};for(var h=4;h<20;h++)hourly[h]={high:-Infinity,low:Infinity,vol:0,trades:0};
+        var sess2={pre:{min:Infinity,max:-Infinity,vol:0,trades:0},reg:{min:Infinity,max:-Infinity,vol:0,trades:0},post:{min:Infinity,max:-Infinity,vol:0,trades:0}};
+        for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=d3.getUTCHours()-4;if(eh<0)eh+=24;var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
+        var chartData=[];for(var h2=4;h2<20;h2++){var hd=hourly[h2];var atr=(hd.high>-Infinity&&hd.low<Infinity)?hd.high-hd.low:0;var atrPct=(hd.low>0&&atr>0)?(atr/hd.low)*100:0;chartData.push({atr:atr,atrPct:atrPct,volume:hd.vol,trades:hd.trades,high:hd.high>-Infinity?hd.high:null,low:hd.low>-Infinity?hd.low:null});}
+        await SB.saveSeasonality(ticker.toUpperCase(),day,chartData,sess2);
       }
       var validDays=allDays.filter(function(d2){return d2.cycles>0;});
       var totalNet=0;var totalGross=0;var totalFees=0;
