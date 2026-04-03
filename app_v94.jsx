@@ -16,6 +16,35 @@ function getETOffset(dateStr){
   if(m===3){var w=new Date(Date.UTC(y,2,1)).getUTCDay();var s=w===0?8:8+((7-w)%7);return d>=s?4:5;}
   var w2=new Date(Date.UTC(y,10,1)).getUTCDay();var s2=w2===0?1:1+((7-w2)%7);return d<s2?4:5;
 }
+function verifyFetchIntegrity(trades,dateStr,etOff){
+  var warnings=[];
+  if(!trades||trades.length===0)return{ok:false,warnings:['No trades fetched'],hourMap:{},hoursWithData:0};
+  var hourMap={};for(var h=4;h<20;h++)hourMap[h]={trades:0,volume:0};
+  for(var i=0;i<trades.length;i++){
+    var ts=trades[i].ts;var ms=ts>1e15?ts/1e6:ts>1e12?ts/1e3:ts;
+    var d=new Date(ms);var eh=d.getUTCHours()-etOff;if(eh<0)eh+=24;
+    if(hourMap[eh]){hourMap[eh].trades++;hourMap[eh].volume+=trades[i].size||0;}
+  }
+  var rthH=[9,10,11,12,13,14,15];var rthMiss=[];
+  for(var r=0;r<rthH.length;r++){if(hourMap[rthH[r]].trades===0)rthMiss.push(hourLabels[rthH[r]]||rthH[r]);}
+  if(rthMiss.length>0)warnings.push('MISSING RTH: '+rthMiss.join(', '));
+  var hwD=0;for(var h2=4;h2<20;h2++){if(hourMap[h2].trades>0)hwD++;}
+  if(hwD<8)warnings.push('LOW COVERAGE: '+hwD+'/16 hours');
+  var rthT=0;for(var r2=0;r2<rthH.length;r2++)rthT+=hourMap[rthH[r2]].trades;
+  if(rthT<500)warnings.push('LOW RTH: '+rthT+' trades');
+  return{ok:warnings.length===0,warnings:warnings,hoursWithData:hwD};
+}
+function verifySaveIntegrity(ticker,date,tpPct,session){
+  return(async function(){var w=[];var h=getSbHeaders();try{
+    var r1=await fetch(SB_URL+'/rest/v1/cached_analyses?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+session+'&select=id',{headers:h});
+    var a1=r1.ok?await r1.json():[];if(a1.length===0)w.push('SAVE: no analysis');
+    var r2=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&select=hour',{headers:h});
+    var s1=r2.ok?await r2.json():[];if(s1.length!==16)w.push('SAVE: seasonality '+s1.length+'/16');
+    var r3=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&select=hour',{headers:h});
+    var c1=r3.ok?await r3.json():[];if(c1.length!==16)w.push('SAVE: hourly_cycles '+c1.length+'/16');
+  }catch(e){}return w;})();
+}
+
 
 var SB_URL='https://haeqzegdlwryvaecanrn.supabase.co';
 var SB_URL_DEFAULT=SB_URL;
@@ -1885,6 +1914,7 @@ function DbManagePage(p){
   var s11=useState(null),optData=s11[0],setOptData=s11[1];
   var s12=useState(null),optDetail=s12[0],setOptDetail=s12[1];
   var s13=useState(null),confirmOptDel=s13[0],setConfirmOptDel=s13[1];
+  var s16=useState(null),consistency=s16[0],setConsistency=s16[1];
 
   var loadData=async function(){
     setLoading(true);setErr(null);
@@ -1981,6 +2011,24 @@ function DbManagePage(p){
         return os;
       });
       setOptData({stocks:optArr,totalRows:optRows.length});
+
+      // Cross-table consistency check
+      var rh4=getSbHeaders();rh4['Range']='0-9999';
+      var cca=await fetch(SB_URL+'/rest/v1/cached_analyses?select=ticker,trade_date,tp_pct,session_type,total_cycles,total_trades&order=ticker.asc,trade_date.asc',{headers:rh4});
+      var ccaRows=cca.ok?await cca.json():[];
+      var consistency=[];
+      for(var ci=0;ci<ccaRows.length;ci++){
+        var cr=ccaRows[ci];var ck=cr.ticker+'|'+cr.trade_date;
+        var chkS=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&select=hour',{headers:getSbHeaders()});
+        var sRows=chkS.ok?await chkS.json():[];
+        var chkH=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&tp_pct=eq.'+cr.tp_pct+'&select=hour',{headers:getSbHeaders()});
+        var hRows=chkH.ok?await chkH.json():[];
+        var issues=[];
+        if(sRows.length!==16)issues.push('Season:'+sRows.length+'/16');
+        if(hRows.length!==16)issues.push('HrCycles:'+hRows.length+'/16');
+        consistency.push({ticker:cr.ticker,date:cr.trade_date,tp:cr.tp_pct,cycles:cr.total_cycles,trades:cr.total_trades,seasonality:sRows.length,hourlyCycles:hRows.length,issues:issues,ok:issues.length===0});
+      }
+      setConsistency(consistency);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -2182,6 +2230,34 @@ function DbManagePage(p){
           <button onClick={function(){setConfirmDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
         </div>:
         <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Stage 1 Data</button>}
+      </Cd>}
+      {consistency&&consistency.length>0&&<Cd style={{marginTop:16}}>
+        <SectionHead title="Cross-Table Integrity" sub="Verify all tables have matching data for each stock-day" info="Each stock-day should have: 1 cached_analyses row, 16 cached_seasonality rows, 16 cached_hourly_cycles rows. Missing data is flagged in red."/>
+        <div style={{marginTop:8,padding:'6px 10px',borderRadius:4,background:(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?C.accentDim:C.warnDim;})(),border:'1px solid '+(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?C.accent:C.warn;})(),marginBottom:8}}>
+          <span style={{fontSize:8,fontFamily:F,fontWeight:700,color:(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?C.accent:C.warn;})()}}>{(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?'\u2713 ALL '+consistency.length+' STOCK-DAYS CONSISTENT':'\u26A0 '+f+' STOCK-DAY'+(f>1?'S':'')+' WITH MISSING DATA';})()}</span>
+        </div>
+        <div style={{overflowX:'auto',maxHeight:300}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Analysis</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Season</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>HrCyc</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'center'}}>Status</th>
+            </tr></thead>
+            <tbody>{consistency.map(function(c){
+              return <tr key={c.ticker+c.date} style={{borderBottom:'1px solid '+C.grid,background:c.ok?'transparent':C.warnDim}}>
+                <td style={{padding:'3px 2px',color:C.txtBright,fontWeight:700}}>{c.ticker}</td>
+                <td style={{padding:'3px 2px',color:C.txt}}>{c.date}</td>
+                <td style={{padding:'3px 2px',color:C.accent,textAlign:'right'}}>{'\u2713'}</td>
+                <td style={{padding:'3px 2px',color:c.seasonality===16?C.accent:C.warn,textAlign:'right',fontWeight:c.seasonality!==16?700:400}}>{c.seasonality+'/16'}</td>
+                <td style={{padding:'3px 2px',color:c.hourlyCycles===16?C.accent:C.warn,textAlign:'right',fontWeight:c.hourlyCycles!==16?700:400}}>{c.hourlyCycles+'/16'}</td>
+                <td style={{padding:'3px 2px',textAlign:'center'}}>{c.ok?<span style={{color:C.accent}}>{'\u2713'}</span>:<span style={{color:C.warn,fontSize:8}}>{'\u26A0'}</span>}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
       </Cd>}
       {optData&&<div style={{marginTop:16}}>
         <Cd glow={true}>
@@ -4946,14 +5022,15 @@ function App(){
         allTrades=filterOutlierTicks(allTrades);
         var filtered=allTrades;
         if(session==='rth'){filtered=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-etOff)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        if(!filtered.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip'});continue;}
+        if(!filtered.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0,netProfit:0,grossProfit:0,fees:0,source:'skip',warnings:['No trades']});continue;}
+        var fetchCheck=verifyFetchIntegrity(filtered,day,etOff);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+filtered.length.toLocaleString()+' trades...');
         await new Promise(function(r){setTimeout(r,50);});
         var res=analyzePriceLevels(filtered,tp);
         var sp=filtered[0].price;var fq=capVal/sp;var af=feeVal*fq;
         var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
         var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        allDays.push({day:day,trades:filtered.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:res.summary.totalCycles*netPC,grossProfit:res.summary.totalCycles*grossPC,fees:res.summary.totalCycles*af,source:'polygon'});
+        allDays.push({day:day,trades:filtered.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:res.summary.totalCycles*netPC,grossProfit:res.summary.totalCycles*grossPC,fees:res.summary.totalCycles*af,source:'polygon',warnings:fetchCheck.warnings,hoursWithData:fetchCheck.hoursWithData});
         grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=filtered.length;
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Saving...');
         var svMin=Infinity,svMax=-Infinity;for(var sv=0;sv<filtered.length;sv++){if(filtered[sv].price<svMin)svMin=filtered[sv].price;if(filtered[sv].price>svMax)svMax=filtered[sv].price;}
@@ -4969,6 +5046,8 @@ function App(){
         for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=d3.getUTCHours()-etOff;if(eh<0)eh+=24;var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
         var chartData=[];for(var h2=4;h2<20;h2++){var hd=hourly[h2];var atr=(hd.high>-Infinity&&hd.low<Infinity)?hd.high-hd.low:0;var atrPct=(hd.low>0&&atr>0)?(atr/hd.low)*100:0;chartData.push({atr:atr,atrPct:atrPct,volume:hd.vol,trades:hd.trades,high:hd.high>-Infinity?hd.high:null,low:hd.low>-Infinity?hd.low:null});}
         await SB.saveSeasonality(ticker.toUpperCase(),day,chartData,sess2);
+        var hcSum=0;for(var hci=0;hci<hcDay.length;hci++)hcSum+=hcDay[hci].cycles;if(hcSum!==res.summary.totalCycles)fetchCheck.warnings.push('CYCLE MISMATCH: hr='+hcSum+' total='+res.summary.totalCycles);
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Verifying save...');var svW=await verifySaveIntegrity(ticker.toUpperCase(),day,tp,session);for(var sw=0;sw<svW.length;sw++)fetchCheck.warnings.push(svW[sw]);
         // Delay between days to prevent Supabase rate limiting
         if(di<days.length-1)await new Promise(function(r){setTimeout(r,500);});
       }
@@ -5147,6 +5226,9 @@ function App(){
             <Mt label="Total Trades" value={rangeResults.totalTrades.toLocaleString()} color={C.txtDim} size="md"/>
             <Mt label="Trading Days" value={rangeResults.validDays+'/'+rangeResults.totalDays} color={C.blue} size="md"/>
           </div>
+          <div style={{marginTop:8,padding:'6px 10px',borderRadius:4,background:(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?C.accentDim:C.warnDim;})(),border:'1px solid '+(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?C.accent:C.warn;})()}}>
+            <span style={{fontSize:8,fontFamily:F,fontWeight:700,color:(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?C.accent:C.warn;})()}}>{(function(){var w=0;for(var i=0;i<rangeResults.days.length;i++){if(rangeResults.days[i].warnings&&rangeResults.days[i].warnings.length>0)w++;}return w===0?'\u2713 ALL DAYS PASS INTEGRITY CHECK':'\u26A0 '+w+' DAY'+(w>1?'S':'')+' WITH WARNINGS - tap \u26A0 for details';})()}</span>
+          </div>
         </Cd>
         <Cd>
           <SectionHead title="Per-Day Breakdown" sub={"Cycles and profit for each trading day at flat "+rangeResults.tp+"% TP"}/>
@@ -5158,6 +5240,7 @@ function App(){
                 <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
                 <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Levels</th>
                 <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net $</th>
+                <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}>Chk</th>
               </tr></thead>
               <tbody>{rangeResults.days.map(function(rd){
                 var maxCy=0;for(var q=0;q<rangeResults.days.length;q++){if(rangeResults.days[q].cycles>maxCy)maxCy=rangeResults.days[q].cycles;}
@@ -5167,6 +5250,7 @@ function App(){
                   <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{rd.cycles.toLocaleString()}</td>
                   <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{rd.activeLevels||0}</td>
                   <td style={{padding:'5px 3px',color:(rd.netProfit||0)>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+(rd.netProfit||0).toFixed(2)}</td>
+                  <td style={{padding:'5px 3px',textAlign:'center'}}>{(!rd.warnings||rd.warnings.length===0)?<span style={{color:C.accent,fontSize:10}}>{'\u2713'}</span>:<span onClick={function(){alert(rd.warnings.join('\n'));}} style={{color:C.warn,fontSize:8,cursor:'pointer'}}>{rd.warnings.length+'\u26A0'}</span>}</td>
                 </tr>;
               })}</tbody>
             </table>
