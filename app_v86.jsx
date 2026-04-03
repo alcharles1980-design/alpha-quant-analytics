@@ -3408,34 +3408,33 @@ function BuildDataSetPage(p){
         // Step 1: Fetch all ticks from Polygon
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching ticks...');
         var allP=[];var allS=[];var allTs=[];
-        var baseUrl='https://api.polygon.io/v3/trades/'+ticker.toUpperCase();
-        var tsGte=day+'T04:00:00.000Z';var tsLt=day+'T23:59:59.000Z';
-        var pgCnt=0;var retries=0;var done=false;
-        while(!done){
-          if(pgCnt>0)await new Promise(function(w){setTimeout(w,500);});
-          var url=baseUrl+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
-          var r=await fetch(url);
-          if(r.status===429||r.status===403){retries++;if(retries>8)throw new Error('Rate limited too many times on '+day);setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Rate limited ('+r.status+'), waiting 15s... (retry '+retries+')');await new Promise(function(w){setTimeout(w,15000);});continue;}
-          if(!r.ok)throw new Error('Polygon error '+r.status+' on '+day);
-          var d2=await r.json();
-          if(d2.status==='ERROR'||d2.error){retries++;if(retries>8)throw new Error('API error on '+day);setProg('Day '+(di+1)+'/'+days.length+': '+day+' | API error, waiting 10s...');await new Promise(function(w){setTimeout(w,10000);});continue;}
-          retries=0;
-          var pageLen=d2.results?d2.results.length:0;
-          if(pageLen===0){done=true;break;}
-          var lastTs=null;
-          for(var i=0;i<d2.results.length;i++){
-            var tk=d2.results[i];
-            allP.push(tk.price);
-            allS.push(tk.size||0);
-            var ts=tk.sip_timestamp||tk.participant_timestamp;
-            allTs.push(ts);
-            lastTs=ts;
+        var fetchDay=async function(dayStr,attempt){
+          var arr={p:[],s:[],ts:[]};
+          var url3='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+dayStr+'T04:00:00.000Z&timestamp.lt='+dayStr+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
+          var pg=0;
+          while(url3){
+            var r3=await fetch(url3);
+            if(r3.status===429){setProg('Day '+(di+1)+'/'+days.length+': '+dayStr+' | Rate limited, waiting 12s...');await new Promise(function(w){setTimeout(w,12000);});continue;}
+            if(!r3.ok)throw new Error('Polygon error '+r3.status);
+            var d3=await r3.json();
+            if(d3.results)for(var j=0;j<d3.results.length;j++){arr.p.push(d3.results[j].price);arr.s.push(d3.results[j].size||0);arr.ts.push(d3.results[j].sip_timestamp||d3.results[j].participant_timestamp);}
+            url3=d3.next_url?(d3.next_url+'&apiKey='+p.apiKey):null;
+            pg++;
+            setProg('Day '+(di+1)+'/'+days.length+': '+dayStr+(attempt>1?' (retry '+attempt+')':'')+' | '+arr.p.length.toLocaleString()+' ticks (page '+pg+(url3?' ...':' DONE')+')');
           }
-          pgCnt++;
-          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allP.length.toLocaleString()+' ticks (page '+pgCnt+(pageLen<50000?' DONE':' ...')+')');
-          if(pageLen<50000){done=true;}else{tsGte=lastTs;}
+          return arr;
+        };
+        var fetchResult=await fetchDay(day,1);
+        allP=fetchResult.p;allS=fetchResult.s;allTs=fetchResult.ts;
+        var hasPreMarket=false;
+        for(var ci=0;ci<allTs.length;ci++){var ch=toETHour(allTs[ci]);if(ch>=4&&ch<9){hasPreMarket=true;break;}}
+        if(!hasPreMarket&&allP.length>0){
+          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Missing pre-market, waiting 10s and retrying...');
+          await new Promise(function(w){setTimeout(w,10000);});
+          var retry2=await fetchDay(day,2);
+          if(retry2.p.length>allP.length){allP=retry2.p;allS=retry2.s;allTs=retry2.ts;}
         }
-        await new Promise(function(w){setTimeout(w,2000);});
+        await new Promise(function(w){setTimeout(w,3000);});
         if(!allP.length){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | No ticks, skipping');await new Promise(function(r){setTimeout(r,500);});continue;}
 
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Extracting features from '+allP.length.toLocaleString()+' ticks...');
@@ -4253,7 +4252,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'}];
+  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -4261,7 +4260,7 @@ function App(){
       <div style={{display:'flex',alignItems:'center',gap:6}}><LiveClock/><MenuIcon onClick={function(){setMenuOpen(!menuOpen);}}/></div>
     </div>
     <div style={{borderBottom:'1px solid '+C.border,marginBottom:12}}></div>
-    <MenuDropdown open={menuOpen} items={menuItems} onSelect={function(k){setPage(k);}} onClose={function(){setMenuOpen(false);}}/>
+    <MenuDropdown open={menuOpen} items={menuItems} onSelect={function(k){if(k==='logout'){try{sessionStorage.removeItem('aq_auth');}catch(e){}setShowSplash(true);window.location.hash='';return;}setPage(k);}} onClose={function(){setMenuOpen(false);}}/>
     {page==='batch'&&<BatchPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='corrlogic'&&<CorrAnalysisPage onBack={function(){setPage('objectives');}}/>}
     {page==='features'&&<FeaturesListPage onBack={function(){setPage('objectives');}}/>}
