@@ -32,6 +32,11 @@ function verifyFetchIntegrity(trades,dateStr,etOff){
   if(hwD<8)warnings.push('LOW COVERAGE: '+hwD+'/16 hours');
   var rthT=0;for(var r2=0;r2<rthH.length;r2++)rthT+=hourMap[rthH[r2]].trades;
   if(rthT<500)warnings.push('LOW RTH: '+rthT+' trades');
+  // Specific market-open check: hour containing 9:30AM should always have trades
+  var mktOpenHr=9;// 9AM ET includes 9:30 market open
+  if(hourMap[mktOpenHr]&&hourMap[mktOpenHr].trades===0){
+    warnings.push('MARKET OPEN HOUR (9AM-10AM) HAS 0 TRADES - possible fetch gap');
+  }
   return{ok:warnings.length===0,warnings:warnings,hoursWithData:hwD};
 }
 function verifySaveIntegrity(ticker,date,tpPct,session){
@@ -2026,13 +2031,15 @@ function DbManagePage(p){
         var issues=[];
         if(sRows.length!==16)issues.push('Season:'+sRows.length+'/16');
         if(hRows.length!==16)issues.push('HrCycles:'+hRows.length+'/16');
-        // Check RTH data quality: load trades per hour and flag zeros
+        // Check RTH data quality: load all hourly data and check in JS (PostgREST filters unreliable)
         var rthMissing=0;
-        if(sRows.length===16){
-          var chkQ=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&hour=gte.9&hour=lte.15&trades=eq.0&select=hour',{headers:getSbHeaders()});
-          var zeroRTH=chkQ.ok?await chkQ.json():[];
+        if(sRows.length>0){
+          var chkQ=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&select=hour,trades&order=hour.asc',{headers:getSbHeaders()});
+          var allHourData=chkQ.ok?await chkQ.json():[];
+          var zeroRTH=allHourData.filter(function(h){return h.hour>=9&&h.hour<=15&&(!h.trades||h.trades===0);});
           rthMissing=zeroRTH.length;
           if(rthMissing>0)issues.push('RTH gaps:'+zeroRTH.map(function(z){return hourLabels[z.hour]||z.hour;}).join(','));
+          if(allHourData.length<16)issues.push('Hours:'+allHourData.length+'/16');
         }
         consistency.push({ticker:cr.ticker,date:cr.trade_date,tp:cr.tp_pct,cycles:cr.total_cycles,trades:cr.total_trades,seasonality:sRows.length,hourlyCycles:hRows.length,rthMissing:rthMissing,issues:issues,ok:issues.length===0});
       }
@@ -5013,16 +5020,16 @@ function App(){
         // 4AM ET to 8PM ET in UTC, split into 4 windows for reliability
         var pad=function(n){return String(n).padStart(2,'0');};
         var nextDay=new Date(new Date(day+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
-        // Overlapping windows: each extends 1hr into the next to prevent boundary data loss
-        var h4=4+etOff,h9=9+etOff,h13=13+etOff,h17=17+etOff,h21=21+etOff;
-        var wEnd=h21<24?day+'T'+pad(h21)+':00:00.000Z':nextDay+'T'+pad(h21-24)+':00:00.000Z';
+        // 3 independent windows with wide overlap to prevent ANY boundary data loss
+        // Each window overlaps 2 hours into the next
+        var hPre=4+etOff;var hMid=10+etOff;var hAft=15+etOff;var hEnd=20+etOff;
+        var wEndTs=hEnd<24?day+'T'+pad(hEnd)+':30:00.000Z':nextDay+'T'+pad(hEnd-24)+':30:00.000Z';
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching (UTC-'+etOff+')...');
-        var wa=await fetchWin(day+'T'+pad(h4)+':00:00.000Z',day+'T'+pad(h9)+':00:00.000Z','[1/4]');await new Promise(function(r){setTimeout(r,150);});
-        var wb=await fetchWin(day+'T'+pad(h9-1)+':00:00.000Z',day+'T'+pad(h13)+':00:00.000Z','[2/4]');await new Promise(function(r){setTimeout(r,150);});
-        var wc=await fetchWin(day+'T'+pad(h13-1)+':00:00.000Z',day+'T'+pad(h17)+':00:00.000Z','[3/4]');await new Promise(function(r){setTimeout(r,150);});
-        var wd=await fetchWin(day+'T'+pad(h17-1)+':00:00.000Z',wEnd,'[4/4]');
-        var allRaw=wa.concat(wb).concat(wc).concat(wd);
-        // Dedup by timestamp (overlapping windows produce duplicates)
+        var wa=await fetchWin(day+'T'+pad(hPre)+':00:00.000Z',day+'T'+pad(hMid+2)+':00:00.000Z','[1/3 pre+open]');await new Promise(function(r){setTimeout(r,200);});
+        var wb=await fetchWin(day+'T'+pad(hMid-1)+':00:00.000Z',day+'T'+pad(hAft+2)+':00:00.000Z','[2/3 midday]');await new Promise(function(r){setTimeout(r,200);});
+        var wc=await fetchWin(day+'T'+pad(hAft-1)+':00:00.000Z',wEndTs,'[3/3 close+post]');
+        var allRaw=wa.concat(wb).concat(wc);
+        // Dedup by timestamp
         allRaw.sort(function(a,b){return a.ts-b.ts;});
         var allTrades=[];var lastTs=-1;
         for(var di2=0;di2<allRaw.length;di2++){if(allRaw[di2].ts!==lastTs){allTrades.push(allRaw[di2]);lastTs=allRaw[di2].ts;}}
@@ -5112,15 +5119,14 @@ function App(){
         return tr2;
       };
       var pad=function(n){return String(n).padStart(2,'0');};
-      var h4=4+etOff,h9=9+etOff,h13=13+etOff,h17=17+etOff,h21=21+etOff;
       var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
-      var wEnd=h21<24?date+'T'+pad(h21)+':00:00.000Z':nextDay+'T'+pad(h21-24)+':00:00.000Z';
+      var hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;
+      var wEndTs=hEnd<24?date+'T'+pad(hEnd)+':30:00.000Z':nextDay+'T'+pad(hEnd-24)+':30:00.000Z';
       setProg('Fetching trades (UTC-'+etOff+')...');
-      var fw1=await fetchW(date+'T'+pad(h4)+':00:00.000Z',date+'T'+pad(h9)+':00:00.000Z','[1/4]');
-      var fw2=await fetchW(date+'T'+pad(h9-1)+':00:00.000Z',date+'T'+pad(h13)+':00:00.000Z','[2/4]');
-      var fw3=await fetchW(date+'T'+pad(h13-1)+':00:00.000Z',date+'T'+pad(h17)+':00:00.000Z','[3/4]');
-      var fw4=await fetchW(date+'T'+pad(h17-1)+':00:00.000Z',wEnd,'[4/4]');
-      var allRaw=fw1.concat(fw2).concat(fw3).concat(fw4);
+      var fw1=await fetchW(date+'T'+pad(hPre)+':00:00.000Z',date+'T'+pad(hMid+2)+':00:00.000Z','[1/3 pre+open]');
+      var fw2=await fetchW(date+'T'+pad(hMid-1)+':00:00.000Z',date+'T'+pad(hAft+2)+':00:00.000Z','[2/3 midday]');
+      var fw3=await fetchW(date+'T'+pad(hAft-1)+':00:00.000Z',wEndTs,'[3/3 close+post]');
+      var allRaw=fw1.concat(fw2).concat(fw3);
       allRaw.sort(function(a,b){return a.ts-b.ts;});
       var allTrades=[];var lastTs2=-1;
       for(var dd2=0;dd2<allRaw.length;dd2++){if(allRaw[dd2].ts!==lastTs2){allTrades.push(allRaw[dd2]);lastTs2=allRaw[dd2].ts;}}
