@@ -1,8 +1,8 @@
 const{useState,useEffect,useRef}=React;
 var RC=typeof Recharts!=="undefined"?Recharts:{};
 var THEMES={
-  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#d0dce8",txtDim:"#7088a0",txtBright:"#f0f6fc",grid:"#14203a"},
-  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00b880",accentDim:"#00b88015",warn:"#e04030",warnDim:"#e0403015",blue:"#2070d0",blueDim:"#2070d015",purple:"#7040c0",gold:"#d09010",goldDim:"#d0901015",txt:"#2a3040",txtDim:"#6878a0",txtBright:"#101828",grid:"#e0e4e8"}
+  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#e0eaf4",txtDim:"#a0b8d0",txtBright:"#f4f8fc",grid:"#14203a"},
+  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00875a",accentDim:"#00875a15",warn:"#c03020",warnDim:"#c0302015",blue:"#1860c0",blueDim:"#1860c015",purple:"#5c2da0",gold:"#a87010",goldDim:"#a8701015",txt:"#101828",txtDim:"#3a4a68",txtBright:"#060e18",grid:"#e0e4e8"}
 };
 var CURRENT_THEME=(function(){try{return localStorage.getItem('aq_theme')||'dark';}catch(e){return 'dark';}})();
 var C=Object.assign({},THEMES[CURRENT_THEME]);
@@ -657,7 +657,7 @@ function TrendPage(p){
     return <div style={{overflowX:'auto'}}>
       <div style={{display:'grid',gridTemplateColumns:'70px repeat(16,1fr)',gap:1,minWidth:500}}>
         <div style={{fontSize:6,color:C.txtDim,fontFamily:F,padding:2}}></div>
-        {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){return <div key={h2} style={{fontSize:6,color:(h2>=9&&h2<16)?'#e0eaf4':'#8a9aaa',fontFamily:F,textAlign:'center',padding:2}}>{hourLabels[String(h2)]}</div>;})}
+        {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){return <div key={h2} style={{fontSize:6,color:(h2>=9&&h2<16)?C.txtBright:C.txtDim,fontFamily:F,textAlign:'center',padding:2}}>{hourLabels[String(h2)]}</div>;})}
         {data.allDates.map(function(dt){
           var dow=new Date(dt+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short'});
           return React.createElement(React.Fragment,{key:dt},[
@@ -666,7 +666,7 @@ function TrendPage(p){
               var hd=data.dates[dt][h2];
               var val=hd?props.getValue(hd):0;
               var bg=heatColor(val,props.max,props.color);
-              return React.createElement('div',{key:dt+'-'+h2,style:{background:bg,borderRadius:2,padding:'2px 0',textAlign:'center',fontSize:6,color:val>0?'#ffffff':'#3a4a5a',fontFamily:F,minHeight:18,display:'flex',alignItems:'center',justifyContent:'center'}},val>0?props.format(val):'');
+              return React.createElement('div',{key:dt+'-'+h2,style:{background:bg,borderRadius:2,padding:'2px 0',textAlign:'center',fontSize:6,color:val>0?'#ffffff':C.txtDim,fontFamily:F,minHeight:18,display:'flex',alignItems:'center',justifyContent:'center'}},val>0?props.format(val):'');
             })
           ]);
         })}
@@ -753,9 +753,9 @@ function TrendPage(p){
             var maxA=0;for(var k=4;k<20;k++){if(data.hourAvg[k].atr>maxA)maxA=data.hourAvg[k].atr;}
             var pct=maxA>0?(data.hourAvg[h2].atr/maxA*100):0;
             return <div key={h2} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
               <div style={{flex:1,position:'relative',height:14}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.gold:'#506878',borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].atr>0?2:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.gold:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].atr>0?2:0}}></div>
               </div>
               <div style={{width:44,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{'$'+data.hourAvg[h2].atr.toFixed(3)}</div>
             </div>;
@@ -767,9 +767,9 @@ function TrendPage(p){
             var maxA=0;for(var k=4;k<20;k++){if(data.hourAvg[k].atrPct>maxA)maxA=data.hourAvg[k].atrPct;}
             var pct=maxA>0?(data.hourAvg[h2].atrPct/maxA*100):0;
             return <div key={h2} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
               <div style={{flex:1,position:'relative',height:14}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.accent:'#506878',borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].atrPct>0?2:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.accent:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].atrPct>0?2:0}}></div>
               </div>
               <div style={{width:40,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{data.hourAvg[h2].atrPct.toFixed(2)+'%'}</div>
             </div>;
@@ -781,9 +781,9 @@ function TrendPage(p){
             var maxV=0;for(var k=4;k<20;k++){if(data.hourAvg[k].volume>maxV)maxV=data.hourAvg[k].volume;}
             var pct=maxV>0?(data.hourAvg[h2].volume/maxV*100):0;
             return <div key={h2} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
               <div style={{flex:1,position:'relative',height:14}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.blue:'#506878',borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].volume>0?2:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.blue:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].volume>0?2:0}}></div>
               </div>
               <div style={{width:40,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{fmtVol(data.hourAvg[h2].volume)}</div>
             </div>;
@@ -795,9 +795,9 @@ function TrendPage(p){
             var maxT=0;for(var k=4;k<20;k++){if(data.hourAvg[k].trades>maxT)maxT=data.hourAvg[k].trades;}
             var pct=maxT>0?(data.hourAvg[h2].trades/maxT*100):0;
             return <div key={h2} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
               <div style={{flex:1,position:'relative',height:14}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.gold:'#506878',borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].trades>0?2:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.gold:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].trades>0?2:0}}></div>
               </div>
               <div style={{width:40,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{fmtVol(data.hourAvg[h2].trades)}</div>
             </div>;
@@ -810,9 +810,9 @@ function TrendPage(p){
             var maxC2=0;for(var k=4;k<20;k++){if(data.avgHourlyCycles[k]>maxC2)maxC2=data.avgHourlyCycles[k];}
             var pct=maxC2>0?(data.avgHourlyCycles[h2]/maxC2*100):0;
             return <div key={h2} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]}</div>
               <div style={{flex:1,position:'relative',height:14}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.accent:'#506878',borderRadius:'0 2px 2px 0',minWidth:data.avgHourlyCycles[h2]>0?2:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.accent:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.avgHourlyCycles[h2]>0?2:0}}></div>
               </div>
               <div style={{width:40,fontSize:7,color:C.accent,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700}}>{data.avgHourlyCycles[h2]>0?data.avgHourlyCycles[h2].toFixed(1):''}</div>
             </div>;
@@ -835,7 +835,7 @@ function TrendPage(p){
             var pct2=maxSw>0?(Math.abs(avgSw)/maxSw*100):0;
             var isPos=avgSw>=0;
             return <div key={h2} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:54,fontSize:6,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]+' > '+hourLabels[String(h2+1)]}</div>
+              <div style={{width:54,fontSize:6,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4}}>{hourLabels[String(h2)]+' > '+hourLabels[String(h2+1)]}</div>
               <div style={{flex:1,position:'relative',height:14}}>
                 <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct2+'%',background:isPos?C.accent:C.warn,borderRadius:'0 2px 2px 0',minWidth:Math.abs(avgSw)>0?2:0}}></div>
               </div>
@@ -858,7 +858,7 @@ function TrendPage(p){
         <div style={{overflowX:'auto',marginTop:8}}>
           <div style={{display:'grid',gridTemplateColumns:'70px repeat(16,1fr)',gap:1,minWidth:500}}>
             <div style={{fontSize:6,color:C.txtDim,fontFamily:F,padding:2}}></div>
-            {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){return <div key={h2} style={{fontSize:6,color:(h2>=9&&h2<16)?'#e0eaf4':'#8a9aaa',fontFamily:F,textAlign:'center',padding:2}}>{hourLabels[String(h2)]}</div>;})}
+            {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){return <div key={h2} style={{fontSize:6,color:(h2>=9&&h2<16)?C.txtBright:C.txtDim,fontFamily:F,textAlign:'center',padding:2}}>{hourLabels[String(h2)]}</div>;})}
             {data.allDates.map(function(dt){
               var dow=new Date(dt+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short'});
               return React.createElement(React.Fragment,{key:dt},[
@@ -867,7 +867,7 @@ function TrendPage(p){
                   var val=(data.cyclesByDate[dt]&&data.cyclesByDate[dt][h2])||0;
                   var intensity=data.maxHourlyCycles>0?Math.min(val/data.maxHourlyCycles,1):0;
                   var bg=val>0?'rgba(0,229,160,'+(intensity*0.8+0.1)+')':'transparent';
-                  return React.createElement('div',{key:dt+'-'+h2,style:{background:bg,borderRadius:2,padding:'2px 0',textAlign:'center',fontSize:6,color:val>0?'#ffffff':'#3a4a5a',fontFamily:F,minHeight:18,display:'flex',alignItems:'center',justifyContent:'center'}},val>0?val:'');
+                  return React.createElement('div',{key:dt+'-'+h2,style:{background:bg,borderRadius:2,padding:'2px 0',textAlign:'center',fontSize:6,color:val>0?'#ffffff':C.txtDim,fontFamily:F,minHeight:18,display:'flex',alignItems:'center',justifyContent:'center'}},val>0?val:'');
                 })
               ]);
             })}
@@ -892,7 +892,7 @@ function TrendPage(p){
         <div style={{overflowX:'auto',marginTop:8}}>
           <div style={{display:'grid',gridTemplateColumns:'70px repeat(15,1fr)',gap:1,minWidth:480}}>
             <div style={{fontSize:6,color:C.txtDim,fontFamily:F,padding:2}}></div>
-            {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].map(function(h2){return <div key={h2} style={{fontSize:5,color:(h2>=9&&h2<16)?'#e0eaf4':'#8a9aaa',fontFamily:F,textAlign:'center',padding:2}}>{hourLabels[String(h2)]+'->'+hourLabels[String(h2+1)]}</div>;})}
+            {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].map(function(h2){return <div key={h2} style={{fontSize:5,color:(h2>=9&&h2<16)?C.txtBright:C.txtDim,fontFamily:F,textAlign:'center',padding:2}}>{hourLabels[String(h2)]+'->'+hourLabels[String(h2+1)]}</div>;})}
             {data.allDates.map(function(dt){
               var dow=new Date(dt+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short'});
               return React.createElement(React.Fragment,{key:dt},[
@@ -904,7 +904,7 @@ function TrendPage(p){
                   var isPos=swingPct>=0;
                   var intensity=Math.min(Math.abs(swingPct)/data.maxSwing,1);
                   var bg=swingPct===0?'transparent':isPos?'rgba(0,229,160,'+(intensity*0.8+0.1)+')':'rgba(255,92,58,'+(intensity*0.8+0.1)+')';
-                  return React.createElement('div',{key:dt+'-'+h2,style:{background:bg,borderRadius:2,padding:'2px 0',textAlign:'center',fontSize:5,color:Math.abs(swingPct)>0?'#ffffff':'#3a4a5a',fontFamily:F,minHeight:18,display:'flex',alignItems:'center',justifyContent:'center'}},Math.abs(swingPct)>0?((isPos?'+':'')+swingPct.toFixed(1)):'');
+                  return React.createElement('div',{key:dt+'-'+h2,style:{background:bg,borderRadius:2,padding:'2px 0',textAlign:'center',fontSize:5,color:Math.abs(swingPct)>0?'#ffffff':C.txtDim,fontFamily:F,minHeight:18,display:'flex',alignItems:'center',justifyContent:'center'}},Math.abs(swingPct)>0?((isPos?'+':'')+swingPct.toFixed(1)):'');
                 })
               ]);
             })}
@@ -939,7 +939,7 @@ function TrendPage(p){
               var dayRangePct=(dayLow>0&&dayRange>0)?((dayRange/dayLow)*100):0;
               var dow=new Date(dt+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short'});
               return <tr key={dt} style={{borderBottom:'1px solid '+C.grid}}>
-                <td style={{padding:'4px 3px',color:'#e0eaf4'}}>{dow+' '+dt.substring(5)}</td>
+                <td style={{padding:'4px 3px',color:C.txtBright}}>{dow+' '+dt.substring(5)}</td>
                 <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{dayRangePct.toFixed(2)+'%'}</td>
                 <td style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>{fmtVol(totVol)}</td>
                 <td style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>{totTrades.toLocaleString()}</td>
@@ -1180,11 +1180,11 @@ function SeasonalityPage(p){
             var maxCy=0;for(var q=0;q<seasCycles.length;q++){if(seasCycles[q].cycles>maxCy)maxCy=seasCycles[q].cycles;}
             var pct=maxCy>0?(d.cycles/maxCy*100):0;
             return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
               <div style={{flex:1,position:'relative',height:16}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.accent:'#506878',borderRadius:'0 2px 2px 0',minWidth:d.cycles>0?2:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.accent:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:d.cycles>0?2:0}}></div>
               </div>
-              <div style={{width:32,fontSize:8,color:d.cycles>0?C.accent:'#3a4a5a',fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.cycles>0?d.cycles:''}</div>
+              <div style={{width:32,fontSize:8,color:d.cycles>0?C.accent:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.cycles>0?d.cycles:''}</div>
             </div>;})}
           </div>
         </Cd>}
@@ -2125,11 +2125,11 @@ function DbManagePage(p){
                         for(var hi=0;hi<dayRows.length;hi++){if(dayRows[hi].hour===hr){hRow=dayRows[hi];break;}}
                         var isRTH=hr>=9&&hr<16;
                         if(!hRow)return <div key={hr} style={{display:'flex',padding:'2px 0',borderBottom:'1px solid '+C.grid}}>
-                          <div style={{width:36,fontSize:7,color:'#5a6a7a',fontFamily:F}}>{hourLabels[String(hr)]||hr}</div>
+                          <div style={{width:36,fontSize:7,color:C.txtDim,fontFamily:F}}>{hourLabels[String(hr)]||hr}</div>
                           <div style={{flex:1,fontSize:7,color:C.warn,fontFamily:F,fontStyle:'italic'}}>No data</div>
                         </div>;
                         return <div key={hr} style={{display:'flex',alignItems:'center',padding:'2px 0',borderBottom:'1px solid '+C.grid}}>
-                          <div style={{width:36,fontSize:7,color:isRTH?'#c0d4e8':'#5a6a7a',fontFamily:F,fontWeight:isRTH?600:400}}>{hourLabels[String(hr)]||hr}</div>
+                          <div style={{width:36,fontSize:7,color:isRTH?C.txtBright:C.txtDim,fontFamily:F,fontWeight:isRTH?600:400}}>{hourLabels[String(hr)]||hr}</div>
                           <div style={{flex:1,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_open).toFixed(2)}</div>
                           <div style={{flex:1,fontSize:7,color:C.accent,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_high).toFixed(2)}</div>
                           <div style={{flex:1,fontSize:7,color:C.warn,fontFamily:F,textAlign:'right'}}>{parseFloat(hRow.hour_low).toFixed(2)}</div>
@@ -3367,16 +3367,16 @@ function HourlyOptimalPage(p){
           {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h){
             var best=results.avgBestPerHour[h];
             if(!best||best.netProfit<=0)return <div key={h} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:40,fontSize:7,color:'#5a6a7a',fontFamily:F,textAlign:'right',paddingRight:6}}>{hourLabels[String(h)]}</div>
-              <div style={{flex:1,color:'#3a4a5a',fontSize:8,fontFamily:F}}>No profitable TP%</div>
+              <div style={{width:40,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'right',paddingRight:6}}>{hourLabels[String(h)]}</div>
+              <div style={{flex:1,color:C.txtDim,fontSize:8,fontFamily:F}}>No profitable TP%</div>
             </div>;
             var maxProfit=0;for(var hh=4;hh<20;hh++){if(results.avgBestPerHour[hh]&&results.avgBestPerHour[hh].netProfit>maxProfit)maxProfit=results.avgBestPerHour[hh].netProfit;}
             var pct=maxProfit>0?Math.sqrt(best.netProfit/maxProfit)*100:0;
             var isRTH=h>=9&&h<16;
             return <div key={h} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:36,fontSize:7,color:isRTH?'#c0d4e8':'#5a6a7a',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{hourLabels[String(h)]}</div>
+              <div style={{width:36,fontSize:7,color:isRTH?C.txtBright:C.txtDim,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{hourLabels[String(h)]}</div>
               <div style={{width:'30%',position:'relative',height:20,flexShrink:0}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:isRTH?C.accent:'#506878',borderRadius:'0 3px 3px 0',minWidth:best.cycles>0?4:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:isRTH?C.accent:C.txtDim,borderRadius:'0 3px 3px 0',minWidth:best.cycles>0?4:0}}></div>
               </div>
               <div style={{flex:1,display:'flex',justifyContent:'flex-end'}}>
                 <div style={{fontSize:8,color:C.gold,fontFamily:F,fontWeight:700,width:42,textAlign:'right'}}>{best.tpPct.toFixed(2)}%</div>
@@ -3402,7 +3402,7 @@ function HourlyOptimalPage(p){
               var hourData=results.avgMatrix[h]||[];
               var maxNet=0;for(var x=0;x<hourData.length;x++){if(hourData[x].totalNetProfit>maxNet)maxNet=hourData[x].totalNetProfit;}
               return <div key={h} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-                <div style={{width:44,fontSize:7,color:(h>=9&&h<16)?'#c0d4e8':'#5a6a7a',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{hourLabels[String(h)]}</div>
+                <div style={{width:44,fontSize:7,color:(h>=9&&h<16)?C.txtBright:C.txtDim,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{hourLabels[String(h)]}</div>
                 <div style={{flex:1,display:'flex',gap:0}}>
                   {hourData.map(function(d,idx){
                     var intensity=maxNet>0&&d.totalNetProfit>0?Math.min(d.totalNetProfit/maxNet,1):0;
@@ -4514,16 +4514,16 @@ function App(){
             var maxCy=0;for(var q=0;q<hourlyCycles.length;q++){if(hourlyCycles[q].cycles>maxCy)maxCy=hourlyCycles[q].cycles;}
             var pct=maxCy>0?(Math.sqrt(d.cycles)/Math.sqrt(maxCy)*100):0;
             return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:36,fontSize:7,color:'#c0d4e8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
               <div style={{flex:1,position:'relative',height:18}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.accent:'#506878',borderRadius:'0 3px 3px 0',minWidth:d.cycles>0?4:0}}></div>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.accent:C.txtDim,borderRadius:'0 3px 3px 0',minWidth:d.cycles>0?4:0}}></div>
               </div>
-              <div style={{width:36,fontSize:9,color:d.cycles>0?'#ffffff':'#3a4a5a',fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.cycles>0?d.cycles:''}</div>
+              <div style={{width:36,fontSize:9,color:d.cycles>0?'#ffffff':C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.cycles>0?d.cycles:''}</div>
             </div>;})}
           </div>
           <div style={{display:'flex',justifyContent:'space-between',marginTop:6,padding:'6px 0',borderTop:'1px solid '+C.border}}>
-            <div style={{fontSize:8,color:'#8a9aaa',fontFamily:F}}>Total: <span style={{color:C.accent,fontWeight:700}}>{hourlyCycles.reduce(function(a,b){return a+b.cycles;},0)}</span></div>
-            <div style={{fontSize:8,color:'#8a9aaa',fontFamily:F}}>Peak: <span style={{color:C.accent,fontWeight:700}}>{(function(){var mx=0,mh='';for(var q=0;q<hourlyCycles.length;q++){if(hourlyCycles[q].cycles>mx){mx=hourlyCycles[q].cycles;mh=hourlyCycles[q].hour;}}return mx+' ('+mh+')';})()}</span></div>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Total: <span style={{color:C.accent,fontWeight:700}}>{hourlyCycles.reduce(function(a,b){return a+b.cycles;},0)}</span></div>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Peak: <span style={{color:C.accent,fontWeight:700}}>{(function(){var mx=0,mh='';for(var q=0;q<hourlyCycles.length;q++){if(hourlyCycles[q].cycles>mx){mx=hourlyCycles[q].cycles;mh=hourlyCycles[q].hour;}}return mx+' ('+mh+')';})()}</span></div>
           </div>
         </Cd>}
         {rawTradesRef.current.length>0&&<TradeAudit trades={rawTradesRef.current} tpPct={parseFloat(tpStr)||1}/>}
