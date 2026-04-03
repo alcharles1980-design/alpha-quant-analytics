@@ -1562,80 +1562,48 @@ function ObjectivesPage(p){
           <p><span style={{color:C.gold}}>&#9679;</span> Historical lookback across multiple days for pattern validation</p>
         </div>
       </div>
-    </CollapseStage><CollapseStage title="Stage 3" sub="Correlation and Coefficient Detection" badge="Future Stage" badgeColor={C.purple} badgeBg={'#9d5cff20'}>
+    </CollapseStage><CollapseStage title="Stage 3" sub="Correlation and Coefficient Detection" badge="In Progress" badgeColor={C.purple} badgeBg={'#9d5cff20'}>
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:6}}>
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Objective</p>
-        <p style={{marginBottom:14}}>Use machine learning to discover which market factors are the strongest predictors of the optimal profit taker for each hour of the trading day. Stage 2 tells us what the best TP% was looking back. Stage 3 answers: what measurable inputs could have predicted it in advance?</p>
+        <p style={{marginBottom:14}}>Discover which observable market conditions predict the optimal take-profit percentage. Stage 2 tells us what the best TP% was looking back. Stage 3 answers: what measurable inputs could have predicted it in advance? This is structured as two independent correlation analyses.</p>
 
-        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>The Concept: What is Correlation and Coefficient Detection?</p>
+        <div style={{padding:'12px',background:C.accentDim,border:'1px solid '+C.accent,borderRadius:8,marginBottom:14}}>
+          <p style={{color:C.accent,fontWeight:800,fontSize:12,marginBottom:8}}>Part 1: Best Flat TP% for the Day</p>
+          <p style={{marginBottom:8,fontSize:9}}>Predict the single best TP% to use as a fixed setting for the entire trading day.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Target variable (Y):</span> The TP% that maximizes total net profit across ALL 16 hours when used as a flat rate for the whole day. Derived from optimal_tp_hourly by summing net_profit across all hours for each TP%, then selecting the TP% with the highest sum.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Features (X):</span> Day-level aggregated market conditions observable before the trading day begins: overnight gap %, VIX at open, previous day ATR%, previous day volume, day of week, pre-market price range, pre-market volume.</p>
+          <p style={{fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Question answered:</span> Given what we know about today before the market opens, what single TP% should we set for the entire day?</p>
+        </div>
+
+        <div style={{padding:'12px',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:8,marginBottom:14}}>
+          <p style={{color:C.blue,fontWeight:800,fontSize:12,marginBottom:8}}>Part 2: Best Hourly Adjusted TP%</p>
+          <p style={{marginBottom:8,fontSize:9}}>Predict the optimal TP% for each specific hour of the trading day, adapting in real-time.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Target variable (Y):</span> The TP% that maximizes net profit for each individual hour. Derived from optimal_tp_hourly by finding the TP% with the highest net_profit for each specific ticker-date-hour combination.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Features (X):</span> Hour-level market microstructure features observable in real-time: current hour ATR%, current hour volume, current hour VWAP, time of day, cumulative volume %, price position vs day open, plus all Part 1 day-level features as context.</p>
+          <p style={{fontSize:9}}><span style={{color:C.txtBright,fontWeight:700}}>Question answered:</span> Given the conditions we can observe RIGHT NOW, what TP% should we use for the next hour?</p>
+        </div>
+
+        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Why Two Parts?</p>
+        <p style={{marginBottom:14}}>Part 1 is the simpler question with fewer features but provides a baseline. If the flat best TP% is predictable from day-level features, the system can set a good starting point before the market opens. Part 2 is the harder question with more features but captures the intraday dynamics that Stage 2 proved exist. The combination gives the system both a strong opening position and the ability to adapt throughout the day.</p>
+
+        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Data Pipeline</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:14}}>
-          <p style={{marginBottom:6}}>In simple terms, correlation means two things tend to move together. If high VIX days consistently produce a higher optimal TP%, that is a positive correlation. If low volume hours consistently produce a lower optimal TP%, that is also a correlation.</p>
-          <p style={{marginBottom:6}}>A coefficient is the strength of that relationship expressed as a number. A coefficient of 0.9 means the factor is a very strong predictor. A coefficient of 0.1 means it barely matters. Stage 3 calculates these numbers for every factor so we know exactly which inputs matter most and which can be ignored.</p>
-          <p>Machine learning automates this discovery process. Instead of manually testing each factor one by one, the ML model examines all factors simultaneously and finds patterns that would be impossible to spot by hand.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent}}>1.</span> <span style={{color:C.txtBright}}>Build Data Set</span> (Stage 3 tool) extracts 22 hourly features from Polygon tick data into hourly_features table</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent}}>2.</span> <span style={{color:C.txtBright}}>Hourly Optimal TP% Finder</span> (Stage 2 tool) computes 100 TP% x 16 hours matrix into optimal_tp_hourly table</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent}}>3.</span> <span style={{color:C.txtBright}}>Correlation Engine</span> joins both tables, computes Part 1 (day-level) and Part 2 (hour-level) correlation coefficients</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent}}>4.</span> <span style={{color:C.txtBright}}>Feature Importance</span> ranks which features are strongest predictors, identifies which can be ignored</p>
         </div>
-
-        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>How It Works</p>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 1: Build the Training Dataset</p>
-          <p style={{fontSize:9}}>Using data from Stage 2, the system compiles a dataset where each row represents one hour of one trading day. For each row, we know the optimal TP% that was identified (our target variable) and dozens of measurable inputs (our features) that were observable before that hour began.</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 2: Define the Feature Set</p>
-          <p style={{marginBottom:6,fontSize:9}}>Features are the measurable inputs the model examines. Examples relevant to our system:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>VIX level at market open</span> - Does overall market fear predict wider or tighter optimal TP%?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Previous day ATR %</span> - Does yesterday's volatility predict today's optimal settings?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Previous hour cycle count</span> - Does recent oscillation frequency predict the next hour?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Time of day</span> - Is 10:00 AM consistently different from 2:00 PM?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Day of week</span> - Do Mondays behave differently from Fridays?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Pre-market price change %</span> - Does the gap up or down predict intraday oscillation behavior?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Volume ratio vs 20-day average</span> - Is unusual volume a predictor of optimal TP%?</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Previous hour's optimal TP%</span> - Does the best setting tend to persist or revert?</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 3: Train the Model</p>
-          <p style={{marginBottom:6,fontSize:9}}>The machine learning model (such as gradient boosted trees or a neural network) is trained on the historical dataset. It learns the relationships between the input features and the optimal TP% output. For example, it might discover:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.txtBright}}>"When VIX is above 25 AND the previous hour had more than 40 cycles AND it is between 10:00-11:00 AM, the optimal TP% is typically 0.6-0.8%."</p>
-          <p style={{fontSize:9}}>These are the kinds of multi-factor patterns that are impossible for a human to detect manually across thousands of data points but are straightforward for machine learning.</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 4: Rank Feature Importance</p>
-          <p style={{marginBottom:6,fontSize:9}}>After training, the model outputs a ranked list of which features matter most. This is the core deliverable of Stage 3. For example, the ranking might reveal:</p>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'8px',marginBottom:6}}>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"1. Previous hour cycle count    coefficient: 0.34"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"2. VIX level                    coefficient: 0.22"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"3. Time of day                  coefficient: 0.18"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"4. Previous day ATR %           coefficient: 0.12"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"5. Pre-market gap %             coefficient: 0.08"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c'}}>{"6. Day of week                  coefficient: 0.03"}</p>
-          </div>
-          <p style={{fontSize:9}}>This tells us that the previous hour's cycle count is the single best predictor (coefficient 0.34), while day of week barely matters (0.03). This ranking directly informs which data inputs the live trading system should prioritize.</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 5: Validate with Out-of-Sample Testing</p>
-          <p style={{fontSize:9}}>The model is trained on historical data but tested on separate data it has never seen. This prevents overfitting, which is when a model memorizes past patterns but fails on new data. If the model predicts optimal TP% accurately on unseen days, we can trust its feature rankings and use them for live decision-making.</p>
-        </div>
-
-        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>What This Means in Simple Terms</p>
-        <p style={{marginBottom:14}}>Imagine you are a weather forecaster trying to predict rain. You have hundreds of possible inputs: temperature, humidity, wind speed, cloud type, season, air pressure, and more. Correlation detection tells you which of these inputs actually matter for predicting rain and how much each one contributes. You might discover that humidity and air pressure together predict 80% of rain events, while wind speed and season add very little. Stage 3 does the same thing but for predicting the optimal profit taker setting.</p>
-
-        <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Why This Is Critical for Edge Detection</p>
-        <p style={{marginBottom:14}}>Stage 1 measures cycles. Stage 2 finds the optimal TP% looking backward. Stage 3 is the bridge to forward-looking prediction. Once we know which factors predict the optimal TP%, the live Alpha Trader System can observe those factors in real-time and adjust the profit taker before each hour begins, rather than reacting after the fact. This transforms the system from a backward-looking analysis tool into a forward-looking edge detection engine.</p>
 
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Deliverables</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Feature importance rankings with coefficient values</p>
-          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Correlation matrix across all measured factors</p>
-          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> ML model accuracy metrics on out-of-sample data</p>
-          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Per-stock and per-hour factor sensitivity analysis</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Part 1: Feature importance rankings for best flat daily TP%</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Part 2: Feature importance rankings for best hourly adjusted TP%</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Correlation coefficients for all 22 features against both targets</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold}}>&#9679;</span> Out-of-sample validation (train on past days, test on recent days)</p>
           <p><span style={{color:C.gold}}>&#9679;</span> Predictive model for real-time TP% recommendation</p>
         </div>
       </div>
-    </CollapseStage><CollapseStage title="Stage 4" sub="Live Adaptive Profit Taker Engine" badge="Future Stage" badgeColor={C.gold} badgeBg={'#ffb02020'}>
+        </CollapseStage><CollapseStage title="Stage 4" sub="Live Adaptive Profit Taker Engine" badge="Future Stage" badgeColor={C.gold} badgeBg={'#ffb02020'}>
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:6}}>
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Objective</p>
         <p style={{marginBottom:14}}>Take the predictive model and feature rankings from Stage 3 and deploy them into the live Alpha Trader System. The system will automatically adjust the profit taker percentage at the start of each hour based on real-time market conditions, achieving a measurable edge over a fixed profit taker approach.</p>
@@ -4006,83 +3974,75 @@ function CorrAnalysisPage(p){
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Correlation Analysis Logic</div>
     </div>
     <Cd glow={true}>
-      <SectionHead title="Stage 3: Correlation and Coefficient Analysis" sub="Finding predictive signals for optimal TP% selection" info="Stage 3 uses two independent data sources to discover which observable market conditions predict the optimal take-profit percentage for each hour. The goal is to move from hindsight (Stage 2: what TP% SHOULD we have used?) to foresight (Stage 3: what TP% SHOULD we use next hour?)."/>
+      <SectionHead title="Stage 3: Correlation Engine" sub="Two-part analysis for predicting optimal TP%" info="Stage 3 discovers which observable market conditions predict the optimal take-profit percentage. Two independent analyses target different prediction horizons: daily (Part 1) and hourly (Part 2)."/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:8,marginBottom:8}}>
-        <p style={{marginBottom:6}}>Stage 2 produced the training data: for each ticker, each day, each hour, we know which TP% was optimal. Stage 3 asks: <span style={{color:C.accent,fontWeight:700}}>what market conditions at the time predicted that optimal TP%?</span></p>
-        <p>Two independent approaches are used. Each provides a different lens on the same question, and their agreement or disagreement is itself a signal.</p>
+        <p style={{marginBottom:6}}>Stage 2 produced the answer key: for every ticker-day-hour, we know which TP% was optimal. Stage 3 asks: <span style={{color:C.accent,fontWeight:700}}>what conditions at the time predicted that optimal TP%?</span></p>
+        <p>Two correlation analyses are run independently. Part 1 predicts a single daily setting. Part 2 predicts hourly adjustments. Together they give the system both a strong opening position and the ability to adapt.</p>
       </div>
     </Cd>
     <Cd>
-      <SectionHead title="Approach 1: Market Microstructure Features" sub="Correlating observable market data with optimal TP% from Polygon tick data"/>
+      <div style={{display:'inline-block',background:C.accentDim,border:'1px solid '+C.accent,borderRadius:4,padding:'3px 10px',fontSize:8,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>PART 1</div>
+      <SectionHead title="Best Flat TP% for the Day" sub="Predict the single best TP% to use all day"/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Objective</p>
-          <p style={{marginBottom:6}}>Find features from publicly observable market data (Polygon trade ticks, OHLC, volume) that correlate with which TP% produces the most cycles and profit in each hour. These features must be available BEFORE the hour starts, so they can be used for prediction.</p>
-          <p style={{color:C.gold,fontWeight:700}}>Key question: what do we know at 9:59 AM that predicts the best TP% for the 10:00 AM hour?</p>
-        </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Candidate Features (X variables)</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Temporal:</span> Hour of day, day of week, minutes since market open. These capture the structural session-based TP% regime already observed in Stage 2 data (pre-market high TP%, RTH low TP%, post-market medium TP%).</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Lagged Volatility:</span> Previous hour ATR%, ATR dollar, high-low range. From cached_seasonality or computed from Polygon ticks. Measures how much the stock moved -- higher volatility typically correlates with wider optimal TP%.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Lagged Volume:</span> Previous hour trade count and share volume. High volume = more oscillation = tighter TP% tends to be optimal (more cycles at smaller targets).</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Price Position:</span> Current price relative to day open, overnight gap size, distance from VWAP. Indicates whether the stock is trending or range-bound.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Momentum Indicators:</span> Direction and magnitude of price change over prior 1-3 hours. Trending markets favor wider TP%, mean-reverting markets favor tighter TP%.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Cross-Asset Signals:</span> VIX level, sector ETF momentum (XLK for tech, XLE for energy), broad market direction (SPY). Market-wide volatility regimes affect all stocks.</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Microstructure:</span> Bid-ask spread width, trade size distribution, proportion of odd-lot trades. These measure market quality and liquidity -- tighter spreads may enable tighter TP%.</p>
-        </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Target Variable (Y)</p>
-          <p style={{marginBottom:4}}>The optimal TP% for each hour, as determined by Stage 2 scanning. Specifically: the TP% value (0.01-1.00%) that produced the highest net profit for that ticker in that hour on that day.</p>
-          <p>Source: optimal_tp_hourly table, filtered to the best TP% per hour (highest net_profit).</p>
+          <p style={{marginBottom:4}}>The single TP% that maximizes total net profit across ALL 16 hours when used as a flat rate for the entire day.</p>
+          <p style={{marginBottom:4}}>Derived from <span style={{color:C.blue}}>optimal_tp_hourly</span>: for each ticker-date, sum net_profit across all 16 hours for each of the 100 TP% values (0.01-1.00%). The TP% with the highest sum is the best flat TP% for that day.</p>
+          <p><span style={{color:C.gold}}>One Y value per stock-day.</span> Example: CCL on 03/23 -> best flat TP% = 0.15%</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Features (X) -- Day-Level</p>
+          <p style={{marginBottom:4}}>Conditions observable BEFORE the trading day begins:</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Pre-market:</span> Overnight gap %, pre-market ATR%, pre-market volume, pre-market price range</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Context:</span> VIX at open, day of week, previous day ATR%, previous day close</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Aggregated:</span> Day open, expected volume (from historical average), stock-specific volatility regime</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Method</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 1:</span> Build a feature matrix. Each row = one ticker-day-hour. Columns = all candidate features + the optimal TP% (target). This requires joining optimal_tp_hourly with cached_seasonality and computing lagged features.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 2:</span> Compute pairwise correlations (Pearson, Spearman) between each feature and the optimal TP%. Rank features by absolute correlation strength. Visualize as correlation heatmap.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 3:</span> Train simple models (Decision Tree, LightGBM) to predict optimal TP% from the top features. Measure prediction accuracy vs naive baseline (just using hour-of-day alone).</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.blue}}>Step 4:</span> Feature importance analysis. Which features add predictive power beyond time-of-day? If none do, then the Stage 2 hourly schedule IS the model. If some do, those features become inputs to the Stage 4 live engine.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 1:</span> Aggregate hourly_features to day level (avg ATR%, total volume, open/close, gap)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 2:</span> Compute best flat TP% per stock-day from optimal_tp_hourly</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 3:</span> Compute Pearson correlation between each day-level feature and best flat TP%</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.blue}}>Step 4:</span> Rank features by correlation strength. Identify top predictors.</p>
         </div>
       </div>
     </Cd>
     <Cd>
-      <SectionHead title="Approach 2: Live Trading System Analysis" sub="Mining the Beta Proprietary Trading System's executed trade data"/>
+      <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'3px 10px',fontSize:8,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>PART 2</div>
+      <SectionHead title="Best Hourly Adjusted TP%" sub="Predict the optimal TP% for each specific hour"/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Objective</p>
-          <p style={{marginBottom:6}}>Access the Beta Proprietary Trading System's actual executed trade database via API to analyze real trading performance. Unlike Approach 1 which uses simulated cycle counts from historical tick data, this approach uses actual fills, actual slippage, actual timing, and actual P&L from the live grid bot running on Alpaca Markets.</p>
-          <p style={{color:C.gold,fontWeight:700}}>This is the ground truth -- what actually happened vs what the simulation predicted would happen.</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Target Variable (Y)</p>
+          <p style={{marginBottom:4}}>The TP% that maximizes net profit for each INDIVIDUAL hour.</p>
+          <p style={{marginBottom:4}}>Derived from <span style={{color:C.blue}}>optimal_tp_hourly</span>: for each ticker-date-hour, find the TP% with the highest net_profit. This is the best TP% that should have been used during that specific hour.</p>
+          <p><span style={{color:C.gold}}>One Y value per stock-day-hour.</span> Example: CCL on 03/23 at 9AM -> best hourly TP% = 0.08%</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Data Source</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>System:</span> Live algorithmic grid trading bot on Alpaca Markets, written in Go with Redis trade log storage, running on GCP.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Access:</span> API connection to the Beta system's Redis database or exported trade logs. Each trade record contains: ticker, entry price, exit price, entry time, exit time, shares, realized P&L, grid configuration ID, and range parameters.</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Coverage:</span> ~70 active grid configurations across leveraged ETFs (SOXL, TQQQ, LABU) and large-cap equities, using limit-only orders at $0.01 price increments.</p>
-        </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Analysis Dimensions</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Cycle Duration:</span> How long does each buy-to-sell cycle take? Distribution by hour, by ticker, by market conditions. Faster cycles = more compounding opportunity.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Fill Rate:</span> What percentage of limit orders actually fill? Unfilled orders are invisible in tick simulation but critical in live execution. Fill rates by price level, time of day, and volatility regime.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Slippage Analysis:</span> Difference between theoretical cycle profit (from simulation) and actual realized P&L. Identifies where the simulation over- or under-estimates reality.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Range Migration:</span> When price moves away from an active range, positions become dormant. Frequency and duration of dormancy periods. Capital efficiency: what fraction of deployed capital is actively cycling vs sitting idle?</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Configuration Performance:</span> Across the ~70 configurations, which grid parameters (range width, TP%, capital per level) produce the best risk-adjusted returns? Identify the configurations that consistently outperform.</p>
-          <p style={{paddingLeft:8}}><span style={{color:C.blue}}>Compounding Effectiveness:</span> The bot uses fractional compounding per completed cycle. Measure actual compound growth rate vs theoretical. Does compounding at $0.01 increments deliver meaningful capital growth over time?</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Features (X) -- Hour-Level</p>
+          <p style={{marginBottom:4}}>Conditions observable in REAL-TIME during the trading day:</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Current hour:</span> ATR%, volume, trades, VWAP, price position vs day open, cumulative volume %</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Temporal:</span> Hour of day, day of week, minutes since market open</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Day context:</span> All Part 1 features (overnight gap, VIX, prev day ATR%) as additional columns</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Lagged:</span> Previous hour ATR%, volume change, price momentum (requires sequential ordering)</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>How This Connects to TP% Optimization</p>
-          <p style={{marginBottom:4}}>The live system data provides calibration for the simulation. If the simulation says 0.17% TP is optimal but live execution shows 0.17% cycles take 45 minutes to complete while 0.25% cycles complete in 12 minutes, the effective profit rate (profit per unit time) may favor the wider TP%. This is invisible in pure cycle-count analysis.</p>
-          <p>Approach 2 discovers characteristics like: which hours have the fastest cycle completion, where slippage is lowest, which configurations compound most effectively. These insights refine the TP% schedule from Approach 1 with real execution data.</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Method</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 1:</span> Join hourly_features with optimal_tp_hourly on ticker + date + hour</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 2:</span> For each row, find the best TP% (highest net_profit for that hour)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 3:</span> Compute Pearson correlation between each hourly feature and best hourly TP%</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>Step 4:</span> Compare with Part 1: does hourly adjustment add predictive power beyond the flat daily rate?</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.blue}}>Step 5:</span> Feature importance ranking. If time-of-day alone explains most variance, the Stage 2 schedule IS the model. If other features add power, those become live engine inputs.</p>
         </div>
       </div>
     </Cd>
     <Cd>
-      <SectionHead title="Convergence: Where Both Approaches Meet" sub="Cross-validating simulation with reality"/>
+      <SectionHead title="Data Requirements" sub="What's needed to run the correlation engine"/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>The Two-Lens Framework</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Agreement:</span> When both approaches recommend the same TP% for an hour, confidence is high. The simulation and reality align.</p>
-          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.warn}}>Disagreement:</span> When simulation says 0.17% but live data shows 0.30% performs better, the gap reveals execution effects (slippage, fill rates, timing) that the simulation misses.</p>
-          <p style={{marginBottom:6,paddingLeft:8}}><span style={{color:C.blue}}>Calibration:</span> Use the disagreement to build a correction factor: adjusted_TP% = simulated_optimal_TP% x calibration_coefficient. This coefficient becomes a learned parameter that improves over time.</p>
-          <p style={{color:C.accent,fontWeight:700}}>The final Stage 3 output is a feature-weighted TP% prediction model, calibrated against live execution data, ready for Stage 4 deployment.</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Both tables must have data for the same ticker-dates:</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>hourly_features</span> -- 22 features per hour, from Build Data Set (Stage 3 tool)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.blue}}>optimal_tp_hourly</span> -- 1,600 rows per day (100 TP% x 16 hours), from Hourly Optimal TP% Finder (Stage 2 tool)</p>
+          <p style={{marginBottom:8,paddingLeft:8}}><span style={{color:C.gold}}>Minimum:</span> 5+ stock-days with both tables populated. More data = more reliable correlations.</p>
+          <p style={{color:C.txtBright,fontWeight:700}}>Current status: Use Database Management to check which ticker-dates have both datasets ready.</p>
         </div>
       </div>
     </Cd>
