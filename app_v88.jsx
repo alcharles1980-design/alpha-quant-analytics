@@ -2777,7 +2777,7 @@ function Splash(p){
   useEffect(function(){setTimeout(function(){setOpacity(1);},100);},[]);
   useEffect(function(){if(unlocked)setTimeout(function(){p.onDone();},1200);},[unlocked]);
   var submit=function(){if(pw==='BT'){setPwError(false);setUnlocked(true);}else{setPwError(true);}};
-  return <div style={{background:'linear-gradient(160deg,#0a1628 0%,#122040 30%,#1a2d5a 50%,#122040 70%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',fontFamily:F,transition:'opacity 0.8s',opacity:opacity,paddingTop:'22vh',paddingLeft:20,paddingRight:20,paddingBottom:20,position:'relative',overflow:'hidden'}}>
+  return <div style={{background:'linear-gradient(160deg,#0a1628 0%,#122040 30%,#1a2d5a 50%,#122040 70%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',fontFamily:F,transition:'opacity 0.8s',opacity:opacity,paddingTop:'18vh',paddingLeft:20,paddingRight:20,paddingBottom:20,position:'relative',overflow:'hidden'}}>
     <div style={{position:'absolute',top:0,left:0,right:0,bottom:0,background:'radial-gradient(ellipse at 30% 20%,rgba(30,60,120,0.4) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(20,40,90,0.3) 0%,transparent 50%)',pointerEvents:'none'}}></div>
     <div style={{color:'#ffffff',fontSize:22,fontWeight:800,letterSpacing:4,textTransform:'uppercase',marginBottom:8,textShadow:'0 0 30px rgba(255,255,255,0.5),0 0 60px rgba(120,180,255,0.25),0 2px 4px rgba(0,0,0,0.3)',position:'relative',zIndex:1}}>Alpha Quant Analytics</div>
     <div style={{color:C.accent,fontSize:13,fontWeight:600,letterSpacing:2,marginBottom:24}}>Beta Growth Holdings</div>
