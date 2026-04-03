@@ -3080,44 +3080,6 @@ function OptimalTPPage(p){
   var sd1=useState(''),startDate=sd1[0],setStartDate=sd1[1];
   var sd2=useState(''),endDate=sd2[0],setEndDate=sd2[1];
   var mr=useState(null),multiResults=mr[0],setMultiResults=mr[1];
-  var runRange=async function(){
-    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
-    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
-    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
-    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
-    try{
-      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
-      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
-      if(!days.length){setErr('No trading days in range');setLd(false);return;}
-      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
-      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
-      for(var di=0;di<days.length;di++){
-        var day=days[di];
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
-        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-        var pages=0;
-        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
-        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
-        allTrades=filterOutlierTicks(allTrades);
-        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
-        await new Promise(function(r){setTimeout(r,50);});
-        var res=analyzePriceLevels(allTrades,tp);
-        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
-        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
-        var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
-        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
-        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
-      }
-      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
-      var totalNet=0;var totalGross=0;var totalFees=0;
-      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
-      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
-      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
-      setProg('');
-    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
-  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
 
@@ -3380,44 +3342,6 @@ function OptimalTPPage(p){
 }
 
 function AdaptiveOptPage(p){
-  var runRange=async function(){
-    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
-    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
-    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
-    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
-    try{
-      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
-      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
-      if(!days.length){setErr('No trading days in range');setLd(false);return;}
-      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
-      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
-      for(var di=0;di<days.length;di++){
-        var day=days[di];
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
-        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-        var pages=0;
-        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
-        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
-        allTrades=filterOutlierTicks(allTrades);
-        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
-        await new Promise(function(r){setTimeout(r,50);});
-        var res=analyzePriceLevels(allTrades,tp);
-        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
-        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
-        var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
-        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
-        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
-      }
-      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
-      var totalNet=0;var totalGross=0;var totalFees=0;
-      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
-      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
-      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
-      setProg('');
-    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
-  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -3558,44 +3482,6 @@ function HourlyOptimalPage(p){
   var s7=useState(null),results=s7[0],setResults=s7[1];
   var s8=useState(null),err=s8[0],setErr=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
-  var runRange=async function(){
-    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
-    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
-    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
-    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
-    try{
-      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
-      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
-      if(!days.length){setErr('No trading days in range');setLd(false);return;}
-      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
-      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
-      for(var di=0;di<days.length;di++){
-        var day=days[di];
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
-        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-        var pages=0;
-        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
-        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
-        allTrades=filterOutlierTicks(allTrades);
-        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
-        await new Promise(function(r){setTimeout(r,50);});
-        var res=analyzePriceLevels(allTrades,tp);
-        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
-        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
-        var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
-        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
-        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
-      }
-      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
-      var totalNet=0;var totalGross=0;var totalFees=0;
-      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
-      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
-      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
-      setProg('');
-    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
-  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -3867,44 +3753,6 @@ function BuildDataSetPage(p){
   var s5=useState(null),err=s5[0],setErr=s5[1];
   var s6=useState(''),prog=s6[0],setProg=s6[1];
   var s7=useState(null),stats=s7[0],setStats=s7[1];
-  var runRange=async function(){
-    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
-    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
-    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
-    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
-    try{
-      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
-      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
-      if(!days.length){setErr('No trading days in range');setLd(false);return;}
-      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
-      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
-      for(var di=0;di<days.length;di++){
-        var day=days[di];
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
-        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-        var pages=0;
-        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
-        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
-        allTrades=filterOutlierTicks(allTrades);
-        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
-        await new Promise(function(r){setTimeout(r,50);});
-        var res=analyzePriceLevels(allTrades,tp);
-        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
-        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
-        var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
-        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
-        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
-      }
-      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
-      var totalNet=0;var totalGross=0;var totalFees=0;
-      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
-      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
-      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
-      setProg('');
-    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
-  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -4768,44 +4616,6 @@ function RawDataPage(p){
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState(''),prog=s5[0],setProg=s5[1];
   var s6=useState(null),stats=s6[0],setStats=s6[1];
-  var runRange=async function(){
-    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
-    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
-    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
-    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
-    try{
-      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
-      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
-      if(!days.length){setErr('No trading days in range');setLd(false);return;}
-      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
-      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
-      for(var di=0;di<days.length;di++){
-        var day=days[di];
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
-        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
-        var pages=0;
-        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
-        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
-        allTrades=filterOutlierTicks(allTrades);
-        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
-        await new Promise(function(r){setTimeout(r,50);});
-        var res=analyzePriceLevels(allTrades,tp);
-        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
-        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
-        var grossPC=fq*tpDollar;var netPC=grossPC-af;
-        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
-        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
-        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
-      }
-      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
-      var totalNet=0;var totalGross=0;var totalFees=0;
-      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
-      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
-      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
-      setProg('');
-    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
-  };
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -5019,6 +4829,45 @@ function App(){
   var s28=useState(''),rangeStart=s28[0],setRangeStart=s28[1];
   var s29=useState(''),rangeEnd=s29[0],setRangeEnd=s29[1];
   var s30=useState(null),rangeResults=s30[0],setRangeResults=s30[1];
+  var runRange=async function(){
+    if(!pgKey){setErr('Set your Polygon API key in Settings');return;}
+    var tp=parseFloat(tpStr);if(!tp||tp<=0){setErr('Enter a valid take profit %');return;}
+    if(!rangeStart||!rangeEnd){setErr('Select start and end dates');return;}
+    setLd(true);setErr(null);setResult(null);setRangeResults(null);setPriceData([]);setOhlc(null);setDataSource('');setHourlyCycles([]);setHoldTimes([]);setProg('Preparing date range...');
+    try{
+      var days=[];var d=new Date(rangeStart+'T12:00:00Z');var e=new Date(rangeEnd+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+      if(!days.length){setErr('No trading days in range');setLd(false);return;}
+      var capVal=parseFloat(capPerLevel)||1;var feeVal=parseFloat(feePerCycle)||0.005;
+      var allDays=[];var grandTotalCycles=0;var grandTotalTrades=0;
+      for(var di=0;di<days.length;di++){
+        var day=days[di];
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+        var allTrades=[],url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+day+'T04:00:00.000Z&timestamp.lt='+day+'T23:59:59.000Z&limit=50000&sort=timestamp&order=asc&apiKey='+pgKey;
+        var pages=0;
+        while(url){var r2=await fetch(url);if(!r2.ok)throw new Error('Polygon error '+r2.status+' on '+day);var dd=await r2.json();if(dd.results)for(var i=0;i<dd.results.length;i++){var t=dd.results[i];allTrades.push({price:t.price,size:t.size,ts:t.sip_timestamp||t.participant_timestamp});}url=dd.next_url?(dd.next_url+'&apiKey='+pgKey):null;pages++;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | '+allTrades.length.toLocaleString()+' trades (pg '+pages+')');}
+        if(!allTrades.length){allDays.push({day:day,trades:0,cycles:0,activeLevels:0,totalLevels:0});continue;}
+        allTrades=filterOutlierTicks(allTrades);
+        if(session==='rth'){allTrades=allTrades.filter(function(t2){var tsR=t2.ts;var tsMs;if(tsR>1e15)tsMs=tsR/1e6;else if(tsR>1e12)tsMs=tsR/1e3;else tsMs=tsR;var d2=new Date(tsMs);var etMin=(d2.getUTCHours()-4)*60+d2.getUTCMinutes();if(etMin<0)etMin+=1440;return etMin>=570&&etMin<960;});}
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Analyzing '+allTrades.length.toLocaleString()+' trades...');
+        await new Promise(function(r){setTimeout(r,50);});
+        var res=analyzePriceLevels(allTrades,tp);
+        var sp=allTrades[0].price;var fq=capVal/sp;var af=feeVal*fq;
+        var tpDollar=Math.round((Math.ceil(sp*(1+tp/100)*100)/100-sp)*100)/100;if(tpDollar<0.01)tpDollar=0.01;
+        var grossPC=fq*tpDollar;var netPC=grossPC-af;
+        var dayNet=res.summary.totalCycles*netPC;var dayGross=res.summary.totalCycles*grossPC;var dayFees=res.summary.totalCycles*af;
+        allDays.push({day:day,trades:allTrades.length,cycles:res.summary.totalCycles,activeLevels:res.summary.activeLevels,totalLevels:res.summary.totalLevels,sharePrice:sp,netProfit:dayNet,grossProfit:dayGross,fees:dayFees,netPC:netPC,tpDollar:tpDollar});
+        grandTotalCycles+=res.summary.totalCycles;grandTotalTrades+=allTrades.length;
+      }
+      var validDays=allDays.filter(function(d2){return d2.cycles>0;});
+      var totalNet=0;var totalGross=0;var totalFees=0;
+      for(var vi=0;vi<allDays.length;vi++){totalNet+=allDays[vi].netProfit||0;totalGross+=allDays[vi].grossProfit||0;totalFees+=allDays[vi].fees||0;}
+      var avgCycles=validDays.length>0?Math.round(grandTotalCycles/validDays.length):0;
+      setRangeResults({days:allDays,totalDays:days.length,validDays:validDays.length,totalCycles:grandTotalCycles,totalTrades:grandTotalTrades,avgCycles:avgCycles,totalNet:totalNet,totalGross:totalGross,totalFees:totalFees,ticker:ticker.toUpperCase(),tp:tp,cap:capVal,fee:feeVal});
+      setProg('');
+    }catch(e2){setErr(e2.message);setProg('');}finally{setLd(false);}
+  };
+
 
   var loadFullData=async function(){
     if(!pgKey)return;
