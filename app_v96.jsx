@@ -3122,7 +3122,7 @@ function OptimalTPPage(p){
       setProg('Scanning all viable TP% values across '+allTrades.length.toLocaleString()+' trades...');
       await new Promise(function(r){setTimeout(r,50);});
       var capVal=parseFloat(cap)||1;var feeVal=parseFloat(fee)||0.005;
-      var res=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Scanning TP% '+ti+'/100...');});
+      var res=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Scanning TP% '+ti+'/100 ('+allTrades.length.toLocaleString()+' trades)...');});
       setResults({scan:res,ticker:ticker.toUpperCase(),date:date,trades:allTrades.length,sharePrice:allTrades[0].price,cap:capVal,fee:feeVal});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
@@ -3152,7 +3152,7 @@ function OptimalTPPage(p){
         allTrades=filterOutlierTicks(allTrades);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning '+allTrades.length.toLocaleString()+' trades'+(allTrades.length>200000?' (heavy stock, may take several minutes)':'')+'...');
         await new Promise(function(r){setTimeout(r,100);});
-        var scan=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ti+'/100');});
+        var scan=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ti+'/100 ('+allTrades.length.toLocaleString()+' trades)');});
         allDayResults.push({day:day,trades:allTrades.length,scan:scan,sharePrice:allTrades[0].price});
       }
       var validDays=allDayResults.filter(function(d2){return d2.scan&&d2.scan.results.length>0;});
