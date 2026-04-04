@@ -191,6 +191,17 @@ var SB={
       await fetch(SB_URL+'/rest/v1/hourly_features',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(rows)});
     }catch(e){console.error('SB save hourly features error:',e);}
   },
+  saveHoldTimes:async function(ticker,date,tpPct,session,holdData){
+    if(!SB_URL||!SB_KEY||!holdData||!holdData.length)return;
+    try{await fetch(SB_URL+'/rest/v1/cached_hourly_hold_times?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+session,{method:'DELETE',headers:getSbHeaders()});
+    var rows=holdData.filter(function(h){return h.count>0;}).map(function(h){return{ticker:ticker,trade_date:date,hour:h.hourNum,tp_pct:tpPct,session_type:session,avg_duration:h.avg||0,min_duration:h.min||0,max_duration:h.max||0,cycle_count:h.count||0};});
+    if(rows.length>0)await fetch(SB_URL+'/rest/v1/cached_hourly_hold_times',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(rows)});
+    }catch(e){console.error('SB save hold times:',e);}
+  },
+  loadHoldTimes:async function(ticker,start,end,tpPct,session){
+    if(!SB_URL||!SB_KEY)return null;
+    try{var h=getSbHeaders();h['Range']='0-9999';var r=await fetch(SB_URL+'/rest/v1/cached_hourly_hold_times?ticker=eq.'+ticker+'&trade_date=gte.'+start+'&trade_date=lte.'+end+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+session+'&select=trade_date,hour,avg_duration,cycle_count&order=trade_date.asc,hour.asc',{headers:h});return r.ok?await r.json():null;}catch(e){return null;}
+  },
   saveSeasonality:async function(ticker,date,chartData,sessions){
     if(!SB_URL||!SB_KEY)return;
     try{
@@ -673,6 +684,7 @@ function TrendPage(p){
   var s4=useState(null),data=s4[0],setData=s4[1];
   var s5=useState(false),loading=s5[0],setLoading=s5[1];
   var s6=useState(null),err=s6[0],setErr=s6[1];
+  var htS=useState(null),holdTimeData=htS[0],setHoldTimeData=htS[1];
 
 
   var run=async function(){
@@ -757,6 +769,15 @@ function TrendPage(p){
         holdProfile=[];for(var hi2=4;hi2<20;hi2++){var hh2=avgHold[hi2];holdProfile.push({hour:hourLabels[hi2]||hi2+'h',hourNum:hi2,avg:hh2.tc>0?Math.round(hh2.tw/hh2.tc*10)/10:0,count:hh2.tc,isRTH:hi2>=9&&hi2<16?1:0});}
       }
       setData({dates:dates,allDates:allDates,hourAvg:hourAvg,maxAtrPct:maxAtrPct,maxVol:maxVol,maxTrades:maxTrades,maxAtr:maxAtr,maxSwing:maxSwing,totalDays:allDates.length,cyclesByDate:cyclesByDate,maxHourlyCycles:maxHourlyCycles,avgHourlyCycles:avgHourlyCycles,hasCycles:cycleRows.length>0,analysisRows:analysisRows,holdProfile:holdProfile});
+    // Load holding time data
+      var htRaw=await SB.loadHoldTimes(ticker.toUpperCase(),startDate,endDate,parseFloat(trendTp)||1,'all');
+      if(htRaw&&htRaw.length>0){
+        var htH={};for(var hh=4;hh<20;hh++)htH[hh]={td:0,tc:0};var htDays={};
+        for(var hi=0;hi<htRaw.length;hi++){var hr2=htRaw[hi];htDays[hr2.trade_date]=true;if(htH[hr2.hour]&&hr2.cycle_count>0){htH[hr2.hour].td+=hr2.avg_duration*hr2.cycle_count;htH[hr2.hour].tc+=hr2.cycle_count;}}
+        var htArr=[];var mxA=0;var tDA=0;var tCA=0;var fH='--';var sH='--';var fV=Infinity;var sV=0;
+        for(var h2=4;h2<20;h2++){var hd2=htH[h2];var av=hd2.tc>0?hd2.td/hd2.tc:0;if(av>mxA)mxA=av;tDA+=hd2.td;tCA+=hd2.tc;var lb=hourLabels[h2]||h2+'h';if(av>0&&av<fV){fV=av;fH=lb+' '+av.toFixed(1)+'m';}if(av>sV){sV=av;sH=lb+' '+av.toFixed(1)+'m';}htArr.push({hour:h2,label:lb,avg:av,cycles:hd2.tc,isRTH:h2>=9&&h2<16});}
+        setHoldTimeData({hourly:htArr,maxAvg:mxA,days:Object.keys(htDays).length,overallAvg:tCA>0?(tDA/tCA).toFixed(1):'--',fastestHr:fH,slowestHr:sH});
+      }else{setHoldTimeData(null);}
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -1092,6 +1113,28 @@ function TrendPage(p){
           </table>
         </div>
       </Cd>
+      {holdTimeData&&holdTimeData.hourly&&<Cd>
+        <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>AVG CYCLE HOLDING DURATION @ {trendTp}% TAKE PROFIT</div>
+        <SectionHead title="Average Cycle Holding Duration by Hour" sub={ticker.toUpperCase()+' | '+startDate+' to '+endDate+' ('+holdTimeData.days+' days)'} info="Average time in minutes between BUY (level activation) and SELL (cycle completion) for each hour, averaged across all days in the range. Shorter = faster capital turnover. Computed from cached_hourly_hold_times, saved during Cycles Analysis date range import."/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10,marginBottom:10}}>
+          <Mt label="Overall Avg" value={holdTimeData.overallAvg+'m'} color={C.blue} size="md"/>
+          <Mt label="Fastest Hour" value={holdTimeData.fastestHr} color={C.accent} size="md"/>
+          <Mt label="Slowest Hour" value={holdTimeData.slowestHr} color={C.gold} size="md"/>
+        </div>
+        <div style={{marginTop:8}}>{holdTimeData.hourly.map(function(h){
+          var pct=holdTimeData.maxAvg>0?(h.avg/holdTimeData.maxAvg*100):0;
+          return <div key={h.hour} style={{display:'flex',alignItems:'center',marginBottom:2}}>
+            <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{h.label}</div>
+            <div style={{flex:1,position:'relative',height:18}}>
+              <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:h.isRTH?C.blue:C.txtDim,borderRadius:'0 3px 3px 0',minWidth:h.avg>0?4:0,opacity:0.8}}></div>
+            </div>
+            <div style={{width:44,fontSize:8,color:h.avg>0?C.blue:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{h.avg>0?h.avg.toFixed(1)+'m':''}</div>
+            <div style={{width:32,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:2,flexShrink:0}}>{h.cycles>0?h.cycles+'c':''}</div>
+          </div>;})}</div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:6,padding:'6px 0',borderTop:'1px solid '+C.border}}>
+          <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Minutes per cycle (m) | Total cycles (c)</div>
+        </div>
+      </Cd>}
     </div>}
   </div>;
 }
@@ -4912,6 +4955,7 @@ function App(){
         for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=getETHourFromMs(ms2);var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
         var chartData=[];for(var h2=4;h2<20;h2++){var hd=hourly[h2];var atr=(hd.high>-Infinity&&hd.low<Infinity)?hd.high-hd.low:0;var atrPct=(hd.low>0&&atr>0)?(atr/hd.low)*100:0;chartData.push({atr:atr,atrPct:atrPct,volume:hd.vol,trades:hd.trades,high:hd.high>-Infinity?hd.high:null,low:hd.low>-Infinity?hd.low:null});}
         await SB.saveSeasonality(ticker.toUpperCase(),day,chartData,sess2);
+        if(filtered.length<500000){var ht=computeCycleHoldTimes(filtered,tp);if(ht&&ht.length>0)await SB.saveHoldTimes(ticker.toUpperCase(),day,tp,session,ht);}
         // Compute and save holding times
         if(filtered.length<500000){
           var ht=computeCycleHoldTimes(filtered,tp);
