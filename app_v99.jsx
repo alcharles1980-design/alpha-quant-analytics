@@ -3389,9 +3389,12 @@ function OptimalTPPage(p){
           <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
           <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:12}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:8}}>
           <div><label style={lS}>$/Level</label><input type="text" inputMode="decimal" value={cap} onChange={function(e){setCap(e.target.value);}} style={iS}/></div>
           <div><label style={lS}>Fee/Share</label><input type="text" inputMode="decimal" value={fee} onChange={function(e){setFee(e.target.value);}} style={iS}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginBottom:12}}>
+          <div><label style={lS}>Current Fixed TP%</label><input type="text" inputMode="decimal" value={currentTp} onChange={function(e){setCurrentTp(e.target.value);}} style={Object.assign({},iS,{border:'1px solid '+C.purple})} placeholder="e.g. 0.10"/></div>
         </div>
         <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#ffb020,#ff8800)',color:loading?C.txtDim:C.bg})}>{loading?'Scanning...':'Scan All TP% Values'}</button>
       </div>}
@@ -3434,6 +3437,30 @@ function OptimalTPPage(p){
           <Mt label="Adj Fee" value={'$'+results.scan.results[0].adjFee.toFixed(4)} color={C.warn} size="md"/>
         </div>
       </Cd>
+      {function(){var curTpVal=parseFloat(currentTp)||0;if(curTpVal<=0)return null;var curResult=null;for(var ci=0;ci<results.scan.results.length;ci++){if(Math.abs(results.scan.results[ci].tpPct-curTpVal)<0.001){curResult=results.scan.results[ci];break;}}if(!curResult)return <Cd><div style={{color:C.warn,fontSize:9,fontFamily:F,textAlign:'center',padding:10}}>Current TP% {curTpVal.toFixed(2)}% not found in scan results (range 0.01%-1.00%)</div></Cd>;var best=results.scan.results[0];var edgeDollar=best.netTotal-curResult.netTotal;var edgePct=curResult.netTotal>0?(edgeDollar/curResult.netTotal*100):0;return <Cd>
+        <SectionHead title="Current vs Optimal" sub={'Your '+curTpVal.toFixed(2)+'% vs best '+best.tpPct.toFixed(2)+'%'}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
+          <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.purple,textAlign:'center'}}>
+            <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Current Fixed</div>
+            <div style={{color:C.purple,fontSize:18,fontWeight:800,fontFamily:F}}>{curTpVal.toFixed(2)+'%'}</div>
+            <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:2}}>{'TP $'+curResult.tpDollar.toFixed(2)}</div>
+            <div style={{color:curResult.netTotal>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+curResult.netTotal.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Net Profit</div>
+          </div>
+          <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,textAlign:'center'}}>
+            <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Optimal</div>
+            <div style={{color:C.gold,fontSize:18,fontWeight:800,fontFamily:F}}>{best.tpPct.toFixed(2)+'%'}</div>
+            <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:2}}>{'TP $'+best.tpDollar.toFixed(2)}</div>
+            <div style={{color:C.accent,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+best.netTotal.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Net Profit</div>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
+          <Mt label="Edge $" value={(edgeDollar>=0?'+$':'$')+edgeDollar.toFixed(2)} color={edgeDollar>0?C.accent:C.warn} size="md"/>
+          <Mt label="Edge %" value={(edgePct>=0?'+':'')+edgePct.toFixed(1)+'%'} color={edgePct>0?C.accent:C.warn} size="md"/>
+          <Mt label="Cycle Diff" value={(best.cycles-curResult.cycles>=0?'+':'')+((best.cycles-curResult.cycles).toLocaleString())} color={best.cycles>curResult.cycles?C.accent:C.warn} size="md"/>
+        </div>
+      </Cd>;}()}
       <Cd>
         <SectionHead title="All Results" sub={results.scan.scanned+' TP% values ranked by net profit'}
 />
@@ -3448,10 +3475,10 @@ function OptimalTPPage(p){
               <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>ROI</th>
             </tr></thead>
             <tbody>{results.scan.results.map(function(r,idx){
-              var isBest=idx===0;var isTop5=idx<5;
-              return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(255,176,32,0.1)':isTop5?'rgba(0,229,160,0.03)':'transparent'}}>
-                <td style={{padding:'5px 2px',color:isBest?C.gold:C.txtDim}}>{idx+1}</td>
-                <td style={{padding:'5px 2px',color:isBest?C.gold:isTop5?C.accent:C.txt,textAlign:'right',fontWeight:isBest?700:400}}>{r.tpPct.toFixed(2)}%</td>
+              var isBest=idx===0;var isTop5=idx<5;var isCurrent=Math.abs(r.tpPct-(parseFloat(currentTp)||0))<0.001;
+              return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCurrent?'rgba(157,92,255,0.15)':isBest?'rgba(255,176,32,0.1)':isTop5?'rgba(0,229,160,0.03)':'transparent'}}>
+                <td style={{padding:'5px 2px',color:isCurrent?C.purple:isBest?C.gold:C.txtDim}}>{isCurrent?'\u25B6':idx+1}</td>
+                <td style={{padding:'5px 2px',color:isCurrent?C.purple:isBest?C.gold:isTop5?C.accent:C.txt,textAlign:'right',fontWeight:isCurrent||isBest?700:400}}>{r.tpPct.toFixed(2)}%</td>
                 <td style={{padding:'5px 2px',color:C.gold,textAlign:'right'}}>{'$'+r.tpDollar.toFixed(2)}</td>
                 <td style={{padding:'5px 2px',color:C.txt,textAlign:'right'}}>{r.cycles}</td>
                 <td style={{padding:'5px 2px',color:r.netTotal>0?C.accent:C.warn,textAlign:'right',fontWeight:isTop5?700:400}}>{'$'+r.netTotal.toFixed(2)}</td>
