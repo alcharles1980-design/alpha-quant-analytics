@@ -3380,7 +3380,7 @@ function OptimalTPPage(p){
           <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,textAlign:'center'}}>
             <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Best Flat TP%</div>
             <div style={{color:C.gold,fontSize:22,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</div>
-            <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:2}}>{'$'+(Math.max(0.01,Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)).toFixed(4)+'/share'}</div>
+            <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:2}}>{'Net $'+(Math.max(0.01,Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)-multiResults.fee).toFixed(4)+'/share'}</div>
             <div style={{color:C.accent,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+multiResults.flatBest.totalNet.toFixed(2)}</div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Total Net Profit</div>
           </div>
@@ -3389,7 +3389,7 @@ function OptimalTPPage(p){
             <div style={{color:C.accent,fontSize:22,fontWeight:800,fontFamily:F}}>{'$'+multiResults.dayAdjustedTotal.toFixed(2)}</div>
             <div style={{color:multiResults.edge>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{(multiResults.edge>=0?'+':'')+multiResults.edgePct.toFixed(1)+'%'}</div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Edge vs Flat</div>
-            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'Avg TP: $'+(function(){var s=0;for(var i=0;i<multiResults.dayBests.length;i++){s+=Math.max(0.01,Math.ceil(multiResults.dayBests[i].sharePrice*(1+multiResults.dayBests[i].bestTp/100)*100)/100-multiResults.dayBests[i].sharePrice);}return (s/multiResults.dayBests.length).toFixed(4);})()+'/share'}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'Avg Net TP: $'+(function(){var s=0;for(var i=0;i<multiResults.dayBests.length;i++){s+=Math.max(0.01,Math.ceil(multiResults.dayBests[i].sharePrice*(1+multiResults.dayBests[i].bestTp/100)*100)/100-multiResults.dayBests[i].sharePrice)-multiResults.fee;}return (s/multiResults.dayBests.length).toFixed(4);})()+'/share'}</div>
           </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
@@ -3409,16 +3409,16 @@ function OptimalTPPage(p){
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Close</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP $/sh</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net TP$/sh</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Adj Profit</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat TP$/sh</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net Flat$/sh</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat Profit</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge</th>
             </tr></thead>
             <tbody>{multiResults.dayBests.map(function(db){
               var dayEdge=db.bestNet-db.flatProfit;
-              var adjTpDollar=Math.max(0.01,Math.ceil(db.sharePrice*(1+db.bestTp/100)*100)/100-db.sharePrice);
-              var flatTpDollar=Math.max(0.01,Math.ceil(db.sharePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-db.sharePrice);
+              var adjTpDollar=Math.max(0.01,Math.ceil(db.sharePrice*(1+db.bestTp/100)*100)/100-db.sharePrice)-multiResults.fee;
+              var flatTpDollar=Math.max(0.01,Math.ceil(db.sharePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-db.sharePrice)-multiResults.fee;
               return <tr key={db.day} style={{borderBottom:'1px solid '+C.grid}}>
                 <td style={{padding:'5px 3px',color:C.txtBright}}>{db.day}</td>
                 <td style={{padding:'5px 3px',color:C.txtDim,textAlign:'right'}}>{'$'+db.sharePrice.toFixed(2)}</td>
