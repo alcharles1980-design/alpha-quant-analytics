@@ -204,6 +204,22 @@ var SB={
       var sessRows=sessTypes.map(function(s){var rng=(s.data.max>-Infinity&&s.data.min<Infinity)?(s.data.max-s.data.min):0;var pct=(s.data.min<Infinity&&s.data.min>0&&rng>0)?((rng/s.data.min)*100):0;return{ticker:ticker,trade_date:date,session_type:s.key,high:s.data.max>-Infinity?s.data.max:null,low:s.data.min<Infinity?s.data.min:null,range_dollars:rng>0?rng:null,range_pct:pct>0?pct:null,volume:Math.round(s.data.vol),trades:s.data.trades};});
       await fetch(SB_URL+'/rest/v1/cached_sessions',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(sessRows)});
     }catch(e){console.error('SB save seasonality error:',e);}
+  },
+  saveHoldTimes:async function(ticker,date,tpPct,session,holdData){
+    if(!SB_URL||!SB_KEY||!holdData||!holdData.length)return;
+    try{
+      await fetch(SB_URL+'/rest/v1/cached_hold_times?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+session,{method:'DELETE',headers:getSbHeaders()});
+      var rows=holdData.map(function(h){return{ticker:ticker,trade_date:date,hour:h.hourNum,tp_pct:tpPct,session_type:session,avg_minutes:Math.round(h.avg*100)/100,min_minutes:Math.round(h.min*100)/100,max_minutes:Math.round(h.max*100)/100,cycle_count:h.count};});
+      await fetch(SB_URL+'/rest/v1/cached_hold_times',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(rows)});
+    }catch(e){console.error('SB save hold times error:',e);}
+  },
+  loadHoldTimes:async function(ticker,startDate,endDate,tpPct){
+    if(!SB_URL||!SB_KEY)return null;
+    try{
+      var h=getSbHeaders();h['Range']='0-9999';
+      var r=await fetch(SB_URL+'/rest/v1/cached_hold_times?ticker=eq.'+ticker+'&trade_date=gte.'+startDate+'&trade_date=lte.'+endDate+'&tp_pct=eq.'+tpPct+'&select=trade_date,hour,avg_minutes,min_minutes,max_minutes,cycle_count&order=trade_date.asc,hour.asc',{headers:h});
+      return r.ok?await r.json():null;
+    }catch(e){return null;}
   }
 };
 
@@ -732,7 +748,15 @@ function TrendPage(p){
         avgHourlyCycles[hc]=cCnt>0?cSum/cCnt:0;
       }
 
-      setData({dates:dates,allDates:allDates,hourAvg:hourAvg,maxAtrPct:maxAtrPct,maxVol:maxVol,maxTrades:maxTrades,maxAtr:maxAtr,maxSwing:maxSwing,totalDays:allDates.length,cyclesByDate:cyclesByDate,maxHourlyCycles:maxHourlyCycles,avgHourlyCycles:avgHourlyCycles,hasCycles:cycleRows.length>0,analysisRows:analysisRows});
+      // Load hold times from cache
+      var holdRows=await SB.loadHoldTimes(ticker.toUpperCase(),startDate,endDate,parseFloat(trendTp));
+      var holdProfile=null;
+      if(holdRows&&holdRows.length>0){
+        var avgHold={};for(var hi=4;hi<20;hi++)avgHold[hi]={tw:0,tc:0};
+        for(var hr2=0;hr2<holdRows.length;hr2++){var hrd=holdRows[hr2];if(avgHold[hrd.hour]&&hrd.cycle_count>0){avgHold[hrd.hour].tw+=hrd.avg_minutes*hrd.cycle_count;avgHold[hrd.hour].tc+=hrd.cycle_count;}}
+        holdProfile=[];for(var hi2=4;hi2<20;hi2++){var hh2=avgHold[hi2];holdProfile.push({hour:hourLabels[hi2]||hi2+'h',hourNum:hi2,avg:hh2.tc>0?Math.round(hh2.tw/hh2.tc*10)/10:0,count:hh2.tc,isRTH:hi2>=9&&hi2<16?1:0});}
+      }
+      setData({dates:dates,allDates:allDates,hourAvg:hourAvg,maxAtrPct:maxAtrPct,maxVol:maxVol,maxTrades:maxTrades,maxAtr:maxAtr,maxSwing:maxSwing,totalDays:allDates.length,cyclesByDate:cyclesByDate,maxHourlyCycles:maxHourlyCycles,avgHourlyCycles:avgHourlyCycles,hasCycles:cycleRows.length>0,analysisRows:analysisRows,holdProfile:holdProfile});
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -950,6 +974,29 @@ function TrendPage(p){
       </Cd>
             {data.hasCycles&&<Cd glow={true}>
         <div style={{display:'inline-block',background:C.accentDim,border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>CYCLE DATA @ {trendTp}% TAKE PROFIT</div>
+        {data.holdProfile&&data.holdProfile.some(function(h){return h.count>0;})&&<Cd>
+          <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>AVG HOLDING DURATION @ {trendTp}% TAKE PROFIT</div>
+          <SectionHead title="Average Cycle Holding Duration by Hour" sub={data.ticker+' | '+data.allDates.length+' days | '+data.holdProfile.filter(function(h){return h.count>0;}).length+' active hours'} info="Weighted average time between BUY (level activation) and SELL (cycle completion) for each hour, aggregated across all days in the range. Shorter durations mean faster capital turnover. Computed from raw tick timestamps during data import."/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10,marginBottom:10}}>
+            <Mt label="Overall Avg" value={(function(){var ts=0,tc=0;for(var q=0;q<data.holdProfile.length;q++){ts+=data.holdProfile[q].avg*data.holdProfile[q].count;tc+=data.holdProfile[q].count;}return tc>0?(ts/tc).toFixed(1)+'m':'--';})()}  color={C.blue} size="md"/>
+            <Mt label="Fastest Hour" value={(function(){var mn=Infinity;for(var q=0;q<data.holdProfile.length;q++){if(data.holdProfile[q].count>0&&data.holdProfile[q].avg>0&&data.holdProfile[q].avg<mn)mn=data.holdProfile[q].avg;}return mn<Infinity?mn.toFixed(1)+'m':'--';})()}  color={C.accent} size="md"/>
+            <Mt label="Slowest Hour" value={(function(){var mx=0;for(var q=0;q<data.holdProfile.length;q++){if(data.holdProfile[q].count>0&&data.holdProfile[q].avg>mx)mx=data.holdProfile[q].avg;}return mx>0?mx.toFixed(1)+'m':'--';})()}  color={C.gold} size="md"/>
+          </div>
+          <div style={{marginTop:8}}>{data.holdProfile.map(function(d){
+            var maxAvg=0;for(var q=0;q<data.holdProfile.length;q++){if(data.holdProfile[q].avg>maxAvg)maxAvg=data.holdProfile[q].avg;}
+            var pct=maxAvg>0?(d.avg/maxAvg*100):0;
+            return <div key={d.hourNum} style={{display:'flex',alignItems:'center',marginBottom:2}}>
+              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
+              <div style={{flex:1,position:'relative',height:18}}>
+                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.blue:C.txtDim,borderRadius:'0 3px 3px 0',minWidth:d.count>0?4:0,opacity:0.8}}></div>
+              </div>
+              <div style={{width:44,fontSize:8,color:d.count>0?C.blue:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.count>0?d.avg.toFixed(1)+'m':''}</div>
+              <div style={{width:32,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:2,flexShrink:0}}>{d.count>0?d.count+'c':''}</div>
+            </div>;})}</div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:6,padding:'6px 0',borderTop:'1px solid '+C.border}}>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Minutes per cycle (m) | Cycle count (c)</div>
+          </div>
+        </Cd>}
         <SectionHead title="Cycles Heatmap" sub="Completed cycles by hour and date" info="Each cell shows how many buy-to-sell cycles completed in that hour at the specified take-profit %. Brighter green = more cycles. This is algorithm-specific data -- unlike ATR and volume which are universal market data. Different TP% values will show different cycle distributions."/>
         <div style={{overflowX:'auto',marginTop:8}}>
           <div style={{display:'grid',gridTemplateColumns:'70px repeat(16,1fr)',gap:1,minWidth:500}}>
@@ -4865,6 +4912,11 @@ function App(){
         for(var i2=0;i2<filtered.length;i2++){var tt=filtered[i2];var ms2=tt.ts>1e15?tt.ts/1e6:tt.ts>1e12?tt.ts/1e3:tt.ts;var d3=new Date(ms2);var eh=getETHourFromMs(ms2);var em=eh*60+d3.getUTCMinutes();if(hourly[eh]){hourly[eh].trades++;hourly[eh].vol+=tt.size;if(tt.price>hourly[eh].high)hourly[eh].high=tt.price;if(tt.price<hourly[eh].low)hourly[eh].low=tt.price;}if(em<570){sess2.pre.trades++;sess2.pre.vol+=tt.size;if(tt.price<sess2.pre.min)sess2.pre.min=tt.price;if(tt.price>sess2.pre.max)sess2.pre.max=tt.price;}else if(em<960){sess2.reg.trades++;sess2.reg.vol+=tt.size;if(tt.price<sess2.reg.min)sess2.reg.min=tt.price;if(tt.price>sess2.reg.max)sess2.reg.max=tt.price;}else{sess2.post.trades++;sess2.post.vol+=tt.size;if(tt.price<sess2.post.min)sess2.post.min=tt.price;if(tt.price>sess2.post.max)sess2.post.max=tt.price;}}
         var chartData=[];for(var h2=4;h2<20;h2++){var hd=hourly[h2];var atr=(hd.high>-Infinity&&hd.low<Infinity)?hd.high-hd.low:0;var atrPct=(hd.low>0&&atr>0)?(atr/hd.low)*100:0;chartData.push({atr:atr,atrPct:atrPct,volume:hd.vol,trades:hd.trades,high:hd.high>-Infinity?hd.high:null,low:hd.low>-Infinity?hd.low:null});}
         await SB.saveSeasonality(ticker.toUpperCase(),day,chartData,sess2);
+        // Compute and save holding times
+        if(filtered.length<500000){
+          var ht=computeCycleHoldTimes(filtered,tp);
+          if(ht&&ht.length>0)await SB.saveHoldTimes(ticker.toUpperCase(),day,tp,session,ht);
+        }
         var hcSum=0;for(var hci=0;hci<hcDay.length;hci++)hcSum+=hcDay[hci].cycles;if(hcSum!==res.summary.totalCycles)fetchCheck.warnings.push('CYCLE MISMATCH: hr='+hcSum+' total='+res.summary.totalCycles);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Verifying save...');var svW=await verifySaveIntegrity(ticker.toUpperCase(),day,tp,session);for(var sw=0;sw<svW.length;sw++)fetchCheck.warnings.push(svW[sw]);
         // Delay between days to prevent Supabase rate limiting
