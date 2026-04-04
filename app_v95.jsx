@@ -1048,278 +1048,6 @@ function TrendPage(p){
     </div>}
   </div>;
 }
-function SeasonalityPage(p){
-  var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
-  var s9s=useState('1'),seasTp=s9s[0],setSeasTp=s9s[1];
-  var s2=useState(new Date().toISOString().split('T')[0]),date=s2[0],setDate=s2[1];
-  var s3=useState(false),loading=s3[0],setLoading=s3[1];
-  var s4=useState(''),prog=s4[0],setProg=s4[1];
-  var s5=useState(null),err=s5[0],setErr=s5[1];
-  var s6=useState(null),data=s6[0],setData=s6[1];
-  var s7s=useState(''),sSource=s7s[0],setSSource=s7s[1];
-  var s8s=useState([]),seasCycles=s8s[0],setSeasCycles=s8s[1];
-
-  var run=async function(){
-    if(!p.apiKey){setErr('Set your Polygon API key in Settings first');return;}
-    setLoading(true);setErr(null);setData(null);setSSource('');setProg('Checking cache...');
-    try{
-      var sCached=await SB.loadSeasonality(ticker.toUpperCase(),date);
-      if(sCached&&sCached.hourly.length>0){
-        var labels={'4':'4AM','5':'5AM','6':'6AM','7':'7AM','8':'8AM','9':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
-        var cCD=sCached.hourly.map(function(h){return{hour:labels[String(h.hour)]||String(h.hour),atr:parseFloat(h.atr)||0,atrPct:parseFloat(h.atr_pct)||0,volume:parseInt(h.volume)||0,trades:parseInt(h.trades)||0,isRTH:(h.hour>=9&&h.hour<16)?1:0,low:h.low?parseFloat(h.low):0,high:h.high?parseFloat(h.high):0};});
-        var cSess={pre:{min:Infinity,max:-Infinity,vol:0,trades:0},reg:{min:Infinity,max:-Infinity,vol:0,trades:0},post:{min:Infinity,max:-Infinity,vol:0,trades:0}};
-        sCached.sessions.forEach(function(s){var t=s.session_type==='pre'?cSess.pre:s.session_type==='reg'?cSess.reg:cSess.post;if(s.low)t.min=parseFloat(s.low);if(s.high)t.max=parseFloat(s.high);t.vol=parseInt(s.volume)||0;t.trades=parseInt(s.trades)||0;});
-        var cMin=Infinity,cMax=-Infinity;cCD.forEach(function(d){if(d.low>0&&d.low<cMin)cMin=d.low;if(d.high>0&&d.high>cMax)cMax=d.high;});
-        setData({sessions:cSess,chartData:cCD,totalTrades:0,allMin:cMin,allMax:cMax});
-        var scHC=await SB.loadHourlyCycles(ticker.toUpperCase(),date,parseFloat(seasTp)||1,'all');
-        if(scHC)setSeasCycles(scHC);
-        setSSource('cache');setProg('');setLoading(false);return;
-      }
-      setProg('Fetching trades (3 windows)...');
-      var etOff=getETOffset(date);var pad=function(n){return String(n).padStart(2,'0');};var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);var hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;var wEndTs=hEnd<24?date+'T'+pad(hEnd)+':30:00.000Z':nextDay+'T'+pad(hEnd-24)+':30:00.000Z';
-      var fetchWin=async function(tsGte,tsLt,label){var tr=[],u='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('API error '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];tr.push({price:t.price,size:t.size||0,ts:t.sip_timestamp||t.participant_timestamp});}u=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;}return tr;};
-      var _w1=await fetchWin(date+'T'+pad(hPre)+':00:00.000Z',date+'T'+pad(hMid+2)+':00:00.000Z','[1/3]');
-      var _w2=await fetchWin(date+'T'+pad(hMid-1)+':00:00.000Z',date+'T'+pad(hAft+2)+':00:00.000Z','[2/3]');
-      var _w3=await fetchWin(date+'T'+pad(hAft-1)+':00:00.000Z',wEndTs,'[3/3]');
-      var allRaw=_w1.concat(_w2).concat(_w3);allRaw.sort(function(a,b){return a.ts-b.ts;});
-      var allTrades=[];var _lt=-1;for(var _di=0;_di<allRaw.length;_di++){if(allRaw[_di].ts!==_lt){allTrades.push(allRaw[_di]);_lt=allRaw[_di].ts;}}
-      if(!allTrades.length)throw new Error('No trades found.');
-      setProg('Processing...');
-      await new Promise(function(r){setTimeout(r,50);});
-
-      // Convert timestamps and bucket
-      var toET=function(ts){var ms;if(ts>1e15)ms=ts/1e6;else if(ts>1e12)ms=ts/1e3;else ms=ts;var h=getETHourFromMs(ms);var m=new Date(ms).getUTCMinutes();return{h:h,m:m,totalMin:h*60+m};};
-
-      // Session ranges
-      var sessions={pre:{min:Infinity,max:-Infinity,vol:0,trades:0},reg:{min:Infinity,max:-Infinity,vol:0,trades:0},post:{min:Infinity,max:-Infinity,vol:0,trades:0}};
-      // Hourly buckets: key = hour start (e.g. "04","05"..."19")
-      var hourly={};
-      for(var h=4;h<20;h++){var hk=String(h).padStart(2,'0');hourly[hk]={high:-Infinity,low:Infinity,vol:0,trades:0};}
-
-      for(var i=0;i<allTrades.length;i++){
-        var t=allTrades[i];var et=toET(t.ts);var pr=t.price;var sz=t.size;
-        // Session
-        if(et.totalMin<570){sessions.pre.trades++;sessions.pre.vol+=sz;if(pr<sessions.pre.min)sessions.pre.min=pr;if(pr>sessions.pre.max)sessions.pre.max=pr;}
-        else if(et.totalMin<960){sessions.reg.trades++;sessions.reg.vol+=sz;if(pr<sessions.reg.min)sessions.reg.min=pr;if(pr>sessions.reg.max)sessions.reg.max=pr;}
-        else{sessions.post.trades++;sessions.post.vol+=sz;if(pr<sessions.post.min)sessions.post.min=pr;if(pr>sessions.post.max)sessions.post.max=pr;}
-        // Hourly
-        var hk=String(et.h).padStart(2,'0');
-        if(hourly[hk]){hourly[hk].trades++;hourly[hk].vol+=sz;if(pr>hourly[hk].high)hourly[hk].high=pr;if(pr<hourly[hk].low)hourly[hk].low=pr;}
-      }
-
-      // Build chart data
-      var chartData=[];
-      var labels={'04':'4AM','05':'5AM','06':'6AM','07':'7AM','08':'8AM','09':'9AM','10':'10AM','11':'11AM','12':'12PM','13':'1PM','14':'2PM','15':'3PM','16':'4PM','17':'5PM','18':'6PM','19':'7PM'};
-      for(var h=4;h<20;h++){
-        var hk=String(h).padStart(2,'0');
-        var hd=hourly[hk];
-        var atr=(hd.high>-Infinity&&hd.low<Infinity)?(hd.high-hd.low):0;
-        var atrPct=(hd.low>0&&atr>0)?((atr/hd.low)*100):0;
-        chartData.push({hour:labels[hk]||hk,atr:Math.round(atr*10000)/10000,atrPct:Math.round(atrPct*100)/100,volume:hd.vol,trades:hd.trades,isRTH:(h>=9&&h<16)?1:0,low:hd.low<Infinity?hd.low:0,high:hd.high>-Infinity?hd.high:0});
-      }
-
-      // Overall
-      var allMin=Infinity,allMax=-Infinity;
-      for(var i=0;i<allTrades.length;i++){if(allTrades[i].price<allMin)allMin=allTrades[i].price;if(allTrades[i].price>allMax)allMax=allTrades[i].price;}
-
-      setData({sessions:sessions,chartData:chartData,totalTrades:allTrades.length,allMin:allMin,allMax:allMax});
-      setSSource('polygon');
-      SB.saveSeasonality(ticker.toUpperCase(),date,chartData,sessions);
-      // Load hourly cycles if cached (from a previous analysis run)
-      var scHC2=await SB.loadHourlyCycles(ticker.toUpperCase(),date,parseFloat(seasTp)||1,'all');
-      if(scHC2)setSeasCycles(scHC2);
-      setProg('');
-    }catch(e){setErr(e.message);setProg('');}finally{setLoading(false);}
-  };
-
-
-
-  var fmtVol=function(v){if(v>=1e6)return (v/1e6).toFixed(1)+'M';if(v>=1e3)return (v/1e3).toFixed(0)+'K';return v.toString();};
-  var fmtRange=function(s){if(s.min===Infinity)return{range:'-',pct:'-',low:'-',high:'-'};var r2=s.max-s.min;return{range:'$'+r2.toFixed(2),pct:((r2/s.min)*100).toFixed(2)+'%',low:'$'+s.min.toFixed(2),high:'$'+s.max.toFixed(2)};};
-
-  var SessionRow=function(props){var f=fmtRange(props.s);return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:4,padding:'6px 0',borderBottom:'1px solid '+C.grid,fontSize:8,fontFamily:F}}>
-    <div style={{color:props.color,fontWeight:700}}>{props.label}</div>
-    <div style={{color:'#f0f6fc',textAlign:'right'}}>{f.range}</div>
-    <div style={{color:'#c0d0e0',textAlign:'right'}}>{f.pct}</div>
-    <div style={{color:'#c0d0e0',textAlign:'right'}}>{fmtVol(props.s.vol)}</div>
-    <div style={{color:'#c0d0e0',textAlign:'right'}}>{props.s.trades.toLocaleString()}</div>
-  </div>;};
-
-  return <div>
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
-      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
-      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Intraday Seasonality</div>
-    </div>
-    <Cd>
-      <SectionHead title="Parameters" sub="Select stock and date" info="Fetches all trade ticks and breaks them down by hour to reveal intraday patterns in volatility, volume, and trading activity across pre-market, regular, and post-market sessions."/>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10,marginBottom:10}}>
-        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
-        <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
-        <div><label style={lS}>TP %</label><input type="text" inputMode="decimal" value={seasTp} onChange={function(e){setSeasTp(e.target.value);}} style={iS}/></div>
-      </div>
-      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Analyze'}</button>
-      {prog&&<div style={{marginTop:8,color:C.accent,fontSize:10}}>{prog}</div>}
-      {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
-    </Cd>
-    {data&&<div>
-      <Cd glow={true}>
-        <SectionHead title="Session Ranges" sub={ticker+' · '+date+(sSource==='cache'?' · From Cache':sSource==='polygon'?' · Live Data':'')}/>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10,marginBottom:12}}>
-          <Mt label="Day Low" value={'$'+data.allMin.toFixed(2)} color={C.warn} size="md"/>
-          <Mt label="Day High" value={'$'+data.allMax.toFixed(2)} color={C.accent} size="md"/>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
-          <Mt label="Day Range" value={'$'+(data.allMax-data.allMin).toFixed(2)} color={C.gold} size="lg"/>
-          <Mt label="Range %" value={((data.allMax-data.allMin)/data.allMin*100).toFixed(2)+'%'} color={C.gold} size="lg"/>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:4,padding:'6px 0',borderBottom:'1px solid '+C.border,fontSize:7,fontFamily:F,color:'#8899aa'}}>
-          <div>Session</div><div style={{textAlign:'right'}}>Range</div><div style={{textAlign:'right'}}>%</div><div style={{textAlign:'right'}}>Volume</div><div style={{textAlign:'right'}}>Trades</div>
-        </div>
-        <SessionRow label="Pre-Market" s={data.sessions.pre} color={C.purple}/>
-        <SessionRow label="Regular" s={data.sessions.reg} color={C.accent}/>
-        <SessionRow label="Post-Market" s={data.sessions.post} color={C.blue}/>
-      </Cd>
-      <div>
-        <Cd>
-          <SectionHead title="Hourly ATR" sub="Price range per hour ($)" info="ATR shows how much the price moved within each hour. Taller bars = more volatile hours."/>
-          <div style={{marginTop:8}}>{data.chartData.map(function(d){
-            var maxATR=0;for(var q=0;q<data.chartData.length;q++){if(data.chartData[q].atr>maxATR)maxATR=data.chartData[q].atr;}
-            var pct=maxATR>0?(d.atr/maxATR*100):0;
-            return <div key={d.hour} style={{display:'flex',alignItems:'flex-end',gap:0,marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,position:'relative',height:16}}>
-                <div style={{position:'absolute',left:0,bottom:0,height:'100%',width:pct+'%',background:d.isRTH?C.accent:'#3a4a5c',borderRadius:'0 2px 2px 0',minWidth:d.atr>0?2:0}}></div>
-              </div>
-              <div style={{width:44,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4,flexShrink:0}}>{'$'+d.atr.toFixed(3)}</div>
-            </div>;})}
-          </div>
-        </Cd>
-        <Cd>
-          <SectionHead title="Hourly Price Range ($)" sub="High and low price each hour" info="Shows the exact high and low price within each hour. The bar width represents the dollar range. Wider bars = more price movement that hour."/>
-          <div style={{marginTop:8}}>{data.chartData.map(function(d){
-            if(d.atr===0)return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,fontSize:7,color:'#4a5568',fontFamily:F,paddingLeft:4}}>No trades</div>
-            </div>;
-            var allLows=data.chartData.filter(function(x){return x.atr>0;}).map(function(x){return x.low;});
-            var allHighs=data.chartData.filter(function(x){return x.atr>0;}).map(function(x){return x.high;});
-            var gMin=Math.min.apply(null,allLows);var gMax=Math.max.apply(null,allHighs);
-            var span=gMax-gMin;if(span===0)span=1;
-            var leftPct=((d.low-gMin)/span)*100;
-            var widthPct=((d.high-d.low)/span)*100;
-            if(widthPct<1)widthPct=1;
-            return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,position:'relative',height:18}}>
-                <div style={{position:'absolute',left:leftPct+'%',width:widthPct+'%',top:2,bottom:2,background:d.isRTH?C.accent:'#3a4a5c',borderRadius:2,minWidth:3}}></div>
-              </div>
-              <div style={{width:90,display:'flex',gap:4,flexShrink:0,paddingLeft:4}}>
-                <span style={{fontSize:7,color:C.warn,fontFamily:F}}>{'$'+d.low.toFixed(2)}</span>
-                <span style={{fontSize:7,color:'#4a5568',fontFamily:F}}>-</span>
-                <span style={{fontSize:7,color:C.accent,fontFamily:F}}>{'$'+d.high.toFixed(2)}</span>
-              </div>
-            </div>;})}
-          </div>
-        </Cd>
-        <Cd>
-          <SectionHead title="Hourly Price Range (%)" sub="Range as percentage of hour low" info="Same range data expressed as a percentage of each hour's low price. This normalizes the volatility so you can compare hours fairly regardless of absolute price level."/>
-          <div style={{marginTop:8}}>{data.chartData.map(function(d){
-            if(d.atrPct===0)return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,fontSize:7,color:'#4a5568',fontFamily:F,paddingLeft:4}}>No trades</div>
-            </div>;
-            var maxAP2=0;for(var q=0;q<data.chartData.length;q++){if(data.chartData[q].atrPct>maxAP2)maxAP2=data.chartData[q].atrPct;}
-            var pct=maxAP2>0?(d.atrPct/maxAP2*100):0;
-            return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:2}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,position:'relative',height:18}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.purple:'#3a4a5c',borderRadius:'0 2px 2px 0',minWidth:d.atrPct>0?3:0}}></div>
-              </div>
-              <div style={{width:90,display:'flex',gap:4,flexShrink:0,paddingLeft:4}}>
-                <span style={{fontSize:7,color:'#e8f0f8',fontFamily:F,fontWeight:700}}>{d.atrPct.toFixed(2)+'%'}</span>
-                <span style={{fontSize:7,color:'#6a7a8a',fontFamily:F}}>{'($'+d.atr.toFixed(2)+')'}</span>
-              </div>
-            </div>;})}
-          </div>
-        </Cd>
-                <Cd>
-          <SectionHead title="Low to Next High Swing %" sub="Previous hour low to next hour high" info="Measures the percentage change from one hour's lowest price to the following hour's highest price. Positive values mean price swung upward. Negative values mean the next hour's high was still below the previous hour's low. This captures the maximum potential swing opportunity between consecutive hours."/>
-          <div style={{marginTop:8}}>{(function(){
-            var swings=[];
-            for(var si=0;si<data.chartData.length-1;si++){
-              var curr=data.chartData[si];var nxt=data.chartData[si+1];
-              if(curr.low>0&&nxt.high>0){
-                var swingPct=((nxt.high-curr.low)/curr.low)*100;
-                swings.push({fromHour:curr.hour,toHour:nxt.hour,pct:Math.round(swingPct*100)/100,low:curr.low,high:nxt.high});
-              }
-            }
-            var maxAbs=0;for(var si2=0;si2<swings.length;si2++){var ab=Math.abs(swings[si2].pct);if(ab>maxAbs)maxAbs=ab;}
-            if(maxAbs===0)maxAbs=1;
-            return swings.map(function(sw){
-              var barPct=(Math.abs(sw.pct)/maxAbs)*50;
-              var isPos=sw.pct>=0;
-              return React.createElement('div',{key:sw.fromHour,style:{display:'flex',alignItems:'center',marginBottom:2}},
-                React.createElement('div',{style:{width:62,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}},sw.fromHour+' → '+sw.toHour),
-                React.createElement('div',{style:{flex:1,position:'relative',height:18}},
-                  React.createElement('div',{style:{position:'absolute',left:'50%',top:0,bottom:0,width:1,background:'#2a3a4a'}}),
-                  isPos?React.createElement('div',{style:{position:'absolute',left:'50%',top:3,bottom:3,width:barPct+'%',background:C.accent,borderRadius:'0 2px 2px 0'}}):
-                  React.createElement('div',{style:{position:'absolute',right:'50%',top:3,bottom:3,width:barPct+'%',background:C.warn,borderRadius:'2px 0 0 2px'}})
-                ),
-                React.createElement('div',{style:{width:100,display:'flex',gap:3,flexShrink:0,paddingLeft:4}},
-                  React.createElement('span',{style:{fontSize:7,color:isPos?C.accent:C.warn,fontFamily:F,fontWeight:700}},(isPos?'+':'')+sw.pct.toFixed(2)+'%'),
-                  React.createElement('span',{style:{fontSize:6,color:'#6a7a8a',fontFamily:F}},'$'+sw.low.toFixed(2)+'→$'+sw.high.toFixed(2))
-                )
-              );
-            });
-          })()}</div>
-        </Cd>
-                {seasCycles.length>0&&<Cd glow={true}>
-          <div style={{display:'inline-block',background:C.accentDim,border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>CYCLE DATA @ {seasTp}% TAKE PROFIT</div>
-          <SectionHead title="Cycles by Hour" sub={ticker+' · '+date} info="Shows completed buy-to-sell cycles per hour at the specified take-profit percentage. This is algorithm-specific data tied to the TP% -- unlike ATR, volume, and trades which are universal market data. Requires running a cycle analysis (main page or batch process) for this ticker/date/TP% first."/>
-          <div style={{marginTop:8}}>{seasCycles.map(function(d){
-            var maxCy=0;for(var q=0;q<seasCycles.length;q++){if(seasCycles[q].cycles>maxCy)maxCy=seasCycles[q].cycles;}
-            var pct=maxCy>0?(d.cycles/maxCy*100):0;
-            return <div key={d.hour} style={{display:'flex',alignItems:'center',marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:C.txt,fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,position:'relative',height:16}}>
-                <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:d.isRTH?C.accent:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:d.cycles>0?2:0}}></div>
-              </div>
-              <div style={{width:32,fontSize:8,color:d.cycles>0?C.accent:C.txtDim,fontFamily:F,textAlign:'right',paddingLeft:4,fontWeight:700,flexShrink:0}}>{d.cycles>0?d.cycles:''}</div>
-            </div>;})}
-          </div>
-        </Cd>}
-        <Cd>
-          <SectionHead title="Hourly Volume" sub="Total shares traded per hour" info="Shows total shares traded each hour. High volume = better liquidity for cycle execution."/>
-          <div style={{marginTop:8}}>{data.chartData.map(function(d){
-            var maxV=0;for(var q=0;q<data.chartData.length;q++){if(data.chartData[q].volume>maxV)maxV=data.chartData[q].volume;}
-            var pct=maxV>0?(d.volume/maxV*100):0;
-            return <div key={d.hour} style={{display:'flex',alignItems:'flex-end',gap:0,marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,position:'relative',height:16}}>
-                <div style={{position:'absolute',left:0,bottom:0,height:'100%',width:pct+'%',background:d.isRTH?C.blue:'#3a4a5c',borderRadius:'0 2px 2px 0',minWidth:d.volume>0?2:0}}></div>
-              </div>
-              <div style={{width:44,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4,flexShrink:0}}>{fmtVol(d.volume)}</div>
-            </div>;})}
-          </div>
-        </Cd>
-        <Cd>
-          <SectionHead title="Hourly Trades" sub="Number of trade executions per hour" info="Each trade is a single exchange transaction. More trades = more cycle opportunities."/>
-          <div style={{marginTop:8}}>{data.chartData.map(function(d){
-            var maxT=0;for(var q=0;q<data.chartData.length;q++){if(data.chartData[q].trades>maxT)maxT=data.chartData[q].trades;}
-            var pct=maxT>0?(d.trades/maxT*100):0;
-            return <div key={d.hour} style={{display:'flex',alignItems:'flex-end',gap:0,marginBottom:1}}>
-              <div style={{width:36,fontSize:7,color:'#a0b4c8',fontFamily:F,textAlign:'right',paddingRight:4,flexShrink:0}}>{d.hour}</div>
-              <div style={{flex:1,position:'relative',height:16}}>
-                <div style={{position:'absolute',left:0,bottom:0,height:'100%',width:pct+'%',background:d.isRTH?C.gold:'#3a4a5c',borderRadius:'0 2px 2px 0',minWidth:d.trades>0?2:0}}></div>
-              </div>
-              <div style={{width:44,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4,flexShrink:0}}>{d.trades.toLocaleString()}</div>
-            </div>;})}
-          </div>
-        </Cd>
-      </div>
-    </div>}
-  </div>;
-}
 function UploadPage(p){
   var fs=useState(null),fileData=fs[0],setFileData=fs[1];
   var ts=useState(p.tpPct.toString()),tp=ts[0],setTp=ts[1];
@@ -1593,7 +1321,7 @@ function ObjectivesPage(p){
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 4: Factor in Market Context</p>
           <p style={{marginBottom:6,fontSize:9}}>The optimal TP% does not exist in a vacuum. It is influenced by measurable market conditions. Stage 2 incorporates these contextual factors:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Intraday Seasonality</span> - Certain hours of the day consistently show different volatility patterns. The opening 30 minutes tend to be volatile (smaller TP% works), while the lunch hour is quieter (fewer opportunities regardless of TP%).</p>
+          
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Volatility Regime</span> - Is the stock in a high-volatility or low-volatility period? High volatility means wider price swings, which supports a larger TP%. Low volatility means tighter oscillations, favoring a smaller TP%.</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>VIX Level</span> - The CBOE Volatility Index measures market-wide fear and expected volatility. When the VIX is elevated (above 20), stocks tend to oscillate more aggressively, changing the optimal TP% for all stocks.</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Previous Day Price Action</span> - Did the stock trend strongly yesterday or chop sideways? A strong trend day often leads to mean-reversion the following day (more oscillations), while a choppy day may continue chopping.</p>
@@ -2544,11 +2272,6 @@ function SourcePage(p){
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>6. Edge function saves results to all 5 database tables (analyses, levels, seasonality, sessions, hourly cycles), discards raw ticks, returns summary</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>7. App displays live progress log. All processed days are immediately available for instant cached loading.</p>
           <p style={{paddingLeft:8,fontSize:9,marginBottom:10}}><span style={{color:C.gold}}>Fallback:</span> If edge function fails (status 546/500/502/504), the app automatically retries that day in the browser using the same engine. Log shows "(browser)" tag for fallback-processed days.</p>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Intraday Seasonality Flow:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>1. Same cache-first pattern. Check Supabase, load if exists.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>2. If not cached: fetch ticks, bucket by hour and session (pre/reg/post market)</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>3. Compute ATR, volume, trades, high/low per hour</p>
-          <p style={{marginBottom:10,paddingLeft:8,fontSize:9}}>4. Save hourly and session data to Supabase, discard ticks</p>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Trend Analysis Flow (no tick fetching):</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>1. User enters ticker, date range, TP%, $/Level, and Fee/Cycle</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>2. Validate cached_analyses exist for the specified TP%. If none, error with direction to import data.</p>
@@ -2671,7 +2394,6 @@ function SourcePage(p){
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:4}}><span style={{color:C.accent}}>Cycles Analysis:</span> Main page. Cycle counting with results, profit analysis (gross/net/fees with fractional fee scaling), OHLC, price levels table, sqrt-scaled cycles-by-hour chart (TP%-labeled), price action chart, trade-by-trade audit, CSV export. Parameters: ticker, date, TP%, $/Level, Fee/Cycle, session. Cache-first loading.</p>
           <p style={{marginBottom:4}}><span style={{color:C.accent}}>Import Stock Data:</span> Server-side date range processing with automatic browser-side fallback for high-volume stocks with browser-side fallback for high-volume stocks via edge function. Ticker, date range, TP%, session toggle. Live progress log with cancel. Skips cached days. Saves cycle counts, seasonality, and hourly cycles to database.</p>
-          <p style={{marginBottom:4}}><span style={{color:C.accent}}>Intraday Seasonality:</span> Single-day intraday analysis with TP% input. ATR $, price ranges ($ with high/low), range %, swing %, cycles-by-hour (TP%-labeled), volume, trades. Session ranges table (pre/reg/post). Cache-first loading.</p>
           <p style={{marginBottom:4}}><span style={{color:C.accent}}>Optimal TP% Finder:</span> Two modes: (A) Single Day scans up to 100 TP% values for one day. (B) Multi-Day Range scans a date range and compares best flat TP% (one setting for all days) vs day-adjusted (best per day), showing the edge from daily adjustment. Each TP% runs the complete analyzePriceLevels() engine. Profit uses actual dollar spread from Math.ceil rounding (not theoretical %). Fractional fee scaling applied. Ranked by net profit. Available in two places: (1) standalone page under Stage 1 that fetches its own ticks, and (2) "Find Optimal TP%" button on Cycles Analysis page that reuses already-loaded ticks for zero extra API calls. Scope: per-day analysis only -- the scanner evaluates one full day at a time. Does NOT perform hourly TP% segmentation. To compare optimal TP% across multiple days, run the scanner on each day individually. Hourly TP% optimization is planned as Stage 2 development. Browser-side computation only, results not stored in database.</p>
           <p style={{marginBottom:4}}><span style={{color:C.accent}}>Trend Analysis:</span> Multi-day pattern detection with TP% input. Average hourly profiles (ATR $, ATR %, cycles, volume, trades, swing %). Heatmaps (ATR %, ATR $, cycles with TP% label, volume, trades, swing %) all with AVG rows. Day-over-day summary table. Queries cached data only -- instant loading.</p>
           <p style={{marginBottom:4}}><span style={{color:C.accent}}>Database Management:</span> Per-stock cached data visibility with date ranges, cycle counts, day-by-day detail. Delete per-stock or clear all. Cleans all 5 cache tables including hourly cycles.</p>
@@ -5252,7 +4974,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'seasonality',label:'Intraday Seasonality',icon:'\u2248',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -5271,7 +4993,6 @@ function App(){
     {page==='adaptive'&&<AdaptiveOptPage onBack={function(){setPage('main');}}/>}
     {page==='optimal'&&<OptimalTPPage apiKey={pgKey} init={optPageInit} onBack={function(){setOptPageInit(null);setPage('main');}}/>}
     {page==='trends'&&<TrendPage onBack={function(){setPage('main');}}/>}
-    {page==='seasonality'&&<SeasonalityPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('main');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
