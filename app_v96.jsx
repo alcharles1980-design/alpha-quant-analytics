@@ -349,39 +349,22 @@ function computeCycleHoldTimes(trades,tpPct){
   return result;
 }
 
-function scanOptimalTP(trades,capPerLevel,feePerShare){
-  if(!trades||trades.length<2)return{results:[],minTpPct:0,maxTpPct:0,sharePrice:0};
-  var sharePrice=trades[0].price;
-  var fracQty=sharePrice>0?(capPerLevel/sharePrice):0;
-  var adjFee=feePerShare*fracQty;
-  // Minimum viable TP%: target must be at least $0.01 above level
-  // For a price P: P*(1+tp/100) must round to at least P+0.01
-  // Minimum tp% = (0.01/P)*100, rounded up to next 0.01%
-  // Minimum viable TP%: need target to be at least $0.02 above level
-  // to ensure meaningful profit above fees
-  var minTpRaw=(0.02/sharePrice)*100;
-  var minTpInt=Math.ceil(minTpRaw*100);
-  if(minTpInt<5)minTpInt=5;// floor at 0.05%
-  var results=[];
-  for(var tpInt=minTpInt;tpInt<=100;tpInt++){
-    var tpPct=tpInt/100;
+async function scanOptimalTP(trades,capPerLevel,feePerShare,onProgress){
+  var sp=trades[0].price;var fq=capPerLevel/sp;var af=feePerShare*fq;
+  var results=[];var minTpPct=Infinity;
+  for(var ti=1;ti<=100;ti++){
+    var tpPct=ti/100;
     var res=analyzePriceLevels(trades,tpPct);
-    var tpDollar=Math.round((Math.ceil(sharePrice*(1+tpPct/100)*100)/100-sharePrice)*100)/100;
+    var tpDollar=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;
     if(tpDollar<0.01)tpDollar=0.01;
-    var grossPC=fracQty*tpDollar;
-    var netPC=grossPC-adjFee;
-    var totalCy=res.summary.totalCycles||0;
-    var grossTotal=totalCy*grossPC;
-    var netTotal=totalCy*netPC;
-    if(isNaN(netTotal))netTotal=0;if(isNaN(grossTotal))grossTotal=0;
-    var activeLvls=res.summary.activeLevels||0;
-    var capDeployed=activeLvls*capPerLevel;
-    var roi=capDeployed>0?((netTotal/capDeployed)*100):0;
-    if(isNaN(roi))roi=0;
-    results.push({tpPct:tpPct,tpDollar:tpDollar,cycles:totalCy,activeLevels:activeLvls,grossPC:grossPC,adjFee:adjFee,netPC:netPC,grossTotal:grossTotal,netTotal:netTotal,capDeployed:capDeployed,roi:roi});
+    var grossPC=fq*tpDollar;var netPC=grossPC-af;
+    if(netPC>0&&tpPct<minTpPct)minTpPct=tpPct;
+    results.push({tpPct:tpPct,tpDollar:tpDollar,cycles:res.summary.totalCycles,grossPC:grossPC,adjFee:af,netPC:netPC,grossTotal:res.summary.totalCycles*grossPC,netTotal:res.summary.totalCycles*netPC,capDeployed:res.summary.activeLevels*capPerLevel,roi:res.summary.activeLevels>0?((res.summary.totalCycles*netPC)/(res.summary.activeLevels*capPerLevel)*100):0});
+    // Yield every 10 iterations to keep UI responsive
+    if(ti%10===0){if(onProgress)onProgress(ti);await new Promise(function(r){setTimeout(r,0);});}
   }
-  results.sort(function(a,b){var an=isNaN(a.netTotal)?-Infinity:a.netTotal;var bn=isNaN(b.netTotal)?-Infinity:b.netTotal;return bn-an;});
-  return{results:results,minTpPct:minTpInt/100,maxTpPct:1.00,sharePrice:sharePrice,scanned:results.length};
+  results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});
+  return{results:results,minTpPct:minTpPct,sharePrice:sp,scanned:results.length};
 }
 
 function scanHourlyOptimalTP(trades,capPerLevel,feePerShare){
@@ -3139,7 +3122,7 @@ function OptimalTPPage(p){
       setProg('Scanning all viable TP% values across '+allTrades.length.toLocaleString()+' trades...');
       await new Promise(function(r){setTimeout(r,50);});
       var capVal=parseFloat(cap)||1;var feeVal=parseFloat(fee)||0.005;
-      var res=scanOptimalTP(allTrades,capVal,feeVal);
+      var res=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Scanning TP% '+ti+'/100...');});
       setResults({scan:res,ticker:ticker.toUpperCase(),date:date,trades:allTrades.length,sharePrice:allTrades[0].price,cap:capVal,fee:feeVal});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
@@ -3169,7 +3152,7 @@ function OptimalTPPage(p){
         allTrades=filterOutlierTicks(allTrades);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning '+allTrades.length.toLocaleString()+' trades...');
         await new Promise(function(r){setTimeout(r,100);});
-        var scan=scanOptimalTP(allTrades,capVal,feeVal);
+        var scan=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ti+'/100');});
         allDayResults.push({day:day,trades:allTrades.length,scan:scan,sharePrice:allTrades[0].price});
       }
       var validDays=allDayResults.filter(function(d2){return d2.scan&&d2.scan.results.length>0;});
@@ -3211,7 +3194,7 @@ function OptimalTPPage(p){
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
-      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Optimal TP% Finder</div>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Daily Optimal TP% Finder</div>
     </div>
     <Cd>
       <SectionHead title="TP% Scanner" sub="Find the most profitable take-profit percentage" info="Single Day: scans up to 100 TP% values for one day. Multi-Day: scans a date range and compares best flat TP% (one setting for all days) vs day-adjusted (optimal per day). Shows the edge gained from daily adjustment."/>
@@ -5259,14 +5242,13 @@ function App(){
         </Cd>}
         {result&&rawTradesRef.current.length>0&&<Cd>
           <div style={{textAlign:'center'}}>
-            <button onClick={function(){
+            <button onClick={async function(){
               if(!rawTradesRef.current.length){setErr('Load full tick data first');return;}
               setOptScanning(true);setOptResults(null);
-              setTimeout(function(){
-                var cap=parseFloat(capPerLevel)||1;var fee=parseFloat(feePerCycle)||0.005;
-                var scan=scanOptimalTP(rawTradesRef.current,cap,fee);
-                setOptResults(scan);setOptScanning(false);
-              },50);
+              await new Promise(function(r){setTimeout(r,50);});
+              var cap=parseFloat(capPerLevel)||1;var fee=parseFloat(feePerCycle)||0.005;
+              var scan=await scanOptimalTP(rawTradesRef.current,cap,fee);
+              setOptResults(scan);setOptScanning(false);
             }} disabled={optScanning} style={Object.assign({},bB,{background:optScanning?C.border:'linear-gradient(135deg,#ffb020,#ff8800)',color:optScanning?C.txtDim:C.bg,width:'auto',padding:'10px 24px',display:'inline-block'})}>{optScanning?'Scanning TP% values...':'Find Optimal TP%'}</button>
             <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>Scans viable TP% values from 0.05% to 1.00% based on share price</div>
           </div>
