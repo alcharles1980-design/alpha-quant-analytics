@@ -3213,6 +3213,17 @@ function OptimalTPPage(p){
             if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
             allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[allTrades.length-1].price;
             fetchCheck2=verifyFetchIntegrity(allTrades,day,etOff);
+            // Compute and save hourly seasonality to DB
+            var _hd={};for(var _h=4;_h<20;_h++)_hd[_h]={high:-Infinity,low:Infinity,atr:0,atrPct:0,volume:0,trades:0};
+            var _sess={pre:{trades:0,vol:0,min:Infinity,max:-Infinity},reg:{trades:0,vol:0,min:Infinity,max:-Infinity},post:{trades:0,vol:0,min:Infinity,max:-Infinity}};
+            for(var _ti=0;_ti<allTrades.length;_ti++){var _tt=allTrades[_ti];var _ms=_tt.ts>1e15?_tt.ts/1e6:_tt.ts>1e12?_tt.ts/1e3:_tt.ts;var _eh=getETHourFromMs(_ms);var _em=_eh*60+new Date(_ms).getUTCMinutes();
+              if(_hd[_eh]){_hd[_eh].trades++;_hd[_eh].volume+=_tt.size||0;if(_tt.price>_hd[_eh].high)_hd[_eh].high=_tt.price;if(_tt.price<_hd[_eh].low)_hd[_eh].low=_tt.price;}
+              if(_em<570){_sess.pre.trades++;_sess.pre.vol+=_tt.size||0;if(_tt.price<_sess.pre.min)_sess.pre.min=_tt.price;if(_tt.price>_sess.pre.max)_sess.pre.max=_tt.price;}
+              else if(_em<960){_sess.reg.trades++;_sess.reg.vol+=_tt.size||0;if(_tt.price<_sess.reg.min)_sess.reg.min=_tt.price;if(_tt.price>_sess.reg.max)_sess.reg.max=_tt.price;}
+              else{_sess.post.trades++;_sess.post.vol+=_tt.size||0;if(_tt.price<_sess.post.min)_sess.post.min=_tt.price;if(_tt.price>_sess.post.max)_sess.post.max=_tt.price;}}
+            for(var _h2=4;_h2<20;_h2++){var _hh=_hd[_h2];if(_hh.trades>0&&_hh.high>-Infinity){_hh.atr=Math.round((_hh.high-_hh.low)*10000)/10000;_hh.atrPct=_hh.low>0?Math.round((_hh.atr/_hh.low)*10000)/100:0;}else{_hh.high=null;_hh.low=null;}}
+            var _cd=[];for(var _h3=4;_h3<20;_h3++)_cd.push(_hd[_h3]);
+            SB.saveSeasonality(ticker.toUpperCase(),day,_cd,_sess);
             setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning (background)...');
             await new Promise(function(r){setTimeout(r,50);});
             scan=await new Promise(function(resolve){

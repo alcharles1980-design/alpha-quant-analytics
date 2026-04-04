@@ -30,7 +30,7 @@ async function handleRequest(request){
 
     async function fetchWin(gte,lt){
       var trades=[],url='https://api.polygon.io/v3/trades/'+ticker+'?timestamp.gte='+gte+'&timestamp.lt='+lt+'&limit=50000&sort=timestamp&order=asc&apiKey='+polygon_key;
-      while(url){var r=await fetch(url);if(!r.ok)return trades;var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++)trades.push({p:d.results[i].price,t:d.results[i].sip_timestamp||d.results[i].participant_timestamp});url=d.next_url?d.next_url+'&apiKey='+polygon_key:null;}
+      while(url){var r=await fetch(url);if(!r.ok)return trades;var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++)trades.push({p:d.results[i].price,s:d.results[i].size||0,t:d.results[i].sip_timestamp||d.results[i].participant_timestamp});url=d.next_url?d.next_url+'&apiKey='+polygon_key:null;}
       return trades;
     }
 
@@ -41,18 +41,20 @@ async function handleRequest(request){
     // Dedup by timestamp - keep both price and timestamp
     var allRaw=w1.concat(w2).concat(w3);
     allRaw.sort(function(a,b){return a.t-b.t;});
-    var dedupedP=[];var dedupedT=[];var lastTs=-1;
-    for(var i=0;i<allRaw.length;i++){if(allRaw[i].t!==lastTs){dedupedP.push(allRaw[i].p);dedupedT.push(allRaw[i].t);lastTs=allRaw[i].t;}}
+    var dedupedP=[];var dedupedT=[];var dedupedS=[];var lastTs=-1;
+    for(var i=0;i<allRaw.length;i++){if(allRaw[i].t!==lastTs){dedupedP.push(allRaw[i].p);dedupedT.push(allRaw[i].t);dedupedS.push(allRaw[i].s||0);lastTs=allRaw[i].t;}}
 
-    // Compute hourly stats for integrity checking
+    // Compute hourly stats for integrity checking + seasonality save
     var etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
-    var hourlyStats={};for(var h=4;h<20;h++)hourlyStats[h]={trades:0};
+    var hourlyStats={};for(var h=4;h<20;h++)hourlyStats[h]={trades:0,volume:0,high:-Infinity,low:Infinity};
     for(var i=0;i<dedupedT.length;i++){
       var ts=dedupedT[i];var ms=ts>1e15?ts/1e6:ts>1e12?ts/1e3:ts;
       var eh=parseInt(etFmt.format(new Date(ms)));if(eh===24)eh=0;
-      if(hourlyStats[eh])hourlyStats[eh].trades++;
+      if(hourlyStats[eh]){hourlyStats[eh].trades++;hourlyStats[eh].volume+=dedupedS[i];if(dedupedP[i]>hourlyStats[eh].high)hourlyStats[eh].high=dedupedP[i];if(dedupedP[i]<hourlyStats[eh].low)hourlyStats[eh].low=dedupedP[i];}
     }
     var hoursWithData=0;for(var h=4;h<20;h++){if(hourlyStats[h].trades>0)hoursWithData++;}
+    // Compute ATR per hour
+    for(var h=4;h<20;h++){var hs=hourlyStats[h];if(hs.trades>0&&hs.high>-Infinity&&hs.low<Infinity){hs.atr=Math.round((hs.high-hs.low)*10000)/10000;hs.atr_pct=hs.low>0?Math.round((hs.atr/hs.low)*10000)/100:0;}else{hs.atr=0;hs.atr_pct=0;hs.high=null;hs.low=null;}}
     var intWarnings=[];
     var rthHours=[9,10,11,12,13,14,15];var rthMissing=[];
     for(var r=0;r<rthHours.length;r++){if(hourlyStats[rthHours[r]].trades===0)rthMissing.push(rthHours[r]);}
@@ -61,6 +63,14 @@ async function handleRequest(request){
     var rthTotal=0;for(var r=0;r<rthHours.length;r++)rthTotal+=hourlyStats[rthHours[r]].trades;
     if(rthTotal<500)intWarnings.push('LOW RTH: '+rthTotal+' trades');
     if(hourlyStats[9]&&hourlyStats[9].trades===0)intWarnings.push('MARKET OPEN (9AM) HAS 0 TRADES');
+
+    // Save hourly seasonality to cached_seasonality
+    if(supabase_url&&supabase_key){
+      var sh2={'Content-Type':'application/json','apikey':supabase_key,'Authorization':'Bearer '+supabase_key,'Prefer':'return=minimal'};
+      await fetch(supabase_url+'/rest/v1/cached_seasonality?ticker=eq.'+ticker+'&trade_date=eq.'+date,{method:'DELETE',headers:sh2});
+      var seasRows=[];for(var h=4;h<20;h++){var hs=hourlyStats[h];seasRows.push({ticker:ticker,trade_date:date,hour:h,high:hs.high,low:hs.low,atr:hs.atr||0,atr_pct:hs.atr_pct||0,volume:Math.round(hs.volume),trades:hs.trades});}
+      await fetch(supabase_url+'/rest/v1/cached_seasonality',{method:'POST',headers:sh2,body:JSON.stringify(seasRows)});
+    }
 
     var prices=new Float64Array(dedupedP);
     var N=prices.length;
