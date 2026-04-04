@@ -1732,6 +1732,7 @@ function DbManagePage(p){
   var s12=useState(null),optDetail=s12[0],setOptDetail=s12[1];
   var s13=useState(null),confirmOptDel=s13[0],setConfirmOptDel=s13[1];
   var dOpt=useState(null),dailyOptData=dOpt[0],setDailyOptData=dOpt[1];
+  var dOptDel=useState(null),confirmDailyOptDel=dOptDel[0],setConfirmDailyOptDel=dOptDel[1];
   var s16=useState(null),consistency=s16[0],setConsistency=s16[1];
 
   var loadData=async function(){
@@ -1939,6 +1940,20 @@ function DbManagePage(p){
       setConfirmFeatDel(null);setFeatDetail(null);loadData();
     }catch(e){setErr('Delete all features failed: '+e.message);}
   };
+  var deleteDailyOptStock=async function(ticker){
+    try{
+      var h=getSbHeaders();
+      await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?ticker=eq.'+ticker,{method:'DELETE',headers:h});
+      setConfirmDailyOptDel(null);loadData();
+    }catch(e){setErr('Delete daily optimal failed: '+e.message);}
+  };
+  var deleteAllDailyOpt=async function(){
+    try{
+      var h=getSbHeaders();
+      await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?id=gt.0',{method:'DELETE',headers:h});
+      setConfirmDailyOptDel(null);loadData();
+    }catch(e){setErr('Delete all daily optimal failed: '+e.message);}
+  };
   var deleteAll=async function(){
     try{
       var h=getSbHeaders();
@@ -2121,6 +2136,20 @@ function DbManagePage(p){
               </tr>;
             })}</tbody>
           </table>
+        </div>}
+        <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
+          {function(){var tickers={};for(var i=0;i<dailyOptData.detail.length;i++)tickers[dailyOptData.detail[i].ticker]=true;return Object.keys(tickers).map(function(tk){
+            return confirmDailyOptDel===tk?<div key={tk} style={{display:'flex',gap:8}}>
+              <button onClick={function(){deleteDailyOptStock(tk);}} style={{background:C.warn,color:C.bg,border:'none',borderRadius:6,fontFamily:F,fontSize:8,fontWeight:700,padding:'6px 10px',cursor:'pointer'}}>Yes, Delete {tk}</button>
+              <button onClick={function(){setConfirmDailyOptDel(null);}} style={{background:C.border,color:C.txt,border:'none',borderRadius:6,fontFamily:F,fontSize:8,padding:'6px 10px',cursor:'pointer'}}>Cancel</button>
+            </div>:<button key={tk} onClick={function(){setConfirmDailyOptDel(tk);}} style={{background:'transparent',border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontFamily:F,fontSize:7,fontWeight:600,padding:'4px 8px',cursor:'pointer'}}>Delete {tk}</button>;
+          });}()}
+        </div>
+        {dailyOptData.totalRows>0&&<div style={{marginTop:6}}>
+          {confirmDailyOptDel==='ALL_DAILY'?<div style={{display:'flex',gap:8}}>
+            <button onClick={deleteAllDailyOpt} style={{flex:1,background:C.warn,color:C.bg,border:'none',borderRadius:8,fontFamily:F,fontSize:9,fontWeight:700,padding:'10px',cursor:'pointer',letterSpacing:1}}>Yes, Delete All Daily Optimal Data</button>
+            <button onClick={function(){setConfirmDailyOptDel(null);}} style={{flex:1,background:C.border,color:C.txt,border:'none',borderRadius:8,fontFamily:F,fontSize:9,padding:'10px',cursor:'pointer'}}>Cancel</button>
+          </div>:<button onClick={function(){setConfirmDailyOptDel('ALL_DAILY');}} style={{width:'100%',background:'transparent',border:'1px solid '+C.warn,borderRadius:8,color:C.warn,fontFamily:F,fontSize:8,fontWeight:600,padding:'8px',cursor:'pointer',letterSpacing:1}}>DELETE ALL DAILY OPTIMAL DATA</button>}
         </div>}
       </Cd>}
       {optData&&<div style={{marginTop:16}}>
