@@ -3554,52 +3554,110 @@ function OptimalTPPage(p){
     </div>}
     {mode==='multi'&&multiResults&&<div>
       <Cd glow={true}>
-        <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>MULTI-DAY COMPARISON | {multiResults.ticker} | {multiResults.totalDays} DAYS</div>
-        <SectionHead title="Current vs Flat vs Day-Adjusted" sub="Three-way TP% comparison"/>
-        {function(){var fq=multiResults.cap/multiResults.avgClosePrice;var af=multiResults.fee*fq;var flatTd=Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100);var flatGPC=fq*flatTd;var flatNPC=flatGPC-af;var hasCur=multiResults.currentTpPct>0&&multiResults.currentFixed;var curTd=hasCur?Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.currentTpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100):0;return <div>
-        {hasCur&&<div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.purple,textAlign:'center',marginTop:10}}>
-          <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Current Fixed TP%</div>
-          <div style={{color:C.purple,fontSize:22,fontWeight:800,fontFamily:F}}>{multiResults.currentTpPct.toFixed(2)+'%'}</div>
-          <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:2}}>{'TP $'+curTd.toFixed(2)+' spread'}</div>
-          <div style={{color:multiResults.currentFixed.totalNet>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+multiResults.currentFixedTotal.toFixed(2)}</div>
-          <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Total Net Profit</div>
-        </div>}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
-          <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,textAlign:'center'}}>
-            <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Best Flat TP%</div>
-            <div style={{color:C.gold,fontSize:22,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</div>
-            <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:2}}>{'TP $'+flatTd.toFixed(2)+' spread'}</div>
-            <div style={{color:C.accent,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+multiResults.flatBest.totalNet.toFixed(2)}</div>
-            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Total Net Profit</div>
+        <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>MULTI-DAY COMPARISON | {multiResults.ticker} | {multiResults.totalDays} DAYS | AVG CLOSE ${multiResults.avgClosePrice.toFixed(2)}</div>
+        {function(){
+          var fq=multiResults.cap/multiResults.avgClosePrice;var af=multiResults.fee*fq;
+          var hasCur=multiResults.currentTpPct>0&&multiResults.currentFixed;
+          // Current stats
+          var curTpPct=multiResults.currentTpPct||0;
+          var curTd=hasCur?Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+curTpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100):0;
+          var curGPC=fq*curTd;var curNPC=curGPC-af;
+          var curCycles=hasCur?multiResults.currentFixed.totalCycles:0;
+          var curNet=multiResults.currentFixedTotal||0;
+          var curGross=curCycles*curGPC;var curFees=curCycles*af;
+          var curFeesPct=curGross>0?(curFees/curGross*100):0;
+          // Flat stats
+          var flatTd=Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100);
+          var flatGPC=fq*flatTd;var flatNPC=flatGPC-af;
+          var flatCycles=multiResults.flatBest.totalCycles;
+          var flatNet=multiResults.flatBest.totalNet;
+          var flatGross=flatCycles*flatGPC;var flatFees=flatCycles*af;
+          var flatFeesPct=flatGross>0?(flatFees/flatGross*100):0;
+          // Day-adjusted stats
+          var adjNet=multiResults.dayAdjustedTotal;
+          var adjCycles=0;var adjGross=0;
+          for(var ai=0;ai<multiResults.dayBests.length;ai++){
+            adjCycles+=multiResults.dayBests[ai].bestCycles;
+            var dayFq=multiResults.cap/multiResults.dayBests[ai].sharePrice;
+            var dayTd=Math.max(0.01,Math.round((Math.ceil(multiResults.dayBests[ai].sharePrice*(1+multiResults.dayBests[ai].bestTp/100)*100)/100-multiResults.dayBests[ai].sharePrice)*100)/100);
+            adjGross+=multiResults.dayBests[ai].bestCycles*dayFq*dayTd;
+          }
+          var adjFees=adjGross-adjNet;var adjFeesPct=adjGross>0?(adjFees/adjGross*100):0;
+          var adjNPC=adjCycles>0?(adjNet/adjCycles):0;var adjGPC=adjCycles>0?(adjGross/adjCycles):0;
+          var adjAfPC=adjCycles>0?(adjFees/adjCycles):0;
+          // Stat row helper
+          var StatRow=function(props){return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0',borderBottom:'1px solid '+C.grid}}>
+            <span style={{color:C.txtDim,fontSize:7,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5}}>{props.label}</span>
+            <span style={{color:props.color||C.txt,fontSize:9,fontFamily:F,fontWeight:props.bold?700:600}}>{props.value}</span>
+          </div>;};
+          // Edge helper
+          var EdgeRow=function(props){var diff=props.mine-props.other;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'2px 0'}}>
+            <span style={{color:C.txtDim,fontSize:6,fontFamily:F,letterSpacing:0.5}}>{'vs '+props.vsLabel}</span>
+            <span style={{color:diff>0?C.accent:diff<0?C.warn:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700}}>{(diff>=0?'+$':'-$')+Math.abs(diff).toFixed(2)}</span>
+          </div>;};
+          return <div>
+          {hasCur&&<div style={{padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.purple,marginTop:10}}>
+            <div style={{color:C.purple,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,textAlign:'center'}}>1. Current Fixed TP%</div>
+            <div style={{textAlign:'center',marginBottom:10}}>
+              <span style={{color:C.purple,fontSize:24,fontWeight:800,fontFamily:F}}>{curTpPct.toFixed(2)+'%'}</span>
+              <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{'($'+curTd.toFixed(2)+' spread)'}</span>
+            </div>
+            <StatRow label="Total Cycles" value={curCycles.toLocaleString()} color={C.purple} bold={true}/>
+            <StatRow label="Total Net Profit" value={'$'+curNet.toFixed(2)} color={curNet>0?C.accent:C.warn} bold={true}/>
+            <StatRow label="Gross/Cycle" value={'$'+curGPC.toFixed(4)} color={C.txt}/>
+            <StatRow label="Net/Cycle" value={'$'+curNPC.toFixed(4)} color={C.accent}/>
+            <StatRow label="Fee/Cycle" value={'$'+af.toFixed(4)} color={C.warn}/>
+            <StatRow label="Total Fees" value={'$'+curFees.toFixed(2)} color={C.warn}/>
+            <StatRow label="Fees as % of Gross" value={curFeesPct.toFixed(1)+'%'} color={curFeesPct>50?C.warn:C.txtDim}/>
+            <div style={{marginTop:6,padding:'4px 0',borderTop:'1px solid '+C.border}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>EDGE</div>
+              <EdgeRow mine={curNet} other={flatNet} vsLabel="Best Flat"/>
+              <EdgeRow mine={curNet} other={adjNet} vsLabel="Day-Adjusted"/>
+            </div>
+          </div>}
+          <div style={{padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.gold,marginTop:10}}>
+            <div style={{color:C.gold,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,textAlign:'center'}}>{hasCur?'2':'1'}. Best Flat TP%</div>
+            <div style={{textAlign:'center',marginBottom:10}}>
+              <span style={{color:C.gold,fontSize:24,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</span>
+              <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{'($'+flatTd.toFixed(2)+' spread)'}</span>
+            </div>
+            <StatRow label="Total Cycles" value={flatCycles.toLocaleString()} color={C.gold} bold={true}/>
+            <StatRow label="Total Net Profit" value={'$'+flatNet.toFixed(2)} color={flatNet>0?C.accent:C.warn} bold={true}/>
+            <StatRow label="Gross/Cycle" value={'$'+flatGPC.toFixed(4)} color={C.txt}/>
+            <StatRow label="Net/Cycle" value={'$'+flatNPC.toFixed(4)} color={C.accent}/>
+            <StatRow label="Fee/Cycle" value={'$'+af.toFixed(4)} color={C.warn}/>
+            <StatRow label="Total Fees" value={'$'+flatFees.toFixed(2)} color={C.warn}/>
+            <StatRow label="Fees as % of Gross" value={flatFeesPct.toFixed(1)+'%'} color={flatFeesPct>50?C.warn:C.txtDim}/>
+            <div style={{marginTop:6,padding:'4px 0',borderTop:'1px solid '+C.border}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>EDGE</div>
+              {hasCur&&<EdgeRow mine={flatNet} other={curNet} vsLabel="Current"/>}
+              <EdgeRow mine={flatNet} other={adjNet} vsLabel="Day-Adjusted"/>
+            </div>
           </div>
-          <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.accent,textAlign:'center'}}>
-            <div style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Day-Adjusted</div>
-            <div style={{color:C.accent,fontSize:22,fontWeight:800,fontFamily:F}}>{'$'+multiResults.dayAdjustedTotal.toFixed(2)}</div>
-            <div style={{color:multiResults.edge>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{(multiResults.edge>=0?'+':'')+multiResults.edgePct.toFixed(1)+'%'}</div>
-            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Edge vs Flat</div>
+          <div style={{padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.accent,marginTop:10}}>
+            <div style={{color:C.accent,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,textAlign:'center'}}>{hasCur?'3':'2'}. Day-Adjusted Optimal</div>
+            <div style={{textAlign:'center',marginBottom:10}}>
+              <span style={{color:C.accent,fontSize:9,fontFamily:F}}>Best TP% varies per day</span>
+            </div>
+            <StatRow label="Total Cycles" value={adjCycles.toLocaleString()} color={C.accent} bold={true}/>
+            <StatRow label="Total Net Profit" value={'$'+adjNet.toFixed(2)} color={adjNet>0?C.accent:C.warn} bold={true}/>
+            <StatRow label="Avg Gross/Cycle" value={'$'+adjGPC.toFixed(4)} color={C.txt}/>
+            <StatRow label="Avg Net/Cycle" value={'$'+adjNPC.toFixed(4)} color={C.accent}/>
+            <StatRow label="Avg Fee/Cycle" value={'$'+adjAfPC.toFixed(4)} color={C.warn}/>
+            <StatRow label="Total Fees" value={'$'+adjFees.toFixed(2)} color={C.warn}/>
+            <StatRow label="Fees as % of Gross" value={adjFeesPct.toFixed(1)+'%'} color={adjFeesPct>50?C.warn:C.txtDim}/>
+            <div style={{marginTop:6,padding:'4px 0',borderTop:'1px solid '+C.border}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>EDGE</div>
+              {hasCur&&<EdgeRow mine={adjNet} other={curNet} vsLabel="Current"/>}
+              <EdgeRow mine={adjNet} other={flatNet} vsLabel="Best Flat"/>
+            </div>
           </div>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
-          <Mt label="Edge $" value={(multiResults.edge>=0?'+$':'$')+multiResults.edge.toFixed(2)} color={multiResults.edge>0?C.accent:C.warn} size="md"/>
-          <Mt label="Flat Cycles" value={multiResults.flatBest.totalCycles} color={C.gold} size="md"/>
-          <Mt label="Days" value={multiResults.totalDays} color={C.blue} size="md"/>
-        </div>
-        {hasCur&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
-          <Mt label="Cur vs Flat" value={(multiResults.flatBest.totalNet-multiResults.currentFixedTotal>=0?'+$':'-$')+Math.abs(multiResults.flatBest.totalNet-multiResults.currentFixedTotal).toFixed(2)} color={multiResults.flatBest.totalNet>multiResults.currentFixedTotal?C.accent:C.warn} size="md"/>
-          <Mt label="Cur vs Adj" value={(multiResults.dayAdjustedTotal-multiResults.currentFixedTotal>=0?'+$':'-$')+Math.abs(multiResults.dayAdjustedTotal-multiResults.currentFixedTotal).toFixed(2)} color={multiResults.dayAdjustedTotal>multiResults.currentFixedTotal?C.accent:C.warn} size="md"/>
-          <Mt label="Cur Cycles" value={multiResults.currentFixed?multiResults.currentFixed.totalCycles:0} color={C.purple} size="md"/>
-        </div>}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
-          <Mt label="Avg Close" value={'$'+multiResults.avgClosePrice.toFixed(2)} color={C.txt} size="md"/>
-          <Mt label="Shares/Level" value={fq.toFixed(4)} color={C.txt} size="md"/>
-          <Mt label="Adj Fee" value={'$'+af.toFixed(4)} color={C.warn} size="md"/>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
-          <Mt label="Flat TP$" value={'$'+flatTd.toFixed(2)} color={C.gold} size="md"/>
-          <Mt label="Gross/Cycle" value={'$'+flatGPC.toFixed(4)} color={C.txt} size="md"/>
-          <Mt label="Net/Cycle" value={'$'+flatNPC.toFixed(4)} color={C.accent} size="md"/>
-        </div>
-        </div>;}()}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
+            <Mt label="Avg Close" value={'$'+multiResults.avgClosePrice.toFixed(2)} color={C.txt} size="md"/>
+            <Mt label="Shares/Level" value={fq.toFixed(4)} color={C.txt} size="md"/>
+            <Mt label="Days" value={multiResults.totalDays} color={C.blue} size="md"/>
+          </div>
+          </div>;}()}
         {function(){var wDays=0;for(var wi=0;wi<multiResults.dayBests.length;wi++){if(multiResults.dayBests[wi].warnings&&multiResults.dayBests[wi].warnings.length>0)wDays++;}
         return <div style={{marginTop:8,padding:'6px 10px',borderRadius:4,background:wDays===0?C.accentDim:C.warnDim,border:'1px solid '+(wDays===0?C.accent:C.warn)}}>
           <span style={{fontSize:8,fontFamily:F,fontWeight:700,color:wDays===0?C.accent:C.warn}}>{wDays===0?'\u2713 ALL DAYS PASS INTEGRITY CHECK':'\u26A0 '+wDays+' DAY'+(wDays>1?'S':'')+' WITH WARNINGS'}</span>
