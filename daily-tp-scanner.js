@@ -1,6 +1,5 @@
-// Alpha Quant Analytics - Daily TP% Scanner
-// Server-side: runs 100 TP% iterations on Cloudflare Workers (300s CPU limit)
-// Same typed-array engine as analyzePriceLevels
+// Alpha Quant Analytics - Daily TP% Scanner v2
+// FIXED: overlapping windows now dedup by timestamp
 const C={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
 function R(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{...C,'Content-Type':'application/json'}});}
 
@@ -18,7 +17,7 @@ export default{async fetch(request){
     const etStr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(testDate);
     const etOff=utcH-parseInt(etStr);
 
-    // 3-window fetch with EST/EDT-aware boundaries
+    // 3-window fetch with overlap + dedup
     const pad=n=>String(n).padStart(2,'0');
     const nextDay=new Date(testDate.getTime()+86400000).toISOString().slice(0,10);
     const hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;
@@ -26,17 +25,22 @@ export default{async fetch(request){
 
     async function fetchWin(gte,lt){
       let trades=[],url=`https://api.polygon.io/v3/trades/${ticker}?timestamp.gte=${gte}&timestamp.lt=${lt}&limit=50000&sort=timestamp&order=asc&apiKey=${polygon_key}`;
-      while(url){const r=await fetch(url);if(!r.ok)return trades;const d=await r.json();if(d.results)for(const t of d.results)trades.push(t.price);url=d.next_url?d.next_url+'&apiKey='+polygon_key:null;}
+      while(url){const r=await fetch(url);if(!r.ok)return trades;const d=await r.json();if(d.results)for(const t of d.results)trades.push({p:t.price,t:t.sip_timestamp||t.participant_timestamp});url=d.next_url?d.next_url+'&apiKey='+polygon_key:null;}
       return trades;
     }
 
     const w1=await fetchWin(`${date}T${pad(hPre)}:00:00.000Z`,`${date}T${pad(hMid+2)}:00:00.000Z`);
     const w2=await fetchWin(`${date}T${pad(hMid-1)}:00:00.000Z`,`${date}T${pad(hAft+2)}:00:00.000Z`);
     const w3=await fetchWin(`${date}T${pad(hAft-1)}:00:00.000Z`,wEnd);
-    // Note: for daily scanner we only need prices, not timestamps, so dedup by value not needed
-    // Just concat and sort isn't needed either since analyzePriceLevels processes sequentially
-    // But we DO need proper ordering, so we keep the window order
-    const prices=new Float64Array([...w1,...w2,...w3]);
+
+    // Dedup by timestamp (overlapping windows produce duplicates)
+    const allRaw=[...w1,...w2,...w3];
+    allRaw.sort((a,b)=>a.t-b.t);
+    const deduped=[];
+    let lastTs=-1;
+    for(const tr of allRaw){if(tr.t!==lastTs){deduped.push(tr.p);lastTs=tr.t;}}
+
+    const prices=new Float64Array(deduped);
     const N=prices.length;
     if(!N)return R({error:'No trades',ticker,date},404);
 
