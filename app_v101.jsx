@@ -5094,6 +5094,76 @@ function TradeFinderPage(p){
         {trades.length>5000&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:8}}>Showing first 5,000 of {trades.length.toLocaleString()} trades. Use CSV export for full data.</div>}
       </Cd>
     </div>}
+    <Cd>
+      <SectionHead title="Important: Fractional Shares" sub="Why your Beta system fills may not appear"/>
+      <div style={{fontSize:9,fontFamily:F,color:C.txt,lineHeight:1.8}}>
+        <p style={{marginBottom:8}}>Fractional share trades are <span style={{color:C.gold,fontWeight:700}}>not reported to the consolidated tape</span> and will never appear in Polygon data. When a broker like Alpaca fills a fractional order (e.g., 0.005 shares of a $200 stock), the process works as follows:</p>
+        <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>1. Aggregation:</span> The broker collects fractional orders from multiple customers into a pool.</p>
+        <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>2. Whole-Share Execution:</span> The broker executes a whole-share trade on the exchange or via an internalizer (Citadel, Virtu, etc.). This is the only trade that appears on the tape.</p>
+        <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>3. Internal Allocation:</span> The broker splits the whole-share fill across customer accounts as fractional allocations. These are ledger entries on the broker's books, not exchange-reported trades.</p>
+        <p style={{marginBottom:8,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>4. Price Matching:</span> Your fractional fill price matches the parent whole-share trade price exactly. The timestamp will also match.</p>
+        <p style={{marginBottom:8,color:C.txtDim}}><span style={{color:C.blue,fontWeight:700}}>To verify Beta system fills:</span> Pull your execution data from the Alpaca API (/v2/orders or /v2/account/activities/FILL), note the timestamp and price, then search here for trades at that exact time. You should find the broker's parent whole-share trade on the tape at the same price, typically with a larger size, reported via FINRA/TRF (exchange code 19) if internalized or via the exchange if routed directly.</p>
+        <p style={{color:C.txtDim}}><span style={{color:C.warn,fontWeight:700}}>What you will NOT find:</span> Your specific fractional allocation as a distinct trade. The 0.005-share fill exists only in Alpaca's internal records, not on any exchange or data feed.</p>
+      </div>
+    </Cd>
+    <Cd>
+      <SectionHead title="Trade Condition Reference" sub="SIP condition codes and their meaning"/>
+      <div style={{fontSize:9,fontFamily:F,color:C.txt,lineHeight:1.6,marginBottom:8}}>
+        <p style={{marginBottom:6}}>Each trade execution carries one or more condition codes that classify its regulatory and market structure context. Rows in the trade log are colored by condition: <span style={{color:C.blue}}>blue = extended hours</span>, <span style={{color:C.purple}}>purple = odd lot</span>.</p>
+      </div>
+      <div style={{overflowX:'auto',maxHeight:500}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'4px 4px',color:C.txtDim,textAlign:'left'}}>Code</th>
+            <th style={{padding:'4px 4px',color:C.txtDim,textAlign:'left'}}>Name</th>
+            <th style={{padding:'4px 4px',color:C.txtDim,textAlign:'left'}}>Description</th>
+            <th style={{padding:'4px 4px',color:C.txtDim,textAlign:'center'}}>OHLC</th>
+          </tr></thead>
+          <tbody>
+            {[
+              {c:0,n:'Regular',d:'Standard exchange trade. Normal price discovery.',o:true},
+              {c:1,n:'Acquisition',d:'Trade related to an acquisition.',o:false},
+              {c:2,n:'Avg Price',d:'Executed at average price (e.g., VWAP order). Not real-time price discovery.',o:false},
+              {c:3,n:'Auto Exec',d:'Automatically executed by exchange matching engine.',o:true},
+              {c:5,n:'Intermarket Sweep',d:'Large order swept across multiple exchanges simultaneously. Often institutional.',o:true},
+              {c:7,n:'Cash Sale',d:'Same-day settlement instead of T+1. Non-standard.',o:false},
+              {c:8,n:'Next Day',d:'Settlement on next business day. Non-standard.',o:false},
+              {c:9,n:'Opening',d:'Part of the opening auction process.',o:true},
+              {c:10,n:'Intermarket Sweep',d:'ISO order routed to sweep protected quotes.',o:true},
+              {c:12,n:'Cross',d:'Pre-arranged trade, buyer and seller matched before exchange. Often block trades.',o:false},
+              {c:13,n:'Derivatively Priced',d:'Price derived from another instrument (NAV, index). Common for leveraged ETFs like SOXL, TQQQ.',o:false},
+              {c:14,n:'Form T',d:'Extended hours trade reported under SEC Form T. Pre-market or after-hours.',o:false},
+              {c:15,n:'Sold Last',d:'Reported late but should update the last sale price.',o:true},
+              {c:16,n:'Out of Sequence',d:'Reported out of time order. Late report.',o:false},
+              {c:17,n:'Contingent',d:'Part of a multi-leg strategy (stock + options combo).',o:false},
+              {c:18,n:'Stopped Stock',d:'Specialist guaranteed a price to the order.',o:true},
+              {c:20,n:'SSR',d:'Short Sale Restriction in effect. Stock on SSR list.',o:true},
+              {c:21,n:'Odd Lot',d:'Fewer than 100 shares. Most retail and fractional orders. Included on tape since 2022.',o:false},
+              {c:22,n:'Corrected Consolidated',d:'Previously reported trade was corrected.',o:false},
+              {c:29,n:'Opening',d:'Official opening print from exchange auction.',o:true},
+              {c:33,n:'Extended Hours',d:'Trade executed outside regular market hours (pre/post).',o:false},
+              {c:37,n:'Cross',d:'Crossing trade on exchange.',o:false},
+              {c:38,n:'Closing',d:'Part of the closing auction. Official close price.',o:true},
+              {c:39,n:'Sub-Penny',d:'Traded at sub-penny precision (e.g., $5.6732). Your cycle engine handles these correctly.',o:true},
+              {c:40,n:'Corrected Extended',d:'Correction to an extended hours trade.',o:false},
+              {c:52,n:'Contingent',d:'Contingent trade, part of larger strategy.',o:false},
+              {c:53,n:'Qualified Contingent',d:'QCT exemption under Reg NMS. Block trade that bypasses NBBO requirements.',o:false}
+            ].map(function(row){
+              return <tr key={row.c} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'4px 4px',color:C.gold,fontWeight:700}}>{row.c}</td>
+                <td style={{padding:'4px 4px',color:C.txtBright,fontWeight:600}}>{row.n}</td>
+                <td style={{padding:'4px 4px',color:C.txtDim}}>{row.d}</td>
+                <td style={{padding:'4px 4px',textAlign:'center',color:row.o?C.accent:C.warn}}>{row.o?'\u2713':'\u2717'}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
+        <p><span style={{color:C.accent}}>{'\u2713'}</span> = Eligible to update OHLC/last sale. <span style={{color:C.warn}}>{'\u2717'}</span> = Does not update official OHLC.</p>
+        <p style={{marginTop:4}}>For cycle engine accuracy, all conditions are included in the analysis since the algorithm measures actual price oscillations regardless of trade classification. However, condition 2 (Avg Price), 12/37 (Cross), and 13 (Derivatively Priced) trades may execute at prices that don't reflect live market dynamics.</p>
+      </div>
+    </Cd>
   </div>;
 }
 
