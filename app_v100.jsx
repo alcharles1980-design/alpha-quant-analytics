@@ -3015,45 +3015,51 @@ function Splash(p){
   useEffect(function(){
     var canvas=canvasRef.current;if(!canvas)return;
     var ctx=canvas.getContext('2d');
+    var dpr=window.devicePixelRatio||1;
     var W=window.innerWidth,H=window.innerHeight;
-    canvas.width=W;canvas.height=H;
-    var cols=Math.floor(W/20);
-    var chars='0123456789.%$+-';
+    canvas.width=W*dpr;canvas.height=H*dpr;
+    canvas.style.width=W+'px';canvas.style.height=H+'px';
+    ctx.scale(dpr,dpr);
+    var colW=24;var cols=Math.floor(W/colW);
+    var chars='0123456789.%$';
     var columns=[];
     for(var i=0;i<cols;i++){
-      var trail=[];var len=4+Math.floor(Math.random()*6);
-      var startY=Math.random()*H/14;
-      for(var j=0;j<len;j++)trail.push({ch:chars[Math.floor(Math.random()*chars.length)],y:startY-j});
-      columns.push({x:i*20+Math.random()*4,trail:trail,speed:0.15+Math.random()*0.35,len:len});
+      var len=3+Math.floor(Math.random()*5);
+      var startY=-Math.random()*30;
+      var trail=[];
+      for(var j=0;j<len;j++)trail.push({ch:chars[Math.floor(Math.random()*chars.length)],y:startY-j*2});
+      columns.push({x:i*colW+2+Math.random()*8,trail:trail,speed:0.1+Math.random()*0.2,len:len});
     }
     var frameId;var tick=0;
     var draw=function(){
       ctx.clearRect(0,0,W,H);
-      ctx.font='13px JetBrains Mono';
+      ctx.font='600 14px JetBrains Mono,monospace';
+      ctx.textBaseline='top';
       for(var i=0;i<cols;i++){
         var col=columns[i];
         for(var j=0;j<col.trail.length;j++){
           var t=col.trail[j];
-          var yPx=t.y*16;
+          var yPx=t.y*20;
           if(yPx<-20||yPx>H+20)continue;
-          var age=j/col.len;
-          var alpha=0.07*(1-age*0.8);
+          var alpha=j===0?0.09:0.06-(j/col.len)*0.03;
+          if(alpha<0.015)alpha=0.015;
           ctx.fillStyle='rgba(61,158,255,'+alpha+')';
           ctx.fillText(t.ch,col.x,yPx);
         }
         if(tick%3===0){
           for(var j=0;j<col.trail.length;j++)col.trail[j].y+=col.speed;
-          if(col.trail[0].y*16>H+40&&Math.random()>0.95){
-            for(var j=0;j<col.trail.length;j++){col.trail[j].y=-col.len+j;col.trail[j].ch=chars[Math.floor(Math.random()*chars.length)];}
+          if(col.trail[0].y*20>H+40){
+            col.trail[0].y=-Math.random()*8;
+            for(var j=0;j<col.trail.length;j++){col.trail[j].y=col.trail[0].y-j*2;col.trail[j].ch=chars[Math.floor(Math.random()*chars.length)];}
           }
         }
-        if(tick%20===0&&Math.random()>0.7){var ri=Math.floor(Math.random()*col.trail.length);col.trail[ri].ch=chars[Math.floor(Math.random()*chars.length)];}
+        if(tick%30===0&&Math.random()>0.6){var ri=Math.floor(Math.random()*col.trail.length);col.trail[ri].ch=chars[Math.floor(Math.random()*chars.length)];}
       }
       tick++;
       frameId=requestAnimationFrame(draw);
     };
     draw();
-    var onResize=function(){W=window.innerWidth;H=window.innerHeight;canvas.width=W;canvas.height=H;};
+    var onResize=function(){W=window.innerWidth;H=window.innerHeight;dpr=window.devicePixelRatio||1;canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.scale(dpr,dpr);};
     window.addEventListener('resize',onResize);
     return function(){cancelAnimationFrame(frameId);window.removeEventListener('resize',onResize);};
   },[]);
