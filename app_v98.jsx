@@ -1733,6 +1733,8 @@ function DbManagePage(p){
   var s13=useState(null),confirmOptDel=s13[0],setConfirmOptDel=s13[1];
   var dOpt=useState(null),dailyOptData=dOpt[0],setDailyOptData=dOpt[1];
   var dOptDel=useState(null),confirmDailyOptDel=dOptDel[0],setConfirmDailyOptDel=dOptDel[1];
+  var dOptExp=useState(null),expandedDailyOpt=dOptExp[0],setExpandedDailyOpt=dOptExp[1];
+  var dOptHr=useState(null),dailyOptHourly=dOptHr[0],setDailyOptHourly=dOptHr[1];
   var s16=useState(null),consistency=s16[0],setConsistency=s16[1];
 
   var loadData=async function(){
@@ -1954,6 +1956,17 @@ function DbManagePage(p){
       setConfirmDailyOptDel(null);loadData();
     }catch(e){setErr('Delete all daily optimal failed: '+e.message);}
   };
+  var loadDailyOptHourly=async function(ticker,date){
+    var key=ticker+'|'+date;
+    if(expandedDailyOpt===key){setExpandedDailyOpt(null);setDailyOptHourly(null);return;}
+    setExpandedDailyOpt(key);setDailyOptHourly(null);
+    try{
+      var h=getSbHeaders();
+      var r=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&select=hour,trades,volume,high,low,atr,atr_pct&order=hour.asc',{headers:h});
+      var rows=r.ok?await r.json():[];
+      setDailyOptHourly(rows);
+    }catch(e){setDailyOptHourly([]);}
+  };
   var deleteAll=async function(){
     try{
       var h=getSbHeaders();
@@ -2127,13 +2140,48 @@ function DbManagePage(p){
               <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Net $</th>
             </tr></thead>
             <tbody>{dailyOptData.detail.map(function(d){
-              return <tr key={d.ticker+d.trade_date} style={{borderBottom:'1px solid '+C.grid}}>
-                <td style={{padding:'3px 2px',color:C.accent,fontWeight:700}}>{d.ticker}</td>
+              var dayKey=d.ticker+'|'+d.trade_date;
+              var isDayOpen=expandedDailyOpt===dayKey;
+              return <React.Fragment key={dayKey}>
+                <tr onClick={function(){loadDailyOptHourly(d.ticker,d.trade_date);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:isDayOpen?C.blueDim:'transparent'}}>
+                <td style={{padding:'3px 2px',color:C.accent,fontWeight:700}}>{d.ticker}<span style={{color:C.blue,fontSize:7,marginLeft:3}}>{isDayOpen?'\u25B2':'\u25BC'}</span></td>
                 <td style={{padding:'3px 2px',color:C.txt}}>{d.trade_date}</td>
                 <td style={{padding:'3px 2px',color:C.gold,textAlign:'right'}}>{'$'+d.tp_dollar.toFixed(2)}</td>
                 <td style={{padding:'3px 2px',color:C.blue,textAlign:'right'}}>{d.cycles}</td>
                 <td style={{padding:'3px 2px',color:d.net_total>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+d.net_total.toFixed(2)}</td>
-              </tr>;
+              </tr>
+              {isDayOpen&&<tr><td colSpan="5" style={{padding:0}}>
+                <div style={{padding:'8px 4px',background:C.bgDeep,borderBottom:'2px solid '+C.blue}}>
+                  {!dailyOptHourly&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>Loading hourly data...</div>}
+                  {dailyOptHourly&&dailyOptHourly.length===0&&<div style={{color:C.warn,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>No hourly seasonality data for this day.</div>}
+                  {dailyOptHourly&&dailyOptHourly.length>0&&<div>
+                    <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:4,fontWeight:700,letterSpacing:1}}>HOURLY DATA INTEGRITY: {d.trade_date}</div>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+                      <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Trades</th>
+                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Volume</th>
+                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>High</th>
+                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Low</th>
+                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>ATR%</th>
+                      </tr></thead>
+                      <tbody>{dailyOptHourly.map(function(hr){
+                        var isRTH=hr.hour>=9&&hr.hour<16;
+                        var isWarn=isRTH&&hr.trades===0;
+                        return <tr key={hr.hour} style={{borderBottom:'1px solid '+C.grid,background:isWarn?C.warnDim:'transparent'}}>
+                          <td style={{padding:'2px 2px',color:isRTH?C.txtBright:C.txtDim}}>{(hourLabels[hr.hour]||hr.hour)+(isWarn?' \u26A0':'')}</td>
+                          <td style={{padding:'2px 2px',color:isWarn?C.warn:C.txt,textAlign:'right',fontWeight:isRTH?700:400}}>{hr.trades.toLocaleString()}</td>
+                          <td style={{padding:'2px 2px',color:C.txt,textAlign:'right'}}>{Math.round(hr.volume).toLocaleString()}</td>
+                          <td style={{padding:'2px 2px',color:C.txt,textAlign:'right'}}>{hr.high?'$'+parseFloat(hr.high).toFixed(2):'-'}</td>
+                          <td style={{padding:'2px 2px',color:C.txt,textAlign:'right'}}>{hr.low?'$'+parseFloat(hr.low).toFixed(2):'-'}</td>
+                          <td style={{padding:'2px 2px',color:parseFloat(hr.atr_pct)>0.5?C.gold:C.txtDim,textAlign:'right'}}>{parseFloat(hr.atr_pct).toFixed(2)+'%'}</td>
+                        </tr>;
+                      })}</tbody>
+                    </table>
+                  </div>}
+                </div>
+              </td></tr>}
+              </React.Fragment>;
             })}</tbody>
           </table>
         </div>}
