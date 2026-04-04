@@ -13,6 +13,7 @@ async function handleRequest(request){
     var b=await request.json();
     var ticker=b.ticker,date=b.date,polygon_key=b.polygon_key;
     var cap=b.cap_per_level||1,fee=b.fee_per_share||0.005;
+    var minTi=b.min_tp||1,maxTi=b.max_tp||100;
     var supabase_url=b.supabase_url,supabase_key=b.supabase_key;
     if(!ticker||!date||!polygon_key)return R({error:'Missing params'},400);
 
@@ -84,7 +85,7 @@ async function handleRequest(request){
     var oc=Math.round(ol*100),pc=Math.round(ps2*100);
 
     var rawResults=[];
-    for(var ti=1;ti<=100;ti++){
+    for(var ti=minTi;ti<=maxTi;ti++){
       var tpPct=ti/100,tf=tpPct/100;
       var act=new Uint8Array(cnt),tgt=new Float64Array(cnt);
       for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}
