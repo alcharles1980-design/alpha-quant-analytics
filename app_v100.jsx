@@ -3017,24 +3017,39 @@ function Splash(p){
     var ctx=canvas.getContext('2d');
     var W=window.innerWidth,H=window.innerHeight;
     canvas.width=W;canvas.height=H;
-    var cols=Math.floor(W/18);
-    var drops=[];for(var i=0;i<cols;i++)drops[i]=Math.random()*H/14;
-    var speeds=[];for(var i=0;i<cols;i++)speeds[i]=0.3+Math.random()*0.7;
-    var chars='0123456789.%$+-×÷';
-    var frameId;
+    var cols=Math.floor(W/20);
+    var chars='0123456789.%$+-';
+    var columns=[];
+    for(var i=0;i<cols;i++){
+      var trail=[];var len=4+Math.floor(Math.random()*6);
+      var startY=Math.random()*H/14;
+      for(var j=0;j<len;j++)trail.push({ch:chars[Math.floor(Math.random()*chars.length)],y:startY-j});
+      columns.push({x:i*20+Math.random()*4,trail:trail,speed:0.15+Math.random()*0.35,len:len});
+    }
+    var frameId;var tick=0;
     var draw=function(){
-      ctx.fillStyle='rgba(10,22,40,0.06)';
-      ctx.fillRect(0,0,W,H);
+      ctx.clearRect(0,0,W,H);
+      ctx.font='13px JetBrains Mono';
       for(var i=0;i<cols;i++){
-        var ch=chars[Math.floor(Math.random()*chars.length)];
-        var x=i*18;var y=drops[i]*14;
-        var fade=0.03+Math.random()*0.04;
-        ctx.fillStyle='rgba(61,158,255,'+fade+')';
-        ctx.font='12px JetBrains Mono';
-        ctx.fillText(ch,x,y);
-        drops[i]+=speeds[i];
-        if(y>H&&Math.random()>0.97)drops[i]=0;
+        var col=columns[i];
+        for(var j=0;j<col.trail.length;j++){
+          var t=col.trail[j];
+          var yPx=t.y*16;
+          if(yPx<-20||yPx>H+20)continue;
+          var age=j/col.len;
+          var alpha=0.07*(1-age*0.8);
+          ctx.fillStyle='rgba(61,158,255,'+alpha+')';
+          ctx.fillText(t.ch,col.x,yPx);
+        }
+        if(tick%3===0){
+          for(var j=0;j<col.trail.length;j++)col.trail[j].y+=col.speed;
+          if(col.trail[0].y*16>H+40&&Math.random()>0.95){
+            for(var j=0;j<col.trail.length;j++){col.trail[j].y=-col.len+j;col.trail[j].ch=chars[Math.floor(Math.random()*chars.length)];}
+          }
+        }
+        if(tick%20===0&&Math.random()>0.7){var ri=Math.floor(Math.random()*col.trail.length);col.trail[ri].ch=chars[Math.floor(Math.random()*chars.length)];}
       }
+      tick++;
       frameId=requestAnimationFrame(draw);
     };
     draw();
