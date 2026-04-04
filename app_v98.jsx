@@ -3190,13 +3190,13 @@ function OptimalTPPage(p){
       var allDayResults=[];var serverFailed=false;
       for(var di=0;di<days.length;di++){
         var day=days[di];
-        var scan=null;var dayTrades=0;var dayPrice=0;
+        var scan=null;var dayTrades=0;var dayPrice=0;var fetchCheck2=null;
         // Try Cloudflare Worker first (fetches + scans server-side)
         if(!serverFailed){
           setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Server scan...');
           try{
             var cfR2=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:day,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal,supabase_url:SB_URL,supabase_key:SB_KEY})});
-            if(cfR2.ok){var cfD2=await cfR2.json();if(cfD2.status==='processed'&&cfD2.results){scan={results:cfD2.results,minTpPct:cfD2.minTpPct,sharePrice:cfD2.share_price,scanned:cfD2.tp_values_scanned};dayTrades=cfD2.total_trades;dayPrice=cfD2.share_price;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Done (server)');}}
+            if(cfR2.ok){var cfD2=await cfR2.json();if(cfD2.status==='processed'&&cfD2.results){scan={results:cfD2.results,minTpPct:cfD2.minTpPct,sharePrice:cfD2.share_price,scanned:cfD2.tp_values_scanned,hourlyStats:cfD2.hourly_stats||null,hoursWithData:cfD2.hours_with_data||0,intWarnings:cfD2.integrity_warnings||[]};dayTrades=cfD2.total_trades;dayPrice=cfD2.share_price;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Done (server)');}}
           }catch(e3){serverFailed=true;}
         }
         // Fallback: fetch ticks + browser Web Worker
@@ -3212,7 +3212,7 @@ function OptimalTPPage(p){
             var allTrades=[];var _lt=-1;for(var _di2=0;_di2<allRaw.length;_di2++){if(allRaw[_di2].ts!==_lt){allTrades.push(allRaw[_di2]);_lt=allRaw[_di2].ts;}}
             if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
             allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[allTrades.length-1].price;
-            var fetchCheck2=verifyFetchIntegrity(allTrades,day,etOff);
+            fetchCheck2=verifyFetchIntegrity(allTrades,day,etOff);
             setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning (background)...');
             await new Promise(function(r){setTimeout(r,50);});
             scan=await new Promise(function(resolve){
@@ -3223,7 +3223,13 @@ function OptimalTPPage(p){
               w2.postMessage({prices:pa2.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa2.buffer]);
             });
         }
-        allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice,warnings:scan?((typeof fetchCheck2!=='undefined'&&fetchCheck2)?fetchCheck2.warnings:[]):[],hoursWithData:scan?((typeof fetchCheck2!=='undefined'&&fetchCheck2)?fetchCheck2.hoursWithData:0):0,hourMap:scan?((typeof fetchCheck2!=='undefined'&&fetchCheck2)?fetchCheck2.hourMap:null):null,source:scan?(typeof fetchCheck2!=='undefined'?'browser':'server'):'none'});
+        var dayWarnings=[];var dayHours=0;var dayHourMap=null;var daySource='none';
+        if(scan){
+          if(fetchCheck2){dayWarnings=fetchCheck2.warnings;dayHours=fetchCheck2.hoursWithData;dayHourMap=fetchCheck2.hourMap;daySource='browser';}
+          else if(scan.intWarnings){dayWarnings=scan.intWarnings;dayHours=scan.hoursWithData||0;dayHourMap=scan.hourlyStats||null;daySource='server';}
+          else{daySource='server';}
+        }
+        allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice,warnings:dayWarnings,hoursWithData:dayHours,hourMap:dayHourMap,source:daySource});
         // Save per-day results to database
         if(scan&&scan.results)SB.saveDailyOptimalTP(ticker.toUpperCase(),day,scan.results,dayTrades,dayPrice,capVal,feeVal);
       }
@@ -3425,7 +3431,7 @@ function OptimalTPPage(p){
                 <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+db.bestNet.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{'$'+db.flatProfit.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:dayEdge>0?C.accent:dayEdge<0?C.warn:C.txtDim,textAlign:'right',fontWeight:700}}>{(dayEdge>=0?'+$':'$')+dayEdge.toFixed(2)}</td>
-                <td style={{padding:'5px 3px',color:db.hoursWithData>=14?C.accent:db.hoursWithData>=8?C.gold:C.warn,textAlign:'center',fontSize:7}}>{db.hoursWithData>0?db.hoursWithData+'/16':db.source==='server'?'srv':'-'}</td>
+                <td style={{padding:'5px 3px',color:db.hoursWithData>=14?C.accent:db.hoursWithData>=8?C.gold:C.warn,textAlign:'center',fontSize:7}}>{db.hoursWithData>0?(db.hoursWithData+'/16'):'-'}</td>
                 <td style={{padding:'5px 3px',textAlign:'center'}}>{(!db.warnings||db.warnings.length===0)?<span style={{color:C.accent,fontSize:10}}>{'\u2713'}</span>:<span onClick={function(){var w=db.warnings;alert(w.join('\n'));}} style={{color:C.warn,fontSize:8,cursor:'pointer'}}>{db.warnings.length+'\u26A0'}</span>}</td>
               </tr>;
             })}</tbody>

@@ -38,13 +38,31 @@ async function handleRequest(request){
     var w2=await fetchWin(date+'T'+pad(hMid-1)+':00:00.000Z',date+'T'+pad(hAft+2)+':00:00.000Z');
     var w3=await fetchWin(date+'T'+pad(hAft-1)+':00:00.000Z',wEnd);
 
-    // Dedup by timestamp
+    // Dedup by timestamp - keep both price and timestamp
     var allRaw=w1.concat(w2).concat(w3);
     allRaw.sort(function(a,b){return a.t-b.t;});
-    var deduped=[];var lastTs=-1;
-    for(var i=0;i<allRaw.length;i++){if(allRaw[i].t!==lastTs){deduped.push(allRaw[i].p);lastTs=allRaw[i].t;}}
+    var dedupedP=[];var dedupedT=[];var lastTs=-1;
+    for(var i=0;i<allRaw.length;i++){if(allRaw[i].t!==lastTs){dedupedP.push(allRaw[i].p);dedupedT.push(allRaw[i].t);lastTs=allRaw[i].t;}}
 
-    var prices=new Float64Array(deduped);
+    // Compute hourly stats for integrity checking
+    var etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    var hourlyStats={};for(var h=4;h<20;h++)hourlyStats[h]={trades:0};
+    for(var i=0;i<dedupedT.length;i++){
+      var ts=dedupedT[i];var ms=ts>1e15?ts/1e6:ts>1e12?ts/1e3:ts;
+      var eh=parseInt(etFmt.format(new Date(ms)));if(eh===24)eh=0;
+      if(hourlyStats[eh])hourlyStats[eh].trades++;
+    }
+    var hoursWithData=0;for(var h=4;h<20;h++){if(hourlyStats[h].trades>0)hoursWithData++;}
+    var intWarnings=[];
+    var rthHours=[9,10,11,12,13,14,15];var rthMissing=[];
+    for(var r=0;r<rthHours.length;r++){if(hourlyStats[rthHours[r]].trades===0)rthMissing.push(rthHours[r]);}
+    if(rthMissing.length>0)intWarnings.push('MISSING RTH: hours '+rthMissing.join(','));
+    if(hoursWithData<8)intWarnings.push('LOW COVERAGE: '+hoursWithData+'/16 hours');
+    var rthTotal=0;for(var r=0;r<rthHours.length;r++)rthTotal+=hourlyStats[rthHours[r]].trades;
+    if(rthTotal<500)intWarnings.push('LOW RTH: '+rthTotal+' trades');
+    if(hourlyStats[9]&&hourlyStats[9].trades===0)intWarnings.push('MARKET OPEN (9AM) HAS 0 TRADES');
+
+    var prices=new Float64Array(dedupedP);
     var N=prices.length;
     if(!N)return R({error:'No trades',ticker:ticker,date:date},404);
 
@@ -98,6 +116,7 @@ async function handleRequest(request){
     var minTp=0.01;for(var i=0;i<results.length;i++){if(results[i].netPC>0){minTp=results[i].tpPct;break;}}
     return R({status:'processed',ticker:ticker,date:date,total_trades:N,levels:cnt,
       tp_values_scanned:results.length,share_price:sp,results:results,
-      fee_per_cycle:af,minTpPct:minTp});
+      fee_per_cycle:af,minTpPct:minTp,
+      hourly_stats:hourlyStats,hours_with_data:hoursWithData,integrity_warnings:intWarnings});
   }catch(e){return R({error:String(e),stack:e.stack?e.stack.substring(0,200):''},500);}
 }
