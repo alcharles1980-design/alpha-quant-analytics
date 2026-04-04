@@ -3212,6 +3212,7 @@ function OptimalTPPage(p){
             var allTrades=[];var _lt=-1;for(var _di2=0;_di2<allRaw.length;_di2++){if(allRaw[_di2].ts!==_lt){allTrades.push(allRaw[_di2]);_lt=allRaw[_di2].ts;}}
             if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
             allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[allTrades.length-1].price;
+            var fetchCheck2=verifyFetchIntegrity(allTrades,day,etOff);
             setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning (background)...');
             await new Promise(function(r){setTimeout(r,50);});
             scan=await new Promise(function(resolve){
@@ -3222,7 +3223,7 @@ function OptimalTPPage(p){
               w2.postMessage({prices:pa2.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa2.buffer]);
             });
         }
-        allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice});
+        allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice,warnings:scan?((typeof fetchCheck2!=='undefined'&&fetchCheck2)?fetchCheck2.warnings:[]):[],hoursWithData:scan?((typeof fetchCheck2!=='undefined'&&fetchCheck2)?fetchCheck2.hoursWithData:0):0,hourMap:scan?((typeof fetchCheck2!=='undefined'&&fetchCheck2)?fetchCheck2.hourMap:null):null,source:scan?(typeof fetchCheck2!=='undefined'?'browser':'server'):'none'});
         // Save per-day results to database
         if(scan&&scan.results)SB.saveDailyOptimalTP(ticker.toUpperCase(),day,scan.results,dayTrades,dayPrice,capVal,feeVal);
       }
@@ -3243,7 +3244,7 @@ function OptimalTPPage(p){
       var dayAdjustedTotal=0;var dayBests=[];
       for(var vi=0;vi<validDays.length;vi++){
         var best=validDays[vi].scan.results[0];
-        dayBests.push({day:validDays[vi].day,trades:validDays[vi].trades,sharePrice:validDays[vi].sharePrice,bestTp:best.tpPct,bestNet:best.netTotal,bestCycles:best.cycles,bestROI:best.roi});
+        dayBests.push({day:validDays[vi].day,trades:validDays[vi].trades,sharePrice:validDays[vi].sharePrice,bestTp:best.tpPct,bestNet:best.netTotal,bestCycles:best.cycles,bestROI:best.roi,warnings:validDays[vi].warnings||[],hoursWithData:validDays[vi].hoursWithData||0,hourMap:validDays[vi].hourMap||null,source:validDays[vi].source||'unknown'});
         dayAdjustedTotal+=best.netTotal;
       }
       var flatDayProfits=[];
@@ -3385,6 +3386,10 @@ function OptimalTPPage(p){
           <Mt label="Net/Cycle" value={'$'+flatNPC.toFixed(4)} color={C.accent} size="md"/>
         </div>
         </div>;}()}
+        {function(){var wDays=0;for(var wi=0;wi<multiResults.dayBests.length;wi++){if(multiResults.dayBests[wi].warnings&&multiResults.dayBests[wi].warnings.length>0)wDays++;}
+        return <div style={{marginTop:8,padding:'6px 10px',borderRadius:4,background:wDays===0?C.accentDim:C.warnDim,border:'1px solid '+(wDays===0?C.accent:C.warn)}}>
+          <span style={{fontSize:8,fontFamily:F,fontWeight:700,color:wDays===0?C.accent:C.warn}}>{wDays===0?'\u2713 ALL DAYS PASS INTEGRITY CHECK':'\u26A0 '+wDays+' DAY'+(wDays>1?'S':'')+' WITH WARNINGS'}</span>
+        </div>;}()}
       </Cd>
       <Cd>
         <SectionHead title="Per-Day Breakdown" sub="Each day's optimal TP% vs the flat rate" info={"Best flat TP% across all "+multiResults.totalDays+" days is "+multiResults.flatBest.tpPct.toFixed(2)+"%. Green = day-adjusted outperformed flat. Red = flat was better that day."}/>
@@ -3400,6 +3405,8 @@ function OptimalTPPage(p){
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Adj$</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat$</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}>Hrs</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}>Chk</th>
             </tr></thead>
             <tbody>{multiResults.dayBests.map(function(db){
               var dayEdge=db.bestNet-db.flatProfit;
@@ -3418,6 +3425,8 @@ function OptimalTPPage(p){
                 <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+db.bestNet.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{'$'+db.flatProfit.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:dayEdge>0?C.accent:dayEdge<0?C.warn:C.txtDim,textAlign:'right',fontWeight:700}}>{(dayEdge>=0?'+$':'$')+dayEdge.toFixed(2)}</td>
+                <td style={{padding:'5px 3px',color:db.hoursWithData>=14?C.accent:db.hoursWithData>=8?C.gold:C.warn,textAlign:'center',fontSize:7}}>{db.hoursWithData>0?db.hoursWithData+'/16':db.source==='server'?'srv':'-'}</td>
+                <td style={{padding:'5px 3px',textAlign:'center'}}>{(!db.warnings||db.warnings.length===0)?<span style={{color:C.accent,fontSize:10}}>{'\u2713'}</span>:<span onClick={function(){var w=db.warnings;alert(w.join('\n'));}} style={{color:C.warn,fontSize:8,cursor:'pointer'}}>{db.warnings.length+'\u26A0'}</span>}</td>
               </tr>;
             })}</tbody>
           </table>
