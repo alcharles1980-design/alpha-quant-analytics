@@ -3170,22 +3170,36 @@ function OptimalTPPage(p){
           setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching trades...');
           var etOff=getETOffset(day);var pad=function(n){return String(n).padStart(2,'0');};var nextDay2=new Date(new Date(day+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);var hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;var wEndTs=hEnd<24?day+'T'+pad(hEnd)+':30:00.000Z':nextDay2+'T'+pad(hEnd-24)+':30:00.000Z';
           var fetchWin2=async function(tsGte,tsLt){var tr=[],u='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('API error '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];tr.push({price:t.price,size:t.size||0,ts:t.sip_timestamp||t.participant_timestamp});}u=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;}return tr;};
-          var _w1=await fetchWin2(day+'T'+pad(hPre)+':00:00.000Z',day+'T'+pad(hMid+2)+':00:00.000Z');
-          var _w2=await fetchWin2(day+'T'+pad(hMid-1)+':00:00.000Z',day+'T'+pad(hAft+2)+':00:00.000Z');
-          var _w3=await fetchWin2(day+'T'+pad(hAft-1)+':00:00.000Z',wEndTs);
-          var allRaw=_w1.concat(_w2).concat(_w3);allRaw.sort(function(a,b){return a.ts-b.ts;});
-          var allTrades=[];var _lt=-1;for(var _di2=0;_di2<allRaw.length;_di2++){if(allRaw[_di2].ts!==_lt){allTrades.push(allRaw[_di2]);_lt=allRaw[_di2].ts;}}
-          if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
-          allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[0].price;
-          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning (background)...');
-          await new Promise(function(r){setTimeout(r,50);});
-          scan=await new Promise(function(resolve){
-            var wCode2='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.cap;var fee=d.fee;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var results=[];var minTp=Infinity;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var totalCy=0,actLev=0;for(var i=1;i<N;i++){var p=prices[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;totalCy++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}for(var c=0;c<cnt;c++)if(act[c]===1)actLev++;var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;if(npc>0&&tpPct<minTp)minTp=tpPct;results.push({tpPct:tpPct,tpDollar:td,cycles:totalCy,grossPC:gpc,adjFee:af,netPC:npc,grossTotal:totalCy*gpc,netTotal:totalCy*npc,capDeployed:actLev*cap,roi:actLev>0?((totalCy*npc)/(actLev*cap)*100):0});if(ti%5===0)self.postMessage({type:"progress",ti:ti});}results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});self.postMessage({type:"result",results:results,minTpPct:minTp,sharePrice:sp,scanned:100});};';
-            var blob2=new Blob([wCode2],{type:'application/javascript'});var w2=new Worker(URL.createObjectURL(blob2));
-            w2.onmessage=function(ev){if(ev.data.type==='progress')setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ev.data.ti+'/100');if(ev.data.type==='result'){w2.terminate();resolve(ev.data);}};
-            var pa2=new Float64Array(allTrades.length);for(var pi2=0;pi2<allTrades.length;pi2++)pa2[pi2]=allTrades[pi2].price;
-            w2.postMessage({prices:pa2.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa2.buffer]);
-          });
+          // Try CF Worker first (server fetches + scans), skip if failed before
+          var cfOk=false;
+          if(!serverFailed){
+            setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Server scan...');
+            try{
+              var cfR2=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:day,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal})});
+              if(cfR2.ok){var cfD2=await cfR2.json();if(cfD2.status==='processed'&&cfD2.results){scan=cfD2;dayTrades=cfD2.total_trades;dayPrice=cfD2.share_price;cfOk=true;}}
+              if(!cfOk)serverFailed=true;
+            }catch(e3){serverFailed=true;}
+          }
+          if(!cfOk){
+            // Fallback: fetch ticks in browser + Web Worker scan
+            setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+            var _w1=await fetchWin2(day+'T'+pad(hPre)+':00:00.000Z',day+'T'+pad(hMid+2)+':00:00.000Z');
+            var _w2=await fetchWin2(day+'T'+pad(hMid-1)+':00:00.000Z',day+'T'+pad(hAft+2)+':00:00.000Z');
+            var _w3=await fetchWin2(day+'T'+pad(hAft-1)+':00:00.000Z',wEndTs);
+            var allRaw=_w1.concat(_w2).concat(_w3);allRaw.sort(function(a,b){return a.ts-b.ts;});
+            var allTrades=[];var _lt=-1;for(var _di2=0;_di2<allRaw.length;_di2++){if(allRaw[_di2].ts!==_lt){allTrades.push(allRaw[_di2]);_lt=allRaw[_di2].ts;}}
+            if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
+            allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[0].price;
+            setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning (background)...');
+            await new Promise(function(r){setTimeout(r,50);});
+            scan=await new Promise(function(resolve){
+              var wCode2='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.cap;var fee=d.fee;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var results=[];var minTp=Infinity;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var totalCy=0,actLev=0;for(var i=1;i<N;i++){var p=prices[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;totalCy++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}for(var c=0;c<cnt;c++)if(act[c]===1)actLev++;var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;if(npc>0&&tpPct<minTp)minTp=tpPct;results.push({tpPct:tpPct,tpDollar:td,cycles:totalCy,grossPC:gpc,adjFee:af,netPC:npc,grossTotal:totalCy*gpc,netTotal:totalCy*npc,capDeployed:actLev*cap,roi:actLev>0?((totalCy*npc)/(actLev*cap)*100):0});if(ti%5===0)self.postMessage({type:"progress",ti:ti});}results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});self.postMessage({type:"result",results:results,minTpPct:minTp,sharePrice:sp,scanned:100});};';
+              var blob2=new Blob([wCode2],{type:'application/javascript'});var w2=new Worker(URL.createObjectURL(blob2));
+              w2.onmessage=function(ev){if(ev.data.type==='progress')setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ev.data.ti+'/100');if(ev.data.type==='result'){w2.terminate();resolve(ev.data);}};
+              var pa2=new Float64Array(allTrades.length);for(var pi2=0;pi2<allTrades.length;pi2++)pa2[pi2]=allTrades[pi2].price;
+              w2.postMessage({prices:pa2.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa2.buffer]);
+            });
+          }
         }
         allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice});
       }
