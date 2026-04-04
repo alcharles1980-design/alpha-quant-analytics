@@ -1854,7 +1854,8 @@ function DbManagePage(p){
       });
       setOptData({stocks:optArr,totalRows:optRows.length});
       // Load daily optimal TP% data
-      var rDOpt=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?select=ticker,trade_date,tp_dollar,cycles,net_total&order=ticker.asc,trade_date.asc,net_total.desc',{headers:rh4});
+      var rh5=getSbHeaders();rh5['Range']='0-49999';
+      var rDOpt=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?select=ticker,trade_date,tp_dollar,cycles,net_total&order=ticker.asc,trade_date.asc,net_total.desc',{headers:rh5});
       var dOptRows=rDOpt.ok?await rDOpt.json():[];
       // Get best per stock-day (first row per ticker+date since ordered by net_total desc)
       var dOptBest={};var dOptTickers={};
