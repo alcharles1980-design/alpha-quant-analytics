@@ -3586,21 +3586,21 @@ function OptimalTPPage(p){
           var adjNPC=adjCycles>0?(adjNet/adjCycles):0;var adjGPC=adjCycles>0?(adjGross/adjCycles):0;
           var adjAfPC=adjCycles>0?(adjFees/adjCycles):0;
           // Stat row helper
-          var StatRow=function(props){return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0',borderBottom:'1px solid '+C.grid}}>
-            <span style={{color:C.txt,fontSize:7,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5}}>{props.label}</span>
-            <span style={{color:props.color||C.txtBright,fontSize:9,fontFamily:F,fontWeight:props.bold?700:600}}>{props.value}</span>
+          var StatRow=function(props){return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:'1px solid '+C.grid}}>
+            <span style={{color:C.txtBright,fontSize:8,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5}}>{props.label}</span>
+            <span style={{color:props.color||C.txtBright,fontSize:10,fontFamily:F,fontWeight:props.bold?800:700}}>{props.value}</span>
           </div>;};
           // Edge helper
-          var EdgeRow=function(props){var diff=props.mine-props.other;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'2px 0'}}>
-            <span style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:0.5}}>{'vs '+props.vsLabel}</span>
-            <span style={{color:diff>0?C.accent:diff<0?C.warn:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700}}>{(diff>=0?'+$':'-$')+Math.abs(diff).toFixed(2)}</span>
+          var EdgeRow=function(props){var diff=props.mine-props.other;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0'}}>
+            <span style={{color:C.txtBright,fontSize:8,fontFamily:F,letterSpacing:0.5}}>{'vs '+props.vsLabel}</span>
+            <span style={{color:diff>0?C.accent:diff<0?C.warn:C.txt,fontSize:9,fontFamily:F,fontWeight:700}}>{(diff>=0?'+$':'-$')+Math.abs(diff).toFixed(2)}</span>
           </div>;};
           return <div>
           {hasCur&&<div style={{padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.purple,marginTop:10}}>
-            <div style={{color:C.purple,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,textAlign:'center'}}>1. Current Fixed TP%</div>
+            <div style={{color:C.purple,fontSize:10,fontFamily:F,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10,textAlign:'center'}}>1. Current Fixed TP%</div>
             <div style={{textAlign:'center',marginBottom:10}}>
-              <span style={{color:C.purple,fontSize:24,fontWeight:800,fontFamily:F}}>{curTpPct.toFixed(2)+'%'}</span>
-              <span style={{color:C.txt,fontSize:9,fontFamily:F,marginLeft:8}}>{'($'+curTd.toFixed(2)+' spread)'}</span>
+              <span style={{color:C.purple,fontSize:26,fontWeight:800,fontFamily:F}}>{curTpPct.toFixed(2)+'%'}</span>
+              <span style={{color:C.txtBright,fontSize:10,fontFamily:F,marginLeft:8}}>{'($'+curTd.toFixed(2)+' spread)'}</span>
             </div>
             <StatRow label="Total Cycles" value={curCycles.toLocaleString()} color={C.purple} bold={true}/>
             <StatRow label="Total Net Profit" value={'$'+curNet.toFixed(2)} color={curNet>0?C.accent:C.warn} bold={true}/>
@@ -3610,16 +3610,16 @@ function OptimalTPPage(p){
             <StatRow label="Total Fees" value={'$'+curFees.toFixed(2)} color={C.warn}/>
             <StatRow label="Fees as % of Gross" value={curFeesPct.toFixed(1)+'%'} color={curFeesPct>50?C.warn:C.txtDim}/>
             <div style={{marginTop:6,padding:'4px 0',borderTop:'1px solid '+C.border}}>
-              <div style={{color:C.txt,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:2}}>EDGE</div>
+              <div style={{color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:800,letterSpacing:1.5,marginBottom:3}}>EDGE</div>
               <EdgeRow mine={curNet} other={flatNet} vsLabel="Best Flat"/>
               <EdgeRow mine={curNet} other={adjNet} vsLabel="Day-Adjusted"/>
             </div>
           </div>}
           <div style={{padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.gold,marginTop:10}}>
-            <div style={{color:C.gold,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,textAlign:'center'}}>{hasCur?'2':'1'}. Best Flat TP%</div>
+            <div style={{color:C.gold,fontSize:10,fontFamily:F,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10,textAlign:'center'}}>{hasCur?'2':'1'}. Best Flat TP%</div>
             <div style={{textAlign:'center',marginBottom:10}}>
-              <span style={{color:C.gold,fontSize:24,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</span>
-              <span style={{color:C.txt,fontSize:9,fontFamily:F,marginLeft:8}}>{'($'+flatTd.toFixed(2)+' spread)'}</span>
+              <span style={{color:C.gold,fontSize:26,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</span>
+              <span style={{color:C.txtBright,fontSize:10,fontFamily:F,marginLeft:8}}>{'($'+flatTd.toFixed(2)+' spread)'}</span>
             </div>
             <StatRow label="Total Cycles" value={flatCycles.toLocaleString()} color={C.gold} bold={true}/>
             <StatRow label="Total Net Profit" value={'$'+flatNet.toFixed(2)} color={flatNet>0?C.accent:C.warn} bold={true}/>
@@ -3629,13 +3629,13 @@ function OptimalTPPage(p){
             <StatRow label="Total Fees" value={'$'+flatFees.toFixed(2)} color={C.warn}/>
             <StatRow label="Fees as % of Gross" value={flatFeesPct.toFixed(1)+'%'} color={flatFeesPct>50?C.warn:C.txtDim}/>
             <div style={{marginTop:6,padding:'4px 0',borderTop:'1px solid '+C.border}}>
-              <div style={{color:C.txt,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:2}}>EDGE</div>
+              <div style={{color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:800,letterSpacing:1.5,marginBottom:3}}>EDGE</div>
               {hasCur&&<EdgeRow mine={flatNet} other={curNet} vsLabel="Current"/>}
               <EdgeRow mine={flatNet} other={adjNet} vsLabel="Day-Adjusted"/>
             </div>
           </div>
           <div style={{padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.accent,marginTop:10}}>
-            <div style={{color:C.accent,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:8,textAlign:'center'}}>{hasCur?'3':'2'}. Day-Adjusted Optimal</div>
+            <div style={{color:C.accent,fontSize:10,fontFamily:F,fontWeight:800,letterSpacing:2,textTransform:'uppercase',marginBottom:10,textAlign:'center'}}>{hasCur?'3':'2'}. Day-Adjusted Optimal</div>
             <div style={{textAlign:'center',marginBottom:10}}>
               <span style={{color:C.accent,fontSize:10,fontFamily:F,fontWeight:600}}>Best TP% varies per day</span>
             </div>
@@ -3647,7 +3647,7 @@ function OptimalTPPage(p){
             <StatRow label="Total Fees" value={'$'+adjFees.toFixed(2)} color={C.warn}/>
             <StatRow label="Fees as % of Gross" value={adjFeesPct.toFixed(1)+'%'} color={adjFeesPct>50?C.warn:C.txtDim}/>
             <div style={{marginTop:6,padding:'4px 0',borderTop:'1px solid '+C.border}}>
-              <div style={{color:C.txt,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:2}}>EDGE</div>
+              <div style={{color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:800,letterSpacing:1.5,marginBottom:3}}>EDGE</div>
               {hasCur&&<EdgeRow mine={adjNet} other={curNet} vsLabel="Current"/>}
               <EdgeRow mine={adjNet} other={flatNet} vsLabel="Best Flat"/>
             </div>
