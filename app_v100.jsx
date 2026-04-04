@@ -3022,13 +3022,14 @@ function Splash(p){
     ctx.scale(dpr,dpr);
     var colW=24;var cols=Math.floor(W/colW);
     var chars='0123456789.%$';
+    var maxY=Math.ceil(H/20)+5;
     var columns=[];
     for(var i=0;i<cols;i++){
       var len=3+Math.floor(Math.random()*5);
-      var startY=-Math.random()*30;
+      var startY=Math.random()*maxY;
       var trail=[];
       for(var j=0;j<len;j++)trail.push({ch:chars[Math.floor(Math.random()*chars.length)],y:startY-j*2});
-      columns.push({x:i*colW+2+Math.random()*8,trail:trail,speed:0.1+Math.random()*0.2,len:len});
+      columns.push({x:i*colW+2+Math.random()*8,trail:trail,speed:0.08+Math.random()*0.18,len:len});
     }
     var frameId;var tick=0;
     var draw=function(){
