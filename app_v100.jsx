@@ -3009,24 +3009,58 @@ function Splash(p){
   var ps=useState(''),pw=ps[0],setPw=ps[1];
   var es=useState(false),pwError=es[0],setPwError=es[1];
   var ls=useState(false),unlocked=ls[0],setUnlocked=ls[1];
+  var canvasRef=useRef(null);
   useEffect(function(){setTimeout(function(){setOpacity(1);},100);},[]);
   useEffect(function(){if(unlocked)setTimeout(function(){p.onDone();},1200);},[unlocked]);
+  useEffect(function(){
+    var canvas=canvasRef.current;if(!canvas)return;
+    var ctx=canvas.getContext('2d');
+    var W=window.innerWidth,H=window.innerHeight;
+    canvas.width=W;canvas.height=H;
+    var cols=Math.floor(W/18);
+    var drops=[];for(var i=0;i<cols;i++)drops[i]=Math.random()*H/14;
+    var speeds=[];for(var i=0;i<cols;i++)speeds[i]=0.3+Math.random()*0.7;
+    var chars='0123456789.%$+-×÷';
+    var frameId;
+    var draw=function(){
+      ctx.fillStyle='rgba(10,22,40,0.06)';
+      ctx.fillRect(0,0,W,H);
+      for(var i=0;i<cols;i++){
+        var ch=chars[Math.floor(Math.random()*chars.length)];
+        var x=i*18;var y=drops[i]*14;
+        var fade=0.03+Math.random()*0.04;
+        ctx.fillStyle='rgba(61,158,255,'+fade+')';
+        ctx.font='12px JetBrains Mono';
+        ctx.fillText(ch,x,y);
+        drops[i]+=speeds[i];
+        if(y>H&&Math.random()>0.97)drops[i]=0;
+      }
+      frameId=requestAnimationFrame(draw);
+    };
+    draw();
+    var onResize=function(){W=window.innerWidth;H=window.innerHeight;canvas.width=W;canvas.height=H;};
+    window.addEventListener('resize',onResize);
+    return function(){cancelAnimationFrame(frameId);window.removeEventListener('resize',onResize);};
+  },[]);
   var submit=function(){if(pw==='BT'){setPwError(false);setUnlocked(true);}else{setPwError(true);}};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
   return <div style={{background:'linear-gradient(160deg,#0a1628 0%,#122040 30%,#1a2d5a 50%,#122040 70%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',fontFamily:F,transition:'opacity 0.8s',opacity:opacity,paddingTop:'18vh',paddingLeft:20,paddingRight:20,paddingBottom:20,position:'relative',overflow:'hidden'}}>
-    <div style={{position:'absolute',top:0,left:0,right:0,bottom:0,background:'radial-gradient(ellipse at 30% 20%,rgba(30,60,120,0.4) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(20,40,90,0.3) 0%,transparent 50%)',pointerEvents:'none'}}></div>
-    <div style={{color:'#ffffff',fontSize:22,fontWeight:800,letterSpacing:4,textTransform:'uppercase',marginBottom:8,textShadow:'0 0 30px rgba(255,255,255,0.5),0 0 60px rgba(120,180,255,0.25),0 2px 4px rgba(0,0,0,0.3)',position:'relative',zIndex:1}}>Alpha Quant Analytics</div>
-    <div style={{color:C.accent,fontSize:13,fontWeight:600,letterSpacing:2,marginBottom:24}}>Beta Growth Holdings</div>
-    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:28}}>
+    <canvas ref={canvasRef} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0}}/>
+    <div style={{position:'absolute',top:0,left:0,right:0,bottom:0,background:'radial-gradient(ellipse at 30% 20%,rgba(30,60,120,0.4) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(20,40,90,0.3) 0%,transparent 50%)',pointerEvents:'none',zIndex:1}}></div>
+    <div style={{color:'#ffffff',fontSize:22,fontWeight:800,letterSpacing:4,textTransform:'uppercase',marginBottom:8,textShadow:'0 0 30px rgba(255,255,255,0.5),0 0 60px rgba(120,180,255,0.25),0 2px 4px rgba(0,0,0,0.3)',position:'relative',zIndex:2}}>Alpha Quant Analytics</div>
+    <div style={{color:C.accent,fontSize:13,fontWeight:600,letterSpacing:2,marginBottom:24,position:'relative',zIndex:2}}>Beta Growth Holdings</div>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:28,position:'relative',zIndex:2}}>
       <div style={{width:6,height:6,borderRadius:'50%',background:C.accent,boxShadow:'0 0 8px '+C.accent,animation:'pulse 1.2s infinite'}}></div>
       <div style={{color:C.txt,fontSize:11,letterSpacing:2,textTransform:'uppercase'}}>Edge Detection</div>
     </div>
-    {!unlocked&&<div style={{width:'100%',maxWidth:260}}>
+    {!unlocked&&<div style={{width:'100%',maxWidth:260,position:'relative',zIndex:2}}>
       <input type="password" value={pw} onChange={function(e){setPw(e.target.value);setPwError(false);}} onKeyDown={function(e){if(e.key==='Enter')submit();}} placeholder="Enter access code" style={Object.assign({},iS,{textAlign:'center',marginBottom:10,fontSize:12,letterSpacing:2})}/>
       <button onClick={submit} style={Object.assign({},bB,{background:'linear-gradient(135deg,#00e5a0,#00c488)',color:C.bg})}>Enter</button>
       {pwError&&<div style={{color:C.warn,fontSize:10,textAlign:'center',marginTop:8}}>Invalid access code</div>}
     </div>}
-    {unlocked&&<div style={{color:C.accent,fontSize:10,marginTop:10,animation:'pulse 1s infinite'}}>Initializing...</div>}
-    <div style={{marginTop:20,color:'#ffffff',fontSize:8,fontFamily:F,letterSpacing:0.5,textAlign:'center',opacity:0.9}}>{typeof BUILD_TS!=='undefined'?BUILD_TS:'dev'}</div>
+    {unlocked&&<div style={{color:C.accent,fontSize:10,marginTop:10,animation:'pulse 1s infinite',position:'relative',zIndex:2}}>Initializing...</div>}
+    <div style={{marginTop:20,color:'#ffffff',fontSize:8,fontFamily:F,letterSpacing:0.5,textAlign:'center',opacity:0.9,position:'relative',zIndex:2}}>{typeof BUILD_TS!=='undefined'?BUILD_TS:'dev'}</div>
   </div>;
 }
 
