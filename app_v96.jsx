@@ -3170,19 +3170,7 @@ function OptimalTPPage(p){
           setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching trades...');
           var etOff=getETOffset(day);var pad=function(n){return String(n).padStart(2,'0');};var nextDay2=new Date(new Date(day+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);var hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;var wEndTs=hEnd<24?day+'T'+pad(hEnd)+':30:00.000Z':nextDay2+'T'+pad(hEnd-24)+':30:00.000Z';
           var fetchWin2=async function(tsGte,tsLt){var tr=[],u='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('API error '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];tr.push({price:t.price,size:t.size||0,ts:t.sip_timestamp||t.participant_timestamp});}u=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;}return tr;};
-          // Try CF Worker first (server fetches + scans), skip if failed before
-          var cfOk=false;
-          if(!serverFailed){
-            setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Server scan...');
-            try{
-              var cfR2=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:day,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal})});
-              if(cfR2.ok){var cfD2=await cfR2.json();if(cfD2.status==='processed'&&cfD2.results){scan=cfD2;dayTrades=cfD2.total_trades;dayPrice=cfD2.share_price;cfOk=true;}}
-              if(!cfOk)serverFailed=true;
-            }catch(e3){serverFailed=true;}
-          }
-          if(!cfOk){
-            // Fallback: fetch ticks in browser + Web Worker scan
-            setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
+          setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching...');
             var _w1=await fetchWin2(day+'T'+pad(hPre)+':00:00.000Z',day+'T'+pad(hMid+2)+':00:00.000Z');
             var _w2=await fetchWin2(day+'T'+pad(hMid-1)+':00:00.000Z',day+'T'+pad(hAft+2)+':00:00.000Z');
             var _w3=await fetchWin2(day+'T'+pad(hAft-1)+':00:00.000Z',wEndTs);
@@ -3199,7 +3187,6 @@ function OptimalTPPage(p){
               var pa2=new Float64Array(allTrades.length);for(var pi2=0;pi2<allTrades.length;pi2++)pa2[pi2]=allTrades[pi2].price;
               w2.postMessage({prices:pa2.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa2.buffer]);
             });
-          }
         }
         allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice});
       }
