@@ -3234,7 +3234,7 @@ function OptimalTPPage(p){
             var allRaw=_w1.concat(_w2).concat(_w3);allRaw.sort(function(a,b){return a.ts-b.ts;});
             var allTrades=[];var _lt=-1;for(var _di2=0;_di2<allRaw.length;_di2++){if(allRaw[_di2].ts!==_lt){allTrades.push(allRaw[_di2]);_lt=allRaw[_di2].ts;}}
             if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
-            allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[0].price;
+            allTrades=filterOutlierTicks(allTrades);dayTrades=allTrades.length;dayPrice=allTrades[allTrades.length-1].price;
             setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning (background)...');
             await new Promise(function(r){setTimeout(r,50);});
             scan=await new Promise(function(resolve){
@@ -3279,7 +3279,8 @@ function OptimalTPPage(p){
         flatDayProfits.push(flatProfit);
       }
       var edge=dayAdjustedTotal-bestFlat.totalNet;var edgePct=bestFlat.totalNet>0?(edge/bestFlat.totalNet*100):0;
-      setMultiResults({flatBest:bestFlat,flatRanked:flatRanked,dayBests:dayBests,dayAdjustedTotal:dayAdjustedTotal,edge:edge,edgePct:edgePct,totalDays:validDays.length,ticker:ticker.toUpperCase(),cap:capVal,fee:feeVal});
+      var totalClose=0;for(var ci=0;ci<dayBests.length;ci++)totalClose+=dayBests[ci].sharePrice;var avgClosePrice=totalClose/dayBests.length;
+      setMultiResults({flatBest:bestFlat,flatRanked:flatRanked,dayBests:dayBests,dayAdjustedTotal:dayAdjustedTotal,edge:edge,edgePct:edgePct,totalDays:validDays.length,ticker:ticker.toUpperCase(),cap:capVal,fee:feeVal,avgClosePrice:avgClosePrice});
       setProg('');setLoading(false);
     }catch(e2){setErr(e2.message);setProg('');setLoading(false);}
   };
@@ -3379,6 +3380,7 @@ function OptimalTPPage(p){
           <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,textAlign:'center'}}>
             <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Best Flat TP%</div>
             <div style={{color:C.gold,fontSize:22,fontWeight:800,fontFamily:F}}>{multiResults.flatBest.tpPct.toFixed(2)+'%'}</div>
+            <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:2}}>{'$'+(Math.max(0.01,Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)).toFixed(4)+'/share'}</div>
             <div style={{color:C.accent,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+multiResults.flatBest.totalNet.toFixed(2)}</div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Total Net Profit</div>
           </div>
@@ -3387,12 +3389,16 @@ function OptimalTPPage(p){
             <div style={{color:C.accent,fontSize:22,fontWeight:800,fontFamily:F}}>{'$'+multiResults.dayAdjustedTotal.toFixed(2)}</div>
             <div style={{color:multiResults.edge>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{(multiResults.edge>=0?'+':'')+multiResults.edgePct.toFixed(1)+'%'}</div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Edge vs Flat</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'Avg TP: $'+(function(){var s=0;for(var i=0;i<multiResults.dayBests.length;i++){s+=Math.max(0.01,Math.ceil(multiResults.dayBests[i].sharePrice*(1+multiResults.dayBests[i].bestTp/100)*100)/100-multiResults.dayBests[i].sharePrice);}return (s/multiResults.dayBests.length).toFixed(4);})()+'/share'}</div>
           </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
           <Mt label="Edge $" value={(multiResults.edge>=0?'+$':'$')+multiResults.edge.toFixed(2)} color={multiResults.edge>0?C.accent:C.warn} size="md"/>
           <Mt label="Flat Cycles" value={multiResults.flatBest.totalCycles} color={C.gold} size="md"/>
           <Mt label="Days" value={multiResults.totalDays} color={C.blue} size="md"/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
+          <Mt label="Avg Close Price" value={'$'+multiResults.avgClosePrice.toFixed(2)} color={C.blue} size="md"/>
         </div>
       </Cd>
       <Cd>
@@ -3401,17 +3407,25 @@ function OptimalTPPage(p){
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
             <thead><tr style={{borderBottom:'1px solid '+C.border}}>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Close</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Adjusted $</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat $</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP $/sh</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Adj Profit</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat TP$/sh</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat Profit</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge</th>
             </tr></thead>
             <tbody>{multiResults.dayBests.map(function(db){
               var dayEdge=db.bestNet-db.flatProfit;
+              var adjTpDollar=Math.max(0.01,Math.ceil(db.sharePrice*(1+db.bestTp/100)*100)/100-db.sharePrice);
+              var flatTpDollar=Math.max(0.01,Math.ceil(db.sharePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-db.sharePrice);
               return <tr key={db.day} style={{borderBottom:'1px solid '+C.grid}}>
                 <td style={{padding:'5px 3px',color:C.txtBright}}>{db.day}</td>
+                <td style={{padding:'5px 3px',color:C.txtDim,textAlign:'right'}}>{'$'+db.sharePrice.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:C.gold,textAlign:'right',fontWeight:700}}>{db.bestTp.toFixed(2)+'%'}</td>
+                <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+adjTpDollar.toFixed(4)}</td>
                 <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+db.bestNet.toFixed(2)}</td>
+                <td style={{padding:'5px 3px',color:C.gold,textAlign:'right',fontWeight:600}}>{'$'+flatTpDollar.toFixed(4)}</td>
                 <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{'$'+db.flatProfit.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:dayEdge>0?C.accent:dayEdge<0?C.warn:C.txtDim,textAlign:'right',fontWeight:700}}>{(dayEdge>=0?'+$':'$')+dayEdge.toFixed(2)}</td>
               </tr>;
