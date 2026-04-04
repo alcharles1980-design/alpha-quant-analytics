@@ -360,8 +360,8 @@ async function scanOptimalTP(trades,capPerLevel,feePerShare,onProgress){
     var grossPC=fq*tpDollar;var netPC=grossPC-af;
     if(netPC>0&&tpPct<minTpPct)minTpPct=tpPct;
     results.push({tpPct:tpPct,tpDollar:tpDollar,cycles:res.summary.totalCycles,grossPC:grossPC,adjFee:af,netPC:netPC,grossTotal:res.summary.totalCycles*grossPC,netTotal:res.summary.totalCycles*netPC,capDeployed:res.summary.activeLevels*capPerLevel,roi:res.summary.activeLevels>0?((res.summary.totalCycles*netPC)/(res.summary.activeLevels*capPerLevel)*100):0});
-    // Yield every 10 iterations to keep UI responsive
-    if(ti%10===0){if(onProgress)onProgress(ti);await new Promise(function(r){setTimeout(r,0);});}
+    // Yield every iteration to keep UI responsive
+    if(onProgress)onProgress(ti);await new Promise(function(r){setTimeout(r,0);});
   }
   results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});
   return{results:results,minTpPct:minTpPct,sharePrice:sp,scanned:results.length};
@@ -3150,7 +3150,7 @@ function OptimalTPPage(p){
         var allTrades=[];var _lt=-1;for(var _di=0;_di<allRaw.length;_di++){if(allRaw[_di].ts!==_lt){allTrades.push(allRaw[_di]);_lt=allRaw[_di].ts;}}
         if(!allTrades.length){allDayResults.push({day:day,trades:0,scan:null});continue;}
         allTrades=filterOutlierTicks(allTrades);
-        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning '+allTrades.length.toLocaleString()+' trades...');
+        setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning '+allTrades.length.toLocaleString()+' trades'+(allTrades.length>200000?' (heavy stock, may take several minutes)':'')+'...');
         await new Promise(function(r){setTimeout(r,100);});
         var scan=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ti+'/100');});
         allDayResults.push({day:day,trades:allTrades.length,scan:scan,sharePrice:allTrades[0].price});
