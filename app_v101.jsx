@@ -3676,21 +3676,25 @@ function OptimalTPPage(p){
         </div>
       </Cd>
       <Cd>
-        <SectionHead title="All Flat TP% Ranked" sub="Top 10 TP% values across all days"/>
-        <div style={{maxHeight:300,overflowY:'auto'}}>
+        <SectionHead title="All Flat TP% Ranked" sub={multiResults.flatRanked.length+' TP% values across all days'}/>
+        <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
               <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'left'}}>#</th>
               <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>TP%</th>
+              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>TP$</th>
               <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>Total Net $</th>
-              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>Total Cycles</th>
+              <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
             </tr></thead>
-            <tbody>{multiResults.flatRanked.slice(0,10).map(function(fr,idx){
-              return <tr key={fr.tpPct} style={{borderBottom:'1px solid '+C.grid,background:idx===0?'rgba(255,176,32,0.1)':'transparent'}}>
-                <td style={{padding:'5px 2px',color:idx===0?C.gold:C.txtDim}}>{idx+1}</td>
-                <td style={{padding:'5px 2px',color:idx===0?C.gold:C.txt,textAlign:'right',fontWeight:idx===0?700:400}}>{fr.tpPct.toFixed(2)+'%'}</td>
-                <td style={{padding:'5px 2px',color:fr.totalNet>0?C.accent:C.warn,textAlign:'right',fontWeight:idx<3?700:400}}>{'$'+fr.totalNet.toFixed(2)}</td>
-                <td style={{padding:'5px 2px',color:C.txt,textAlign:'right'}}>{fr.totalCycles}</td>
+            <tbody>{multiResults.flatRanked.map(function(fr,idx){
+              var isCur=multiResults.currentTpPct>0&&Math.abs(fr.tpPct-multiResults.currentTpPct)<0.001;
+              var isBest=idx===0;
+              return <tr key={fr.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCur?'rgba(157,92,255,0.15)':isBest?'rgba(255,176,32,0.1)':'transparent'}}>
+                <td style={{padding:'5px 2px',color:isCur?C.purple:isBest?C.gold:C.txtDim}}>{isCur?'\u25B6':idx+1}</td>
+                <td style={{padding:'5px 2px',color:isCur?C.purple:isBest?C.gold:C.txt,textAlign:'right',fontWeight:isCur||isBest?700:400}}>{fr.tpPct.toFixed(2)+'%'}</td>
+                <td style={{padding:'5px 2px',color:C.txtDim,textAlign:'right'}}>{'$'+(Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+fr.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100)).toFixed(2)}</td>
+                <td style={{padding:'5px 2px',color:fr.totalNet>0?C.accent:C.warn,textAlign:'right',fontWeight:idx<3||isCur?700:400}}>{'$'+fr.totalNet.toFixed(2)}</td>
+                <td style={{padding:'5px 2px',color:C.txt,textAlign:'right'}}>{fr.totalCycles.toLocaleString()}</td>
               </tr>;
             })}</tbody>
           </table>
