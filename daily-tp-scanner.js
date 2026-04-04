@@ -7,7 +7,7 @@ export default{async fetch(request){
   if(request.method==='OPTIONS')return new Response('ok',{headers:C});
   try{
     const b=await request.json();
-    const{ticker,date,polygon_key,cap_per_level,fee_per_share}=b;
+    const{ticker,date,polygon_key,cap_per_level,fee_per_share,supabase_url,supabase_key}=b;
     if(!ticker||!date||!polygon_key)return R({error:'Missing params'},400);
     const cap=cap_per_level||1,fee=fee_per_share||0.005;
 
@@ -84,6 +84,14 @@ export default{async fetch(request){
     }
     const results=Object.values(bySpread);
     results.sort((a,b)=>(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal));
+
+    // Save to Supabase if credentials provided
+    if(supabase_url&&supabase_key){
+      const sh={'Content-Type':'application/json','apikey':supabase_key,'Authorization':'Bearer '+supabase_key,'Prefer':'return=minimal'};
+      await fetch(\`\${supabase_url}/rest/v1/cached_daily_optimal_tp?ticker=eq.\${ticker}&trade_date=eq.\${date}&cap_per_level=eq.\${cap}&fee_per_share=eq.\${fee}\`,{method:'DELETE',headers:sh});
+      const saveRows=results.map(r=>({ticker,trade_date:date,tp_pct:r.tpPct,tp_dollar:r.tpDollar,cycles:r.cycles,gross_per_cycle:r.grossPC,adj_fee:r.adjFee,net_per_cycle:r.netPC,gross_total:r.grossTotal,net_total:r.netTotal,cap_deployed:r.capDeployed,roi:r.roi,total_trades:N,share_price:sp,cap_per_level:cap,fee_per_share:fee}));
+      for(let b2=0;b2<saveRows.length;b2+=200)await fetch(\`\${supabase_url}/rest/v1/cached_daily_optimal_tp\`,{method:'POST',headers:sh,body:JSON.stringify(saveRows.slice(b2,b2+200))});
+    }
 
     return R({status:'processed',ticker,date,total_trades:N,levels:cnt,
       tp_values_scanned:results.length,share_price:sp,results,

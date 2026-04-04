@@ -191,6 +191,14 @@ var SB={
       await fetch(SB_URL+'/rest/v1/hourly_features',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(rows)});
     }catch(e){console.error('SB save hourly features error:',e);}
   },
+  saveDailyOptimalTP:async function(ticker,date,results,trades,sharePrice,cap,fee){
+    if(!SB_URL||!SB_KEY||!results||!results.length)return;
+    try{
+      await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&cap_per_level=eq.'+cap+'&fee_per_share=eq.'+fee,{method:'DELETE',headers:getSbHeaders()});
+      var rows=results.map(function(r){return{ticker:ticker,trade_date:date,tp_pct:r.tpPct,tp_dollar:r.tpDollar,cycles:r.cycles,gross_per_cycle:r.grossPC,adj_fee:r.adjFee,net_per_cycle:r.netPC,gross_total:r.grossTotal,net_total:r.netTotal,cap_deployed:r.capDeployed,roi:r.roi,total_trades:trades,share_price:sharePrice,cap_per_level:cap,fee_per_share:fee};});
+      for(var b=0;b<rows.length;b+=200)await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(rows.slice(b,b+200))});
+    }catch(e){console.error('SB save daily optimal:',e);}
+  },
   saveHoldTimes:async function(ticker,date,tpPct,session,holdData){
     if(!SB_URL||!SB_KEY||!holdData||!holdData.length)return;
     try{await fetch(SB_URL+'/rest/v1/cached_hourly_hold_times?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&tp_pct=eq.'+tpPct+'&session_type=eq.'+session,{method:'DELETE',headers:getSbHeaders()});
@@ -215,6 +223,14 @@ var SB={
       var sessRows=sessTypes.map(function(s){var rng=(s.data.max>-Infinity&&s.data.min<Infinity)?(s.data.max-s.data.min):0;var pct=(s.data.min<Infinity&&s.data.min>0&&rng>0)?((rng/s.data.min)*100):0;return{ticker:ticker,trade_date:date,session_type:s.key,high:s.data.max>-Infinity?s.data.max:null,low:s.data.min<Infinity?s.data.min:null,range_dollars:rng>0?rng:null,range_pct:pct>0?pct:null,volume:Math.round(s.data.vol),trades:s.data.trades};});
       await fetch(SB_URL+'/rest/v1/cached_sessions',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(sessRows)});
     }catch(e){console.error('SB save seasonality error:',e);}
+  },
+  saveDailyOptimalTP:async function(ticker,date,results,trades,sharePrice,cap,fee){
+    if(!SB_URL||!SB_KEY||!results||!results.length)return;
+    try{
+      await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?ticker=eq.'+ticker+'&trade_date=eq.'+date+'&cap_per_level=eq.'+cap+'&fee_per_share=eq.'+fee,{method:'DELETE',headers:getSbHeaders()});
+      var rows=results.map(function(r){return{ticker:ticker,trade_date:date,tp_pct:r.tpPct,tp_dollar:r.tpDollar,cycles:r.cycles,gross_per_cycle:r.grossPC,adj_fee:r.adjFee,net_per_cycle:r.netPC,gross_total:r.grossTotal,net_total:r.netTotal,cap_deployed:r.capDeployed,roi:r.roi,total_trades:trades,share_price:sharePrice,cap_per_level:cap,fee_per_share:fee};});
+      for(var b=0;b<rows.length;b+=200)await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(rows.slice(b,b+200))});
+    }catch(e){console.error('SB save daily optimal:',e);}
   },
   saveHoldTimes:async function(ticker,date,tpPct,session,holdData){
     if(!SB_URL||!SB_KEY||!holdData||!holdData.length)return;
@@ -1739,6 +1755,7 @@ function DbManagePage(p){
   var s11=useState(null),optData=s11[0],setOptData=s11[1];
   var s12=useState(null),optDetail=s12[0],setOptDetail=s12[1];
   var s13=useState(null),confirmOptDel=s13[0],setConfirmOptDel=s13[1];
+  var dOpt=useState(null),dailyOptData=dOpt[0],setDailyOptData=dOpt[1];
   var s16=useState(null),consistency=s16[0],setConsistency=s16[1];
 
   var loadData=async function(){
@@ -1836,6 +1853,13 @@ function DbManagePage(p){
         return os;
       });
       setOptData({stocks:optArr,totalRows:optRows.length});
+      // Load daily optimal TP% data
+      var rDOpt=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?select=ticker,trade_date,tp_dollar,cycles,net_total&order=ticker.asc,trade_date.asc,net_total.desc',{headers:rh4});
+      var dOptRows=rDOpt.ok?await rDOpt.json():[];
+      // Get best per stock-day (first row per ticker+date since ordered by net_total desc)
+      var dOptBest={};var dOptTickers={};
+      for(var doi=0;doi<dOptRows.length;doi++){var dk=dOptRows[doi].ticker+'|'+dOptRows[doi].trade_date;if(!dOptBest[dk]){dOptBest[dk]=dOptRows[doi];dOptTickers[dOptRows[doi].ticker]=true;}}
+      setDailyOptData({stocks:Object.keys(dOptTickers).length,totalRows:dOptRows.length,days:Object.keys(dOptBest).length,detail:Object.values(dOptBest)});
 
       // Cross-table consistency check
       var rh4=getSbHeaders();rh4['Range']='0-9999';
@@ -2093,6 +2117,34 @@ function DbManagePage(p){
             })}</tbody>
           </table>
         </div>
+      </Cd>}
+      {dailyOptData&&<Cd style={{marginTop:16}}>
+        <SectionHead title="Daily Optimal TP% Results" sub="Results from Daily Optimal TP% Finder scans" info="Each scan tests 100 TP% values for a stock-day and saves the deduped results (one per unique penny spread). Ranked by net profit after fees."/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+          <Mt label="Stocks" value={dailyOptData.stocks} color={C.accent} size="lg"/>
+          <Mt label="Total Rows" value={dailyOptData.totalRows} color={C.purple} size="lg"/>
+          <Mt label="Stock-Days" value={dailyOptData.days} color={C.blue} size="lg"/>
+        </div>
+        {dailyOptData.detail.length>0&&<div style={{overflowX:'auto',maxHeight:250}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Best TP$</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
+              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Net $</th>
+            </tr></thead>
+            <tbody>{dailyOptData.detail.map(function(d){
+              return <tr key={d.ticker+d.trade_date} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'3px 2px',color:C.accent,fontWeight:700}}>{d.ticker}</td>
+                <td style={{padding:'3px 2px',color:C.txt}}>{d.trade_date}</td>
+                <td style={{padding:'3px 2px',color:C.gold,textAlign:'right'}}>{'$'+d.tp_dollar.toFixed(2)}</td>
+                <td style={{padding:'3px 2px',color:C.blue,textAlign:'right'}}>{d.cycles}</td>
+                <td style={{padding:'3px 2px',color:d.net_total>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+d.net_total.toFixed(2)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>}
       </Cd>}
       {optData&&<div style={{marginTop:16}}>
         <Cd glow={true}>
@@ -3127,7 +3179,7 @@ function OptimalTPPage(p){
       setProg('Attempting server-side scan...');
       var res=null;
       try{
-        var cfR=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:date,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal})});
+        var cfR=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:date,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal,supabase_url:SB_URL,supabase_key:SB_KEY})});
         if(cfR.ok){var cfD=await cfR.json();if(cfD.status==='processed'&&cfD.results){res={results:cfD.results,minTpPct:cfD.minTpPct,sharePrice:cfD.share_price,scanned:cfD.tp_values_scanned};setProg('Server scan complete');}}
       }catch(e2){}
       if(!res){
@@ -3143,6 +3195,8 @@ function OptimalTPPage(p){
         });
       }
       setResults({scan:res,ticker:ticker.toUpperCase(),date:date,trades:allTrades.length,sharePrice:allTrades[0].price,cap:capVal,fee:feeVal});
+      // Save to database
+      SB.saveDailyOptimalTP(ticker.toUpperCase(),date,res.results,allTrades.length,allTrades[0].price,capVal,feeVal);
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
@@ -3164,7 +3218,7 @@ function OptimalTPPage(p){
         if(!serverFailed){
           setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Server scan...');
           try{
-            var cfR2=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:day,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal})});
+            var cfR2=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:day,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal,supabase_url:SB_URL,supabase_key:SB_KEY})});
             if(cfR2.ok){var cfD2=await cfR2.json();if(cfD2.status==='processed'&&cfD2.results){scan={results:cfD2.results,minTpPct:cfD2.minTpPct,sharePrice:cfD2.share_price,scanned:cfD2.tp_values_scanned};dayTrades=cfD2.total_trades;dayPrice=cfD2.share_price;setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Done (server)');}}
           }catch(e3){serverFailed=true;}
         }
@@ -3192,6 +3246,8 @@ function OptimalTPPage(p){
             });
         }
         allDayResults.push({day:day,trades:dayTrades,scan:scan,sharePrice:dayPrice});
+        // Save per-day results to database
+        if(scan&&scan.results)SB.saveDailyOptimalTP(ticker.toUpperCase(),day,scan.results,dayTrades,dayPrice,capVal,feeVal);
       }
       var validDays=allDayResults.filter(function(d2){return d2.scan&&d2.scan.results.length>0;});
       if(!validDays.length){setErr('No valid results');setLoading(false);return;}
