@@ -3119,10 +3119,26 @@ function OptimalTPPage(p){
       var allRaw=_w1.concat(_w2).concat(_w3);allRaw.sort(function(a,b){return a.ts-b.ts;});
       var allTrades=[];var _lt=-1;for(var _di=0;_di<allRaw.length;_di++){if(allRaw[_di].ts!==_lt){allTrades.push(allRaw[_di]);_lt=allRaw[_di].ts;}}
       if(!allTrades.length){setErr('No trades found for '+ticker+' on '+date);setLoading(false);return;}
-      setProg('Scanning all viable TP% values across '+allTrades.length.toLocaleString()+' trades...');
-      await new Promise(function(r){setTimeout(r,50);});
       var capVal=parseFloat(cap)||1;var feeVal=parseFloat(fee)||0.005;
-      var res=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Scanning TP% '+ti+'/100 ('+allTrades.length.toLocaleString()+' trades)...');});
+      // Try Cloudflare Worker first, then browser Web Worker
+      setProg('Attempting server-side scan...');
+      var res=null;
+      try{
+        var cfR=await fetch('https://daily-tp-scanner.alcharles1980.workers.dev/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:ticker.toUpperCase(),date:date,polygon_key:p.apiKey,cap_per_level:capVal,fee_per_share:feeVal})});
+        if(cfR.ok){var cfD=await cfR.json();if(cfD.status==='processed'&&cfD.results){res={results:cfD.results,minTpPct:cfD.minTpPct,sharePrice:cfD.share_price,scanned:cfD.tp_values_scanned};setProg('Server scan complete');}}
+      }catch(e2){}
+      if(!res){
+        setProg('Running in browser (background thread)...');
+        await new Promise(function(r2){setTimeout(r2,100);});
+        res=await new Promise(function(resolve){
+          var wCode='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.cap;var fee=d.fee;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var results=[];var minTp=Infinity;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var totalCy=0,actLev=0;for(var i=1;i<N;i++){var p=prices[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;totalCy++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}for(var c=0;c<cnt;c++)if(act[c]===1)actLev++;var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;if(npc>0&&tpPct<minTp)minTp=tpPct;results.push({tpPct:tpPct,tpDollar:td,cycles:totalCy,grossPC:gpc,adjFee:af,netPC:npc,grossTotal:totalCy*gpc,netTotal:totalCy*npc,capDeployed:actLev*cap,roi:actLev>0?((totalCy*npc)/(actLev*cap)*100):0});if(ti%5===0)self.postMessage({type:"progress",ti:ti});}results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});self.postMessage({type:"result",results:results,minTpPct:minTp,sharePrice:sp,scanned:100});};';
+          var blob=new Blob([wCode],{type:'application/javascript'});
+          var w=new Worker(URL.createObjectURL(blob));
+          w.onmessage=function(ev){if(ev.data.type==='progress')setProg('TP% '+ev.data.ti+'/100 (background thread)...');if(ev.data.type==='result'){w.terminate();resolve(ev.data);}};
+          var pa=new Float64Array(allTrades.length);for(var pi=0;pi<allTrades.length;pi++)pa[pi]=allTrades[pi].price;
+          w.postMessage({prices:pa.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa.buffer]);
+        });
+      }
       setResults({scan:res,ticker:ticker.toUpperCase(),date:date,trades:allTrades.length,sharePrice:allTrades[0].price,cap:capVal,fee:feeVal});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
@@ -3152,7 +3168,13 @@ function OptimalTPPage(p){
         allTrades=filterOutlierTicks(allTrades);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Scanning '+allTrades.length.toLocaleString()+' trades'+(allTrades.length>200000?' (heavy stock, may take several minutes)':'')+'...');
         await new Promise(function(r){setTimeout(r,100);});
-        var scan=await scanOptimalTP(allTrades,capVal,feeVal,function(ti){setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ti+'/100 ('+allTrades.length.toLocaleString()+' trades)');});
+        var scan=await new Promise(function(resolve){
+          var wCode2='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.cap;var fee=d.fee;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var results=[];var minTp=Infinity;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var totalCy=0,actLev=0;for(var i=1;i<N;i++){var p=prices[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;totalCy++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}for(var c=0;c<cnt;c++)if(act[c]===1)actLev++;var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;if(npc>0&&tpPct<minTp)minTp=tpPct;results.push({tpPct:tpPct,tpDollar:td,cycles:totalCy,grossPC:gpc,adjFee:af,netPC:npc,grossTotal:totalCy*gpc,netTotal:totalCy*npc,capDeployed:actLev*cap,roi:actLev>0?((totalCy*npc)/(actLev*cap)*100):0});if(ti%5===0)self.postMessage({type:"progress",ti:ti});}results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});self.postMessage({type:"result",results:results,minTpPct:minTp,sharePrice:sp,scanned:100});};';
+          var blob2=new Blob([wCode2],{type:'application/javascript'});var w2=new Worker(URL.createObjectURL(blob2));
+          w2.onmessage=function(ev){if(ev.data.type==='progress')setProg('Day '+(di+1)+'/'+days.length+': '+day+' | TP% '+ev.data.ti+'/100');if(ev.data.type==='result'){w2.terminate();resolve(ev.data);}};
+          var pa2=new Float64Array(allTrades.length);for(var pi2=0;pi2<allTrades.length;pi2++)pa2[pi2]=allTrades[pi2].price;
+          w2.postMessage({prices:pa2.buffer,tradeCount:allTrades.length,cap:capVal,fee:feeVal},[pa2.buffer]);
+        });
         allDayResults.push({day:day,trades:allTrades.length,scan:scan,sharePrice:allTrades[0].price});
       }
       var validDays=allDayResults.filter(function(d2){return d2.scan&&d2.scan.results.length>0;});
@@ -5247,7 +5269,13 @@ function App(){
               setOptScanning(true);setOptResults(null);
               await new Promise(function(r){setTimeout(r,50);});
               var cap=parseFloat(capPerLevel)||1;var fee=parseFloat(feePerCycle)||0.005;
-              var scan=await scanOptimalTP(rawTradesRef.current,cap,fee);
+              var scan=await new Promise(function(resolve){
+                var wCode3='self.onmessage=function(e){var d=e.data;var prices=new Float64Array(d.prices);var N=d.tradeCount;var cap=d.cap;var fee=d.fee;var sp=prices[0];var fq=cap/sp;var af=fee*fq;var mn=Infinity,mx=-Infinity;for(var i=0;i<N;i++){if(prices[i]<mn)mn=prices[i];if(prices[i]>mx)mx=prices[i];}var ol=Math.floor(sp*100)/100;var ps2=Math.round(ol*1.01*100)/100;var mc=Math.round(Math.floor(mn*100));var xc=Math.round(Math.ceil(mx*100));var cnt=xc-mc+1;var oc=Math.round(ol*100);var pc=Math.round(ps2*100);var results=[];var minTp=Infinity;for(var ti=1;ti<=100;ti++){var tpPct=ti/100;var tf=tpPct/100;var act=new Uint8Array(cnt);var tgt=new Float64Array(cnt);for(var c=0;c<cnt;c++){tgt[c]=Math.ceil((mc+c)/100*(1+tf)*100)/100;act[c]=(mc+c>=oc&&mc+c<=pc)?1:0;}var totalCy=0,actLev=0;for(var i=1;i<N;i++){var p=prices[i];for(var j=0;j<cnt;j++){if(act[j]===1&&p>=tgt[j]){act[j]=0;totalCy++;}}var idx=Math.floor(p*100)-mc;if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;}for(var c=0;c<cnt;c++)if(act[c]===1)actLev++;var td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;if(td<0.01)td=0.01;var gpc=fq*td,npc=gpc-af;if(npc>0&&tpPct<minTp)minTp=tpPct;results.push({tpPct:tpPct,tpDollar:td,cycles:totalCy,grossPC:gpc,adjFee:af,netPC:npc,grossTotal:totalCy*gpc,netTotal:totalCy*npc,capDeployed:actLev*cap,roi:actLev>0?((totalCy*npc)/(actLev*cap)*100):0});}results.sort(function(a,b){return(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal);});self.postMessage({type:"result",results:results,minTpPct:minTp,sharePrice:sp,scanned:100});};';
+                var blob3=new Blob([wCode3],{type:'application/javascript'});var w3=new Worker(URL.createObjectURL(blob3));
+                w3.onmessage=function(ev){if(ev.data.type==='result'){w3.terminate();resolve(ev.data);}};
+                var pa3=new Float64Array(rawTradesRef.current.length);for(var pi3=0;pi3<rawTradesRef.current.length;pi3++)pa3[pi3]=rawTradesRef.current[pi3].price;
+                w3.postMessage({prices:pa3.buffer,tradeCount:rawTradesRef.current.length,cap:cap,fee:fee},[pa3.buffer]);
+              });
               setOptResults(scan);setOptScanning(false);
             }} disabled={optScanning} style={Object.assign({},bB,{background:optScanning?C.border:'linear-gradient(135deg,#ffb020,#ff8800)',color:optScanning?C.txtDim:C.bg,width:'auto',padding:'10px 24px',display:'inline-block'})}>{optScanning?'Scanning TP% values...':'Find Optimal TP%'}</button>
             <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>Scans viable TP% values from 0.05% to 1.00% based on share price</div>
