@@ -3416,12 +3416,17 @@ function OptimalTPPage(p){
       // Current fixed TP% lookup
       var curTpVal=parseFloat(currentTp)||0;var currentFixed=null;var currentFixedTotal=0;
       if(curTpVal>0){
-        var curKey=curTpVal.toFixed(2);
-        currentFixed=tpMap[curKey]||null;
+        var curTd=Math.max(0.01,Math.round((Math.ceil(avgClosePrice*(1+curTpVal/100)*100)/100-avgClosePrice)*100)/100);
+        var curTdKey=curTd.toFixed(2);
+        currentFixed=null;
+        for(var fk in tpMap){if(Math.abs(tpMap[fk].tpPct-curTpVal)<0.001||(tpMap[fk].tpDollar&&Math.abs(parseFloat(fk)*0.01-curTd)<0.001)){currentFixed=tpMap[fk];break;}}
+        if(!currentFixed){for(var fk2 in tpMap){var fkTd=Math.max(0.01,Math.round((Math.ceil(avgClosePrice*(1+tpMap[fk2].tpPct/100)*100)/100-avgClosePrice)*100)/100);if(Math.abs(fkTd-curTd)<0.001){currentFixed=tpMap[fk2];break;}}}
         for(var vi=0;vi<validDays.length;vi++){
-          var curDayProfit=0;
+          var curDayProfit=0;var dayPrice2=validDays[vi].sharePrice||avgClosePrice;
+          var curDayTd=Math.max(0.01,Math.round((Math.ceil(dayPrice2*(1+curTpVal/100)*100)/100-dayPrice2)*100)/100);
           for(var ri=0;ri<validDays[vi].scan.results.length;ri++){
-            if(Math.abs(validDays[vi].scan.results[ri].tpPct-curTpVal)<0.001){curDayProfit=validDays[vi].scan.results[ri].netTotal;break;}
+            var rTd=validDays[vi].scan.results[ri].tpDollar;
+            if(Math.abs(rTd-curDayTd)<0.001||Math.abs(validDays[vi].scan.results[ri].tpPct-curTpVal)<0.001){curDayProfit=validDays[vi].scan.results[ri].netTotal;break;}
           }
           dayBests[vi].currentProfit=curDayProfit;
           currentFixedTotal+=curDayProfit;
@@ -3501,7 +3506,7 @@ function OptimalTPPage(p){
           <Mt label="Adj Fee" value={'$'+results.scan.results[0].adjFee.toFixed(4)} color={C.warn} size="md"/>
         </div>
       </Cd>
-      {function(){var curTpVal=parseFloat(currentTp)||0;if(curTpVal<=0)return null;var curResult=null;for(var ci=0;ci<results.scan.results.length;ci++){if(Math.abs(results.scan.results[ci].tpPct-curTpVal)<0.001){curResult=results.scan.results[ci];break;}}if(!curResult)return <Cd><div style={{color:C.warn,fontSize:9,fontFamily:F,textAlign:'center',padding:10}}>Current TP% {curTpVal.toFixed(2)}% not found in scan results (range 0.01%-1.00%)</div></Cd>;var best=results.scan.results[0];var edgeDollar=best.netTotal-curResult.netTotal;var edgePct=curResult.netTotal>0?(edgeDollar/curResult.netTotal*100):0;return <Cd>
+      {function(){var curTpVal=parseFloat(currentTp)||0;if(curTpVal<=0)return null;var curResult=null;var curTdTarget=Math.max(0.01,Math.round((Math.ceil(results.sharePrice*(1+curTpVal/100)*100)/100-results.sharePrice)*100)/100);for(var ci=0;ci<results.scan.results.length;ci++){if(Math.abs(results.scan.results[ci].tpPct-curTpVal)<0.001||Math.abs(results.scan.results[ci].tpDollar-curTdTarget)<0.001){curResult=results.scan.results[ci];break;}}if(!curResult)return <Cd><div style={{color:C.warn,fontSize:9,fontFamily:F,textAlign:'center',padding:10}}>Current TP% {curTpVal.toFixed(2)}% (${curTdTarget.toFixed(2)} spread) not found in scan results</div></Cd>;var best=results.scan.results[0];var edgeDollar=best.netTotal-curResult.netTotal;var edgePct=curResult.netTotal>0?(edgeDollar/curResult.netTotal*100):0;return <Cd>
         <SectionHead title="Current vs Optimal" sub={'Your '+curTpVal.toFixed(2)+'% vs best '+best.tpPct.toFixed(2)+'%'}/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
           <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.purple,textAlign:'center'}}>
@@ -3539,7 +3544,7 @@ function OptimalTPPage(p){
               <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>ROI</th>
             </tr></thead>
             <tbody>{results.scan.results.map(function(r,idx){
-              var isBest=idx===0;var isTop5=idx<5;var isCurrent=Math.abs(r.tpPct-(parseFloat(currentTp)||0))<0.001;
+              var isBest=idx===0;var isTop5=idx<5;var curTdH=Math.max(0.01,Math.round((Math.ceil(results.sharePrice*(1+(parseFloat(currentTp)||0)/100)*100)/100-results.sharePrice)*100)/100);var isCurrent=Math.abs(r.tpPct-(parseFloat(currentTp)||0))<0.001||Math.abs(r.tpDollar-curTdH)<0.001;
               return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCurrent?'rgba(157,92,255,0.15)':isBest?'rgba(255,176,32,0.1)':isTop5?'rgba(0,229,160,0.03)':'transparent'}}>
                 <td style={{padding:'5px 2px',color:isCurrent?C.purple:isBest?C.gold:C.txtDim}}>{isCurrent?'\u25B6':idx+1}</td>
                 <td style={{padding:'5px 2px',color:isCurrent?C.purple:isBest?C.gold:isTop5?C.accent:C.txt,textAlign:'right',fontWeight:isCurrent||isBest?700:400}}>{r.tpPct.toFixed(2)}%</td>
@@ -3746,7 +3751,7 @@ function OptimalTPPage(p){
               <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
             </tr></thead>
             <tbody>{multiResults.flatRanked.map(function(fr,idx){
-              var isCur=multiResults.currentTpPct>0&&Math.abs(fr.tpPct-multiResults.currentTpPct)<0.001;
+              var curTdR=multiResults.currentTpPct>0?Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.currentTpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100):0;var isCur=multiResults.currentTpPct>0&&(Math.abs(fr.tpPct-multiResults.currentTpPct)<0.001||(curTdR>0&&Math.abs(parseFloat(Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+fr.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100))-curTdR)<0.001));
               var isBest=idx===0;
               return <tr key={fr.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCur?'rgba(157,92,255,0.15)':isBest?'rgba(255,176,32,0.1)':'transparent'}}>
                 <td style={{padding:'5px 2px',color:isCur?C.purple:isBest?C.gold:C.txtDim}}>{isCur?'\u25B6':idx+1}</td>
