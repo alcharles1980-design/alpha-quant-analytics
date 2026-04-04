@@ -3271,6 +3271,7 @@ function OptimalTPPage(p){
   var sct=useState('0.10'),currentTp=sct[0],setCurrentTp=sct[1];
   var sMinTp=useState('0.01'),minTpInput=sMinTp[0],setMinTpInput=sMinTp[1];
   var sMaxTp=useState('1.00'),maxTpInput=sMaxTp[0],setMaxTpInput=sMaxTp[1];
+  var sHow=useState(false),howExpanded=sHow[0],setHowExpanded=sHow[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
 
@@ -3759,6 +3760,58 @@ function OptimalTPPage(p){
         </div>
       </Cd>
     </div>}
+    <Cd>
+      <div onClick={function(){setHowExpanded(!howExpanded);}} style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
+        <div style={{flex:1}}><SectionHead title="How This Tool Works" sub="Algorithm logic, profit math, and scan methodology"/></div>
+        <div style={{color:C.blue,fontSize:22,fontWeight:300,lineHeight:1,transition:'transform 0.2s',transform:howExpanded?'rotate(45deg)':'none',flexShrink:0,marginLeft:8}}>+</div>
+      </div>
+      {!howExpanded&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6}}>Tap to expand full documentation</div>}
+      {howExpanded&&<div style={{marginTop:12,fontSize:9,fontFamily:F,color:C.txt,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:12}}>
+          <div style={{color:C.blue,fontSize:10,fontWeight:700,marginBottom:6}}>Summary</div>
+          <p style={{marginBottom:6}}>This tool finds the most profitable take-profit percentage for a stock by running the complete Beta cycle engine against every tick trade from Polygon, testing each TP% value in the configured range (default 0.01% to 1.00% in 0.01% increments). For each TP% tested, it simulates the full day of trading and counts how many buy-sell cycles complete at that setting. The TP% that generates the highest net profit (after fractional fees) is the optimal.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>Single Day mode</span> scans one day and ranks all TP% values by net profit. It shows your Current Fixed TP% compared to the best found.</p>
+          <p><span style={{color:C.blue,fontWeight:700}}>Multi-Day mode</span> scans a date range and produces three comparisons: your Current Fixed TP%, the Best Flat TP% (single best setting across all days), and Day-Adjusted Optimal (each day's individual best, summed). This reveals whether daily TP% adjustment is worth the complexity for a given stock.</p>
+        </div>
+
+        <div style={{color:C.accent,fontSize:10,fontWeight:700,marginBottom:8,letterSpacing:1}}>DETAILED LOGIC</div>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>1. Data Acquisition</div>
+        <p style={{marginBottom:4,paddingLeft:8}}>Fetches every trade execution from Polygon.io using a 3-window EST/EDT-aware strategy to ensure complete coverage across all 16 trading hours (4AM-8PM ET). Windows overlap by 1 hour and are deduped by timestamp to prevent double-counting. Outlier ticks are filtered using IQR-based detection.</p>
+        <p style={{marginBottom:8,paddingLeft:8}}>For each day, the tool first attempts the Cloudflare Worker (server-side scan). If that fails (timeout, memory limit on heavy stocks), it falls back to fetching ticks in the browser and running the scan in a Web Worker background thread to keep the UI responsive.</p>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>2. The Cycle Engine (per TP% iteration)</div>
+        <p style={{marginBottom:4,paddingLeft:8}}>For each TP% value tested, the engine builds a fresh grid of $0.01 price levels using typed arrays for O(1) access:</p>
+        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:8,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"// Level grid setup\nvar minCents = Math.round(minPrice * 100);\nvar maxCents = Math.round(maxPrice * 100);\nvar count = maxCents - minCents + 1;  // one level per penny\n\nvar lvlActive = new Uint8Array(count);   // 0=inactive, 1=active\nvar lvlCycles = new Int32Array(count);   // cycle counter per level\nvar lvlTarget = new Float64Array(count); // sell target per level\n\n// Sell target = always ceil to next tradeable penny\nlvlTarget[c] = Math.ceil(levelPrice * (1 + TP/100) * 100) / 100;\n\n// Pre-seed: levels from open to open+1% start ACTIVE\nlvlActive[c] = (cents >= openCents && cents <= preSeedMaxCents) ? 1 : 0;"}</pre></div>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>3. Tick-by-Tick Execution</div>
+        <p style={{marginBottom:4,paddingLeft:8}}>From tick #2 onwards (tick #1 is observe-only), two operations execute in strict order on every tick:</p>
+        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:4,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"for (var i = 1; i < trades.length; i++) {\n  var price = trades[i].price;\n\n  // STEP A: SELL FIRST - scan ALL active levels\n  for (var j = 0; j < count; j++) {\n    if (lvlActive[j] === 1 && price >= lvlTarget[j]) {\n      lvlCycles[j]++;    // cycle complete\n      lvlActive[j] = 0;  // level goes inactive\n    }\n  }\n\n  // STEP B: BUY SECOND - activate ONE level\n  var idx = Math.floor(price * 100) - minCents;\n  if (idx >= 0 && idx < count && lvlActive[idx] === 0) {\n    lvlActive[idx] = 1;  // level activated\n  }\n}"}</pre></div>
+        <p style={{marginBottom:8,paddingLeft:8,color:C.warn,fontWeight:600}}>SELL-before-BUY order is critical. Reversing it would count a cycle and immediately re-buy on the same tick, inflating results.</p>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>4. Profit Calculation</div>
+        <p style={{marginBottom:4,paddingLeft:8}}>Profit uses the actual penny-rounded dollar spread, not the theoretical percentage:</p>
+        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:8,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"// Dollar spread (always rounds UP to next tradeable penny)\ntpDollar = Math.ceil(sharePrice * (1 + TP%/100) * 100) / 100 - sharePrice;\nif (tpDollar < 0.01) tpDollar = 0.01;  // minimum 1 cent\n\n// Fractional share quantity\nshares_per_level = capitalPerLevel / sharePrice;  // e.g. $1 / $25 = 0.04 shares\n\n// Fee scales with fractional quantity\nadj_fee = fee_per_share * shares_per_level;  // e.g. $0.005 * 0.04 = $0.0002\n\n// Per-cycle economics\ngross_per_cycle = shares_per_level * tpDollar;\nnet_per_cycle   = gross_per_cycle - adj_fee;\n\n// Totals\nnet_total = total_cycles * net_per_cycle;\nroi = net_total / (active_levels * capitalPerLevel) * 100;"}</pre></div>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>5. TP% Deduplication</div>
+        <p style={{marginBottom:8,paddingLeft:8}}>Multiple TP% values can ceil to the same penny target (e.g., on a $25 stock, 0.01% through 0.03% all ceil to a $0.01 spread). After scanning, results are deduped by <span style={{color:C.gold}}>tpDollar</span> -- keeping the best net profit per unique cent spread. This prevents showing redundant entries that would produce identical trading behavior.</p>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>6. Multi-Day Aggregation</div>
+        <p style={{marginBottom:4,paddingLeft:8}}>In Multi-Day mode, the scanner runs the full engine independently for each trading day in the range. Results are aggregated three ways:</p>
+        <p style={{marginBottom:2,paddingLeft:16}}><span style={{color:C.purple,fontWeight:700}}>Current Fixed:</span> Looks up your specified TP% in each day's scan results and sums the net profit across all days.</p>
+        <p style={{marginBottom:2,paddingLeft:16}}><span style={{color:C.gold,fontWeight:700}}>Best Flat:</span> For every TP% value, sums its net profit across ALL days. The TP% with the highest cross-day total wins. This is the best single setting you could have used.</p>
+        <p style={{marginBottom:8,paddingLeft:16}}><span style={{color:C.accent,fontWeight:700}}>Day-Adjusted:</span> Takes each day's #1 ranked TP% and sums those profits. This is the theoretical maximum if you could perfectly predict the best TP% each day.</p>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>7. Data Integrity</div>
+        <p style={{marginBottom:4,paddingLeft:8}}>Every scanned day runs through <span style={{color:C.accent}}>verifyFetchIntegrity</span> which checks for missing RTH hours (9AM-3PM), low hourly coverage ({'"<8/16"'} hours), low RTH trade count ({'"<500"'} trades), and market open gaps. Both the CF Worker and browser paths compute and save hourly seasonality data (trades, volume, high, low, ATR per hour) to the database for post-scan verification.</p>
+
+        <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>8. Key Design Decisions</div>
+        <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Math.ceil for targets:</span> Limit orders execute at whole pennies only. Ceiling ensures the target is always at least $0.01 above entry at a tradeable price.</p>
+        <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Fractional fee scaling:</span> At $1/level on a $200 stock, you hold 0.005 shares. The $0.005/share fee becomes $0.0000025/cycle -- negligible. At $1/level on a $5 stock, you hold 0.2 shares and the fee is $0.001/cycle. This scaling is critical for accurate comparison across different price points.</p>
+        <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Pre-seed ~1% above open:</span> Simulates the staggered entry the live system uses. Without pre-seeding, the first few minutes would show artificially low cycle counts as levels haven't been bought yet.</p>
+        <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Full-day engine per iteration:</span> Each TP% gets a completely fresh level grid and runs through every tick independently. No shortcuts, no approximations. 100 TP% values means 100 complete replays of the trading day.</p>
+      </div>}
+    </Cd>
   </div>;
 }
 
