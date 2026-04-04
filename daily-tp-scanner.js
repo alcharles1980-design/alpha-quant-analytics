@@ -1,5 +1,5 @@
-// Alpha Quant Analytics - Daily TP% Scanner v2
-// FIXED: overlapping windows now dedup by timestamp
+// Alpha Quant Analytics - Daily TP% Scanner v3
+// FIXES: dedup overlapping windows, dedup results by tpDollar, proper fee handling
 const C={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
 function R(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{...C,'Content-Type':'application/json'}});}
 
@@ -11,13 +11,13 @@ export default{async fetch(request){
     if(!ticker||!date||!polygon_key)return R({error:'Missing params'},400);
     const cap=cap_per_level||1,fee=fee_per_share||0.005;
 
-    // EST/EDT detection using Intl API
+    // EST/EDT detection
     const testDate=new Date(date+'T12:00:00Z');
     const utcH=testDate.getUTCHours();
     const etStr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(testDate);
     const etOff=utcH-parseInt(etStr);
 
-    // 3-window fetch with overlap + dedup
+    // 3-window fetch with overlap + dedup by timestamp
     const pad=n=>String(n).padStart(2,'0');
     const nextDay=new Date(testDate.getTime()+86400000).toISOString().slice(0,10);
     const hPre=4+etOff,hMid=10+etOff,hAft=15+etOff,hEnd=20+etOff;
@@ -33,7 +33,7 @@ export default{async fetch(request){
     const w2=await fetchWin(`${date}T${pad(hMid-1)}:00:00.000Z`,`${date}T${pad(hAft+2)}:00:00.000Z`);
     const w3=await fetchWin(`${date}T${pad(hAft-1)}:00:00.000Z`,wEnd);
 
-    // Dedup by timestamp (overlapping windows produce duplicates)
+    // Dedup by timestamp
     const allRaw=[...w1,...w2,...w3];
     allRaw.sort((a,b)=>a.t-b.t);
     const deduped=[];
@@ -51,7 +51,8 @@ export default{async fetch(request){
     const mc=Math.round(Math.floor(mn*100)),xc=Math.round(Math.ceil(mx*100)),cnt=xc-mc+1;
     const oc=Math.round(ol*100),pc=Math.round(ps2*100);
 
-    const results=[];
+    // Scan all 100 TP% values
+    const rawResults=[];
     for(let ti=1;ti<=100;ti++){
       const tpPct=ti/100,tf=tpPct/100;
       const act=new Uint8Array(cnt),tgt=new Float64Array(cnt);
@@ -64,18 +65,29 @@ export default{async fetch(request){
         if(idx>=0&&idx<cnt&&act[idx]===0)act[idx]=1;
       }
       for(let c=0;c<cnt;c++)if(act[c]===1)activeLevels++;
+      // tpDollar = actual dollar spread (always whole cents due to Math.ceil)
       let td=Math.round((Math.ceil(sp*(1+tpPct/100)*100)/100-sp)*100)/100;
       if(td<0.01)td=0.01;
       const gpc=fq*td,npc=gpc-af;
-      results.push({tpPct,tpDollar:td,cycles:totalCycles,grossPC:gpc,adjFee:af,netPC:npc,
+      rawResults.push({tpPct,tpDollar:td,cycles:totalCycles,grossPC:gpc,adjFee:af,netPC:npc,
         grossTotal:totalCycles*gpc,netTotal:totalCycles*npc,
         capDeployed:activeLevels*cap,
-        roi:activeLevels>0?((totalCycles*npc)/(activeLevels*cap)*100):0});
+        roi:activeLevels>0?((totalCycles*npc)/(activeLevels*cap)*100):0,
+        activeLevels});
     }
+
+    // Deduplicate by tpDollar: keep the best net profit for each unique cent spread
+    const bySpread={};
+    for(const r of rawResults){
+      const key=r.tpDollar.toFixed(2);
+      if(!bySpread[key]||r.netTotal>bySpread[key].netTotal)bySpread[key]=r;
+    }
+    const results=Object.values(bySpread);
     results.sort((a,b)=>(isNaN(b.netTotal)?-Infinity:b.netTotal)-(isNaN(a.netTotal)?-Infinity:a.netTotal));
 
     return R({status:'processed',ticker,date,total_trades:N,levels:cnt,
-      tp_values_scanned:100,share_price:sp,results,
+      tp_values_scanned:results.length,share_price:sp,results,
+      fee_per_cycle:af,
       minTpPct:results.find(r=>r.netPC>0)?.tpPct||0.01});
   }catch(e){return R({error:String(e),stack:e.stack?e.stack.slice(0,200):''},500);}
 }};
