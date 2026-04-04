@@ -3212,6 +3212,7 @@ function OptimalTPPage(p){
   var sd1=useState(ini.startDate||''),startDate=sd1[0],setStartDate=sd1[1];
   var sd2=useState(ini.endDate||''),endDate=sd2[0],setEndDate=sd2[1];
   var mr=useState(null),multiResults=mr[0],setMultiResults=mr[1];
+  var sct=useState('0.10'),currentTp=sct[0],setCurrentTp=sct[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
 
@@ -3352,7 +3353,21 @@ function OptimalTPPage(p){
       }
       var edge=dayAdjustedTotal-bestFlat.totalNet;var edgePct=bestFlat.totalNet>0?(edge/bestFlat.totalNet*100):0;
       var totalClose=0;for(var ci=0;ci<dayBests.length;ci++)totalClose+=dayBests[ci].sharePrice;var avgClosePrice=totalClose/dayBests.length;
-      setMultiResults({flatBest:bestFlat,flatRanked:flatRanked,dayBests:dayBests,dayAdjustedTotal:dayAdjustedTotal,edge:edge,edgePct:edgePct,totalDays:validDays.length,ticker:ticker.toUpperCase(),cap:capVal,fee:feeVal,avgClosePrice:avgClosePrice});
+      // Current fixed TP% lookup
+      var curTpVal=parseFloat(currentTp)||0;var currentFixed=null;var currentFixedTotal=0;
+      if(curTpVal>0){
+        var curKey=curTpVal.toFixed(2);
+        currentFixed=tpMap[curKey]||null;
+        for(var vi=0;vi<validDays.length;vi++){
+          var curDayProfit=0;
+          for(var ri=0;ri<validDays[vi].scan.results.length;ri++){
+            if(Math.abs(validDays[vi].scan.results[ri].tpPct-curTpVal)<0.001){curDayProfit=validDays[vi].scan.results[ri].netTotal;break;}
+          }
+          dayBests[vi].currentProfit=curDayProfit;
+          currentFixedTotal+=curDayProfit;
+        }
+      }
+      setMultiResults({flatBest:bestFlat,flatRanked:flatRanked,dayBests:dayBests,dayAdjustedTotal:dayAdjustedTotal,edge:edge,edgePct:edgePct,totalDays:validDays.length,ticker:ticker.toUpperCase(),cap:capVal,fee:feeVal,avgClosePrice:avgClosePrice,currentFixed:currentFixed,currentFixedTotal:currentFixedTotal,currentTpPct:curTpVal});
       setProg('');setLoading(false);
     }catch(e2){setErr(e2.message);setProg('');setLoading(false);}
   };
@@ -3391,6 +3406,9 @@ function OptimalTPPage(p){
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:12}}>
           <div><label style={lS}>$/Level</label><input type="text" inputMode="decimal" value={cap} onChange={function(e){setCap(e.target.value);}} style={iS}/></div>
           <div><label style={lS}>Fee/Share</label><input type="text" inputMode="decimal" value={fee} onChange={function(e){setFee(e.target.value);}} style={iS}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginBottom:12}}>
+          <div><label style={lS}>Current Fixed TP%</label><input type="text" inputMode="decimal" value={currentTp} onChange={function(e){setCurrentTp(e.target.value);}} style={Object.assign({},iS,{border:'1px solid '+C.purple})} placeholder="e.g. 0.10"/></div>
         </div>
         <button onClick={runMulti} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#3d9eff,#2070d0)',color:loading?C.txtDim:'#fff'})}>{loading?'Scanning...':'Scan Multi-Day Range'}</button>
       </div>}
@@ -3447,8 +3465,15 @@ function OptimalTPPage(p){
     {mode==='multi'&&multiResults&&<div>
       <Cd glow={true}>
         <div style={{display:'inline-block',background:C.blueDim,border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>MULTI-DAY COMPARISON | {multiResults.ticker} | {multiResults.totalDays} DAYS</div>
-        <SectionHead title="Flat vs Day-Adjusted" sub="Is daily TP% adjustment worth the complexity?"/>
-        {function(){var fq=multiResults.cap/multiResults.avgClosePrice;var af=multiResults.fee*fq;var flatTd=Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100);var flatGPC=fq*flatTd;var flatNPC=flatGPC-af;return <div>
+        <SectionHead title="Current vs Flat vs Day-Adjusted" sub="Three-way TP% comparison"/>
+        {function(){var fq=multiResults.cap/multiResults.avgClosePrice;var af=multiResults.fee*fq;var flatTd=Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.flatBest.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100);var flatGPC=fq*flatTd;var flatNPC=flatGPC-af;var hasCur=multiResults.currentTpPct>0&&multiResults.currentFixed;var curTd=hasCur?Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.currentTpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100):0;return <div>
+        {hasCur&&<div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.purple,textAlign:'center',marginTop:10}}>
+          <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Current Fixed TP%</div>
+          <div style={{color:C.purple,fontSize:22,fontWeight:800,fontFamily:F}}>{multiResults.currentTpPct.toFixed(2)+'%'}</div>
+          <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:2}}>{'TP $'+curTd.toFixed(2)+' spread'}</div>
+          <div style={{color:multiResults.currentFixed.totalNet>0?C.accent:C.warn,fontSize:14,fontWeight:700,fontFamily:F,marginTop:4}}>{'$'+multiResults.currentFixedTotal.toFixed(2)}</div>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>Total Net Profit</div>
+        </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
           <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,textAlign:'center'}}>
             <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Best Flat TP%</div>
@@ -3469,6 +3494,11 @@ function OptimalTPPage(p){
           <Mt label="Flat Cycles" value={multiResults.flatBest.totalCycles} color={C.gold} size="md"/>
           <Mt label="Days" value={multiResults.totalDays} color={C.blue} size="md"/>
         </div>
+        {hasCur&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
+          <Mt label="Cur vs Flat" value={(multiResults.flatBest.totalNet-multiResults.currentFixedTotal>=0?'+$':'-$')+Math.abs(multiResults.flatBest.totalNet-multiResults.currentFixedTotal).toFixed(2)} color={multiResults.flatBest.totalNet>multiResults.currentFixedTotal?C.accent:C.warn} size="md"/>
+          <Mt label="Cur vs Adj" value={(multiResults.dayAdjustedTotal-multiResults.currentFixedTotal>=0?'+$':'-$')+Math.abs(multiResults.dayAdjustedTotal-multiResults.currentFixedTotal).toFixed(2)} color={multiResults.dayAdjustedTotal>multiResults.currentFixedTotal?C.accent:C.warn} size="md"/>
+          <Mt label="Cur Cycles" value={multiResults.currentFixed?multiResults.currentFixed.totalCycles:0} color={C.purple} size="md"/>
+        </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
           <Mt label="Avg Close" value={'$'+multiResults.avgClosePrice.toFixed(2)} color={C.txt} size="md"/>
           <Mt label="Shares/Level" value={fq.toFixed(4)} color={C.txt} size="md"/>
@@ -3498,6 +3528,7 @@ function OptimalTPPage(p){
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net/Cy</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Adj$</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Flat$</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cur$</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}>Hrs</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}>Chk</th>
@@ -3518,6 +3549,7 @@ function OptimalTPPage(p){
                 <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+adjNet.toFixed(4)}</td>
                 <td style={{padding:'5px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+db.bestNet.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:C.txt,textAlign:'right'}}>{'$'+db.flatProfit.toFixed(2)}</td>
+                <td style={{padding:'5px 3px',color:C.purple,textAlign:'right'}}>{'$'+(db.currentProfit||0).toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:dayEdge>0?C.accent:dayEdge<0?C.warn:C.txtDim,textAlign:'right',fontWeight:700}}>{(dayEdge>=0?'+$':'$')+dayEdge.toFixed(2)}</td>
                 <td style={{padding:'5px 3px',color:db.hoursWithData>=14?C.accent:db.hoursWithData>=8?C.gold:C.warn,textAlign:'center',fontSize:7}}>{db.hoursWithData>0?(db.hoursWithData+'/16'):'-'}</td>
                 <td style={{padding:'5px 3px',textAlign:'center'}}>{(!db.warnings||db.warnings.length===0)?<span style={{color:C.accent,fontSize:10}}>{'\u2713'}</span>:<span onClick={function(){var w=db.warnings;alert(w.join('\n'));}} style={{color:C.warn,fontSize:8,cursor:'pointer'}}>{db.warnings.length+'\u26A0'}</span>}</td>
@@ -3527,24 +3559,29 @@ function OptimalTPPage(p){
         </div>
       </Cd>
       <Cd>
-        <SectionHead title="Daily Profit: Flat vs Adjusted" sub="Visual comparison per day"/>
+        <SectionHead title="Daily Profit: Current vs Flat vs Adjusted" sub="Visual comparison per day"/>
         <div style={{marginTop:8}}>{multiResults.dayBests.map(function(db){
-          var maxP=0;for(var q=0;q<multiResults.dayBests.length;q++){var mp=Math.max(multiResults.dayBests[q].bestNet,multiResults.dayBests[q].flatProfit);if(mp>maxP)maxP=mp;}
+          var maxP=0;for(var q=0;q<multiResults.dayBests.length;q++){var mp=Math.max(multiResults.dayBests[q].bestNet,multiResults.dayBests[q].flatProfit,multiResults.dayBests[q].currentProfit||0);if(mp>maxP)maxP=mp;}
           var adjPct=maxP>0?(db.bestNet/maxP*100):0;
           var flatPct=maxP>0?(db.flatProfit/maxP*100):0;
+          var curPct=maxP>0?((db.currentProfit||0)/maxP*100):0;
           return <div key={db.day} style={{marginBottom:6}}>
             <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:2}}>{db.day}</div>
-            <div style={{position:'relative',height:10,marginBottom:1}}>
+            <div style={{position:'relative',height:8,marginBottom:1}}>
               <div style={{position:'absolute',left:0,top:0,bottom:0,width:adjPct+'%',background:C.accent,borderRadius:'0 3px 3px 0',opacity:0.8,minWidth:adjPct>0?3:0}}></div>
             </div>
-            <div style={{position:'relative',height:10}}>
+            <div style={{position:'relative',height:8,marginBottom:1}}>
               <div style={{position:'absolute',left:0,top:0,bottom:0,width:flatPct+'%',background:C.gold,borderRadius:'0 3px 3px 0',opacity:0.6,minWidth:flatPct>0?3:0}}></div>
+            </div>
+            <div style={{position:'relative',height:8}}>
+              <div style={{position:'absolute',left:0,top:0,bottom:0,width:curPct+'%',background:C.purple,borderRadius:'0 3px 3px 0',opacity:0.6,minWidth:curPct>0?3:0}}></div>
             </div>
           </div>;
         })}
-        <div style={{display:'flex',gap:16,marginTop:6}}>
-          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:8,background:C.accent,borderRadius:2,opacity:0.8}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Day-Adjusted</span></div>
-          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:8,background:C.gold,borderRadius:2,opacity:0.6}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{'Flat ('+multiResults.flatBest.tpPct.toFixed(2)+'%)'}</span></div>
+        <div style={{display:'flex',gap:12,marginTop:6,flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:6,background:C.accent,borderRadius:2,opacity:0.8}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Day-Adjusted</span></div>
+          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:6,background:C.gold,borderRadius:2,opacity:0.6}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{'Flat ('+multiResults.flatBest.tpPct.toFixed(2)+'%)'}</span></div>
+          <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:12,height:6,background:C.purple,borderRadius:2,opacity:0.6}}></div><span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{'Current ('+multiResults.currentTpPct.toFixed(2)+'%)'}</span></div>
         </div>
         </div>
       </Cd>
