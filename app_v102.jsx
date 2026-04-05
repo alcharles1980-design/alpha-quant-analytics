@@ -4450,36 +4450,37 @@ function BuildDataSetPage(p){
       <button onClick={async function(){
         if(!p.apiKey){setErr('No Polygon API key');return;}
         if(!ticker){setErr('Enter a ticker');return;}
-        setLoading(true);setErr(null);setProg('Finding days with missing VIX...');
+        setLoading(true);setErr(null);setProg('Loading all feature rows for '+ticker.toUpperCase()+'...');
         try{
           var h=getSbHeaders();
-          var r=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&vix_close=is.null&select=trade_date,hour&order=trade_date.asc,hour.asc',{headers:h});
-          var rows=r.ok?await r.json():[];
-          var dates={};for(var i=0;i<rows.length;i++){if(!dates[rows[i].trade_date])dates[rows[i].trade_date]=[];dates[rows[i].trade_date].push(rows[i].hour);}
-          var uniqueDates=Object.keys(dates).sort();
-          if(!uniqueDates.length){setProg('All hours already have VIX data.');setLoading(false);return;}
-          setProg('Backfilling hourly VIX for '+uniqueDates.length+' dates...');
+          var rAll=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&select=*&order=trade_date.asc,hour.asc',{headers:Object.assign({},h,{'Range':'0-49999'})});
+          var allRows=rAll.ok?await rAll.json():[];
+          if(!allRows.length){setErr('No feature data for '+ticker.toUpperCase());setLoading(false);return;}
+          var byDate={};for(var i=0;i<allRows.length;i++){var dk=allRows[i].trade_date;if(!byDate[dk])byDate[dk]=[];byDate[dk].push(allRows[i]);}
+          var needVix=[];for(var dk2 in byDate){for(var j=0;j<byDate[dk2].length;j++){if(byDate[dk2][j].vix_close===null){needVix.push(dk2);break;}}}
+          needVix.sort();
+          if(!needVix.length){setProg('All hours already have VIX data.');setLoading(false);return;}
+          setProg('Backfilling hourly VIX for '+needVix.length+' dates...');
           var filled=0;
-          for(var di=0;di<uniqueDates.length;di++){
-            var day=uniqueDates[di];
-            setProg('VIX '+(di+1)+'/'+uniqueDates.length+': '+day+'...');
+          for(var di=0;di<needVix.length;di++){
+            var day=needVix[di];
+            setProg('VIX '+(di+1)+'/'+needVix.length+': '+day+'...');
             try{
+              var vixByH={};var vFall=null;
               var vR=await fetch('https://api.polygon.io/v2/aggs/ticker/I:VIX/range/1/hour/'+day+'/'+day+'?adjusted=true&apiKey='+p.apiKey);
-              if(vR.ok){var vD=await vR.json();if(vD.results&&vD.results.length){
-                var vixByH={};var vFall=null;
-                for(var vi=0;vi<vD.results.length;vi++){var vB=vD.results[vi];var vHr=getETHourFromMs(vB.t);if(vHr>=4&&vHr<20)vixByH[vHr]=vB.c;vFall=vB.c;}
-                var lastV=null;for(var vh=4;vh<20;vh++){if(vixByH[vh])lastV=vixByH[vh];else if(lastV)vixByH[vh]=lastV;else if(vFall)vixByH[vh]=vFall;}
-                var hours=dates[day];
-                for(var hi=0;hi<hours.length;hi++){
-                  var hVal=vixByH[hours[hi]]||vFall;
-                  if(hVal){await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&trade_date=eq.'+day+'&hour=eq.'+hours[hi],{method:'PATCH',headers:Object.assign({},h,{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify({vix_close:hVal})});}
-                }
-                filled++;
-              }}
-            }catch(e2){}
-            if(di<uniqueDates.length-1)await new Promise(function(w){setTimeout(w,300);});
+              if(vR.ok){var vD=await vR.json();if(vD.results&&vD.results.length){for(var vi=0;vi<vD.results.length;vi++){var vB=vD.results[vi];var vHr=getETHourFromMs(vB.t);if(vHr>=4&&vHr<20)vixByH[vHr]=vB.c;vFall=vB.c;}}}
+              if(!vFall){var vR2=await fetch('https://api.polygon.io/v2/aggs/ticker/I:VIX/range/1/day/'+day+'/'+day+'?adjusted=true&apiKey='+p.apiKey);if(vR2.ok){var vD2=await vR2.json();if(vD2.results&&vD2.results.length)vFall=vD2.results[0].c;}}
+              if(!vFall){setProg('VIX '+(di+1)+'/'+needVix.length+': '+day+' - no data');await new Promise(function(w){setTimeout(w,500);});continue;}
+              var lastV=null;for(var vh=4;vh<20;vh++){if(vixByH[vh])lastV=vixByH[vh];else if(lastV)vixByH[vh]=lastV;else vixByH[vh]=vFall;}
+              var dayRows=byDate[day];
+              for(var ri=0;ri<dayRows.length;ri++){dayRows[ri].vix_close=vixByH[dayRows[ri].hour]||vFall;delete dayRows[ri].id;delete dayRows[ri].created_at;}
+              await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&trade_date=eq.'+day,{method:'DELETE',headers:h});
+              await fetch(SB_URL+'/rest/v1/hourly_features',{method:'POST',headers:h,body:JSON.stringify(dayRows)});
+              filled++;
+            }catch(e2){setProg('VIX '+(di+1)+'/'+needVix.length+': '+day+' - error: '+e2.message);}
+            if(di<needVix.length-1)await new Promise(function(w){setTimeout(w,300);});
           }
-          setProg('Hourly VIX backfill complete: '+filled+'/'+uniqueDates.length+' days updated.');
+          setProg('Hourly VIX backfill complete: '+filled+'/'+needVix.length+' days updated.');
           setLoading(false);
         }catch(e){setErr(e.message);setProg('');setLoading(false);}
       }} disabled={loading} style={Object.assign({},bB,{marginTop:8,background:loading?C.border:'transparent',border:'1px solid '+C.gold,color:loading?C.txtDim:C.gold,fontSize:9})}>Backfill Hourly VIX Data (fast - no tick re-fetch)</button>
