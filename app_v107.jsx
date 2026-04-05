@@ -5421,8 +5421,7 @@ function CorrelationFinderPage(p){
       // Fetch optimal_tp_hourly with pagination (can be 38000+ rows)
       var optRows=[];var optOffset=0;var optBatch=10000;
       while(true){
-        var optH=Object.assign({},getSbHeaders(),{'Range':optOffset+'-'+(optOffset+optBatch-1)});
-        var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc',{headers:optH});
+        var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit='+optBatch+'&offset='+optOffset,{headers:getSbHeaders()});
         var batch=r2.ok?await r2.json():[];
         if(!batch.length)break;
         for(var bi=0;bi<batch.length;bi++)optRows.push(batch[bi]);
