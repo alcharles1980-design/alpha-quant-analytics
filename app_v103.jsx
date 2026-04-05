@@ -4646,11 +4646,143 @@ function BuildDataSetPage(p){
     <CollapseStage title="Timestamp Features" sub="hour_first_ts, hour_last_ts" badge="2 fields" badgeColor={C.txtDim} badgeBg={'rgba(100,120,140,0.1)'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
-          <p style={{marginBottom:4}}><span style={{color:C.accent,fontWeight:700}}>What:</span> Nanosecond-precision SIP timestamps of the first and last trade in each hour. Stored as raw numeric values from Polygon.</p>
-          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>Why:</span> Enables precise timing analysis. The gap between last tick of hour N and first tick of hour N+1 measures inter-hour activity gaps. Hours with late first-ticks may indicate pre-market illiquidity. Also useful for joining with live trade system data for exact timestamp matching.</p>
-          <p><span style={{color:C.blue,fontWeight:700}}>Calculation:</span> Captured during the single-pass feature extraction. First tick timestamp per hour is stored on first encounter. Last tick timestamp is overwritten on every tick (final value = last tick).</p>
+          <p style={{marginBottom:4}}><span style={{color:C.accent,fontWeight:700}}>What:</span> Nanosecond-precision SIP timestamps of the first and last trade in each hour.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>Why:</span> Enables precise timing analysis and duration computation for trade intensity.</p>
+          <p><span style={{color:C.blue,fontWeight:700}}>Calculation:</span> First tick timestamp stored on first encounter per hour. Last tick overwritten on every tick.</p>
         </div>
-        <div style={cS}>{'if (hFirstTs[hr] === null) {\n  hFirstTs[hr] = tick.sip_timestamp;  // first tick in this hour\n}\nhLastTs[hr] = tick.sip_timestamp;  // always update (last wins)\n\n// Timestamps are nanoseconds from epoch\n// To convert: ms = ts > 1e15 ? ts/1e6 : ts > 1e12 ? ts/1e3 : ts'}</div>
+        <div style={cS}>{'if (hFirstTs[hr] === null) hFirstTs[hr] = tick.sip_timestamp;\nhLastTs[hr] = tick.sip_timestamp;  // always update (last wins)'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Tick Volatility Features" sub="realized_vol, tick_volatility, return_pct, max_drawdown, range_vs_prev, upper_wick, first_15min_range" badge="7 fields" badgeColor={C.warn} badgeBg={C.warnDim}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: These features measure the character of price movement within each hour at the tick level. They answer: how choppy is the price action? Is it trending or oscillating? How severe are the pullbacks?</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_realized_vol:</span> Standard deviation of tick-to-tick returns expressed as %. THE core oscillation measure. A stock that moves +0.01%, -0.02%, +0.01%, -0.01% every tick has low realized vol. One that moves +0.1%, -0.15%, +0.2% has high realized vol. Higher realized vol = more price movement for the cycle engine.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_tick_volatility:</span> Average absolute price change between consecutive ticks in cents. Pure choppiness without direction. A stock ticking $10.00, $10.02, $9.99, $10.01 has ~2 cent avg tick volatility. Higher = more oscillation per tick.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_return_pct:</span> Directional return for the hour (close minus open, divided by open, times 100). Near zero = range-bound (ideal for grid trading). Large positive or negative = trending (may need wider TP% to avoid getting run over).</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_max_drawdown_pct:</span> Worst intra-hour pullback from the running high. Tracks the highest price seen so far in the hour, measures the deepest drop from that peak. A 0.5% drawdown in a 1% range hour means price pulled back halfway.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_range_vs_prev:</span> This hour's dollar range divided by the previous hour's range. Greater than 1 = volatility expanding. Less than 1 = contracting. Regime change detector: a jump from 0.5 to 2.0 signals a volatility spike.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_upper_wick_pct:</span> Upper wick as a percentage of total range. Wick = distance from the high to the higher of open/close. High upper wick = price tested highs but was rejected. Indicates selling pressure at the top.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>first_15min_range_pct:</span> Price range of the first 15 minutes of each hour as a percentage of price. The opening range often sets the tone. A wide first-15-min range may predict continued volatility for the rest of the hour.</p>
+        </div>
+        <div style={cS}>{'// Realized Vol: std dev of tick-to-tick returns (Welford online)\nif (prevPrice !== null && prevPrice > 0) {\n  var ret = price / prevPrice - 1;\n  sumSqRet += ret * ret;\n  sumRet += ret;\n  retCount++;\n}\n// After all ticks:\nvar meanRet = sumRet / retCount;\nvar variance = (sumSqRet - retCount * meanRet * meanRet) / (retCount - 1);\nvar realizedVol = Math.sqrt(variance) * 100;  // as percentage\n\n// Tick Volatility: avg absolute move in cents\nsumAbsMove += Math.abs(price - prevPrice);\ntickVol = (sumAbsMove / (tradeCount - 1)) * 100;  // in cents\n\n// Max Drawdown: track running high\nif (price > runningHigh) runningHigh = price;\nvar dd = (runningHigh - price) / runningHigh * 100;\nif (dd > maxDrawdown) maxDrawdown = dd;\n\n// First 15min Range: track high/low for first 900,000ms\nvar elapsed = (currentTs - firstTs) / 1e6;  // nanoseconds to ms\nif (elapsed <= 900000) {  // 15 minutes\n  if (price > first15High) first15High = price;\n  if (price < first15Low) first15Low = price;\n}\nfirst15RangePct = (first15High - first15Low) / first15Low * 100;\n\n// Range vs Previous Hour\nhour_range_vs_prev = thisHourRange / prevHourRange;'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Microstructure Features" sub="avg_trade_size, trade_intensity, up_down_ratio" badge="3 fields" badgeColor={C.blue} badgeBg={C.blueDim}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: These features describe the market microstructure -- who is trading, how fast, and in what direction. They distinguish institutional flow from retail, active markets from quiet ones.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_avg_trade_size:</span> Total volume divided by number of trades. Large average size (500+ shares) suggests institutional orders being executed. Small average size (10-50 shares) suggests retail and fractional trading. Institutional flow may create different oscillation patterns than retail.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_trade_intensity:</span> Number of trade executions per minute. Computed from trade count divided by the duration (last tick minus first tick). High intensity (100+ trades/min) means the order book is very active with fine price granularity. Low intensity (5 trades/min) means sparse execution -- fewer opportunities for the cycle engine.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_up_down_ratio:</span> Count of up-ticks divided by down-ticks. An up-tick is when price increases vs the previous trade. Near 1.0 = balanced market (ideal for grid trading). Greater than 1.0 = net buying pressure. Less than 1.0 = net selling pressure. Extreme ratios indicate directional flow.</p>
+        </div>
+        <div style={cS}>{'// Average Trade Size\nhour_avg_trade_size = hour_volume / hour_trades;\n\n// Trade Intensity (trades per minute)\nvar durationMs = (lastTs - firstTs) / 1e6;  // nanos to ms\nvar durationMin = durationMs / 60000;\nhour_trade_intensity = hour_trades / durationMin;\n\n// Up/Down Ratio\nvar move = price - prevPrice;\nif (move > 0) upTicks++;\nelse if (move < 0) downTicks++;\nhour_up_down_ratio = upTicks / downTicks;'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Mean-Reversion Features" sub="reversal_count, reversal_rate" badge="2 fields" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: These features directly measure how often price reverses direction -- the core behavior that makes the cycle engine profitable. More reversals = more buy-sell cycles = more profit opportunities.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_reversal_count:</span> Number of times price changes direction within the hour. Counted every time the current tick moves in the opposite direction from the previous tick (up then down, or down then up). 500 reversals in an hour with 10,000 ticks means price flips direction every 20 ticks on average.</p>
+          <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_reversal_rate:</span> Reversals per 100 ticks. Normalizes reversal count by activity level. A 40% reversal rate means 40 out of every 100 ticks change direction. Higher reversal rate = more mean-reverting, choppy price action. This is arguably the most directly relevant feature for TP% prediction because it measures exactly what the cycle engine exploits.</p>
+        </div>
+        <div style={cS}>{'// Track direction of each tick\nvar move = price - prevPrice;\nvar direction = move > 0 ? 1 : (move < 0 ? -1 : 0);\n\n// Count reversals (direction change)\nif (direction !== 0 && lastDirection !== 0 && direction !== lastDirection) {\n  reversalCount++;\n}\nif (direction !== 0) lastDirection = direction;\n\n// Reversal rate (normalized per 100 ticks)\nhour_reversal_rate = (reversalCount / (tradeCount - 1)) * 100;'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Derived: Previous Hour Features (Hourly Correlation)" sub="prev_hour_atr_pct, prev_hour_volume, prev_hour_best_tp, + 11 more" badge="14 LEADABLE" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: For each hour, the Correlation Finder looks back at the previous hour (same day) and copies its feature values. These are the most powerful LEADABLE predictors because they are the freshest signal available before the current hour starts.</p>
+          <p style={{marginBottom:6}}>Not stored in the database. Computed at runtime by the Correlation Finder when joining feature rows ordered by date and hour.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_atr_pct / atr_dollar:</span> Previous hour volatility. If last hour had high ATR, this hour may continue.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_volume / trades:</span> Previous hour activity level.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_direction:</span> Was last hour up or down? (close vs open %).</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_range_dollar:</span> Dollar range of last hour (high - low).</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_best_tp:</span> Optimal TP% last hour. Strong persistence = use similar setting this hour.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_realized_vol:</span> Last hour oscillation intensity.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_tick_volatility:</span> Last hour avg tick-to-tick choppiness.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_return_pct:</span> Last hour directional return.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_max_drawdown_pct:</span> Last hour worst pullback.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_reversal_rate:</span> Last hour reversal rate.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_avg_trade_size:</span> Last hour institutional vs retail.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>prev_hour_trade_intensity:</span> Last hour trades per minute.</p>
+        </div>
+        <div style={cS}>{'// In the Correlation Finder join loop:\nvar prevIdx = -1;\nfor (var pi = i - 1; pi >= 0; pi--) {\n  if (features[pi].trade_date === row.trade_date) {\n    prevIdx = pi; break;\n  }\n}\nif (prevIdx >= 0) {\n  var ph = features[prevIdx];\n  row.prev_hour_atr_pct = ph.hour_atr_pct;\n  row.prev_hour_realized_vol = ph.hour_realized_vol;\n  row.prev_hour_best_tp = bestTP[ph.trade_date + "|" + ph.hour].tp;\n  // ... same pattern for all prev_hour features\n}'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Derived: Additional Hourly Features (Correlation)" sub="hour_range_dollar, hour_direction, is_rth, vol_pct_of_day, price_vs_prev_close, day_range_hl" badge="6 features" badgeColor={C.blue} badgeBg={C.blueDim}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: Additional features derived from stored data at correlation runtime. Mix of leadable and non-leadable.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>hour_range_dollar:</span> Hour high minus low in dollars. Absolute price movement.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>hour_close_vs_open_pct:</span> Hour close vs open as %. Directional movement within the hour.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>hour_vol_pct_of_day:</span> This hour volume as % of total day volume. Measures relative concentration.</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>price_vs_prev_close_pct:</span> Current price vs previous day close. How far has the stock moved from yesterday?</p>
+          <p style={{marginBottom:2}}><span style={{color:C.gold,fontWeight:700}}>is_rth:</span> 1 if regular trading hours (9-4 ET), 0 if pre/post market. RTH has very different volatility.</p>
+          <p><span style={{color:C.gold,fontWeight:700}}>day_range_pct_hl:</span> Day high minus low as % of low. Full day range measure.</p>
+        </div>
+        <div style={cS}>{'// Derived at correlation runtime:\nrow.hour_range_dollar = hour_high - hour_low;\nrow.hour_close_vs_open_pct = (hour_close - hour_open) / hour_open * 100;\nrow.hour_vol_pct_of_day = hour_volume / day_volume * 100;\nrow.price_vs_prev_close_pct = (hour_close - prev_day_close) / prev_day_close * 100;\nrow.is_rth = (hour >= 9 && hour < 16) ? 1 : 0;\nrow.day_range_pct_hl = (day_high - day_low) / day_low * 100;'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Derived: Seasonality Features (Hourly + Daily)" sub="hour_seasonal_*, dow_seasonal_*, *_vs_*_seasonal" badge="13 hourly + 7 daily" badgeColor={C.purple} badgeBg={'rgba(168,85,247,0.1)'}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: Seasonality features capture recurring time-based patterns. They answer: is this hour/day more or less active than it normally is? These are all LEADABLE because they are computed from historical data.</p>
+          <p style={{marginBottom:6,color:C.txtBright,fontWeight:700}}>Intraday Seasonality (Hourly Mode -- 13 features):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>The Correlation Finder groups all data points by hour-of-day (4AM, 5AM, ..., 7PM) and computes the average ATR, volume, realized vol, and best TP% for each time slot across all days in the dataset.</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Baselines (4):</span> hour_seasonal_atr, hour_seasonal_volume, hour_seasonal_realized_vol, hour_seasonal_best_tp -- the typical value for this time of day.</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Ratios (4):</span> atr_vs_hour_seasonal, volume_vs_hour_seasonal, realized_vol_vs_hour_seasonal, reversals_vs_hour_seasonal -- how far above/below normal. A value of 1.5 means 50% above the seasonal average for this hour.</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>DOW in Hourly (5):</span> dow_seasonal_atr, dow_seasonal_volume, dow_seasonal_best_tp, atr_vs_dow_seasonal, volume_vs_dow_seasonal -- same concept but grouped by day-of-week.</p>
+          <p style={{marginBottom:6,color:C.txtBright,fontWeight:700}}>Day-of-Week Seasonality (Daily Mode -- 7 features):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Baselines (4):</span> dow_seasonal_atr, dow_seasonal_volume, dow_seasonal_range, dow_seasonal_best_tp.</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>Ratios (3):</span> atr_vs_dow_seasonal, volume_vs_dow_seasonal, range_vs_dow_seasonal.</p>
+        </div>
+        <div style={cS}>{'// Step 1: Compute baselines by grouping all data by hour-of-day\nvar hourAvg = {};  // keyed by hour 4-19\nfor (var h = 4; h < 20; h++) hourAvg[h] = { atrSum: 0, atrCnt: 0, ... };\nfor (var i = 0; i < joined.length; i++) {\n  var hr = joined[i].hour;\n  hourAvg[hr].atrSum += joined[i].hour_atr_pct;\n  hourAvg[hr].atrCnt++;\n}\n\n// Step 2: For each data point, compute seasonal ratio\nfor (var i = 0; i < joined.length; i++) {\n  var hr = joined[i].hour;\n  var baseline = hourAvg[hr].atrSum / hourAvg[hr].atrCnt;\n  \n  // Baseline: what is normal for 10AM?\n  joined[i].hour_seasonal_atr = baseline;\n  \n  // Ratio: is THIS 10AM above or below normal?\n  joined[i].atr_vs_hour_seasonal = joined[i].hour_atr_pct / baseline;\n  // 1.0 = exactly average, 2.0 = double normal, 0.5 = half normal\n}'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Daily Mode: Previous Day Features" sub="28 leadable features from yesterday's aggregated data" badge="28 LEADABLE" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: In Daily mode, the Correlation Finder aggregates all 16 hourly rows into one day-level summary, then creates previous-day versions. These 28 features are all known before today's market opens -- the foundation for daily TP% prediction.</p>
+          <p style={{marginBottom:6}}>Each feature is computed by summing, averaging, or taking the max across all hours of the previous trading day.</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Price + Range (4):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_close, prev_day_open, prev_day_range_pct (high-low as % of low), prev_day_close_vs_open_pct (direction -- up/down day)</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Activity (2):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_volume (sum of all hourly volumes), prev_day_trades (sum of all hourly trades)</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Volatility (5):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_atr_avg (mean hourly ATR%), prev_day_max_atr (peak hour), prev_day_atr_stddev (std dev of hourly ATRs -- high = concentrated volatility), prev_day_rth_atr_avg (RTH-only ATR), prev_day_max_hourly_vol (peak hour volume)</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Tick-Level Aggregated (7):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_avg_realized_vol, prev_day_max_realized_vol, prev_day_avg_tick_volatility, prev_day_avg_abs_return, prev_day_max_drawdown, prev_day_total_reversals, prev_day_avg_reversal_rate</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Microstructure (4):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_avg_trade_size, prev_day_avg_trade_intensity, prev_day_avg_up_down_ratio, prev_day_first_15min_range</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Session Structure (2):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_pre_mkt_vol_pct (pre-market volume as % of total), prev_day_hours_active (how many hours had trading)</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Optimal TP% Persistence (3):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>prev_day_best_tp (yesterday's optimal TP%), prev_day_cycles (total cycles at that TP%), prev_day_net_profit (how profitable the optimal was)</p>
+          <p style={{marginBottom:2,color:C.txtBright,fontWeight:700}}>Context (1):</p>
+          <p style={{paddingLeft:8}}>prev_day_avg_vwap (average VWAP across hours -- institutional price reference)</p>
+        </div>
+        <div style={cS}>{'// Daily mode aggregation (from hourly rows):\nfor each hour in previous day:\n  df.atrSum += hour_atr_pct;  df.atrCount++;\n  if (hour_atr_pct > df.atrMax) df.atrMax = hour_atr_pct;\n  df.volSum += hour_volume;   df.tradeSum += hour_trades;\n  df.rvSum += hour_realized_vol;  df.rvCnt++;\n  df.totalReversals += hour_reversal_count;\n  // ... same for all aggregated features\n\n// Then compute derived values:\nrow.prev_day_atr_avg = df.atrSum / df.atrCount;\nrow.prev_day_atr_stddev = stdDev(df.atrVals);\nrow.prev_day_avg_realized_vol = df.rvSum / df.rvCnt;\nrow.prev_day_pre_mkt_vol_pct = df.preVol / df.dayVol * 100;'}</div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Daily Mode: Today Features" sub="26 non-leadable + 5 leadable at open" badge="31 features" badgeColor={C.gold} badgeBg={C.goldDim}>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+        <div style={fS}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: Same aggregated features as previous-day but for the current day. Most are NOT leadable (you do not know today's ATR until the day is over). However, they are useful for understanding what drives optimal TP% -- even if you cannot predict them in advance.</p>
+          <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>Leadable at Open (5):</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>overnight_gap_pct, vix_close (UVXY proxy), day_of_week, day_open, share_price -- all known before or at market open.</p>
+          <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>Not Leadable (26):</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>day_range_pct, day_close_vs_open_pct, day_volume, day_trades, day_close, day_avg_atr, day_max_atr, day_atr_stddev, day_max_hourly_vol, day_rth_atr_avg, day_pre_mkt_vol_pct, day_rth_vol_pct, day_avg_vwap, day_hours_active, day_avg_realized_vol, day_max_realized_vol, day_avg_tick_volatility, day_max_tick_volatility, day_avg_abs_return, day_max_drawdown, day_total_reversals, day_avg_reversal_rate, day_max_reversal_rate, day_avg_trade_size, day_avg_trade_intensity, day_avg_up_down_ratio, day_first_15min_range</p>
+          <p style={{marginTop:6,color:C.warn}}>Non-leadable features tell you "when the day had high realized vol, the optimal TP% was X" -- useful for building intuition even if you cannot use them for pre-market prediction. If a strong correlation exists between day_avg_realized_vol and best TP%, you know to look for real-time proxies of realized vol.</p>
+        </div>
       </div>
     </CollapseStage>
   </div>;
