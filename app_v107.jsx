@@ -5418,8 +5418,18 @@ function CorrelationFinderPage(p){
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
       setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
-      var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc',{headers:h});
-      var optRows=r2.ok?await r2.json():[];
+      // Fetch optimal_tp_hourly with pagination (can be 38000+ rows)
+      var optRows=[];var optOffset=0;var optBatch=10000;
+      while(true){
+        var optH=Object.assign({},getSbHeaders(),{'Range':optOffset+'-'+(optOffset+optBatch-1)});
+        var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc',{headers:optH});
+        var batch=r2.ok?await r2.json():[];
+        if(!batch.length)break;
+        for(var bi=0;bi<batch.length;bi++)optRows.push(batch[bi]);
+        setProg('Loading optimal TP% (Y)... '+optRows.length+' rows');
+        if(batch.length<optBatch)break;
+        optOffset+=optBatch;
+      }
       if(!optRows.length){setErr('No optimal TP% data for '+ticker+'. Run Hourly Optimal TP% Finder first.');setLoading(false);return;}
       setProg('Finding best TP% per hour...');
       var bestTP={};
