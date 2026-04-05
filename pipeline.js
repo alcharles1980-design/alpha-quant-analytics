@@ -733,22 +733,24 @@ async function reportProgress(data) {
 
 // ── Robust Save Helper ───────────────────────────────────
 async function sbDeleteInsert(table, deleteFilter, rows, label) {
-  // Delete existing
-  var delR = await fetch(SB_URL + '/rest/v1/' + table + '?' + deleteFilter, { method: 'DELETE', headers: sbHeaders() });
-  if (!delR.ok) console.log('    WARN: ' + label + ' DELETE failed: ' + delR.status);
-  await sleep(100); // ensure DELETE completes before INSERT
-  // Insert in batches
+  // Try upsert first (merge-duplicates handles UNIQUE constraints)
+  var upsertHeaders = Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
   for (var i = 0; i < rows.length; i += 500) {
     var batch = rows.slice(i, i + 500);
-    var postR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+    var postR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: upsertHeaders, body: JSON.stringify(batch) });
     if (!postR.ok) {
+      // Upsert failed — fall back to DELETE+INSERT
       var errTxt = await postR.text();
-      console.log('    WARN: ' + label + ' POST failed (batch ' + i + '): ' + postR.status + ' ' + errTxt.slice(0, 200));
-      // Retry once
-      await sleep(500);
+      console.log('    ' + label + ' upsert failed (' + postR.status + '), falling back to DELETE+INSERT: ' + errTxt.slice(0, 100));
+      if (i === 0) { // Only delete once
+        await fetch(SB_URL + '/rest/v1/' + table + '?' + deleteFilter, { method: 'DELETE', headers: sbHeaders() });
+        await sleep(200);
+      }
       var retryR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
-      if (!retryR.ok) console.log('    ERROR: ' + label + ' retry also failed: ' + retryR.status);
-      else console.log('    OK: ' + label + ' retry succeeded');
+      if (!retryR.ok) {
+        var retryErr = await retryR.text();
+        console.log('    ERROR: ' + label + ' fallback also failed: ' + retryR.status + ' ' + retryErr.slice(0, 100));
+      }
     }
   }
 }
@@ -864,11 +866,19 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         var savedA = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
         var analysisId = savedA.length > 0 ? savedA[0].id : null;
 
-        // Save cached_levels
+        // Save cached_levels (requires delete+insert since no UNIQUE on data columns)
         if (analysisId) {
           var levelRows = [];
           for (var lv of result.levels || []) { if (lv && lv.cycles > 0) levelRows.push({ analysis_id: analysisId, level_price: lv.price, target_price: lv.target, cycles: lv.cycles }); }
-          if (levelRows.length) await sbDeleteInsert('cached_levels', 'analysis_id=eq.' + analysisId, levelRows, 'levels');
+          if (levelRows.length) {
+            await fetch(SB_URL + '/rest/v1/cached_levels?analysis_id=eq.' + analysisId, { method: 'DELETE', headers: sbHeaders() });
+            await sleep(100);
+            for (var li = 0; li < levelRows.length; li += 200) {
+              var lvBatch = levelRows.slice(li, li + 200);
+              var lvR = await fetch(SB_URL + '/rest/v1/cached_levels', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(lvBatch) });
+              if (!lvR.ok) console.log('    WARN: levels POST failed batch ' + li + ': ' + lvR.status);
+            }
+          }
           console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
         } else {
           console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles (WARNING: analyses ID not found)');
@@ -922,8 +932,9 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         var vF = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vH = await sbFetch('cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vSe = await sbFetch('cached_sessions?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=session_type&limit=1');
-        if (vA.length===0||vS.length===0||vO.length===0||vF.length===0||vH.length===0||vSe.length===0) console.log('  WARNING: Verify failed! A='+vA.length+' S='+vS.length+' O='+vO.length+' F='+vF.length+' H='+vH.length+' Se='+vSe.length);
-        else console.log('  VERIFIED: All 6 tables populated');
+        var vL = analysisId ? await sbFetch('cached_levels?analysis_id=eq.' + analysisId + '&select=id&limit=1') : [];
+        if (vA.length===0||vS.length===0||vO.length===0||vF.length===0||vH.length===0||vSe.length===0||vL.length===0) console.log('  WARNING: Verify failed! A='+vA.length+' S='+vS.length+' O='+vO.length+' F='+vF.length+' H='+vH.length+' Se='+vSe.length+' L='+vL.length);
+        else console.log('  VERIFIED: All 7 tables populated');
 
 
         // Update prevDayClose for next day
