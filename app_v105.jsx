@@ -4905,7 +4905,7 @@ function BuildDataSetPage(p){
           <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>Leadable at Open (5):</p>
           <p style={{marginBottom:4,paddingLeft:8}}>overnight_gap_pct, vix_close (UVXY proxy), day_of_week, day_open, share_price -- all known before or at market open.</p>
           <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>Not Leadable (26):</p>
-          <p style={{marginBottom:2,paddingLeft:8}}>All day_* aggregated features (range, volume, trades, ATR, realized vol, drawdown, reversals, trade size, etc.)</p>
+          <p style={{marginBottom:2,paddingLeft:8}}>All day_* aggregated features: day_avg_atr, day_max_atr, day_atr_stddev, day_rth_atr_avg, day_rth_vol_pct, day_pre_mkt_vol_pct, day_range_pct, day_close_vs_open_pct, day_volume, day_trades, day_close, day_max_hourly_vol, day_avg_vwap, day_hours_active, day_avg_realized_vol, day_max_realized_vol, day_avg_tick_volatility, day_max_tick_volatility, day_avg_abs_return, day_max_drawdown, day_total_reversals, day_avg_reversal_rate, day_max_reversal_rate, day_avg_trade_size, day_avg_trade_intensity, day_avg_up_down_ratio, day_first_15min_range, day_avg_autocorr, day_avg_hurst, day_avg_run_length, day_avg_oscillation_score, day_volume_concentration, day_morning_session_pct, day_closing_hour_pct</p>
           <p style={{marginTop:6,color:C.warn}}>Non-leadable features tell you "when the day had high realized vol, the optimal TP% was X" -- useful for building intuition even if you cannot use them for pre-market prediction.</p>
         </div>
       </div>
@@ -4943,7 +4943,7 @@ function BuildDataSetPage(p){
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>realized_vol_delta_abs, atr_delta_abs:</span> Absolute magnitude of change (not percentage). Shows how many points volatility actually moved.</p>
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>regime_intensity_score:</span> Composite 0-1 score combining acceleration + expansion streak + decompression. Higher = stronger regime transition. Normalized for cross-stock comparison.</p>
           <p style={{marginBottom:6,color:C.txtBright,fontWeight:700}}>Daily Multi-Scale (13 features):</p>
-          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_atr_avg_2d/5d, ratios, std_5d:</span> 2-day and weekly ATR baselines with ratio and volatility-of-vol.</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_atr_avg_2d/5d, day_atr_ratio_2d/5d, day_atr_std_5d:</span> 2-day and weekly ATR baselines with ratio and volatility-of-vol.</p>
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_intensity_avg_3d, ratio_3d:</span> 3-day activity baseline.</p>
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_volume_avg_5d, ratio_5d:</span> Weekly volume baseline.</p>
           <p style={{paddingLeft:8}}><span style={{color:C.gold}}>day_atr_delta_abs, day_rv_delta_abs, day_regime_intensity_score:</span> Daily versions of absolute deltas and composite score.</p>
