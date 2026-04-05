@@ -5585,7 +5585,7 @@ function CorrelationFinderPage(p){
         var dr=joined[dri];
         var myDatr=dr.day_avg_atr||0;var myDrv=dr.day_avg_realized_vol||0;var myDvol=dr.day_volume||0;
         var myDrng=dr.day_range_pct||0;var myDret=dr.day_close_vs_open_pct||0;var myDdd=dr.day_max_drawdown||0;
-        var myDrr=dr.day_avg_reversal_rate||0;var myDtp=dr.best_tp_pct||0;
+        var myDrr=dr.day_avg_reversal_rate||0;var myDtp=dr.best_tp_pct||0;var myDti=dr.day_avg_trade_intensity||0;
         // Acceleration vs previous day
         dr.day_atr_acceleration=dAtrBuf.length>0&&dAtrBuf[dAtrBuf.length-1]>0?((myDatr-dAtrBuf[dAtrBuf.length-1])/dAtrBuf[dAtrBuf.length-1]*100):null;
         dr.day_realized_vol_acceleration=dRvBuf.length>0&&dRvBuf[dRvBuf.length-1]>0?((myDrv-dRvBuf[dRvBuf.length-1])/dRvBuf[dRvBuf.length-1]*100):null;
