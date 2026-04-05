@@ -4943,7 +4943,7 @@ function BuildDataSetPage(p){
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>realized_vol_delta_abs, atr_delta_abs:</span> Absolute magnitude of change (not percentage). Shows how many points volatility actually moved.</p>
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>regime_intensity_score:</span> Composite 0-1 score combining acceleration + expansion streak + decompression. Higher = stronger regime transition. Normalized for cross-stock comparison.</p>
           <p style={{marginBottom:6,color:C.txtBright,fontWeight:700}}>Daily Multi-Scale (13 features):</p>
-          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_atr_avg_2d/5d, day_atr_ratio_2d/5d, day_atr_std_5d:</span> 2-day and weekly ATR baselines with ratio and volatility-of-vol.</p>
+          <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_atr_avg_2d, day_atr_avg_5d, day_atr_ratio_2d, day_atr_ratio_5d, day_atr_std_5d:</span> 2-day and weekly ATR baselines with ratio and volatility-of-vol.</p>
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_intensity_avg_3d, ratio_3d:</span> 3-day activity baseline.</p>
           <p style={{marginBottom:2,paddingLeft:8}}><span style={{color:C.gold}}>day_volume_avg_5d, ratio_5d:</span> Weekly volume baseline.</p>
           <p style={{paddingLeft:8}}><span style={{color:C.gold}}>day_atr_delta_abs, day_rv_delta_abs, day_regime_intensity_score:</span> Daily versions of absolute deltas and composite score.</p>
