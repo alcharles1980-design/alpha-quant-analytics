@@ -2681,7 +2681,7 @@ function SettingsPage(p){
       <SectionHead title="GitHub Pipeline" sub="Trigger automated pipelines from the app" info="A GitHub Personal Access Token with 'actions' scope lets you trigger the nightly and hourly pipelines directly from this app. Create one at github.com > Settings > Developer settings > Personal access tokens > Fine-grained tokens. Select your repo and grant Actions read/write permission."/>
       <div style={{marginBottom:12,marginTop:10}}>
         <label style={lS}>Personal Access Token</label>
-        <input type="password" value={ghTok} onChange={function(e){setGhTok(e.target.value);}} placeholder="github_pat_..." style={iS}/>
+        <input type="text" value={ghTok} onChange={function(e){setGhTok(e.target.value.trim());}} placeholder="Paste token here" style={Object.assign({},iS,{fontSize:8})} autoComplete="off" autoCorrect="off" spellCheck="false"/>
       </div>
       <button onClick={saveGh} style={Object.assign({},bB,{background:savedGh?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:savedGh?C.bg:'#fff'})}>{savedGh?'Saved!':'Save GitHub Token'}</button>
       {!ghTok&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>Pipeline triggers disabled. Pipelines still run automatically via cron schedule.</div>}
