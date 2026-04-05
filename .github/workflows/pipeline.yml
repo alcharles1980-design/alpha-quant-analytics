@@ -1,0 +1,56 @@
+name: Alpha Quant Pipeline
+
+on:
+  schedule:
+    # Nightly: 1AM ET = 6AM UTC (Mon-Fri)
+    - cron: '0 6 * * 1-5'
+    # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
+    - cron: '5 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Pipeline mode'
+        required: true
+        default: 'nightly'
+        type: choice
+        options:
+          - nightly
+          - hourly
+      tickers:
+        description: 'Comma-separated tickers'
+        required: true
+        default: 'ONON'
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Determine mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ inputs.mode }}" >> $GITHUB_OUTPUT
+            echo "tickers=${{ inputs.tickers }}" >> $GITHUB_OUTPUT
+          else
+            # Check current UTC hour to determine if nightly or hourly
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" = "06" ]; then
+              echo "mode=nightly" >> $GITHUB_OUTPUT
+            else
+              echo "mode=hourly" >> $GITHUB_OUTPUT
+            fi
+            echo "tickers=ONON" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run pipeline
+        run: node pipeline.js --${{ steps.mode.outputs.mode }} --tickers ${{ steps.mode.outputs.tickers }}
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

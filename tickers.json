@@ -1,0 +1,7 @@
+{
+  "tickers": ["ONON"],
+  "cap_per_level": 200,
+  "fee_per_share": 0.005,
+  "top_n_features": 5,
+  "notes": "Add tickers here as you build up data. Each ticker needs Build Data Set + Hourly Optimal TP% runs first."
+}
