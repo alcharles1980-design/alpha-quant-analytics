@@ -5741,32 +5741,27 @@ function CorrelationFinderPage(p){
 
       <Cd>
         <SectionHead title="Full Correlation Matrix" sub="All features ranked by correlation strength with optimal TP%. Tap headers to sort."/>
-        {function(){
-          var toggleSort=function(key){if(sortKey===key){setSortDir(sortDir==='desc'?'asc':'desc');}else{setSortKey(key);setSortDir('desc');}};
-          var sortInd=function(key){return sortKey===key?(sortDir==='desc'?'\u25BC':'\u25B2'):'';};
-          var thS=function(key,align){return{padding:'5px 3px',color:sortKey===key?C.accent:C.txtDim,textAlign:align||'left',cursor:'pointer',fontWeight:sortKey===key?700:400,userSelect:'none'};};
-          var sorted=results.correlations.slice().sort(function(a,b){
-            var va,vb;
-            if(sortKey==='label'){va=a.label.toLowerCase();vb=b.label.toLowerCase();return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0);}
-            if(sortKey==='r'){va=a.r;vb=b.r;}
-            else if(sortKey==='rAbs'){va=a.rAbs;vb=b.rAbs;}
-            else if(sortKey==='rProfit'){va=Math.abs(a.rProfit);vb=Math.abs(b.rProfit);}
-            else if(sortKey==='n'){va=a.n;vb=b.n;}
-            else if(sortKey==='leadable'){va=a.leadable?1:0;vb=b.leadable?1:0;}
-            else{va=a.rAbs;vb=b.rAbs;}
-            return sortDir==='desc'?(vb-va):(va-vb);
-          });
-          return <div style={{overflowX:'auto',maxHeight:600}}>
+        <div style={{overflowX:'auto',maxHeight:600}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
             <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard,zIndex:1}}>
-              <th style={thS('rAbs','left')} onClick={function(){toggleSort('rAbs');}}># {sortInd('rAbs')}</th>
-              <th style={thS('label','left')} onClick={function(){toggleSort('label');}}>Feature {sortInd('label')}</th>
-              <th style={thS('r','right')} onClick={function(){toggleSort('r');}}>r (TP%) {sortInd('r')}</th>
-              <th style={thS('rProfit','right')} onClick={function(){toggleSort('rProfit');}}>r (Profit) {sortInd('rProfit')}</th>
-              <th style={thS('leadable','left')} onClick={function(){toggleSort('leadable');}}>Type {sortInd('leadable')}</th>
-              <th style={thS('n','right')} onClick={function(){toggleSort('n');}}>n {sortInd('n')}</th>
+              <th style={{padding:'5px 3px',color:sortKey==='rAbs'?C.accent:C.txtDim,textAlign:'left',cursor:'pointer',fontWeight:sortKey==='rAbs'?700:400,userSelect:'none'}} onClick={function(){if(sortKey==='rAbs')setSortDir(sortDir==='desc'?'asc':'desc');else{setSortKey('rAbs');setSortDir('desc');}}}># {sortKey==='rAbs'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
+              <th style={{padding:'5px 3px',color:sortKey==='label'?C.accent:C.txtDim,textAlign:'left',cursor:'pointer',fontWeight:sortKey==='label'?700:400,userSelect:'none'}} onClick={function(){if(sortKey==='label')setSortDir(sortDir==='desc'?'asc':'desc');else{setSortKey('label');setSortDir('asc');}}}> Feature {sortKey==='label'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
+              <th style={{padding:'5px 3px',color:sortKey==='r'?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontWeight:sortKey==='r'?700:400,userSelect:'none'}} onClick={function(){if(sortKey==='r')setSortDir(sortDir==='desc'?'asc':'desc');else{setSortKey('r');setSortDir('desc');}}}> r (TP%) {sortKey==='r'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
+              <th style={{padding:'5px 3px',color:sortKey==='rProfit'?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontWeight:sortKey==='rProfit'?700:400,userSelect:'none'}} onClick={function(){if(sortKey==='rProfit')setSortDir(sortDir==='desc'?'asc':'desc');else{setSortKey('rProfit');setSortDir('desc');}}}> r (Profit) {sortKey==='rProfit'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
+              <th style={{padding:'5px 3px',color:sortKey==='leadable'?C.accent:C.txtDim,textAlign:'left',cursor:'pointer',fontWeight:sortKey==='leadable'?700:400,userSelect:'none'}} onClick={function(){if(sortKey==='leadable')setSortDir(sortDir==='desc'?'asc':'desc');else{setSortKey('leadable');setSortDir('desc');}}}> Type {sortKey==='leadable'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
+              <th style={{padding:'5px 3px',color:sortKey==='n'?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontWeight:sortKey==='n'?700:400,userSelect:'none'}} onClick={function(){if(sortKey==='n')setSortDir(sortDir==='desc'?'asc':'desc');else{setSortKey('n');setSortDir('desc');}}}> n {sortKey==='n'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
             </tr></thead>
-            <tbody>{sorted.map(function(c,idx){
+            <tbody>{results.correlations.slice().sort(function(a,b){
+              if(sortKey==='label'){var la=a.label.toLowerCase(),lb=b.label.toLowerCase();return sortDir==='asc'?(la<lb?-1:la>lb?1:0):(la>lb?-1:la<lb?1:0);}
+              var va=0,vb=0;
+              if(sortKey==='r'){va=a.r;vb=b.r;}
+              else if(sortKey==='rAbs'){va=a.rAbs;vb=b.rAbs;}
+              else if(sortKey==='rProfit'){va=Math.abs(a.rProfit);vb=Math.abs(b.rProfit);}
+              else if(sortKey==='n'){va=a.n;vb=b.n;}
+              else if(sortKey==='leadable'){va=a.leadable?1:0;vb=b.leadable?1:0;}
+              else{va=a.rAbs;vb=b.rAbs;}
+              return sortDir==='desc'?(vb-va):(va-vb);
+            }).map(function(c,idx){
               var isStrong=c.rAbs>=0.4;var isMod=c.rAbs>=0.2;
               return <tr key={c.feature} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
@@ -5778,7 +5773,7 @@ function CorrelationFinderPage(p){
               </tr>;
             })}</tbody>
           </table>
-        </div>;}()}
+        </div>
       </Cd>
 
       {expandedFeat&&function(){
