@@ -5186,6 +5186,7 @@ function CorrelationFinderPage(p){
   var s8=useState('hourly'),corrMode=s8[0],setCorrMode=s8[1];
   var s9=useState('rAbs'),sortKey=s9[0],setSortKey=s9[1];
   var s10=useState('desc'),sortDir=s10[0],setSortDir=s10[1];
+  var s11=useState(0),sortVer=s11[0],setSortVer=s11[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -5647,18 +5648,23 @@ function CorrelationFinderPage(p){
 
   var strengthLabel=function(r){var a=Math.abs(r);if(a>=0.7)return'Strong';if(a>=0.4)return'Moderate';if(a>=0.2)return'Weak';return'Negligible';};
   var strengthColor=function(r){var a=Math.abs(r);if(a>=0.7)return C.accent;if(a>=0.4)return C.gold;if(a>=0.2)return C.blue;return C.txtDim;};
-  var doSort=function(key){if(sortKey===key){setSortDir(sortDir==='desc'?'asc':'desc');}else{setSortKey(key);setSortDir(key==='label'?'asc':'desc');}};
-  var sortedCorrelations=results?results.correlations.slice().sort(function(a,b){
-    if(sortKey==='label'){var la=a.label.toLowerCase(),lb=b.label.toLowerCase();return sortDir==='asc'?(la<lb?-1:la>lb?1:0):(la>lb?-1:la<lb?1:0);}
-    var va=0,vb=0;
-    if(sortKey==='r'){va=a.r;vb=b.r;}
-    else if(sortKey==='rAbs'){va=a.rAbs;vb=b.rAbs;}
-    else if(sortKey==='rProfit'){va=Math.abs(a.rProfit);vb=Math.abs(b.rProfit);}
-    else if(sortKey==='n'){va=a.n;vb=b.n;}
-    else if(sortKey==='leadable'){va=a.leadable?1:0;vb=b.leadable?1:0;}
-    else{va=a.rAbs;vb=b.rAbs;}
-    return sortDir==='desc'?(vb-va):(va-vb);
-  }):[];
+  var doSort=function(key){if(sortKey===key){setSortDir(sortDir==='desc'?'asc':'desc');}else{setSortKey(key);setSortDir(key==='label'?'asc':'desc');}setSortVer(sortVer+1);};
+  var sortedCorrelations=[];
+  if(results&&results.correlations){
+    sortedCorrelations=results.correlations.slice();
+    var sk=sortKey,sd=sortDir;
+    sortedCorrelations.sort(function(a,b){
+      if(sk==='label'){var la=(a.label||'').toLowerCase(),lb=(b.label||'').toLowerCase();return sd==='asc'?(la<lb?-1:la>lb?1:0):(la>lb?-1:la<lb?1:0);}
+      var va=0,vb=0;
+      if(sk==='r'){va=a.r;vb=b.r;}
+      else if(sk==='rAbs'){va=a.rAbs;vb=b.rAbs;}
+      else if(sk==='rProfit'){va=Math.abs(a.rProfit||0);vb=Math.abs(b.rProfit||0);}
+      else if(sk==='n'){va=a.n||0;vb=b.n||0;}
+      else if(sk==='leadable'){va=a.leadable?1:0;vb=b.leadable?1:0;}
+      else{va=a.rAbs;vb=b.rAbs;}
+      return sd==='desc'?(vb-va):(va-vb);
+    });
+  }
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -5753,6 +5759,7 @@ function CorrelationFinderPage(p){
 
       <Cd>
         <SectionHead title="Full Correlation Matrix" sub="All features ranked by correlation strength with optimal TP%. Tap headers to sort."/>
+        <div style={{padding:'4px 8px',background:'rgba(157,92,255,0.1)',borderRadius:4,marginBottom:6,fontSize:7,fontFamily:F,color:C.purple}}>Sort: <span style={{fontWeight:700}}>{sortKey}</span> {sortDir} | {sortedCorrelations.length} features | v{sortVer}</div>
         <div style={{overflowX:'auto',maxHeight:600}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
             <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard,zIndex:1}}>
@@ -5765,7 +5772,7 @@ function CorrelationFinderPage(p){
             </tr></thead>
             <tbody>{sortedCorrelations.map(function(c,idx){
               var isStrong=c.rAbs>=0.4;var isMod=c.rAbs>=0.2;
-              return <tr key={c.feature} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
+              return <tr key={c.feature+'_'+sortVer} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
                 <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}{c.leadable&&<span style={{color:C.accent,fontSize:5,fontWeight:700,marginLeft:3,padding:'1px 3px',background:C.accentDim,borderRadius:2}}>LEADABLE</span>}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
                 <td style={{padding:'5px 3px',color:strengthColor(c.r),textAlign:'right',fontWeight:700}}>{(c.r>0?'+':'')+c.r.toFixed(3)}</td>
