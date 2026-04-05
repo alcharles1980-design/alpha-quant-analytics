@@ -4443,6 +4443,35 @@ function BuildDataSetPage(p){
       </div>
       {startDate&&endDate&&!loading&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:8}}>{getTradingDays(startDate,endDate).length+' trading days | ~'+(getTradingDays(startDate,endDate).length*16)+' feature rows will be generated'}</div>}
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#a855f7,#8040d0)',color:loading?C.txtDim:'#fff'})}>{loading?'Building...':'Build Feature Data Set'}</button>
+      <button onClick={async function(){
+        if(!p.apiKey){setErr('No Polygon API key');return;}
+        if(!ticker){setErr('Enter a ticker');return;}
+        setLoading(true);setErr(null);setProg('Finding days with missing VIX...');
+        try{
+          var h=getSbHeaders();
+          var r=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&vix_close=is.null&select=trade_date&order=trade_date.asc',{headers:h});
+          var rows=r.ok?await r.json():[];
+          var dates={};for(var i=0;i<rows.length;i++)dates[rows[i].trade_date]=true;
+          var uniqueDates=Object.keys(dates).sort();
+          if(!uniqueDates.length){setProg('All dates already have VIX data.');setLoading(false);return;}
+          setProg('Backfilling VIX for '+uniqueDates.length+' dates...');
+          var filled=0;
+          for(var di=0;di<uniqueDates.length;di++){
+            var day=uniqueDates[di];
+            setProg('VIX '+(di+1)+'/'+uniqueDates.length+': '+day+'...');
+            try{
+              var vR=await fetch('https://api.polygon.io/v2/aggs/ticker/I:VIX/range/1/day/'+day+'/'+day+'?adjusted=true&apiKey='+p.apiKey);
+              if(vR.ok){var vD=await vR.json();if(vD.results&&vD.results.length){var vixVal=vD.results[0].c;
+                var uR=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&trade_date=eq.'+day,{method:'PATCH',headers:Object.assign({},h,{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify({vix_close:vixVal})});
+                if(uR.ok)filled++;
+              }}
+            }catch(e2){}
+            if(di<uniqueDates.length-1)await new Promise(function(w){setTimeout(w,300);});
+          }
+          setProg('VIX backfill complete: '+filled+'/'+uniqueDates.length+' days updated.');
+          setLoading(false);
+        }catch(e){setErr(e.message);setProg('');setLoading(false);}
+      }} disabled={loading} style={Object.assign({},bB,{marginTop:8,background:loading?C.border:'transparent',border:'1px solid '+C.gold,color:loading?C.txtDim:C.gold,fontSize:9})}>Backfill VIX Data (fast - no tick re-fetch)</button>
       {prog&&<div style={{marginTop:8,color:C.purple,fontSize:10,fontFamily:F}}>{prog}</div>}
       {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
     </Cd>
