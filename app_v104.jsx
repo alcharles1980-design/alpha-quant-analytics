@@ -5662,6 +5662,11 @@ function CorrelationFinderPage(p){
       else if(sk==='n'){va=a.n||0;vb=b.n||0;}
       else if(sk==='leadable'){va=a.leadable?1:0;vb=b.leadable?1:0;}
       else{va=a.rAbs;vb=b.rAbs;}
+      // NaN guard: NaN breaks Array.sort() completely
+      var aNaN=isNaN(va),bNaN=isNaN(vb);
+      if(aNaN&&bNaN)return 0;
+      if(aNaN)return 1;  // push NaN to end
+      if(bNaN)return -1;
       return sd==='desc'?(vb-va):(va-vb);
     });
   }
@@ -5775,8 +5780,8 @@ function CorrelationFinderPage(p){
               return <tr key={c.feature+'_'+sortVer} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
                 <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}{c.leadable&&<span style={{color:C.accent,fontSize:5,fontWeight:700,marginLeft:3,padding:'1px 3px',background:C.accentDim,borderRadius:2}}>LEADABLE</span>}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
-                <td style={{padding:'5px 3px',color:strengthColor(c.r),textAlign:'right',fontWeight:700}}>{(c.r>0?'+':'')+c.r.toFixed(3)}</td>
-                <td style={{padding:'5px 3px',color:strengthColor(c.rProfit),textAlign:'right'}}>{(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</td>
+                <td style={{padding:'5px 3px',color:isNaN(c.r)?C.txtDim:strengthColor(c.r),textAlign:'right',fontWeight:700}}>{isNaN(c.r)?'—':(c.r>0?'+':'')+c.r.toFixed(3)}</td>
+                <td style={{padding:'5px 3px',color:isNaN(c.rProfit)?C.txtDim:strengthColor(c.rProfit),textAlign:'right'}}>{isNaN(c.rProfit)?'—':(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</td>
                 <td style={{padding:'5px 3px'}}><span style={{color:strengthColor(c.r),fontSize:6,fontWeight:700,textTransform:'uppercase'}}>{strengthLabel(c.r)}{c.r>0?' \u2191':' \u2193'}</span></td>
                 <td style={{padding:'5px 3px',color:C.txtDim,textAlign:'right'}}>{c.n}</td>
               </tr>;
