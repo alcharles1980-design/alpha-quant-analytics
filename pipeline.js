@@ -90,8 +90,9 @@ function analyzePriceLevels(trades, tpPct) {
     if (idx >= 0 && idx < count && lvlActive[idx] === 0) lvlActive[idx] = 1;
   }
   var totalCycles = 0, activeLevels = 0;
-  for (var c2 = 0; c2 < count; c2++) { totalCycles += lvlCycles[c2]; if (lvlCycles[c2] > 0) activeLevels++; }
-  return { summary: { totalLevels: count, activeLevels, totalCycles, tpPct } };
+  var levels = [];
+  for (var c2 = 0; c2 < count; c2++) { totalCycles += lvlCycles[c2]; if (lvlCycles[c2] > 0) { activeLevels++; levels.push({ price: lvlPrice[c2], target: lvlTarget[c2], cycles: lvlCycles[c2] }); } }
+  return { levels, summary: { totalLevels: count, activeLevels, totalCycles, tpPct } };
 }
 
 function computeHourlyCycles(trades, tpPct) {
@@ -644,6 +645,258 @@ async function runHourly(tickers) {
   }
 }
 
+// ── Stage 1: Seasonality + Sessions ──────────────────────
+function computeSeasonality(trades) {
+  var hourData = {};
+  for (var h = 4; h < 20; h++) hourData[h] = { high: -Infinity, low: Infinity, vol: 0, trades: 0, open: null, close: null };
+  for (var i = 0; i < trades.length; i++) {
+    var hr = toETHour(trades[i].ts);
+    if (hr >= 4 && hr < 20) {
+      var hd = hourData[hr];
+      if (hd.open === null) hd.open = trades[i].price;
+      hd.close = trades[i].price;
+      if (trades[i].price > hd.high) hd.high = trades[i].price;
+      if (trades[i].price < hd.low) hd.low = trades[i].price;
+      hd.vol += trades[i].size;
+      hd.trades++;
+    }
+  }
+  var result = [];
+  for (var h2 = 4; h2 < 20; h2++) {
+    var d = hourData[h2];
+    if (d.trades === 0) continue;
+    var atr = d.high - d.low;
+    result.push({ hour: h2, high: d.high, low: d.low, atr: Math.round(atr * 10000) / 10000, atr_pct: d.low > 0 ? Math.round((atr / d.low) * 100 * 10000) / 10000 : 0, volume: d.vol, trades: d.trades });
+  }
+  return result;
+}
+
+function computeSessions(trades) {
+  var _etFmt2 = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false });
+  var sessions = { pre: { high: -Infinity, low: Infinity, vol: 0, trades: 0 }, reg: { high: -Infinity, low: Infinity, vol: 0, trades: 0 }, post: { high: -Infinity, low: Infinity, vol: 0, trades: 0 } };
+  for (var i = 0; i < trades.length; i++) {
+    var ms = trades[i].ts > 1e15 ? trades[i].ts / 1e6 : trades[i].ts > 1e12 ? trades[i].ts / 1e3 : trades[i].ts;
+    var parts = _etFmt2.format(new Date(ms)).split(':');
+    var etMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    var s = etMin < 570 ? 'pre' : etMin < 960 ? 'reg' : 'post';
+    var sd = sessions[s];
+    if (trades[i].price > sd.high) sd.high = trades[i].price;
+    if (trades[i].price < sd.low) sd.low = trades[i].price;
+    sd.vol += trades[i].size; sd.trades++;
+  }
+  var result = [];
+  for (var sk of ['pre', 'reg', 'post']) {
+    var ss = sessions[sk];
+    if (ss.trades === 0) continue;
+    var range = ss.high - ss.low;
+    result.push({ session_type: sk, high: ss.high, low: ss.low, range_dollars: Math.round(range * 10000) / 10000, range_pct: ss.low > 0 ? Math.round((range / ss.low) * 100 * 10000) / 10000 : 0, volume: ss.vol, trades: ss.trades });
+  }
+  return result;
+}
+
+// ── Resume Check ─────────────────────────────────────────
+async function checkExisting(ticker, date) {
+  try {
+    var features = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+    var optimal = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+    var analyses = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
+    return { hasFeatures: features.length > 0, hasOptimal: optimal.length > 0, hasAnalyses: analyses.length > 0 };
+  } catch (e) { return { hasFeatures: false, hasOptimal: false, hasAnalyses: false }; }
+}
+
+// ── Trading Days ─────────────────────────────────────────
+function getTradingDays(start, end) {
+  var days = [];
+  var d = new Date(start + 'T12:00:00Z');
+  var e = new Date(end + 'T12:00:00Z');
+  while (d <= e) {
+    var dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) days.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return days;
+}
+
+// ── Backfill Pipeline ────────────────────────────────────
+async function runBackfill(tickers, startDate, endDate, skipExisting) {
+  var days = getTradingDays(startDate, endDate);
+  console.log(`\nDate range: ${startDate} to ${endDate} (${days.length} trading days)`);
+  console.log(`Tickers: ${tickers.join(', ')}`);
+  console.log(`Skip existing: ${skipExisting}`);
+  console.log(`Total jobs: ${days.length * tickers.length}`);
+
+  var stats = { processed: 0, skipped: 0, noData: 0, errors: 0, totalTicks: 0 };
+  var startTime = Date.now();
+
+  for (var ti = 0; ti < tickers.length; ti++) {
+    var ticker = tickers[ti];
+    var prevDayClose = null;
+    console.log(`\n${'─'.repeat(40)}`);
+    console.log(`TICKER: ${ticker} (${ti + 1}/${tickers.length})`);
+    console.log(`${'─'.repeat(40)}`);
+
+    for (var di = 0; di < days.length; di++) {
+      var date = days[di];
+      var elapsed = Math.round((Date.now() - startTime) / 1000);
+      var pct = Math.round(((ti * days.length + di) / (tickers.length * days.length)) * 100);
+      console.log(`\n[${pct}%] ${ticker} ${date} (day ${di + 1}/${days.length}) [${elapsed}s elapsed]`);
+
+      // Resume check
+      if (skipExisting) {
+        var existing = await checkExisting(ticker, date);
+        if (existing.hasFeatures && existing.hasOptimal && existing.hasAnalyses) {
+          console.log('  SKIP: already complete in database');
+          stats.skipped++;
+          // Still fetch prev day close for next day's gap calculation
+          try {
+            var prevR = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=day_close&limit=1');
+            if (prevR.length) prevDayClose = parseFloat(prevR[0].day_close);
+          } catch (e) {}
+          continue;
+        }
+      }
+
+      // 1. Fetch ticks
+      console.log('  Fetching ticks...');
+      var trades;
+      try {
+        trades = await fetchTicks(ticker, date);
+      } catch (e) {
+        console.log('  ERROR fetching ticks: ' + e.message);
+        stats.errors++;
+        continue;
+      }
+      console.log('  ' + trades.length.toLocaleString() + ' ticks');
+      if (trades.length < 100) {
+        console.log('  SKIP: too few ticks (holiday/no data)');
+        stats.noData++;
+        continue;
+      }
+      stats.totalTicks += trades.length;
+
+      // 2. Get prev day close (for first day only)
+      if (prevDayClose === null && di === 0) {
+        try {
+          var prevDate = new Date(date + 'T12:00:00Z');
+          prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+          while (prevDate.getUTCDay() === 0 || prevDate.getUTCDay() === 6) prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+          var ohlcR = await fetch('https://api.polygon.io/v1/open-close/' + ticker + '/' + prevDate.toISOString().slice(0, 10) + '?adjusted=true&apiKey=' + POLYGON_KEY);
+          if (ohlcR.ok) { var ohlcD = await ohlcR.json(); if (ohlcD.close) prevDayClose = ohlcD.close; }
+        } catch (e) {}
+      }
+
+      try {
+        // ── STAGE 1: Analysis ──
+        console.log('  Stage 1: Cycle analysis...');
+        var sharePrice = trades[0].price;
+        var tpPct = 1.0; // default TP% for Stage 1
+        var result = analyzePriceLevels(trades, tpPct);
+        var minP = Infinity, maxP = -Infinity;
+        for (var z = 0; z < trades.length; z++) { if (trades[z].price < minP) minP = trades[z].price; if (trades[z].price > maxP) maxP = trades[z].price; }
+        var openLvl = Math.floor(trades[0].price * 100) / 100;
+        var preSeedMax = Math.round(openLvl * 1.01 * 100) / 100;
+
+        // Fetch OHLC for the day
+        var ohlc = null;
+        try {
+          var ohlcR2 = await fetch('https://api.polygon.io/v1/open-close/' + ticker + '/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY);
+          if (ohlcR2.ok) ohlc = await ohlcR2.json();
+        } catch (e) {}
+
+        // Save cached_analyses
+        var analysisBody = { ticker, trade_date: date, tp_pct: tpPct, session_type: 'all', total_cycles: result.summary.totalCycles, active_levels: result.summary.activeLevels, total_levels: result.summary.totalLevels, total_trades: trades.length, tick_min: minP, tick_max: maxP, open_price: sharePrice, pre_seed_max: preSeedMax };
+        if (ohlc) { analysisBody.ohlc_open = ohlc.open; analysisBody.ohlc_high = ohlc.high; analysisBody.ohlc_low = ohlc.low; analysisBody.ohlc_close = ohlc.close; analysisBody.ohlc_volume = ohlc.volume; }
+        await fetch(SB_URL + '/rest/v1/cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.' + tpPct + '&session_type=eq.all', { method: 'DELETE', headers: sbHeaders() });
+        var aR = await fetch(SB_URL + '/rest/v1/cached_analyses', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=representation' }), body: JSON.stringify(analysisBody) });
+        var savedAnalysis = await aR.json();
+        var analysisId = Array.isArray(savedAnalysis) ? savedAnalysis[0].id : savedAnalysis.id;
+
+        // Save cached_levels (only levels with cycles > 0)
+        var levelRows = [];
+        for (var lv of result.levels || []) { if (lv && lv.cycles > 0) levelRows.push({ analysis_id: analysisId, level_price: lv.price, target_price: lv.target, cycles: lv.cycles }); }
+        if (levelRows.length) {
+          await fetch(SB_URL + '/rest/v1/cached_levels?analysis_id=eq.' + analysisId, { method: 'DELETE', headers: sbHeaders() });
+          for (var li = 0; li < levelRows.length; li += 200) {
+            await fetch(SB_URL + '/rest/v1/cached_levels', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(levelRows.slice(li, li + 200)) });
+          }
+        }
+        console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
+
+        // Save cached_seasonality
+        console.log('  Stage 1: Seasonality...');
+        var seasonality = computeSeasonality(trades);
+        await fetch(SB_URL + '/rest/v1/cached_seasonality?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
+        var seasonRows = seasonality.map(s => ({ ticker, trade_date: date, hour: s.hour, high: s.high, low: s.low, atr: s.atr, atr_pct: s.atr_pct, volume: s.volume, trades: s.trades }));
+        if (seasonRows.length) await fetch(SB_URL + '/rest/v1/cached_seasonality', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(seasonRows) });
+
+        // Save cached_sessions
+        var sessionData = computeSessions(trades);
+        await fetch(SB_URL + '/rest/v1/cached_sessions?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
+        var sessionRows = sessionData.map(s => ({ ticker, trade_date: date, session_type: s.session_type, high: s.high, low: s.low, range_dollars: s.range_dollars, range_pct: s.range_pct, volume: s.volume, trades: s.trades }));
+        if (sessionRows.length) await fetch(SB_URL + '/rest/v1/cached_sessions', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(sessionRows) });
+
+        // ── STAGE 2: Hourly Optimal TP% ──
+        console.log('  Stage 2: Scanning 100 TP% x 16 hours...');
+        var fracQty = sharePrice > 0 ? CAP_PER_LEVEL / sharePrice : 0;
+        var adjFee = FEE_PER_SHARE * fracQty;
+        var optRows = [];
+        for (var tpInt = 1; tpInt <= 100; tpInt++) {
+          var tp = tpInt / 100;
+          var hc = computeHourlyCycles(trades, tp);
+          var tpDollar = Math.round((Math.ceil(sharePrice * (1 + tp / 100) * 100) / 100 - sharePrice) * 100) / 100;
+          if (tpDollar < 0.01) tpDollar = 0.01;
+          var grossPC = fracQty * tpDollar;
+          var netPC = grossPC - adjFee;
+          for (var h = 4; h < 20; h++) {
+            var cy = hc[h] || 0;
+            optRows.push({ ticker, trade_date: date, hour: h, tp_pct: tp, session_type: 'full', cycles: cy, tp_dollar: tpDollar, net_profit: Math.round(cy * netPC * 100) / 100 });
+          }
+        }
+        console.log('  Stage 2: ' + optRows.length + ' rows');
+        await fetch(SB_URL + '/rest/v1/optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
+        await sbUpsert('optimal_tp_hourly', optRows);
+
+        // Save cached_hourly_cycles (for default TP%)
+        var hcDefault = computeHourlyCycles(trades, 1.0);
+        await fetch(SB_URL + '/rest/v1/cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', { method: 'DELETE', headers: sbHeaders() });
+        var hcRows = [];
+        for (var hh = 4; hh < 20; hh++) hcRows.push({ ticker, trade_date: date, hour: hh, tp_pct: 1.0, session_type: 'all', cycles: hcDefault[hh] || 0 });
+        await fetch(SB_URL + '/rest/v1/cached_hourly_cycles', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(hcRows) });
+
+        // ── STAGE 3: Feature Extraction ──
+        console.log('  Stage 3: Extracting features...');
+        var featureRows = await extractDayFeatures(ticker, date, trades, prevDayClose);
+        console.log('  Stage 3: ' + featureRows.length + ' feature rows');
+        await fetch(SB_URL + '/rest/v1/hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
+        await sbUpsert('hourly_features', featureRows);
+
+        // Update prevDayClose for next day
+        prevDayClose = trades[trades.length - 1].price;
+        stats.processed++;
+        console.log('  DONE: Stages 1+2+3 complete');
+
+      } catch (e) {
+        console.log('  ERROR: ' + e.message);
+        stats.errors++;
+      }
+
+      // Rate limit pause between days
+      await sleep(500);
+    }
+  }
+
+  var totalElapsed = Math.round((Date.now() - startTime) / 1000);
+  console.log(`\n${'='.repeat(50)}`);
+  console.log(`BACKFILL COMPLETE`);
+  console.log(`  Processed: ${stats.processed} days`);
+  console.log(`  Skipped: ${stats.skipped} (already in DB)`);
+  console.log(`  No data: ${stats.noData} (holidays/weekends)`);
+  console.log(`  Errors: ${stats.errors}`);
+  console.log(`  Total ticks: ${stats.totalTicks.toLocaleString()}`);
+  console.log(`  Time: ${totalElapsed}s (${Math.round(totalElapsed / 60)}m)`);
+  console.log(`${'='.repeat(50)}`);
+}
+
 // ── CLI Entry Point ──────────────────────────────────────
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
@@ -651,17 +904,26 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
+  var startIdx = args.indexOf('--start');
+  var startDate = startIdx >= 0 && args[startIdx + 1] ? args[startIdx + 1] : null;
+  var endIdx = args.indexOf('--end');
+  var endDate = endIdx >= 0 && args[endIdx + 1] ? args[endIdx + 1] : null;
+  var skipExisting = !args.includes('--force');
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Alpha Quant Pipeline: ${mode.toUpperCase()}`);
   console.log(`Tickers: ${tickers.join(', ')}`);
+  if (startDate) console.log(`Range: ${startDate} to ${endDate}`);
   console.log(`Time: ${new Date().toISOString()}`);
   console.log(`${'='.repeat(50)}`);
 
-  if (mode === 'nightly') {
+  if (mode === 'backfill') {
+    if (!startDate || !endDate) { console.error('Backfill requires --start and --end dates'); process.exit(1); }
+    await runBackfill(tickers, startDate, endDate, skipExisting);
+  } else if (mode === 'nightly') {
     await runNightly(tickers);
   } else {
     await runHourly(tickers);

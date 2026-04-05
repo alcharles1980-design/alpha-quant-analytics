@@ -6795,6 +6795,9 @@ function HourlyPredictionPage(p){
   var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
   var s7=useState(5),topN=s7[0],setTopN=s7[1];
   var s8=useState(80),trainPct=s8[0],setTrainPct=s8[1];
+  var sb1=useState('2026-01-02'),bfStart=sb1[0],setBfStart=sb1[1];
+  var sb2=useState(new Date().toISOString().slice(0,10)),bfEnd=sb2[0],setBfEnd=sb2[1];
+  var sb3=useState(''),bfStatus=sb3[0],setBfStatus=sb3[1];
 
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
@@ -7024,6 +7027,31 @@ function HourlyPredictionPage(p){
       {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6,animation:'pulse 1.5s infinite'}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
+
+    {p.ghToken&&<Cd>
+      <SectionHead title="Backfill Data (GitHub)" sub="Run Stages 1+2+3 on GitHub servers for any date range and ticker. Handles heavy stocks (SOXL, NVDA, AMZN). Skips days already in database."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Start Date</label><input type="date" value={bfStart} onChange={function(e){setBfStart(e.target.value);}} style={iS}/></div>
+        <div><label style={lS}>End Date</label><input type="date" value={bfEnd} onChange={function(e){setBfEnd(e.target.value);}} style={iS}/></div>
+      </div>
+      <button onClick={async function(){
+        if(!ticker){setErr('Select a ticker');return;}
+        if(!bfStart||!bfEnd){setErr('Set start and end dates');return;}
+        setErr(null);setBfStatus('Triggering backfill...');
+        try{
+          var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'backfill',tickers:ticker,start_date:bfStart,end_date:bfEnd,force:'false'}})});
+          if(r.status===204)setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+'. Stages 1+2+3 running on GitHub. Check Actions tab for progress.');
+          else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setBfStatus('');}
+        }catch(e2){setErr('GitHub trigger failed: '+e2.message);setBfStatus('');}
+      }} style={Object.assign({},bB,{marginTop:10,background:'linear-gradient(135deg,#ff8c00,#e06000)',color:'#fff'})}>Run Backfill on GitHub</button>
+      {bfStatus&&<div style={{color:C.accent,fontSize:8,fontFamily:F,marginTop:6}}>{bfStatus}</div>}
+      <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:8,lineHeight:1.6}}>
+        <p>Runs on GitHub Actions (7GB RAM, 6hr max). Processes each day: fetch ticks from Polygon, run cycle analysis (Stage 1), scan 100 TP% x 16 hours (Stage 2), extract 32+ features (Stage 3). Skips days already in database. Heavy stocks like SOXL (250K+ ticks/day) work fine on GitHub but crash in browser.</p>
+      </div>
+    </Cd>}
 
     {results&&<div>
       <Cd glow>

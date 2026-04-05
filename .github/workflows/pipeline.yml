@@ -16,14 +16,29 @@ on:
         options:
           - nightly
           - hourly
+          - backfill
       tickers:
         description: 'Comma-separated tickers'
         required: true
         default: 'ONON'
+      start_date:
+        description: 'Backfill start date (YYYY-MM-DD)'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end date (YYYY-MM-DD)'
+        required: false
+        default: ''
+      force:
+        description: 'Force re-process existing data'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
@@ -37,8 +52,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "mode=${{ inputs.mode }}" >> $GITHUB_OUTPUT
             echo "tickers=${{ inputs.tickers }}" >> $GITHUB_OUTPUT
+            echo "start=${{ inputs.start_date }}" >> $GITHUB_OUTPUT
+            echo "end=${{ inputs.end_date }}" >> $GITHUB_OUTPUT
+            echo "force=${{ inputs.force }}" >> $GITHUB_OUTPUT
           else
-            # Check current UTC hour to determine if nightly or hourly
             HOUR=$(date -u +%H)
             if [ "$HOUR" = "06" ]; then
               echo "mode=nightly" >> $GITHUB_OUTPUT
@@ -46,10 +63,22 @@ jobs:
               echo "mode=hourly" >> $GITHUB_OUTPUT
             fi
             echo "tickers=ONON" >> $GITHUB_OUTPUT
+            echo "start=" >> $GITHUB_OUTPUT
+            echo "end=" >> $GITHUB_OUTPUT
+            echo "force=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Run pipeline
-        run: node pipeline.js --${{ steps.mode.outputs.mode }} --tickers ${{ steps.mode.outputs.tickers }}
+        run: |
+          ARGS="--${{ steps.mode.outputs.mode }} --tickers ${{ steps.mode.outputs.tickers }}"
+          if [ -n "${{ steps.mode.outputs.start }}" ]; then
+            ARGS="$ARGS --start ${{ steps.mode.outputs.start }} --end ${{ steps.mode.outputs.end }}"
+          fi
+          if [ "${{ steps.mode.outputs.force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          echo "Running: node pipeline.js $ARGS"
+          node pipeline.js $ARGS
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
