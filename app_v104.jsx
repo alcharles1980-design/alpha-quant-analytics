@@ -5184,6 +5184,8 @@ function CorrelationFinderPage(p){
   var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
   var s7=useState(null),expandedFeat=s7[0],setExpandedFeat=s7[1];
   var s8=useState('hourly'),corrMode=s8[0],setCorrMode=s8[1];
+  var s9=useState('rAbs'),sortKey=s9[0],setSortKey=s9[1];
+  var s10=useState('desc'),sortDir=s10[0],setSortDir=s10[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -5738,18 +5740,33 @@ function CorrelationFinderPage(p){
       </Cd>
 
       <Cd>
-        <SectionHead title="Full Correlation Matrix" sub="All features ranked by correlation strength with optimal TP%"/>
-        <div style={{overflowX:'auto',maxHeight:600}}>
+        <SectionHead title="Full Correlation Matrix" sub="All features ranked by correlation strength with optimal TP%. Tap headers to sort."/>
+        {function(){
+          var toggleSort=function(key){if(sortKey===key){setSortDir(sortDir==='desc'?'asc':'desc');}else{setSortKey(key);setSortDir('desc');}};
+          var sortInd=function(key){return sortKey===key?(sortDir==='desc'?'\u25BC':'\u25B2'):'';};
+          var thS=function(key,align){return{padding:'5px 3px',color:sortKey===key?C.accent:C.txtDim,textAlign:align||'left',cursor:'pointer',fontWeight:sortKey===key?700:400,userSelect:'none'};};
+          var sorted=results.correlations.slice().sort(function(a,b){
+            var va,vb;
+            if(sortKey==='label'){va=a.label.toLowerCase();vb=b.label.toLowerCase();return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0);}
+            if(sortKey==='r'){va=a.r;vb=b.r;}
+            else if(sortKey==='rAbs'){va=a.rAbs;vb=b.rAbs;}
+            else if(sortKey==='rProfit'){va=Math.abs(a.rProfit);vb=Math.abs(b.rProfit);}
+            else if(sortKey==='n'){va=a.n;vb=b.n;}
+            else if(sortKey==='leadable'){va=a.leadable?1:0;vb=b.leadable?1:0;}
+            else{va=a.rAbs;vb=b.rAbs;}
+            return sortDir==='desc'?(vb-va):(va-vb);
+          });
+          return <div style={{overflowX:'auto',maxHeight:600}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Feature</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r (TP%)</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r (Profit)</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Strength</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>n</th>
+            <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard,zIndex:1}}>
+              <th style={thS('rAbs','left')} onClick={function(){toggleSort('rAbs');}}># {sortInd('rAbs')}</th>
+              <th style={thS('label','left')} onClick={function(){toggleSort('label');}}>Feature {sortInd('label')}</th>
+              <th style={thS('r','right')} onClick={function(){toggleSort('r');}}>r (TP%) {sortInd('r')}</th>
+              <th style={thS('rProfit','right')} onClick={function(){toggleSort('rProfit');}}>r (Profit) {sortInd('rProfit')}</th>
+              <th style={thS('leadable','left')} onClick={function(){toggleSort('leadable');}}>Type {sortInd('leadable')}</th>
+              <th style={thS('n','right')} onClick={function(){toggleSort('n');}}>n {sortInd('n')}</th>
             </tr></thead>
-            <tbody>{results.correlations.map(function(c,idx){
+            <tbody>{sorted.map(function(c,idx){
               var isStrong=c.rAbs>=0.4;var isMod=c.rAbs>=0.2;
               return <tr key={c.feature} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
@@ -5761,7 +5778,7 @@ function CorrelationFinderPage(p){
               </tr>;
             })}</tbody>
           </table>
-        </div>
+        </div>;}()}
       </Cd>
 
       {expandedFeat&&function(){
