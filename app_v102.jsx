@@ -4879,12 +4879,15 @@ function CorrelationFinderPage(p){
   var s5=useState(null),results=s5[0],setResults=s5[1];
   var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
   var s7=useState(null),expandedFeat=s7[0],setExpandedFeat=s7[1];
+  var s8=useState('hourly'),corrMode=s8[0],setCorrMode=s8[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
 
   var featureLabels={hour_atr_dollar:'Hourly ATR ($)',hour_atr_pct:'Hourly ATR (%)',hour_volume:'Hourly Volume',hour_trades:'Hourly Trades',price_vs_day_open_pct:'Price vs Day Open (%)',intraday_range_pct:'Intraday Range (%)',cumulative_volume_pct:'Cumulative Volume (%)',overnight_gap_pct:'Overnight Gap (%)',vix_close:'VIX Close',day_of_week:'Day of Week',hour:'Hour of Day',day_volume:'Day Volume',day_trades:'Day Trades',hour_open:'Hour Open',hour_close:'Hour Close',hour_high:'Hour High',hour_low:'Hour Low',hour_vwap:'Hour VWAP',day_open:'Day Open',day_close:'Day Close'};
   var featureDescriptions={hour_atr_pct:'Percentage range of the hour. Higher ATR% = more price movement = more oscillation opportunities.',hour_atr_dollar:'Dollar range within the hour. Wider range may favor wider TP% to capture larger swings.',hour_volume:'Share volume traded in this hour. High volume = more liquidity, more ticks, more cycle opportunities.',hour_trades:'Number of individual trade executions. More trades = finer price granularity for the cycle engine.',price_vs_day_open_pct:'How far price has moved from the day open. Trending days show persistent direction; mean-reversion days oscillate around open.',intraday_range_pct:'Total day range as % of low. Measures overall volatility of the day.',cumulative_volume_pct:'What fraction of the day volume has traded by this hour. Early hours have low cumulative %, late hours approach 100%.',overnight_gap_pct:'Gap between prev close and today open. Large gaps often lead to mean-reversion (good for tight TP%) or continuation (wider TP%).',vix_close:'CBOE VIX level. Higher VIX = higher expected volatility across all stocks.',day_of_week:'Monday=1 through Friday=5. Some days have consistently different volatility profiles.',hour:'Hour of day (4-19 ET). Different hours have different liquidity and volatility patterns.'};
+  var dailyFeatureLabels={prev_day_close:'Prev Day Close',prev_day_range_pct:'Prev Day Range (%)',prev_day_volume:'Prev Day Volume',prev_day_trades:'Prev Day Trades',prev_day_atr_avg:'Prev Day Avg Hourly ATR (%)',prev_day_best_tp:'Prev Day Best TP%',overnight_gap_pct:'Overnight Gap (%)',vix_close:'VIX Close',day_of_week:'Day of Week',day_open:'Day Open',day_range_pct:'Day Range (%)',day_volume:'Day Volume',day_trades:'Day Trades',day_avg_atr:'Day Avg Hourly ATR (%)'};
+  var dailyFeatureDescriptions={prev_day_close:'Previous trading day closing price. Higher-priced stocks tend toward different TP% regimes.',prev_day_range_pct:'Previous day total range as % of low. High range yesterday may predict volatile today.',prev_day_volume:'Previous day total volume. Volume persistence: high-volume days often cluster.',prev_day_trades:'Previous day total trade count. More granular than volume for measuring activity.',prev_day_atr_avg:'Average hourly ATR% from previous day. Direct measure of recent oscillation intensity.',prev_day_best_tp:'What was the optimal TP% yesterday? Strong persistence = today should use a similar setting.',overnight_gap_pct:'Gap between prev close and today open. Large gaps often set the tone for the day.',vix_close:'Previous day VIX close. Elevated VIX = market expects more volatility.',day_of_week:'Monday=1 through Friday=5. Mondays and Fridays may behave differently from mid-week.',day_open:'Today opening price. Combined with prev close gives gap direction.',day_range_pct:'Today total range. Not leadable (known after the fact) but useful for understanding.',day_volume:'Today total volume. Not leadable but shows the relationship.',day_trades:'Today total trades. Not leadable but shows the relationship.',day_avg_atr:'Today average hourly ATR%. Not leadable but shows the relationship.'};
 
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
@@ -4960,7 +4963,104 @@ function CorrelationFinderPage(p){
       for(var i=0;i<yVals.length;i++){if(yVals[i]<yMin)yMin=yVals[i];if(yVals[i]>yMax)yMax=yVals[i];ySum+=yVals[i];}
       var yMean=ySum/yVals.length;
       var dates={};for(var i=0;i<joined.length;i++)dates[joined[i].trade_date]=true;
-      setResults({correlations:correlations,dataPoints:joined.length,days:Object.keys(dates).length,ticker:ticker,yMin:yMin,yMax:yMax,yMean:yMean,joined:joined});
+      setResults({correlations:correlations,dataPoints:joined.length,days:Object.keys(dates).length,ticker:ticker,yMin:yMin,yMax:yMax,yMean:yMean,joined:joined,mode:'hourly'});
+      setProg('');setLoading(false);
+    }catch(e){setErr(e.message);setProg('');setLoading(false);}
+  };
+
+  var runDaily=async function(){
+    if(!SB_URL||!SB_KEY){setErr('No Supabase config');return;}
+    if(!ticker){setErr('Select a ticker');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Loading daily optimal TP% (Y)...');
+    try{
+      var h=getSbHeaders();h['Range']='0-49999';
+      // Get best flat TP% per day from cached_daily_optimal_tp
+      var r1=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?ticker=eq.'+ticker+'&select=trade_date,tp_pct,net_total,cycles,share_price&order=trade_date.asc,net_total.desc',{headers:h});
+      var dailyRows=r1.ok?await r1.json():[];
+      if(!dailyRows.length){setErr('No daily optimal TP% data for '+ticker+'. Run Daily Optimal TP% Finder (multi-day) first.');setLoading(false);return;}
+      // Get best TP% per day (first row per date since sorted by net_total desc)
+      var bestPerDay={};
+      for(var i=0;i<dailyRows.length;i++){var dk=dailyRows[i].trade_date;if(!bestPerDay[dk])bestPerDay[dk]={tp:dailyRows[i].tp_pct,net:dailyRows[i].net_total,cycles:dailyRows[i].cycles,price:dailyRows[i].share_price};}
+      var dayKeys=Object.keys(bestPerDay).sort();
+      if(dayKeys.length<3){setErr('Only '+dayKeys.length+' days of daily optimal data. Need at least 3. Run more daily scans.');setLoading(false);return;}
+      setProg('Loading hourly features (X) for '+dayKeys.length+' days...');
+      // Get hourly features to aggregate into day-level features
+      var r2=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_pct,hour_volume,hour_trades,day_open,day_close,day_high,day_low,day_volume,day_trades,overnight_gap_pct,vix_close,day_of_week,prev_day_close&order=trade_date.asc,hour.asc',{headers:h});
+      var hourlyRows=r2.ok?await r2.json():[];
+      setProg('Aggregating day-level features...');
+      // Aggregate hourly features into day-level
+      var dayFeatures={};
+      for(var i=0;i<hourlyRows.length;i++){
+        var dk2=hourlyRows[i].trade_date;
+        if(!dayFeatures[dk2])dayFeatures[dk2]={atrSum:0,atrCount:0,volSum:0,tradeSum:0,dayOpen:null,dayClose:null,dayHigh:null,dayLow:null,dayVol:0,dayTrades:0,overnightGap:null,vix:null,dow:null,prevClose:null};
+        var df=dayFeatures[dk2];var hr=hourlyRows[i];
+        if(hr.hour_atr_pct!==null){df.atrSum+=parseFloat(hr.hour_atr_pct)||0;df.atrCount++;}
+        df.volSum+=(parseFloat(hr.hour_volume)||0);
+        df.tradeSum+=(parseFloat(hr.hour_trades)||0);
+        if(hr.day_open!==null)df.dayOpen=parseFloat(hr.day_open);
+        if(hr.day_close!==null)df.dayClose=parseFloat(hr.day_close);
+        if(hr.day_high!==null)df.dayHigh=parseFloat(hr.day_high);
+        if(hr.day_low!==null)df.dayLow=parseFloat(hr.day_low);
+        if(hr.day_volume!==null)df.dayVol=parseFloat(hr.day_volume);
+        if(hr.day_trades!==null)df.dayTrades=parseFloat(hr.day_trades);
+        if(hr.overnight_gap_pct!==null)df.overnightGap=parseFloat(hr.overnight_gap_pct);
+        if(hr.vix_close!==null)df.vix=parseFloat(hr.vix_close);
+        if(hr.day_of_week!==null)df.dow=parseFloat(hr.day_of_week);
+        if(hr.prev_day_close!==null)df.prevClose=parseFloat(hr.prev_day_close);
+      }
+      setProg('Building joined dataset with previous-day features...');
+      await new Promise(function(r){setTimeout(r,50);});
+      // Build joined rows with previous-day lookups
+      var joined=[];
+      for(var di=0;di<dayKeys.length;di++){
+        var dk3=dayKeys[di];
+        if(!bestPerDay[dk3]||!dayFeatures[dk3])continue;
+        var today=dayFeatures[dk3];var bp=bestPerDay[dk3];
+        var prevDayKey=di>0?dayKeys[di-1]:null;
+        var prev=prevDayKey&&dayFeatures[prevDayKey]?dayFeatures[prevDayKey]:null;
+        var prevBest=prevDayKey&&bestPerDay[prevDayKey]?bestPerDay[prevDayKey]:null;
+        var row={trade_date:dk3,best_tp_pct:bp.tp,best_net:bp.net,best_cycles:bp.cycles};
+        // Today's features (not all are leadable)
+        row.day_open=today.dayOpen;
+        row.day_range_pct=(today.dayHigh&&today.dayLow&&today.dayLow>0)?((today.dayHigh-today.dayLow)/today.dayLow*100):null;
+        row.day_volume=today.dayVol;
+        row.day_trades=today.dayTrades;
+        row.day_avg_atr=today.atrCount>0?(today.atrSum/today.atrCount):null;
+        row.overnight_gap_pct=today.overnightGap;
+        row.vix_close=today.vix;
+        row.day_of_week=today.dow;
+        // Previous day features (LEADABLE - known before today opens)
+        if(prev){
+          row.prev_day_close=prev.dayClose;
+          row.prev_day_range_pct=(prev.dayHigh&&prev.dayLow&&prev.dayLow>0)?((prev.dayHigh-prev.dayLow)/prev.dayLow*100):null;
+          row.prev_day_volume=prev.dayVol;
+          row.prev_day_trades=prev.dayTrades;
+          row.prev_day_atr_avg=prev.atrCount>0?(prev.atrSum/prev.atrCount):null;
+        }
+        if(prevBest)row.prev_day_best_tp=prevBest.tp;
+        joined.push(row);
+      }
+      if(joined.length<3){setErr('Only '+joined.length+' days with matched data. Need more daily scans and feature data.');setLoading(false);return;}
+      setProg('Computing correlations across '+joined.length+' days...');
+      var yVals=[];for(var i=0;i<joined.length;i++)yVals.push(joined[i].best_tp_pct);
+      var dailyKeys=['prev_day_close','prev_day_range_pct','prev_day_volume','prev_day_trades','prev_day_atr_avg','prev_day_best_tp','overnight_gap_pct','vix_close','day_of_week','day_open','day_range_pct','day_volume','day_trades','day_avg_atr'];
+      var correlations=[];
+      for(var fi=0;fi<dailyKeys.length;fi++){
+        var fKey=dailyKeys[fi];var validX=[],validY=[],validProfit=[];
+        for(var i=0;i<joined.length;i++){
+          var v=joined[i][fKey];
+          if(v!==null&&v!==undefined&&!isNaN(parseFloat(v))){validX.push(parseFloat(v));validY.push(yVals[i]);validProfit.push(joined[i].best_net);}
+        }
+        if(validX.length<3)continue;
+        var r3=pearson(validX,validY);var rP=pearson(validX,validProfit);
+        var meanX=0,meanY=0;for(var i=0;i<validX.length;i++){meanX+=validX[i];meanY+=validY[i];}meanX/=validX.length;meanY/=validY.length;
+        var isLeadable=fKey.indexOf('prev_')===0||fKey==='overnight_gap_pct'||fKey==='vix_close'||fKey==='day_of_week'||fKey==='day_open';
+        correlations.push({feature:fKey,label:dailyFeatureLabels[fKey]||fKey,r:r3,rAbs:Math.abs(r3),rProfit:rP,n:validX.length,meanX:meanX,meanY:meanY,desc:dailyFeatureDescriptions[fKey]||'',xVals:validX,yVals:validY,leadable:isLeadable});
+      }
+      correlations.sort(function(a,b){return b.rAbs-a.rAbs;});
+      var yMin=Infinity,yMax=-Infinity,ySum=0;
+      for(var i=0;i<yVals.length;i++){if(yVals[i]<yMin)yMin=yVals[i];if(yVals[i]>yMax)yMax=yVals[i];ySum+=yVals[i];}
+      setResults({correlations:correlations,dataPoints:joined.length,days:dayKeys.length,ticker:ticker,yMin:yMin,yMax:yMax,yMean:ySum/yVals.length,joined:joined,mode:'daily'});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
@@ -4975,6 +5075,13 @@ function CorrelationFinderPage(p){
     </div>
     <Cd>
       <SectionHead title="Feature Correlation Scanner" sub="Find which market features predict optimal TP%" info="Joins hourly market features (X) from Build Data Set with optimal TP% per hour (Y) from Hourly Optimal TP% Finder. Computes Pearson correlation between each feature and the best TP% for that hour. Strong correlations reveal which market conditions drive TP% selection."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+        <button onClick={function(){setCorrMode('hourly');setResults(null);setErr(null);}} style={{padding:'10px',border:'1px solid '+(corrMode==='hourly'?C.purple:C.border),borderRadius:6,background:corrMode==='hourly'?C.purple+'20':'transparent',color:corrMode==='hourly'?C.purple:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer',letterSpacing:1}}>HOURLY</button>
+        <button onClick={function(){setCorrMode('daily');setResults(null);setErr(null);}} style={{padding:'10px',border:'1px solid '+(corrMode==='daily'?C.gold:C.border),borderRadius:6,background:corrMode==='daily'?C.gold+'20':'transparent',color:corrMode==='daily'?C.gold:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer',letterSpacing:1}}>DAILY</button>
+      </div>
+      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:10,lineHeight:1.5}}>
+        {corrMode==='hourly'?'Predicts the best TP% for the next hour. Uses 16 data points per day (one per trading hour 4AM-8PM). Features: hourly ATR, volume, trades, price position, VIX, etc.':'Predicts the best flat TP% for the entire day. Uses 1 data point per trading day. Features: previous day close/range/volume/optimal TP%, overnight gap, VIX, day of week.'}
+      </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8}}>
         <div><label style={lS}>Ticker</label>
           {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={Object.assign({},iS,{appearance:'auto'})}>
@@ -4982,13 +5089,13 @@ function CorrelationFinderPage(p){
           </select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
         </div>
       </div>
-      <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:10,background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'})}>{loading?'Analyzing...':'Run Correlation Analysis'}</button>
+      <button onClick={corrMode==='daily'?runDaily:run} disabled={loading} style={Object.assign({},bB,{marginTop:10,background:loading?C.border:corrMode==='daily'?'linear-gradient(135deg,#ffb020,#d08010)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'})}>{loading?'Analyzing...':(corrMode==='daily'?'Run Daily Correlation':'Run Hourly Correlation')}</button>
       {prog&&<div style={{marginTop:8,color:C.purple,fontSize:10,fontFamily:F}}>{prog}</div>}
       {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
     </Cd>
     {results&&<div>
       <Cd glow={true}>
-        <div style={{display:'inline-block',background:'rgba(157,92,255,0.15)',border:'1px solid '+C.purple,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.purple,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>CORRELATION RESULTS | {results.ticker} | {results.days} DAYS | {results.dataPoints} DATA POINTS</div>
+        <div style={{display:'inline-block',background:results.mode==='daily'?'rgba(255,176,32,0.15)':'rgba(157,92,255,0.15)',border:'1px solid '+(results.mode==='daily'?C.gold:C.purple),borderRadius:4,padding:'2px 8px',fontSize:7,color:results.mode==='daily'?C.gold:C.purple,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{(results.mode==='daily'?'DAILY':'HOURLY')+' CORRELATION | '+results.ticker+' | '+results.days+' DAYS | '+results.dataPoints+' DATA POINTS'}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
           <Mt label="Data Points" value={results.dataPoints} color={C.purple} size="lg"/>
           <Mt label="Trading Days" value={results.days} color={C.blue} size="md"/>
@@ -5016,6 +5123,7 @@ function CorrelationFinderPage(p){
               <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{c.n+' data points'}</span>
             </div>
             <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>
+              {c.leadable===false&&<span style={{color:C.warn,fontWeight:600,fontSize:7}}>Not leadable (known after the fact). </span>}
               {'When '+c.label+' '+direction+', the optimal TP% tends to '+(c.r>0?'be higher (wider spreads)':'be lower (tighter spreads)')+'.'+(c.desc?' '+c.desc:'')}
             </div>
           </div>;
@@ -5038,7 +5146,7 @@ function CorrelationFinderPage(p){
               var isStrong=c.rAbs>=0.4;var isMod=c.rAbs>=0.2;
               return <tr key={c.feature} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
-                <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
+                <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}{c.leadable&&<span style={{color:C.accent,fontSize:5,fontWeight:700,marginLeft:3,padding:'1px 3px',background:C.accentDim,borderRadius:2}}>LEADABLE</span>}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
                 <td style={{padding:'5px 3px',color:strengthColor(c.r),textAlign:'right',fontWeight:700}}>{(c.r>0?'+':'')+c.r.toFixed(3)}</td>
                 <td style={{padding:'5px 3px',color:strengthColor(c.rProfit),textAlign:'right'}}>{(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</td>
                 <td style={{padding:'5px 3px'}}><span style={{color:strengthColor(c.r),fontSize:6,fontWeight:700,textTransform:'uppercase'}}>{strengthLabel(c.r)}{c.r>0?' \u2191':' \u2193'}</span></td>
