@@ -3006,8 +3006,8 @@ function LogicPage(p){
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>The Symptoms</p>
         <p style={{marginBottom:6,paddingLeft:8}}>Correlation Finder reports "1 DAYS | 10 DATA POINTS" despite the database containing 24 days. Correlations show extreme values (+1.000 or -1.000) because with only 10 points, any feature can appear perfectly correlated by chance. Seasonality features show r=+1.000 because with 1 day, the seasonal average for each hour IS that hour's value (a tautology).</p>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>The Resolution</p>
-        <p style={{marginBottom:6,paddingLeft:8}}>Paginate large fetches using URL parameters <span style={{color:C.accent}}>limit</span> and <span style={{color:C.accent}}>offset</span>. Loop in batches of 10,000 rows until an incomplete batch signals end-of-data. Do NOT rely on PostgREST Range headers for pagination -- they are unreliable for large result sets. Always use URL parameters.</p>
-        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0}}>{"// WRONG - silent truncation at 1,000 rows\nvar r = await fetch(URL + '?ticker=eq.ONON', {headers: h});\nvar data = await r.json(); // only 1,000 rows!\n\n// ALSO WRONG - Range headers unreliable\nvar r = await fetch(URL, {headers: {...h, 'Range': '0-9999'}});\n\n// CORRECT - URL-based pagination\nvar all = [], offset = 0, batch = 10000;\nwhile (true) {\n  var r = await fetch(URL + '&limit=' + batch + '&offset=' + offset);\n  var rows = await r.json();\n  if (!rows.length) break;\n  all = all.concat(rows);\n  if (rows.length < batch) break; // last page\n  offset += batch;\n}\n// all now contains every row"}</pre></div>
+        <p style={{marginBottom:6,paddingLeft:8}}>Paginate large fetches using URL parameters <span style={{color:C.accent}}>limit</span> and <span style={{color:C.accent}}>offset</span>. CRITICAL: the <span style={{color:C.accent}}>limit</span> value MUST be set to <span style={{color:C.accent}}>1000</span> or lower because PostgREST enforces a server-side <span style={{color:C.accent}}>max_rows</span> cap of 1,000. If you request <span style={{color:C.accent}}>limit=10000</span>, PostgREST silently returns only 1,000 rows. The pagination loop then sees <span style={{color:C.accent}}>batch.length (1000) &lt; batchSize (10000)</span> and breaks, thinking it received the last partial page. Loop with batch size of 1000 until an empty or partial batch signals end-of-data.</p>
+        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0}}>{"// WRONG - silent truncation at 1,000 rows\nvar r = await fetch(URL + '?ticker=eq.ONON', {headers: h});\nvar data = await r.json(); // only 1,000 rows!\n\n// ALSO WRONG - batch > max_rows, loop breaks early\nvar r = await fetch(URL + '&limit=10000&offset=0');\n// Returns 1000 rows, loop sees 1000 < 10000, breaks!\n\n// CORRECT - batch size matches max_rows (1000)\nvar all = [], offset = 0, batch = 1000;\nwhile (true) {\n  var r = await fetch(URL + '&limit=' + batch + '&offset=' + offset);\n  var rows = await r.json();\n  if (!rows.length) break;\n  all = all.concat(rows);\n  if (rows.length < batch) break; // last page\n  offset += batch;\n}\n// all now contains every row"}</pre></div>
         <p style={{marginBottom:6,paddingLeft:8,color:C.txtDim}}>Rule: Any table that could exceed 1,000 rows for a single query MUST use paginated fetching. Currently affected: optimal_tp_hourly (1,600 rows/day), cached_daily_optimal_tp (100 rows/day), hourly_features (16 rows/day, safe under 1,000 for ~60 days).</p>
 
         <p style={{marginBottom:6,color:C.warn,fontWeight:700,fontSize:11}}>7. Cloudflare Worker Timeouts and Memory Limits</p>
@@ -3043,7 +3043,7 @@ function LogicPage(p){
         <p style={{marginBottom:6,paddingLeft:8,color:C.txtDim}}>Resolution: Replaced PATCH with DELETE + POST (same pattern as saveHourlyFeatures). Delete the existing row by primary key, then insert a complete new row with all columns including the VIX value. More reliable than partial updates.</p>
 
         <p style={{marginBottom:6,color:C.warn,fontWeight:700,fontSize:11}}>12. Developer Rules Summary</p>
-        <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Never fetch without pagination.</span> Any PostgREST query that could return 1,000+ rows must use limit/offset pagination. Default limit silently truncates results.</p>
+        <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Never fetch without pagination.</span> Any PostgREST query that could return 1,000+ rows must use limit/offset pagination with batch size of 1000 (matching PostgREST max_rows). Larger batch sizes silently cap at 1000 and break the pagination loop.</p>
         <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Use URL params not Range headers.</span> PostgREST Range headers are unreliable for pagination. Always use <span style={{color:C.accent}}>&limit=N&offset=M</span> URL parameters.</p>
         <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Never use PATCH for updates.</span> Use DELETE + POST for reliable row updates. PostgREST PATCH can silently fail.</p>
         <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.accent,fontWeight:700}}>Guard all sort comparators against NaN.</span> Any Pearson correlation can produce NaN. One NaN breaks the entire sort.</p>
@@ -5469,14 +5469,14 @@ function CorrelationFinderPage(p){
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
       setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
-      // Fetch optimal_tp_hourly with pagination (can be 38000+ rows)
-      var optRows=[];var optOffset=0;var optBatch=10000;
+      // Fetch optimal_tp_hourly with pagination (PostgREST max_rows=1000)
+      var optRows=[];var optOffset=0;var optBatch=1000;
       while(true){
         var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit='+optBatch+'&offset='+optOffset,{headers:getSbHeaders()});
         var batch=r2.ok?await r2.json():[];
         if(!batch.length)break;
         for(var bi=0;bi<batch.length;bi++)optRows.push(batch[bi]);
-        setProg('Loading optimal TP% (Y)... '+optRows.length+' rows');
+        if(optRows.length%5000<optBatch)setProg('Loading optimal TP% (Y)... '+optRows.length+' rows');
         if(batch.length<optBatch)break;
         optOffset+=optBatch;
       }
