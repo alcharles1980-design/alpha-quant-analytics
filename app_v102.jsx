@@ -4884,8 +4884,8 @@ function CorrelationFinderPage(p){
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
 
-  var featureLabels={hour_atr_dollar:'Hourly ATR ($)',hour_atr_pct:'Hourly ATR (%)',hour_volume:'Hourly Volume',hour_trades:'Hourly Trades',price_vs_day_open_pct:'Price vs Day Open (%)',intraday_range_pct:'Intraday Range (%)',cumulative_volume_pct:'Cumulative Volume (%)',overnight_gap_pct:'Overnight Gap (%)',vix_close:'VIX Close',day_of_week:'Day of Week',hour:'Hour of Day',day_volume:'Day Volume',day_trades:'Day Trades',hour_open:'Hour Open',hour_close:'Hour Close',hour_high:'Hour High',hour_low:'Hour Low',hour_vwap:'Hour VWAP',day_open:'Day Open',day_close:'Day Close'};
-  var featureDescriptions={hour_atr_pct:'Percentage range of the hour. Higher ATR% = more price movement = more oscillation opportunities.',hour_atr_dollar:'Dollar range within the hour. Wider range may favor wider TP% to capture larger swings.',hour_volume:'Share volume traded in this hour. High volume = more liquidity, more ticks, more cycle opportunities.',hour_trades:'Number of individual trade executions. More trades = finer price granularity for the cycle engine.',price_vs_day_open_pct:'How far price has moved from the day open. Trending days show persistent direction; mean-reversion days oscillate around open.',intraday_range_pct:'Total day range as % of low. Measures overall volatility of the day.',cumulative_volume_pct:'What fraction of the day volume has traded by this hour. Early hours have low cumulative %, late hours approach 100%.',overnight_gap_pct:'Gap between prev close and today open. Large gaps often lead to mean-reversion (good for tight TP%) or continuation (wider TP%).',vix_close:'CBOE VIX level. Higher VIX = higher expected volatility across all stocks.',day_of_week:'Monday=1 through Friday=5. Some days have consistently different volatility profiles.',hour:'Hour of day (4-19 ET). Different hours have different liquidity and volatility patterns.'};
+  var featureLabels={hour_atr_dollar:'Hourly ATR ($)',hour_atr_pct:'Hourly ATR (%)',hour_volume:'Hourly Volume',hour_trades:'Hourly Trades',price_vs_day_open_pct:'Price vs Day Open (%)',intraday_range_pct:'Intraday Range (%)',cumulative_volume_pct:'Cumulative Volume (%)',overnight_gap_pct:'Overnight Gap (%)',vix_close:'VIX Close',day_of_week:'Day of Week',hour:'Hour of Day',day_volume:'Day Volume',day_trades:'Day Trades',hour_open:'Hour Open',hour_close:'Hour Close',hour_high:'Hour High',hour_low:'Hour Low',hour_vwap:'Hour VWAP',day_open:'Day Open',day_close:'Day Close',day_high:'Day High',day_low:'Day Low',prev_day_close:'Prev Day Close',hour_range_dollar:'Hour Range ($)',hour_close_vs_open_pct:'Hour Direction (%)',hour_vol_pct_of_day:'Hour Vol % of Day',prev_hour_atr_pct:'Prev Hour ATR (%)',prev_hour_atr_dollar:'Prev Hour ATR ($)',prev_hour_volume:'Prev Hour Volume',prev_hour_trades:'Prev Hour Trades',prev_hour_direction:'Prev Hour Direction (%)',prev_hour_range_dollar:'Prev Hour Range ($)',prev_hour_best_tp:'Prev Hour Best TP%',price_vs_prev_close_pct:'Price vs Prev Close (%)',is_rth:'Is RTH (9:30-4)',day_range_pct_hl:'Day Range % (H-L)'};
+  var featureDescriptions={hour_atr_pct:'Percentage range of the hour. Higher ATR% = more price movement = more oscillation opportunities.',hour_atr_dollar:'Dollar range within the hour. Wider range may favor wider TP% to capture larger swings.',hour_volume:'Share volume traded in this hour. High volume = more liquidity, more ticks, more cycle opportunities.',hour_trades:'Number of individual trade executions. More trades = finer price granularity for the cycle engine.',price_vs_day_open_pct:'How far price has moved from day open. Trending days show persistent direction; mean-reversion days oscillate around open. Known at start of each hour.',intraday_range_pct:'Total day range as % of low so far. Measures overall volatility. Known at start of each hour.',cumulative_volume_pct:'What fraction of the day volume has traded by this hour. Known at start of each hour.',overnight_gap_pct:'Gap between prev close and today open. Large gaps often lead to mean-reversion or continuation. Known before 4AM.',vix_close:'Previous day CBOE VIX level. Higher VIX = higher expected volatility. Known overnight.',day_of_week:'Monday=1 through Friday=5. Some days have consistently different volatility profiles. Known before market.',hour:'Hour of day (4-19 ET). Different hours have different liquidity and volatility patterns. Known before the hour.',hour_range_dollar:'Dollar range within the hour (high - low). Direct measure of price movement magnitude.',hour_close_vs_open_pct:'Hour close vs open as %. Positive = price rose during the hour. Measures directional movement.',hour_vol_pct_of_day:'This hour volume as % of total day volume. Measures relative activity concentration.',prev_hour_atr_pct:'Previous hour ATR%. The most recent volatility signal before the current hour. Key leadable predictor.',prev_hour_atr_dollar:'Previous hour ATR in dollars. Absolute volatility of the just-completed hour.',prev_hour_volume:'Previous hour volume. Recent liquidity level before current hour.',prev_hour_trades:'Previous hour trade count. Recent market activity granularity.',prev_hour_direction:'Previous hour close vs open %. Was the last hour bullish or bearish? May affect next hour TP%.',prev_hour_range_dollar:'Previous hour dollar range (high - low). How wide did price swing last hour.',prev_hour_best_tp:'What was the optimal TP% last hour? Strong persistence = current hour may favor similar setting.',price_vs_prev_close_pct:'Current price vs previous day close %. Shows how far the stock has moved from yesterday. Known at start of hour.',is_rth:'1 if regular trading hours (9:30-4PM), 0 if pre/post market. RTH has different volatility and liquidity. Known before the hour.',day_range_pct_hl:'Day range computed from day high minus day low as % of low. Broader measure than intraday_range_pct.'};
   var dailyFeatureLabels={prev_day_close:'Prev Day Close',prev_day_open:'Prev Day Open',prev_day_range_pct:'Prev Day Range (%)',prev_day_close_vs_open_pct:'Prev Day Direction (%)',prev_day_volume:'Prev Day Volume',prev_day_trades:'Prev Day Trades',prev_day_atr_avg:'Prev Day Avg ATR (%)',prev_day_max_atr:'Prev Day Max Hourly ATR (%)',prev_day_atr_stddev:'Prev Day ATR Std Dev',prev_day_max_hourly_vol:'Prev Day Max Hourly Vol',prev_day_rth_atr_avg:'Prev Day RTH ATR (%)',prev_day_pre_mkt_vol_pct:'Prev Day Pre-Mkt Vol (%)',prev_day_avg_vwap:'Prev Day Avg VWAP',prev_day_hours_active:'Prev Day Active Hours',prev_day_best_tp:'Prev Day Best TP%',prev_day_cycles:'Prev Day Cycles',prev_day_net_profit:'Prev Day Net Profit',overnight_gap_pct:'Overnight Gap (%)',vix_close:'VIX Close',day_of_week:'Day of Week',day_open:'Day Open',share_price:'Share Price',day_range_pct:'Day Range (%)',day_close_vs_open_pct:'Day Direction (%)',day_volume:'Day Volume',day_trades:'Day Trades',day_avg_atr:'Day Avg ATR (%)',day_max_atr:'Day Max Hourly ATR (%)',day_atr_stddev:'Day ATR Std Dev',day_max_hourly_vol:'Day Max Hourly Vol',day_rth_atr_avg:'Day RTH ATR (%)',day_pre_mkt_vol_pct:'Day Pre-Mkt Vol (%)',day_rth_vol_pct:'Day RTH Vol (%)',day_avg_vwap:'Day Avg VWAP',day_hours_active:'Day Active Hours',day_close:'Day Close'};
   var dailyFeatureDescriptions={prev_day_close:'Previous day closing price. Price level affects TP dollar spread at the same percentage.',prev_day_open:'Previous day opening price. Combined with close shows previous day direction.',prev_day_range_pct:'Previous day total range as % of low. High range yesterday may predict volatile today.',prev_day_close_vs_open_pct:'Previous day close vs open as %. Positive = up day, negative = down day. Directional momentum.',prev_day_volume:'Previous day total share volume. Volume persistence: high-volume days tend to cluster.',prev_day_trades:'Previous day total trade executions. More granular measure of market activity.',prev_day_atr_avg:'Average hourly ATR% from previous day. Direct measure of recent oscillation intensity.',prev_day_max_atr:'Maximum hourly ATR% yesterday. Captures the peak volatility hour.',prev_day_atr_stddev:'Standard deviation of hourly ATR values. High = volatility concentrated in few hours. Low = evenly spread.',prev_day_max_hourly_vol:'Maximum volume in any single hour yesterday. Identifies volume spikes.',prev_day_rth_atr_avg:'Average ATR% during regular trading hours (9:30-4PM) only. Core session volatility.',prev_day_pre_mkt_vol_pct:'Pre-market volume as % of total day volume. High pre-market activity may signal news-driven day.',prev_day_avg_vwap:'Average VWAP across all hours yesterday. Institutional price level reference.',prev_day_hours_active:'Hours with trading activity yesterday. Fewer active hours = concentrated trading.',prev_day_best_tp:'What was the optimal TP% yesterday? Strong persistence = today may need a similar setting.',prev_day_cycles:'Total cycles at yesterday best TP%. High cycle count may indicate oscillation-friendly conditions continuing.',prev_day_net_profit:'Net profit at yesterday best TP%. Measures how profitable the optimal was, not just which % was best.',overnight_gap_pct:'Gap between prev close and today open. Large gaps often set the tone for the trading day.',vix_close:'Previous day VIX close. Elevated VIX = market expects more volatility across all stocks.',day_of_week:'Monday=1 through Friday=5. Mondays may have gap effects, Fridays position squaring.',day_open:'Today opening price. Combined with prev close gives gap magnitude and direction.',share_price:'Share price used in daily optimal scan. Price level affects dollar spread at same TP%.',day_range_pct:'Today total range as %. Not leadable but shows the relationship between range and optimal TP%.',day_close_vs_open_pct:'Today close vs open %. Not leadable. Shows if directional days favor different TP%.',day_close:'Today closing price. Not leadable.',day_volume:'Today total volume. Not leadable but shows volume-TP% relationship.',day_trades:'Today total trades. Not leadable but shows activity-TP% relationship.',day_avg_atr:'Today average hourly ATR%. Not leadable but the key volatility-TP% relationship.',day_max_atr:'Today max hourly ATR%. Not leadable. Shows if peak volatility affects optimal TP%.',day_atr_stddev:'Today ATR standard deviation. Not leadable. High = uneven volatility distribution.',day_max_hourly_vol:'Today max hourly volume. Not leadable. Peak liquidity hour.',day_rth_atr_avg:'Today RTH-only ATR%. Not leadable. Core session volatility.',day_pre_mkt_vol_pct:'Today pre-market volume as % of total. Not leadable. Pre-market activity level.',day_rth_vol_pct:'Today RTH volume as % of total. Not leadable. How much trading happens in core session.',day_avg_vwap:'Today average VWAP. Not leadable. Institutional price level.',day_hours_active:'Today hours with activity. Not leadable. Trading breadth.'};
 
@@ -4912,7 +4912,7 @@ function CorrelationFinderPage(p){
     setLoading(true);setErr(null);setResults(null);setProg('Loading features (X)...');
     try{
       var h=getSbHeaders();h['Range']='0-49999';
-      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,hour_close,hour_high,hour_low,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct,overnight_gap_pct,vix_close,day_of_week,day_open,day_close,day_volume,day_trades&order=trade_date.asc,hour.asc',{headers:h});
+      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,hour_close,hour_high,hour_low,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct,overnight_gap_pct,vix_close,day_of_week,day_open,day_close,day_high,day_low,day_volume,day_trades,prev_day_close&order=trade_date.asc,hour.asc',{headers:h});
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
       setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
@@ -4920,27 +4920,60 @@ function CorrelationFinderPage(p){
       var optRows=r2.ok?await r2.json():[];
       if(!optRows.length){setErr('No optimal TP% data for '+ticker+'. Run Hourly Optimal TP% Finder first.');setLoading(false);return;}
       setProg('Finding best TP% per hour...');
-      // Get best TP% per hour (first row per date+hour since sorted by net_profit desc)
       var bestTP={};
       for(var i=0;i<optRows.length;i++){var ok2=optRows[i].trade_date+'|'+optRows[i].hour;if(!bestTP[ok2])bestTP[ok2]={tp:optRows[i].tp_pct,np:optRows[i].net_profit};}
-      setProg('Joining X and Y...');
-      // Join features with best TP%
+      setProg('Joining X and Y + deriving features...');
       var joined=[];
       for(var i=0;i<features.length;i++){
         var fk=features[i].trade_date+'|'+features[i].hour;
         if(bestTP[fk]){
           var row=Object.assign({},features[i]);
           row.best_tp_pct=bestTP[fk].tp;row.best_net_profit=bestTP[fk].np;
+          // Derived: hour range dollar
+          var hHigh=parseFloat(row.hour_high)||0,hLow=parseFloat(row.hour_low)||0;
+          row.hour_range_dollar=hHigh>0&&hLow>0?(hHigh-hLow):null;
+          // Derived: hour direction (close vs open %)
+          var hOpen=parseFloat(row.hour_open)||0,hClose=parseFloat(row.hour_close)||0;
+          row.hour_close_vs_open_pct=(hOpen>0)?((hClose-hOpen)/hOpen*100):null;
+          // Derived: hour volume as % of day
+          var dVol=parseFloat(row.day_volume)||0;var hVol=parseFloat(row.hour_volume)||0;
+          row.hour_vol_pct_of_day=dVol>0?(hVol/dVol*100):null;
+          // Derived: day range % from high/low
+          var dHigh=parseFloat(row.day_high)||0,dLow=parseFloat(row.day_low)||0;
+          row.day_range_pct_hl=(dLow>0)?((dHigh-dLow)/dLow*100):null;
+          // Derived: price vs prev day close
+          var prevClose=parseFloat(row.prev_day_close)||0;
+          row.price_vs_prev_close_pct=(prevClose>0&&hClose>0)?((hClose-prevClose)/prevClose*100):null;
+          // Derived: is RTH hour
+          var hh=parseInt(row.hour);
+          row.is_rth=(hh>=9&&hh<16)?1:0;
+          // Previous hour lookup (same day, previous row)
+          var prevIdx=-1;
+          for(var pi=i-1;pi>=0;pi--){
+            if(features[pi].trade_date===row.trade_date){prevIdx=pi;break;}
+          }
+          if(prevIdx>=0){
+            var ph=features[prevIdx];
+            row.prev_hour_atr_pct=parseFloat(ph.hour_atr_pct)||null;
+            row.prev_hour_atr_dollar=parseFloat(ph.hour_atr_dollar)||null;
+            row.prev_hour_volume=parseFloat(ph.hour_volume)||null;
+            row.prev_hour_trades=parseFloat(ph.hour_trades)||null;
+            var phOpen=parseFloat(ph.hour_open)||0,phClose=parseFloat(ph.hour_close)||0;
+            row.prev_hour_direction=(phOpen>0)?((phClose-phOpen)/phOpen*100):null;
+            row.prev_hour_range_dollar=(parseFloat(ph.hour_high)||0)-(parseFloat(ph.hour_low)||0);
+            if(row.prev_hour_range_dollar<=0)row.prev_hour_range_dollar=null;
+            // Previous hour best TP%
+            var prevHourKey=ph.trade_date+'|'+ph.hour;
+            if(bestTP[prevHourKey])row.prev_hour_best_tp=bestTP[prevHourKey].tp;
+          }
           joined.push(row);
         }
       }
       if(!joined.length){setErr('No matching data points. Features and optimal TP% must cover same dates.');setLoading(false);return;}
       setProg('Computing correlations across '+joined.length+' data points...');
       await new Promise(function(r){setTimeout(r,50);});
-      // Extract Y values
       var yVals=[];for(var i=0;i<joined.length;i++)yVals.push(joined[i].best_tp_pct);
-      // Compute correlation for each feature
-      var featureKeys=['hour','hour_atr_dollar','hour_atr_pct','hour_volume','hour_trades','hour_vwap','hour_open','hour_close','hour_high','hour_low','price_vs_day_open_pct','intraday_range_pct','cumulative_volume_pct','overnight_gap_pct','vix_close','day_of_week','day_open','day_close','day_volume','day_trades'];
+      var featureKeys=['hour','is_rth','hour_atr_dollar','hour_atr_pct','hour_range_dollar','hour_volume','hour_trades','hour_vwap','hour_open','hour_close','hour_high','hour_low','hour_close_vs_open_pct','hour_vol_pct_of_day','prev_hour_atr_pct','prev_hour_atr_dollar','prev_hour_volume','prev_hour_trades','prev_hour_direction','prev_hour_range_dollar','prev_hour_best_tp','price_vs_day_open_pct','price_vs_prev_close_pct','intraday_range_pct','cumulative_volume_pct','day_range_pct_hl','overnight_gap_pct','vix_close','day_of_week','day_open','day_close','day_high','day_low','day_volume','day_trades','prev_day_close'];
       var correlations=[];
       for(var fi=0;fi<featureKeys.length;fi++){
         var fKey=featureKeys[fi];
@@ -4955,7 +4988,7 @@ function CorrelationFinderPage(p){
         // Also compute correlation with net_profit (not just TP%)
         var profitVals=[];for(var i=0;i<joined.length;i++){var v2=parseFloat(joined[i][fKey]);if(!isNaN(v2))profitVals.push(joined[i].best_net_profit);}
         var rProfit=pearson(validX,profitVals);
-        correlations.push({feature:fKey,label:featureLabels[fKey]||fKey,r:r3,rAbs:Math.abs(r3),rProfit:rProfit,n:validX.length,meanX:meanX,meanY:meanY,desc:featureDescriptions[fKey]||'',xVals:validX,yVals:validY});
+        correlations.push({feature:fKey,label:featureLabels[fKey]||fKey,r:r3,rAbs:Math.abs(r3),rProfit:rProfit,n:validX.length,meanX:meanX,meanY:meanY,desc:featureDescriptions[fKey]||'',xVals:validX,yVals:validY,leadable:fKey.indexOf('prev_')===0||fKey==='overnight_gap_pct'||fKey==='vix_close'||fKey==='day_of_week'||fKey==='day_open'||fKey==='prev_day_close'||fKey==='hour'||fKey==='is_rth'||fKey==='cumulative_volume_pct'||fKey==='price_vs_day_open_pct'||fKey==='price_vs_prev_close_pct'||fKey==='intraday_range_pct'});
       }
       correlations.sort(function(a,b){return b.rAbs-a.rAbs;});
       // Compute Y stats
