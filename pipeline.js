@@ -834,24 +834,29 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
           if (ohlcR2.ok) ohlc = await ohlcR2.json();
         } catch (e) {}
 
-        // Save cached_analyses
+        // Save cached_analyses (delete ALL for this ticker+date regardless of tp_pct/session_type)
         var analysisBody = { ticker, trade_date: date, tp_pct: tpPct, session_type: 'all', total_cycles: result.summary.totalCycles, active_levels: result.summary.activeLevels, total_levels: result.summary.totalLevels, total_trades: trades.length, tick_min: minP, tick_max: maxP, open_price: sharePrice, pre_seed_max: preSeedMax };
         if (ohlc) { analysisBody.ohlc_open = ohlc.open; analysisBody.ohlc_high = ohlc.high; analysisBody.ohlc_low = ohlc.low; analysisBody.ohlc_close = ohlc.close; analysisBody.ohlc_volume = ohlc.volume; }
-        await fetch(SB_URL + '/rest/v1/cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.' + tpPct + '&session_type=eq.all', { method: 'DELETE', headers: sbHeaders() });
+        await fetch(SB_URL + '/rest/v1/cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
         var aR = await fetch(SB_URL + '/rest/v1/cached_analyses', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=representation' }), body: JSON.stringify(analysisBody) });
-        var savedAnalysis = await aR.json();
-        var analysisId = Array.isArray(savedAnalysis) ? savedAnalysis[0].id : savedAnalysis.id;
+        if (!aR.ok) { var errTxt = await aR.text(); console.log('  WARN: cached_analyses POST failed: ' + aR.status + ' ' + errTxt); }
+        var savedAnalysis = aR.ok ? await aR.json() : [];
+        var analysisId = Array.isArray(savedAnalysis) ? (savedAnalysis[0]||{}).id : (savedAnalysis||{}).id;
 
         // Save cached_levels (only levels with cycles > 0)
-        var levelRows = [];
-        for (var lv of result.levels || []) { if (lv && lv.cycles > 0) levelRows.push({ analysis_id: analysisId, level_price: lv.price, target_price: lv.target, cycles: lv.cycles }); }
-        if (levelRows.length) {
-          await fetch(SB_URL + '/rest/v1/cached_levels?analysis_id=eq.' + analysisId, { method: 'DELETE', headers: sbHeaders() });
-          for (var li = 0; li < levelRows.length; li += 200) {
-            await fetch(SB_URL + '/rest/v1/cached_levels', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(levelRows.slice(li, li + 200)) });
+        if (analysisId) {
+          var levelRows = [];
+          for (var lv of result.levels || []) { if (lv && lv.cycles > 0) levelRows.push({ analysis_id: analysisId, level_price: lv.price, target_price: lv.target, cycles: lv.cycles }); }
+          if (levelRows.length) {
+            await fetch(SB_URL + '/rest/v1/cached_levels?analysis_id=eq.' + analysisId, { method: 'DELETE', headers: sbHeaders() });
+            for (var li = 0; li < levelRows.length; li += 200) {
+              await fetch(SB_URL + '/rest/v1/cached_levels', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(levelRows.slice(li, li + 200)) });
+            }
           }
+          console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
+        } else {
+          console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles (analyses save failed, skipping levels)');
         }
-        console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
         await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage1', message: ticker + ' ' + date + ': Stage 1 done (' + result.summary.totalCycles + ' cycles)' });
 
         // Save cached_seasonality
@@ -891,7 +896,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
 
         // Save cached_hourly_cycles (for default TP%)
         var hcDefault = computeHourlyCycles(trades, 1.0);
-        await fetch(SB_URL + '/rest/v1/cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', { method: 'DELETE', headers: sbHeaders() });
+        await fetch(SB_URL + '/rest/v1/cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
         var hcRows = [];
         for (var hh = 4; hh < 20; hh++) hcRows.push({ ticker, trade_date: date, hour: hh, tp_pct: 1.0, session_type: 'all', cycles: hcDefault[hh] || 0 });
         await fetch(SB_URL + '/rest/v1/cached_hourly_cycles', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(hcRows) });
