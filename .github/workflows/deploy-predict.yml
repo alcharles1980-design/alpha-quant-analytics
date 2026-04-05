@@ -1,0 +1,21 @@
+name: Deploy Predict API
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'predict-api.js'
+      - 'wrangler-predict.toml'
+
+jobs:
+  deploy-predict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy Predict API Worker
+        run: npx wrangler@latest deploy --config wrangler-predict.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
