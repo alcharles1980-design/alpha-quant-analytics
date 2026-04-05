@@ -5018,7 +5018,7 @@ function CorrelationFinderPage(p){
     setLoading(true);setErr(null);setResults(null);setProg('Loading features (X)...');
     try{
       var h=getSbHeaders();h['Range']='0-49999';
-      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,hour_close,hour_high,hour_low,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct,overnight_gap_pct,vix_close,day_of_week,day_open,day_close,day_high,day_low,day_volume,day_trades,prev_day_close&order=trade_date.asc,hour.asc',{headers:h});
+      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:Object.assign({},h,{'Range':'0-49999'})});
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
       setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
