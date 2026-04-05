@@ -5969,8 +5969,9 @@ function CorrelationFinderPage(p){
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
 
-  var strengthLabel=function(r){var a=Math.abs(r);if(a>=0.7)return'Strong';if(a>=0.4)return'Moderate';if(a>=0.2)return'Weak';return'Negligible';};
-  var strengthColor=function(r){var a=Math.abs(r);if(a>=0.7)return C.accent;if(a>=0.4)return C.gold;if(a>=0.2)return C.blue;return C.txtDim;};
+  var strengthLabel=function(r,rP){var a=Math.max(Math.abs(r),Math.abs(rP||0));if(a>=0.7)return'Strong';if(a>=0.4)return'Moderate';if(a>=0.2)return'Weak';return'Negligible';};
+  var strengthColor=function(r,rP){var a=Math.max(Math.abs(r),Math.abs(rP||0));if(a>=0.7)return C.accent;if(a>=0.4)return C.gold;if(a>=0.2)return C.blue;return C.txtDim;};
+  var strengthBest=function(r,rP){return Math.abs(rP||0)>Math.abs(r)?'profit':'tp';};
   var doSort=function(key){if(sortKey===key){setSortDir(sortDir==='desc'?'asc':'desc');}else{setSortKey(key);setSortDir(key==='label'?'asc':'desc');}setSortVer(sortVer+1);};
   var sortedCorrelations=[];
   if(results&&results.correlations){
@@ -6064,22 +6065,26 @@ function CorrelationFinderPage(p){
       </Cd>
 
       <Cd>
-        <SectionHead title="Key Findings" sub="Strongest predictors of optimal TP%"/>
-        {results.correlations.filter(function(c){return c.rAbs>=0.2;}).length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:12}}>No features with correlation above 0.2 found. More data or different market conditions may reveal stronger patterns.</div>}
-        {results.correlations.filter(function(c){return c.rAbs>=0.2;}).slice(0,5).map(function(c){
-          var direction=c.r>0?'increases':'decreases';
-          return <div key={c.feature} style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+strengthColor(c.r),marginBottom:8}}>
+        <SectionHead title="Key Findings" sub="Strongest predictors of optimal TP% and profit"/>
+        {results.correlations.filter(function(c){return c.rAbs>=0.2||Math.abs(c.rProfit)>=0.4;}).length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:12}}>No features with r(TP%) above 0.2 or r(Profit) above 0.4 found. More data or different market conditions may reveal stronger patterns.</div>}
+        {results.correlations.filter(function(c){return c.rAbs>=0.2||Math.abs(c.rProfit)>=0.4;}).sort(function(a,b){return Math.max(Math.abs(b.rProfit),b.rAbs)-Math.max(Math.abs(a.rProfit),a.rAbs);}).slice(0,8).map(function(c){
+          var direction=c.r>0?'increases':'decreases';var profDir=c.rProfit>0?'higher':'lower';
+          return <div key={c.feature} style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+strengthColor(c.r,c.rProfit),marginBottom:8}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
               <span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{c.label}</span>
-              <span style={{color:strengthColor(c.r),fontSize:12,fontWeight:800,fontFamily:F}}>{(c.r>0?'+':'')+c.r.toFixed(3)}</span>
+              <div style={{textAlign:'right'}}>
+                <div style={{color:strengthColor(c.r,0),fontSize:10,fontWeight:800,fontFamily:F}}>{'TP% '+(c.r>0?'+':'')+c.r.toFixed(3)}</div>
+                <div style={{color:strengthColor(c.rProfit,0),fontSize:10,fontWeight:800,fontFamily:F}}>{'Profit '+(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</div>
+              </div>
             </div>
             <div style={{display:'flex',gap:8,marginBottom:6}}>
-              <span style={{background:strengthColor(c.r)+'20',color:strengthColor(c.r),fontSize:7,fontFamily:F,fontWeight:700,padding:'2px 6px',borderRadius:3,textTransform:'uppercase'}}>{strengthLabel(c.r)}</span>
+              <span style={{background:strengthColor(c.r,c.rProfit)+'20',color:strengthColor(c.r,c.rProfit),fontSize:7,fontFamily:F,fontWeight:700,padding:'2px 6px',borderRadius:3,textTransform:'uppercase'}}>{strengthLabel(c.r,c.rProfit)}</span>
               <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{c.n+' data points'}</span>
+              {c.leadable&&<span style={{color:C.accent,fontSize:5,fontWeight:700,padding:'1px 4px',background:C.accentDim,borderRadius:2}}>LEADABLE</span>}
             </div>
             <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>
               {c.leadable===false&&<span style={{color:C.warn,fontWeight:600,fontSize:7}}>Not leadable (known after the fact). </span>}
-              {'When '+c.label+' '+direction+', the optimal TP% tends to '+(c.r>0?'be higher (wider spreads)':'be lower (tighter spreads)')+'.'+(c.desc?' '+c.desc:'')}
+              {'When '+c.label+' '+direction+', the optimal TP% tends to '+(c.r>0?'be higher (wider spreads)':'be lower (tighter spreads)')+'. Profit tends to be '+profDir+' (r='+c.rProfit.toFixed(3)+').'+(c.desc?' '+c.desc:'')}
             </div>
           </div>;
         })}
@@ -6098,13 +6103,13 @@ function CorrelationFinderPage(p){
               <th style={{padding:'5px 3px',color:sortKey==='n'?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontWeight:sortKey==='n'?700:400,userSelect:'none'}} onClick={function(){doSort('n');}}> n {sortKey==='n'?(sortDir==='desc'?'\u25BC':'\u25B2'):''}</th>
             </tr></thead>
             <tbody>{sortedCorrelations.map(function(c,idx){
-              var isStrong=c.rAbs>=0.4;var isMod=c.rAbs>=0.2;
+              var cMax=Math.max(c.rAbs,Math.abs(c.rProfit||0));var isStrong=cMax>=0.4;var isMod=cMax>=0.2;
               return <tr key={c.feature+'_'+sortVer} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
                 <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}{c.leadable&&<span style={{color:C.accent,fontSize:5,fontWeight:700,marginLeft:3,padding:'1px 3px',background:C.accentDim,borderRadius:2}}>LEADABLE</span>}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
-                <td style={{padding:'5px 3px',color:isNaN(c.r)?C.txtDim:strengthColor(c.r),textAlign:'right',fontWeight:700}}>{isNaN(c.r)?'—':(c.r>0?'+':'')+c.r.toFixed(3)}</td>
-                <td style={{padding:'5px 3px',color:isNaN(c.rProfit)?C.txtDim:strengthColor(c.rProfit),textAlign:'right'}}>{isNaN(c.rProfit)?'—':(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</td>
-                <td style={{padding:'5px 3px'}}><span style={{color:strengthColor(c.r),fontSize:6,fontWeight:700,textTransform:'uppercase'}}>{strengthLabel(c.r)}{c.r>0?' \u2191':' \u2193'}</span></td>
+                <td style={{padding:'5px 3px',color:isNaN(c.r)?C.txtDim:strengthColor(c.r,0),textAlign:'right',fontWeight:700}}>{isNaN(c.r)?'—':(c.r>0?'+':'')+c.r.toFixed(3)}</td>
+                <td style={{padding:'5px 3px',color:isNaN(c.rProfit)?C.txtDim:strengthColor(c.rProfit,0),textAlign:'right'}}>{isNaN(c.rProfit)?'—':(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</td>
+                <td style={{padding:'5px 3px'}}><span style={{color:strengthColor(c.r,c.rProfit),fontSize:6,fontWeight:700,textTransform:'uppercase'}}>{strengthLabel(c.r,c.rProfit)}{strengthBest(c.r,c.rProfit)==='profit'?' \u0024':''}{c.r>0?' \u2191':' \u2193'}</span></td>
                 <td style={{padding:'5px 3px',color:C.txtDim,textAlign:'right'}}>{c.n}</td>
               </tr>;
             })}</tbody>
