@@ -7192,7 +7192,7 @@ function App(){
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
-  var sGh=useState(''),ghToken=sGh[0],setGhToken=sGh[1];
+  var sGh=useState(function(){try{return sessionStorage.getItem('aq_gh_token')||'';}catch(e){return '';}}),ghToken=sGh[0],setGhToken=sGh[1];
   var s8=useState(false),ld=s8[0],setLd=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
   var s10=useState(null),err=s10[0],setErr=s10[1];
@@ -7441,7 +7441,7 @@ function App(){
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('main');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
-    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);}} onBack={function(){setPage('main');}}/>}
+    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);try{sessionStorage.setItem('aq_gh_token',t);}catch(e){}}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}
