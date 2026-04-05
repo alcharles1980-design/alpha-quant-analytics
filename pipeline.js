@@ -113,6 +113,32 @@ function computeHourlyCycles(trades, tpPct) {
   return hourCycles;
 }
 
+function computeCycleHoldTimes(trades, tpPct) {
+  if (!trades || trades.length < 2) return [];
+  var tf = tpPct / 100;
+  var minP = Infinity, maxP = -Infinity;
+  for (var i = 0; i < trades.length; i++) { if (trades[i].price < minP) minP = trades[i].price; if (trades[i].price > maxP) maxP = trades[i].price; }
+  var minC = Math.round(Math.floor(minP * 100) / 100 * 100), maxC = Math.round(Math.ceil(maxP * 100) / 100 * 100), cnt = maxC - minC + 1;
+  var openC = Math.round(Math.floor(trades[0].price * 100) / 100 * 100), psC = Math.round(Math.round(Math.floor(trades[0].price * 100) / 100 * 1.01 * 100) / 100 * 100);
+  var active = new Uint8Array(cnt), target = new Float64Array(cnt), buyMs = new Float64Array(cnt);
+  var t0 = trades[0].ts; var t0ms = t0 > 1e15 ? t0 / 1e6 : t0 > 1e12 ? t0 / 1e3 : t0;
+  for (var c = 0; c < cnt; c++) { target[c] = Math.ceil((minC + c) / 100 * (1 + tf) * 100) / 100; if (minC + c >= openC && minC + c <= psC) { active[c] = 1; buyMs[c] = t0ms; } }
+  var hourDur = {}; for (var h = 4; h < 20; h++) hourDur[h] = [];
+  for (var i2 = 1; i2 < trades.length; i2++) {
+    var p = trades[i2].price; var ts = trades[i2].ts; var ms = ts > 1e15 ? ts / 1e6 : ts > 1e12 ? ts / 1e3 : ts;
+    var hr = getETHourFromMs(ms);
+    for (var j = 0; j < cnt; j++) { if (active[j] === 1 && p >= target[j]) { active[j] = 0; if (hr >= 4 && hr < 20 && buyMs[j] > 0) { var dur = (ms - buyMs[j]) / 60000; if (dur > 0 && dur < 960) hourDur[hr].push(dur); } buyMs[j] = 0; } }
+    var idx = Math.floor(p * 100) - minC; if (idx >= 0 && idx < cnt && active[idx] === 0) { active[idx] = 1; buyMs[idx] = ms; }
+  }
+  var result = [];
+  for (var h2 = 4; h2 < 20; h2++) {
+    var durations = hourDur[h2]; var avg = 0, mn = 0, mx = 0, cnt2 = durations.length;
+    if (cnt2 > 0) { var sum = 0; mn = Infinity; mx = -Infinity; for (var d = 0; d < cnt2; d++) { sum += durations[d]; if (durations[d] < mn) mn = durations[d]; if (durations[d] > mx) mx = durations[d]; } avg = sum / cnt2; }
+    result.push({ hour: h2, avg: Math.round(avg * 10) / 10, min: Math.round(mn * 10) / 10, max: Math.round(mx * 10) / 10, count: cnt2 });
+  }
+  return result;
+}
+
 // ── Polygon fetch ────────────────────────────────────────
 async function fetchTicks(ticker, date) {
   var etOff = getETOffset(date);
@@ -921,6 +947,17 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         for (var hh = 4; hh < 20; hh++) hcRows.push({ ticker, trade_date: date, hour: hh, tp_pct: 1.0, session_type: 'all', cycles: hcDefault[hh] || 0 });
         await sbDeleteInsert('cached_hourly_cycles', 'ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', hcRows, 'hourly_cycles');
 
+        // Save cached_hourly_hold_times (cycle holding durations)
+        if (trades.length < 500000) { // skip for very heavy stocks to avoid memory issues
+          var holdTimes = computeCycleHoldTimes(trades, 1.0);
+          var htRows = holdTimes.filter(ht => ht.count > 0).map(ht => ({
+            ticker, trade_date: date, hour: ht.hour, tp_pct: 1.0, session_type: 'all',
+            avg_duration: ht.avg, min_duration: ht.min, max_duration: ht.max, cycle_count: ht.count
+          }));
+          if (htRows.length) await sbDeleteInsert('cached_hourly_hold_times', 'ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', htRows, 'hold_times');
+          console.log('  Stage 1: Hold times: ' + htRows.length + ' hours with cycles');
+        }
+
         // ── Daily Optimal TP% (flat scan for the whole day) ──
         console.log('  Stage 2b: Daily flat TP% scan...');
         var dailyOptRows = [];
@@ -953,7 +990,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         console.log('  Stage 3: ' + featureRows.length + ' feature rows');
         await sbDeleteInsert('hourly_features', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, featureRows, 'features');
 
-        // ── VERIFY ALL 8 TABLES ──
+        // ── VERIFY ALL 9 TABLES ──
         var vA = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
         var vS = await sbFetch('cached_seasonality?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vO = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
@@ -962,8 +999,13 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         var vSe = await sbFetch('cached_sessions?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=session_type&limit=1');
         var vD = await sbFetch('cached_daily_optimal_tp?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=tp_pct&limit=1');
         var vL = analysisId ? await sbFetch('cached_levels?analysis_id=eq.' + analysisId + '&select=id&limit=1') : [];
-        if (vA.length===0||vS.length===0||vO.length===0||vF.length===0||vH.length===0||vSe.length===0||vD.length===0||vL.length===0) console.log('  WARNING: Verify failed! A='+vA.length+' S='+vS.length+' O='+vO.length+' F='+vF.length+' H='+vH.length+' Se='+vSe.length+' D='+vD.length+' L='+vL.length);
-        else console.log('  VERIFIED: All 8 tables populated');
+        var vHT = await sbFetch('cached_hourly_hold_times?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+        var missing = [];
+        if(!vA.length)missing.push('A');if(!vS.length)missing.push('S');if(!vO.length)missing.push('O');
+        if(!vF.length)missing.push('F');if(!vH.length)missing.push('HC');if(!vSe.length)missing.push('Se');
+        if(!vD.length)missing.push('D');if(!vL.length)missing.push('L');if(!vHT.length)missing.push('HT');
+        if(missing.length) console.log('  WARNING: Missing: ' + missing.join(', '));
+        else console.log('  VERIFIED: All 9 tables populated');
 
 
         // Update prevDayClose for next day
