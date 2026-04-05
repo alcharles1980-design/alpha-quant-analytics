@@ -116,14 +116,18 @@ function computeHourlyCycles(trades, tpPct) {
 // ── Polygon fetch ────────────────────────────────────────
 async function fetchTicks(ticker, date) {
   var etOff = getETOffset(date);
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var nextDay = new Date(new Date(date + 'T12:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
+  var hPre = 4 + etOff, hMid = 10 + etOff, hAft = 15 + etOff, hEnd = 20 + etOff;
+  var wEndTs = hEnd < 24 ? date + 'T' + pad(hEnd) + ':30:00Z' : nextDay + 'T' + pad(hEnd - 24) + ':30:00Z';
   var windows = [
-    { from: 'T' + String(4 + etOff).padStart(2, '0') + ':00:00Z', to: 'T' + String(12 + etOff).padStart(2, '0') + ':00:00Z' },
-    { from: 'T' + String(9 + etOff).padStart(2, '0') + ':00:00Z', to: 'T' + String(17 + etOff).padStart(2, '0') + ':00:00Z' },
-    { from: 'T' + String(14 + etOff).padStart(2, '0') + ':00:00Z', to: 'T' + String(20 + etOff + 1).padStart(2, '0') + ':30:00Z' }
+    { from: date + 'T' + pad(hPre) + ':00:00Z', to: date + 'T' + pad(hMid + 2) + ':00:00Z' },
+    { from: date + 'T' + pad(hMid - 1) + ':00:00Z', to: date + 'T' + pad(hAft + 2) + ':00:00Z' },
+    { from: date + 'T' + pad(hAft - 1) + ':00:00Z', to: wEndTs }
   ];
   var allRaw = [];
   for (var w of windows) {
-    var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + date + w.from + '&timestamp.lt=' + date + w.to + '&limit=50000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
+    var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + w.from + '&timestamp.lt=' + w.to + '&limit=50000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
     while (url) {
       var r = await fetch(url);
       if (!r.ok) break;
@@ -143,11 +147,14 @@ async function fetchTicks(ticker, date) {
 async function fetchHourlyTicks(ticker, date, hour) {
   // Fetch just 1 hour of ticks
   var etOff = getETOffset(date);
-  var utcHour = hour + etOff;
-  var from = 'T' + String(utcHour).padStart(2, '0') + ':00:00Z';
-  var to = 'T' + String(utcHour + 1).padStart(2, '0') + ':00:00Z';
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var nextDay = new Date(new Date(date + 'T12:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
+  var utcStart = hour + etOff;
+  var utcEnd = utcStart + 1;
+  var fromTs = utcStart < 24 ? date + 'T' + pad(utcStart) + ':00:00Z' : nextDay + 'T' + pad(utcStart - 24) + ':00:00Z';
+  var toTs = utcEnd < 24 ? date + 'T' + pad(utcEnd) + ':00:00Z' : nextDay + 'T' + pad(utcEnd - 24) + ':00:00Z';
   var allRaw = [];
-  var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + date + from + '&timestamp.lt=' + date + to + '&limit=50000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
+  var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + fromTs + '&timestamp.lt=' + toTs + '&limit=50000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
   while (url) {
     var r = await fetch(url);
     if (!r.ok) break;
