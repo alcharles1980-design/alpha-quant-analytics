@@ -2642,8 +2642,11 @@ function SettingsPage(p){
   var us=useState(p.sbUrl),sUrl=us[0],setSUrl=us[1];
   var usk=useState(p.sbKey),sKey=usk[0],setSKey=usk[1];
   var ss2=useState(false),savedSb=ss2[0],setSavedSb=ss2[1];
+  var gs=useState(p.ghToken||''),ghTok=gs[0],setGhTok=gs[1];
+  var gs2=useState(false),savedGh=gs2[0],setSavedGh=gs2[1];
   var savePg=function(){p.onSave(key);setSaved(true);setTimeout(function(){setSaved(false);},2000);};
   var saveSb=function(){p.onSaveSb(sUrl,sKey);setSavedSb(true);setTimeout(function(){setSavedSb(false);},2000);};
+  var saveGh=function(){p.onSaveGh(ghTok);setSavedGh(true);setTimeout(function(){setSavedGh(false);},2000);};
   var clearSb=function(){setSUrl('');setSKey('');p.onSaveSb('','');};
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -2673,6 +2676,15 @@ function SettingsPage(p){
         <button onClick={clearSb} style={Object.assign({},bB,{width:'auto',padding:'10px 14px',background:'transparent',border:'1px solid '+C.border,color:C.warn})}>Clear</button>
       </div>
       {(!sUrl||!sKey)&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>Caching disabled. Analysis will fetch from Polygon every time.</div>}
+    </Cd>
+    <Cd>
+      <SectionHead title="GitHub Pipeline" sub="Trigger automated pipelines from the app" info="A GitHub Personal Access Token with 'actions' scope lets you trigger the nightly and hourly pipelines directly from this app. Create one at github.com > Settings > Developer settings > Personal access tokens > Fine-grained tokens. Select your repo and grant Actions read/write permission."/>
+      <div style={{marginBottom:12,marginTop:10}}>
+        <label style={lS}>Personal Access Token</label>
+        <input type="password" value={ghTok} onChange={function(e){setGhTok(e.target.value);}} placeholder="github_pat_..." style={iS}/>
+      </div>
+      <button onClick={saveGh} style={Object.assign({},bB,{background:savedGh?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:savedGh?C.bg:'#fff'})}>{savedGh?'Saved!':'Save GitHub Token'}</button>
+      {!ghTok&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>Pipeline triggers disabled. Pipelines still run automatically via cron schedule.</div>}
     </Cd>
   </div>;
 }
@@ -6988,6 +7000,27 @@ function HourlyPredictionPage(p){
         <div><label style={lS}>Train %</label><select value={trainPct} onChange={function(e){setTrainPct(parseInt(e.target.value));}} style={iS}><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></div>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:10,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Run Backtest'}</button>
+      {p.ghToken&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <button onClick={async function(){
+          if(!ticker){setErr('Select a ticker');return;}
+          setErr(null);setProg('Triggering nightly pipeline...');
+          try{
+            var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'nightly',tickers:ticker}})});
+            if(r.status===204)setProg('Nightly pipeline triggered for '+ticker+'. Check GitHub Actions for progress.');
+            else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
+          }catch(e2){setErr('GitHub trigger failed: '+e2.message);}
+        }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff'})}>Trigger Nightly</button>
+        <button onClick={async function(){
+          if(!ticker){setErr('Select a ticker');return;}
+          setErr(null);setProg('Triggering hourly pipeline...');
+          try{
+            var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'hourly',tickers:ticker}})});
+            if(r.status===204)setProg('Hourly pipeline triggered for '+ticker+'. Check GitHub Actions for progress.');
+            else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
+          }catch(e2){setErr('GitHub trigger failed: '+e2.message);}
+        }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#3d9eff,#2070d0)',color:'#fff'})}>Trigger Hourly</button>
+      </div>}
+      {!p.ghToken&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>Add a GitHub PAT in Settings to trigger pipelines from here.</div>}
       {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6,animation:'pulse 1.5s infinite'}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
@@ -7131,6 +7164,7 @@ function App(){
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
+  var sGh=useState(''),ghToken=sGh[0],setGhToken=sGh[1];
   var s8=useState(false),ld=s8[0],setLd=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
   var s10=useState(null),err=s10[0],setErr=s10[1];
@@ -7368,7 +7402,7 @@ function App(){
     {page==='aiagents'&&<AIAgentsOverviewPage onBack={function(){setPage('objectives');}}/>}
     {page==='builddata'&&<BuildDataSetPage apiKey={pgKey} onBack={function(){setPage('objectives');}}/>}
     {page==='corrfinder'&&<CorrelationFinderPage onBack={function(){setPage('objectives');}}/>}
-    {page==='predict'&&<HourlyPredictionPage onBack={function(){setPage('objectives');}}/>}
+    {page==='predict'&&<HourlyPredictionPage ghToken={ghToken} onBack={function(){setPage('objectives');}}/>}
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='adaptive'&&<AdaptiveOptPage onBack={function(){setPage('main');}}/>}
@@ -7379,7 +7413,7 @@ function App(){
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('main');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
-    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onBack={function(){setPage('main');}}/>}
+    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}
