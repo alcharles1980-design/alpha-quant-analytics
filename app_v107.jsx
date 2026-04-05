@@ -7231,7 +7231,7 @@ function App(){
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
-  var GH_TOKEN_DEFAULT=(function(){try{return localStorage.getItem('aq_gh_token')||'';}catch(e){return '';}})();
+  var GH_TOKEN_DEFAULT=(function(){try{var s=localStorage.getItem('aq_gh_token');if(s)return s;}catch(e){}return '';})();
   var sGh=useState(GH_TOKEN_DEFAULT),ghToken=sGh[0],setGhToken=sGh[1];
   var s8=useState(false),ld=s8[0],setLd=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
