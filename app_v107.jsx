@@ -6798,6 +6798,7 @@ function HourlyPredictionPage(p){
   var sb1=useState('2026-01-02'),bfStart=sb1[0],setBfStart=sb1[1];
   var sb2=useState(new Date().toISOString().slice(0,10)),bfEnd=sb2[0],setBfEnd=sb2[1];
   var sb3=useState(''),bfStatus=sb3[0],setBfStatus=sb3[1];
+  var sb5=useState(false),bfForce=sb5[0],setBfForce=sb5[1];
   var sb4=useState(null),pipelineProgress=sb4[0],setPipelineProgress=sb4[1];
   var pollRef=useRef(null);
 
@@ -7055,13 +7056,22 @@ function HourlyPredictionPage(p){
         <div><label style={lS}>Start Date</label><input type="date" value={bfStart} onChange={function(e){setBfStart(e.target.value);}} style={iS}/></div>
         <div><label style={lS}>End Date</label><input type="date" value={bfEnd} onChange={function(e){setBfEnd(e.target.value);}} style={iS}/></div>
       </div>
+      <div onClick={function(){setBfForce(!bfForce);}} style={{display:'flex',alignItems:'center',gap:8,marginTop:10,cursor:'pointer',padding:'8px 0'}}>
+        <div style={{width:18,height:18,borderRadius:4,border:'2px solid '+(bfForce?C.warn:C.border),background:bfForce?C.warnDim:'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {bfForce&&<span style={{color:C.warn,fontSize:12,fontWeight:700}}>{'\u2713'}</span>}
+        </div>
+        <div>
+          <span style={{color:bfForce?C.warn:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>Force Re-process</span>
+          <span style={{color:C.txtDim,fontSize:7,fontFamily:F,display:'block',marginTop:1}}>Delete and rebuild all data for selected dates, even if already in database. Use after bug fixes or when data may be incomplete (e.g., missing post-market hours from DST issues).</span>
+        </div>
+      </div>
       <button onClick={async function(){
         if(!ticker){setErr('Select a ticker');return;}
         if(!bfStart||!bfEnd){setErr('Set start and end dates');return;}
         setErr(null);setBfStatus('Triggering backfill...');
         try{
-          var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'backfill',tickers:ticker,start_date:bfStart,end_date:bfEnd,force:'false'}})});
-          if(r.status===204){setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+'. Stages 1+2+3 running on GitHub. Check Actions tab for progress.');startPolling();}
+          var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'backfill',tickers:ticker,start_date:bfStart,end_date:bfEnd,force:bfForce?'true':'false'}})});
+          if(r.status===204){setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+(bfForce?' (FORCE re-process)':' (skip existing)')+'. Stages 1+2+3 running on GitHub.');startPolling();}
           else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setBfStatus('');}
         }catch(e2){setErr('GitHub trigger failed: '+e2.message);setBfStatus('');}
       }} style={Object.assign({},bB,{marginTop:10,background:'linear-gradient(135deg,#ff8c00,#e06000)',color:'#fff'})}>Run Backfill on GitHub</button>
