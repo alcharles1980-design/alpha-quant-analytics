@@ -5074,6 +5074,35 @@ function CorrelationFinderPage(p){
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Correlation Analysis Finder</div>
     </div>
     <Cd>
+      <SectionHead title="Data Requirements" sub="What needs to be in the database before running"/>
+      <div style={{fontSize:9,fontFamily:F,color:C.txt,lineHeight:1.8}}>
+        <p style={{marginBottom:8}}>This tool correlates market features (X) with optimal TP% results (Y) to find predictive patterns. Both datasets must be populated for the same ticker and overlapping dates.</p>
+
+        <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:8}}>
+          <div style={{color:C.blue,fontSize:9,fontWeight:700,marginBottom:4}}>Step 1: Extract Market Features (X)</div>
+          <p style={{marginBottom:4}}>Go to <span style={{color:C.accent,fontWeight:700}}>Build Data Set</span> (Stage 3 menu). Enter the ticker and a date range (20+ trading days recommended). This fetches all tick data from Polygon and extracts 22 hourly features (ATR, volume, VWAP, price position, etc.) into the <span style={{color:C.txtBright}}>hourly_features</span> table. Needed for both Hourly and Daily modes.</p>
+        </div>
+
+        <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.purple,marginBottom:8}}>
+          <div style={{color:C.purple,fontSize:9,fontWeight:700,marginBottom:4}}>Step 2a: Hourly Optimal TP% (Y for Hourly mode)</div>
+          <p style={{marginBottom:4}}>Go to <span style={{color:C.accent,fontWeight:700}}>Hourly Optimal TP% Finder</span> (Stage 2 menu). Enter the same ticker and date range. This runs the cycle engine 100 times per day (one per TP% value) and saves the best TP% per hour to the <span style={{color:C.txtBright}}>optimal_tp_hourly</span> table. Produces 1,600 rows per day (100 TP% x 16 hours).</p>
+        </div>
+
+        <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.gold,marginBottom:8}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,marginBottom:4}}>Step 2b: Daily Optimal TP% (Y for Daily mode)</div>
+          <p style={{marginBottom:4}}>Go to <span style={{color:C.accent,fontWeight:700}}>Daily Optimal TP% Finder</span> (Stage 1 menu). Select <span style={{color:C.txtBright}}>Multi-Day Range</span> mode and scan the same ticker and dates. This tests all TP% values for each full day and saves results to the <span style={{color:C.txtBright}}>cached_daily_optimal_tp</span> table.</p>
+        </div>
+
+        <div style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <div style={{color:C.txtBright,fontSize:9,fontWeight:700,marginBottom:4}}>Minimum Data Needed</div>
+          <p style={{marginBottom:2}}><span style={{color:C.purple}}>Hourly mode:</span> 5+ days with both hourly_features AND optimal_tp_hourly for the same ticker. Each day gives 16 data points. 20 days = 320 correlation data points.</p>
+          <p><span style={{color:C.gold}}>Daily mode:</span> 3+ days minimum (20+ recommended) with both hourly_features AND cached_daily_optimal_tp. Each day gives 1 data point.</p>
+        </div>
+
+        <p style={{marginTop:8,color:C.txtDim}}>Check <span style={{color:C.txtBright}}>Database Management</span> to see how much data is currently loaded for each ticker and stage.</p>
+      </div>
+    </Cd>
+    <Cd>
       <SectionHead title="Feature Correlation Scanner" sub="Find which market features predict optimal TP%" info="Joins hourly market features (X) from Build Data Set with optimal TP% per hour (Y) from Hourly Optimal TP% Finder. Computes Pearson correlation between each feature and the best TP% for that hour. Strong correlations reveal which market conditions drive TP% selection."/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
         <button onClick={function(){setCorrMode('hourly');setResults(null);setErr(null);}} style={{padding:'10px',border:'1px solid '+(corrMode==='hourly'?C.purple:C.border),borderRadius:6,background:corrMode==='hourly'?C.purple+'20':'transparent',color:corrMode==='hourly'?C.purple:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer',letterSpacing:1}}>HOURLY</button>
