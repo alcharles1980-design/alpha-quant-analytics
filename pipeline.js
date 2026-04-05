@@ -731,6 +731,28 @@ async function reportProgress(data) {
   } catch (e) { /* don't let progress reporting crash the pipeline */ }
 }
 
+// ── Robust Save Helper ───────────────────────────────────
+async function sbDeleteInsert(table, deleteFilter, rows, label) {
+  // Delete existing
+  var delR = await fetch(SB_URL + '/rest/v1/' + table + '?' + deleteFilter, { method: 'DELETE', headers: sbHeaders() });
+  if (!delR.ok) console.log('    WARN: ' + label + ' DELETE failed: ' + delR.status);
+  await sleep(100); // ensure DELETE completes before INSERT
+  // Insert in batches
+  for (var i = 0; i < rows.length; i += 500) {
+    var batch = rows.slice(i, i + 500);
+    var postR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+    if (!postR.ok) {
+      var errTxt = await postR.text();
+      console.log('    WARN: ' + label + ' POST failed (batch ' + i + '): ' + postR.status + ' ' + errTxt.slice(0, 200));
+      // Retry once
+      await sleep(500);
+      var retryR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+      if (!retryR.ok) console.log('    ERROR: ' + label + ' retry also failed: ' + retryR.status);
+      else console.log('    OK: ' + label + ' retry succeeded');
+    }
+  }
+}
+
 // ── Trading Days ─────────────────────────────────────────
 function getTradingDays(start, end) {
   var days = [];
@@ -834,43 +856,33 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
           if (ohlcR2.ok) ohlc = await ohlcR2.json();
         } catch (e) {}
 
-        // Save cached_analyses (delete ALL for this ticker+date regardless of tp_pct/session_type)
+        // Save cached_analyses
         var analysisBody = { ticker, trade_date: date, tp_pct: tpPct, session_type: 'all', total_cycles: result.summary.totalCycles, active_levels: result.summary.activeLevels, total_levels: result.summary.totalLevels, total_trades: trades.length, tick_min: minP, tick_max: maxP, open_price: sharePrice, pre_seed_max: preSeedMax };
-        if (ohlc) { analysisBody.ohlc_open = ohlc.open; analysisBody.ohlc_high = ohlc.high; analysisBody.ohlc_low = ohlc.low; analysisBody.ohlc_close = ohlc.close; analysisBody.ohlc_volume = ohlc.volume; }
-        await fetch(SB_URL + '/rest/v1/cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
-        var aR = await fetch(SB_URL + '/rest/v1/cached_analyses', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=representation' }), body: JSON.stringify(analysisBody) });
-        if (!aR.ok) { var errTxt = await aR.text(); console.log('  WARN: cached_analyses POST failed: ' + aR.status + ' ' + errTxt); }
-        var savedAnalysis = aR.ok ? await aR.json() : [];
-        var analysisId = Array.isArray(savedAnalysis) ? (savedAnalysis[0]||{}).id : (savedAnalysis||{}).id;
+        if (ohlc && ohlc.open) { analysisBody.ohlc_open = ohlc.open; analysisBody.ohlc_high = ohlc.high; analysisBody.ohlc_low = ohlc.low; analysisBody.ohlc_close = ohlc.close; analysisBody.ohlc_volume = ohlc.volume; }
+        await sbDeleteInsert('cached_analyses', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, [analysisBody], 'analyses');
+        await sleep(200);
+        var savedA = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
+        var analysisId = savedA.length > 0 ? savedA[0].id : null;
 
-        // Save cached_levels (only levels with cycles > 0)
+        // Save cached_levels
         if (analysisId) {
           var levelRows = [];
           for (var lv of result.levels || []) { if (lv && lv.cycles > 0) levelRows.push({ analysis_id: analysisId, level_price: lv.price, target_price: lv.target, cycles: lv.cycles }); }
-          if (levelRows.length) {
-            await fetch(SB_URL + '/rest/v1/cached_levels?analysis_id=eq.' + analysisId, { method: 'DELETE', headers: sbHeaders() });
-            for (var li = 0; li < levelRows.length; li += 200) {
-              await fetch(SB_URL + '/rest/v1/cached_levels', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(levelRows.slice(li, li + 200)) });
-            }
-          }
+          if (levelRows.length) await sbDeleteInsert('cached_levels', 'analysis_id=eq.' + analysisId, levelRows, 'levels');
           console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
         } else {
-          console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles (analyses save failed, skipping levels)');
+          console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles (WARNING: analyses ID not found)');
         }
         await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage1', message: ticker + ' ' + date + ': Stage 1 done (' + result.summary.totalCycles + ' cycles)' });
 
-        // Save cached_seasonality
-        console.log('  Stage 1: Seasonality...');
+        // Save cached_seasonality + sessions
+        console.log('  Stage 1: Seasonality + Sessions...');
         var seasonality = computeSeasonality(trades);
-        await fetch(SB_URL + '/rest/v1/cached_seasonality?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
         var seasonRows = seasonality.map(s => ({ ticker, trade_date: date, hour: s.hour, high: s.high, low: s.low, atr: s.atr, atr_pct: s.atr_pct, volume: s.volume, trades: s.trades }));
-        if (seasonRows.length) await fetch(SB_URL + '/rest/v1/cached_seasonality', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(seasonRows) });
-
-        // Save cached_sessions
+        await sbDeleteInsert('cached_seasonality', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, seasonRows, 'seasonality');
         var sessionData = computeSessions(trades);
-        await fetch(SB_URL + '/rest/v1/cached_sessions?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
         var sessionRows = sessionData.map(s => ({ ticker, trade_date: date, session_type: s.session_type, high: s.high, low: s.low, range_dollars: s.range_dollars, range_pct: s.range_pct, volume: s.volume, trades: s.trades }));
-        if (sessionRows.length) await fetch(SB_URL + '/rest/v1/cached_sessions', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(sessionRows) });
+        await sbDeleteInsert('cached_sessions', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, sessionRows, 'sessions');
 
         // ── STAGE 2: Hourly Optimal TP% ──
         console.log('  Stage 2: Scanning 100 TP% x 16 hours...');
@@ -891,22 +903,28 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         }
         console.log('  Stage 2: ' + optRows.length + ' rows');
         await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 done (100 TP% x 16 hrs)' });
-        await fetch(SB_URL + '/rest/v1/optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
-        await sbUpsert('optimal_tp_hourly', optRows);
-
-        // Save cached_hourly_cycles (for default TP%)
+        await sbDeleteInsert('optimal_tp_hourly', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, optRows, 'optimal');
         var hcDefault = computeHourlyCycles(trades, 1.0);
-        await fetch(SB_URL + '/rest/v1/cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
         var hcRows = [];
         for (var hh = 4; hh < 20; hh++) hcRows.push({ ticker, trade_date: date, hour: hh, tp_pct: 1.0, session_type: 'all', cycles: hcDefault[hh] || 0 });
-        await fetch(SB_URL + '/rest/v1/cached_hourly_cycles', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(hcRows) });
+        await sbDeleteInsert('cached_hourly_cycles', 'ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', hcRows, 'hourly_cycles');
 
         // ── STAGE 3: Feature Extraction ──
         console.log('  Stage 3: Extracting features...');
         var featureRows = await extractDayFeatures(ticker, date, trades, prevDayClose);
         console.log('  Stage 3: ' + featureRows.length + ' feature rows');
-        await fetch(SB_URL + '/rest/v1/hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
-        await sbUpsert('hourly_features', featureRows);
+        await sbDeleteInsert('hourly_features', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, featureRows, 'features');
+
+        // ── VERIFY ALL 6 TABLES ──
+        var vA = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
+        var vS = await sbFetch('cached_seasonality?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+        var vO = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+        var vF = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+        var vH = await sbFetch('cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
+        var vSe = await sbFetch('cached_sessions?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=session_type&limit=1');
+        if (vA.length===0||vS.length===0||vO.length===0||vF.length===0||vH.length===0||vSe.length===0) console.log('  WARNING: Verify failed! A='+vA.length+' S='+vS.length+' O='+vO.length+' F='+vF.length+' H='+vH.length+' Se='+vSe.length);
+        else console.log('  VERIFIED: All 6 tables populated');
+
 
         // Update prevDayClose for next day
         prevDayClose = trades[trades.length - 1].price;
