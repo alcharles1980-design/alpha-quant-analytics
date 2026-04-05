@@ -6818,6 +6818,14 @@ function HourlyPredictionPage(p){
 
   useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
+  // Auto-load latest pipeline status on mount
+  useEffect(function(){
+    if(!SB_URL||!SB_KEY)return;
+    fetch(SB_URL+'/rest/v1/pipeline_status?order=updated_at.desc&limit=1',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){
+      if(d.length){setPipelineProgress(d[0]);if(d[0].status==='running')startPolling();}
+    }).catch(function(){});
+  },[]);
+
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
     fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&limit=1000',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){
