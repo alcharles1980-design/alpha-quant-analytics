@@ -4814,6 +4814,7 @@ function BuildDataSetPage(p){
           <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_cep_p90:</span> 90th percentile excursion. Only 10% of swings exceed this size. Shows the upper tail: how big do the large swings get?</p>
           <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_cep_tail_ratio:</span> P90 / P50. Measures how fat-tailed the excursion distribution is. Ratio of 2 means the 90th percentile swing is 2x the median. High tail ratio = occasional outsized moves mixed with many small ones.</p>
           <p style={{marginBottom:4}}><span style={{color:C.gold,fontWeight:700}}>hour_ece_up_pct / hour_ece_down_pct:</span> Separate ECE for up-runs and down-runs. If ECE-up is 0.10% but ECE-down is 0.05%, price swings further upward -- bullish microstructure asymmetry.</p>
+          <p><span style={{color:C.gold,fontWeight:700}}>Daily: day_avg_ece, day_avg_cwe, prev_day_avg_ece, prev_day_avg_cwe:</span> Aggregated ECE and CWE across all hours of the day. Previous-day versions are LEADABLE for next-day prediction.</p>
         </div>
         <div style={cS}>{'// Track run start price\nif (direction changes) {\n  var excursion = abs(price - runStartPrice) / runStartPrice * 100;\n  runExcursions.push(excursion);\n  runStartPrice = price;\n}\n// ECE = mean(excursions)\n// CWE = sqrt(mean(excursion^2))  // RMS\n// CEP: sort, P50 = median, P90 = 90th pctl\n// Tail ratio = P90 / P50'}</div>
       </div>
