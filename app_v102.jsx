@@ -4871,6 +4871,258 @@ function CorrAnalysisPage(p){
   </div>;
 }
 
+function CorrelationFinderPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(''),prog=s4[0],setProg=s4[1];
+  var s5=useState(null),results=s5[0],setResults=s5[1];
+  var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
+  var s7=useState(null),expandedFeat=s7[0],setExpandedFeat=s7[1];
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+
+  var featureLabels={hour_atr_dollar:'Hourly ATR ($)',hour_atr_pct:'Hourly ATR (%)',hour_volume:'Hourly Volume',hour_trades:'Hourly Trades',price_vs_day_open_pct:'Price vs Day Open (%)',intraday_range_pct:'Intraday Range (%)',cumulative_volume_pct:'Cumulative Volume (%)',overnight_gap_pct:'Overnight Gap (%)',vix_close:'VIX Close',day_of_week:'Day of Week',hour:'Hour of Day',day_volume:'Day Volume',day_trades:'Day Trades',hour_open:'Hour Open',hour_close:'Hour Close',hour_high:'Hour High',hour_low:'Hour Low',hour_vwap:'Hour VWAP',day_open:'Day Open',day_close:'Day Close'};
+  var featureDescriptions={hour_atr_pct:'Percentage range of the hour. Higher ATR% = more price movement = more oscillation opportunities.',hour_atr_dollar:'Dollar range within the hour. Wider range may favor wider TP% to capture larger swings.',hour_volume:'Share volume traded in this hour. High volume = more liquidity, more ticks, more cycle opportunities.',hour_trades:'Number of individual trade executions. More trades = finer price granularity for the cycle engine.',price_vs_day_open_pct:'How far price has moved from the day open. Trending days show persistent direction; mean-reversion days oscillate around open.',intraday_range_pct:'Total day range as % of low. Measures overall volatility of the day.',cumulative_volume_pct:'What fraction of the day volume has traded by this hour. Early hours have low cumulative %, late hours approach 100%.',overnight_gap_pct:'Gap between prev close and today open. Large gaps often lead to mean-reversion (good for tight TP%) or continuation (wider TP%).',vix_close:'CBOE VIX level. Higher VIX = higher expected volatility across all stocks.',day_of_week:'Monday=1 through Friday=5. Some days have consistently different volatility profiles.',hour:'Hour of day (4-19 ET). Different hours have different liquidity and volatility patterns.'};
+
+  useEffect(function(){
+    if(!SB_URL||!SB_KEY)return;
+    var h=getSbHeaders();
+    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(rows){
+      var tks={};for(var i=0;i<rows.length;i++)tks[rows[i].ticker]=true;
+      var arr=Object.keys(tks).sort();setAvailTickers(arr);if(arr.length>0&&!ticker)setTicker(arr[0]);
+    });
+  },[]);
+
+  var pearson=function(x,y){
+    var n=x.length;if(n<3)return 0;
+    var sx=0,sy=0,sxy=0,sx2=0,sy2=0;
+    for(var i=0;i<n;i++){sx+=x[i];sy+=y[i];sxy+=x[i]*y[i];sx2+=x[i]*x[i];sy2+=y[i]*y[i];}
+    var num=n*sxy-sx*sy;var den=Math.sqrt((n*sx2-sx*sx)*(n*sy2-sy*sy));
+    return den===0?0:num/den;
+  };
+
+  var run=async function(){
+    if(!SB_URL||!SB_KEY){setErr('No Supabase config');return;}
+    if(!ticker){setErr('Select a ticker');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Loading features (X)...');
+    try{
+      var h=getSbHeaders();h['Range']='0-49999';
+      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,hour_close,hour_high,hour_low,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct,overnight_gap_pct,vix_close,day_of_week,day_open,day_close,day_volume,day_trades&order=trade_date.asc,hour.asc',{headers:h});
+      var features=r1.ok?await r1.json():[];
+      if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
+      setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
+      var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc',{headers:h});
+      var optRows=r2.ok?await r2.json():[];
+      if(!optRows.length){setErr('No optimal TP% data for '+ticker+'. Run Hourly Optimal TP% Finder first.');setLoading(false);return;}
+      setProg('Finding best TP% per hour...');
+      // Get best TP% per hour (first row per date+hour since sorted by net_profit desc)
+      var bestTP={};
+      for(var i=0;i<optRows.length;i++){var ok2=optRows[i].trade_date+'|'+optRows[i].hour;if(!bestTP[ok2])bestTP[ok2]={tp:optRows[i].tp_pct,np:optRows[i].net_profit};}
+      setProg('Joining X and Y...');
+      // Join features with best TP%
+      var joined=[];
+      for(var i=0;i<features.length;i++){
+        var fk=features[i].trade_date+'|'+features[i].hour;
+        if(bestTP[fk]){
+          var row=Object.assign({},features[i]);
+          row.best_tp_pct=bestTP[fk].tp;row.best_net_profit=bestTP[fk].np;
+          joined.push(row);
+        }
+      }
+      if(!joined.length){setErr('No matching data points. Features and optimal TP% must cover same dates.');setLoading(false);return;}
+      setProg('Computing correlations across '+joined.length+' data points...');
+      await new Promise(function(r){setTimeout(r,50);});
+      // Extract Y values
+      var yVals=[];for(var i=0;i<joined.length;i++)yVals.push(joined[i].best_tp_pct);
+      // Compute correlation for each feature
+      var featureKeys=['hour','hour_atr_dollar','hour_atr_pct','hour_volume','hour_trades','hour_vwap','hour_open','hour_close','hour_high','hour_low','price_vs_day_open_pct','intraday_range_pct','cumulative_volume_pct','overnight_gap_pct','vix_close','day_of_week','day_open','day_close','day_volume','day_trades'];
+      var correlations=[];
+      for(var fi=0;fi<featureKeys.length;fi++){
+        var fKey=featureKeys[fi];
+        var xVals=[];var validX=[];var validY=[];
+        for(var i=0;i<joined.length;i++){
+          var v=parseFloat(joined[i][fKey]);
+          if(!isNaN(v)&&v!==null){validX.push(v);validY.push(yVals[i]);}
+        }
+        if(validX.length<5)continue;
+        var r3=pearson(validX,validY);
+        var meanX=0,meanY=0;for(var i=0;i<validX.length;i++){meanX+=validX[i];meanY+=validY[i];}meanX/=validX.length;meanY/=validY.length;
+        // Also compute correlation with net_profit (not just TP%)
+        var profitVals=[];for(var i=0;i<joined.length;i++){var v2=parseFloat(joined[i][fKey]);if(!isNaN(v2))profitVals.push(joined[i].best_net_profit);}
+        var rProfit=pearson(validX,profitVals);
+        correlations.push({feature:fKey,label:featureLabels[fKey]||fKey,r:r3,rAbs:Math.abs(r3),rProfit:rProfit,n:validX.length,meanX:meanX,meanY:meanY,desc:featureDescriptions[fKey]||'',xVals:validX,yVals:validY});
+      }
+      correlations.sort(function(a,b){return b.rAbs-a.rAbs;});
+      // Compute Y stats
+      var yMin=Infinity,yMax=-Infinity,ySum=0;
+      for(var i=0;i<yVals.length;i++){if(yVals[i]<yMin)yMin=yVals[i];if(yVals[i]>yMax)yMax=yVals[i];ySum+=yVals[i];}
+      var yMean=ySum/yVals.length;
+      var dates={};for(var i=0;i<joined.length;i++)dates[joined[i].trade_date]=true;
+      setResults({correlations:correlations,dataPoints:joined.length,days:Object.keys(dates).length,ticker:ticker,yMin:yMin,yMax:yMax,yMean:yMean,joined:joined});
+      setProg('');setLoading(false);
+    }catch(e){setErr(e.message);setProg('');setLoading(false);}
+  };
+
+  var strengthLabel=function(r){var a=Math.abs(r);if(a>=0.7)return'Strong';if(a>=0.4)return'Moderate';if(a>=0.2)return'Weak';return'Negligible';};
+  var strengthColor=function(r){var a=Math.abs(r);if(a>=0.7)return C.accent;if(a>=0.4)return C.gold;if(a>=0.2)return C.blue;return C.txtDim;};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Correlation Analysis Finder</div>
+    </div>
+    <Cd>
+      <SectionHead title="Feature Correlation Scanner" sub="Find which market features predict optimal TP%" info="Joins hourly market features (X) from Build Data Set with optimal TP% per hour (Y) from Hourly Optimal TP% Finder. Computes Pearson correlation between each feature and the best TP% for that hour. Strong correlations reveal which market conditions drive TP% selection."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8}}>
+        <div><label style={lS}>Ticker</label>
+          {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={Object.assign({},iS,{appearance:'auto'})}>
+            {availTickers.map(function(t){return <option key={t} value={t}>{t}</option>;})}
+          </select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
+        </div>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:10,background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'})}>{loading?'Analyzing...':'Run Correlation Analysis'}</button>
+      {prog&&<div style={{marginTop:8,color:C.purple,fontSize:10,fontFamily:F}}>{prog}</div>}
+      {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
+    </Cd>
+    {results&&<div>
+      <Cd glow={true}>
+        <div style={{display:'inline-block',background:'rgba(157,92,255,0.15)',border:'1px solid '+C.purple,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.purple,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>CORRELATION RESULTS | {results.ticker} | {results.days} DAYS | {results.dataPoints} DATA POINTS</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
+          <Mt label="Data Points" value={results.dataPoints} color={C.purple} size="lg"/>
+          <Mt label="Trading Days" value={results.days} color={C.blue} size="md"/>
+          <Mt label="Features" value={results.correlations.length} color={C.accent} size="md"/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
+          <Mt label="Avg Best TP%" value={results.yMean.toFixed(3)+'%'} color={C.gold} size="md"/>
+          <Mt label="Min Best TP%" value={results.yMin.toFixed(2)+'%'} color={C.txtDim} size="md"/>
+          <Mt label="Max Best TP%" value={results.yMax.toFixed(2)+'%'} color={C.txtDim} size="md"/>
+        </div>
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Key Findings" sub="Strongest predictors of optimal TP%"/>
+        {results.correlations.filter(function(c){return c.rAbs>=0.2;}).length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:12}}>No features with correlation above 0.2 found. More data or different market conditions may reveal stronger patterns.</div>}
+        {results.correlations.filter(function(c){return c.rAbs>=0.2;}).slice(0,5).map(function(c){
+          var direction=c.r>0?'increases':'decreases';
+          return <div key={c.feature} style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+strengthColor(c.r),marginBottom:8}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+              <span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{c.label}</span>
+              <span style={{color:strengthColor(c.r),fontSize:12,fontWeight:800,fontFamily:F}}>{(c.r>0?'+':'')+c.r.toFixed(3)}</span>
+            </div>
+            <div style={{display:'flex',gap:8,marginBottom:6}}>
+              <span style={{background:strengthColor(c.r)+'20',color:strengthColor(c.r),fontSize:7,fontFamily:F,fontWeight:700,padding:'2px 6px',borderRadius:3,textTransform:'uppercase'}}>{strengthLabel(c.r)}</span>
+              <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{c.n+' data points'}</span>
+            </div>
+            <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>
+              {'When '+c.label+' '+direction+', the optimal TP% tends to '+(c.r>0?'be higher (wider spreads)':'be lower (tighter spreads)')+'.'+(c.desc?' '+c.desc:'')}
+            </div>
+          </div>;
+        })}
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Full Correlation Matrix" sub="All features ranked by correlation strength with optimal TP%"/>
+        <div style={{overflowX:'auto',maxHeight:600}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Feature</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r (TP%)</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r (Profit)</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Strength</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>n</th>
+            </tr></thead>
+            <tbody>{results.correlations.map(function(c,idx){
+              var isStrong=c.rAbs>=0.4;var isMod=c.rAbs>=0.2;
+              return <tr key={c.feature} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
+                <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
+                <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
+                <td style={{padding:'5px 3px',color:strengthColor(c.r),textAlign:'right',fontWeight:700}}>{(c.r>0?'+':'')+c.r.toFixed(3)}</td>
+                <td style={{padding:'5px 3px',color:strengthColor(c.rProfit),textAlign:'right'}}>{(c.rProfit>0?'+':'')+c.rProfit.toFixed(3)}</td>
+                <td style={{padding:'5px 3px'}}><span style={{color:strengthColor(c.r),fontSize:6,fontWeight:700,textTransform:'uppercase'}}>{strengthLabel(c.r)}{c.r>0?' \u2191':' \u2193'}</span></td>
+                <td style={{padding:'5px 3px',color:C.txtDim,textAlign:'right'}}>{c.n}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </Cd>
+
+      {expandedFeat&&function(){
+        var c=null;for(var i=0;i<results.correlations.length;i++){if(results.correlations[i].feature===expandedFeat){c=results.correlations[i];break;}}
+        if(!c)return null;
+        // Bucket analysis: split X into quintiles, show avg TP% per bucket
+        var sorted=c.xVals.map(function(v,i){return{x:v,y:c.yVals[i]};}).sort(function(a,b){return a.x-b.x;});
+        var bucketSize=Math.ceil(sorted.length/5);
+        var buckets=[];
+        for(var bi=0;bi<5;bi++){
+          var start=bi*bucketSize;var end=Math.min(start+bucketSize,sorted.length);
+          if(start>=sorted.length)break;
+          var sumY=0,sumX=0,cnt=0;
+          for(var i=start;i<end;i++){sumX+=sorted[i].x;sumY+=sorted[i].y;cnt++;}
+          buckets.push({label:'Q'+(bi+1),avgX:sumX/cnt,avgY:sumY/cnt,minX:sorted[start].x,maxX:sorted[end-1].x,n:cnt});
+        }
+        var maxAvgY=0;for(var i=0;i<buckets.length;i++){if(buckets[i].avgY>maxAvgY)maxAvgY=buckets[i].avgY;}
+        return <Cd>
+          <SectionHead title={c.label+' Deep Dive'} sub={'Correlation: '+(c.r>0?'+':'')+c.r.toFixed(3)+' | '+c.n+' data points'}/>
+          {c.desc&&<div style={{padding:'8px 10px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10,fontSize:8,fontFamily:F,color:C.txt,lineHeight:1.6}}>{c.desc}</div>}
+          <div style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Quintile Analysis</div>
+          <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:8}}>Data split into 5 equal groups by {c.label} value. Shows average optimal TP% in each group.</div>
+          {buckets.map(function(b){
+            var pct=maxAvgY>0?(b.avgY/maxAvgY*100):0;
+            return <div key={b.label} style={{marginBottom:4}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:1}}>
+                <span>{b.label+': '+(typeof b.minX==='number'&&b.minX<1000?b.minX.toFixed(2):Math.round(b.minX).toLocaleString())+' - '+(typeof b.maxX==='number'&&b.maxX<1000?b.maxX.toFixed(2):Math.round(b.maxX).toLocaleString())}</span>
+                <span style={{color:C.txtBright,fontWeight:700}}>{'avg TP: '+b.avgY.toFixed(3)+'%'}</span>
+              </div>
+              <div style={{position:'relative',height:14,background:C.bgDeep,borderRadius:3}}>
+                <div style={{position:'absolute',left:0,top:0,bottom:0,width:pct+'%',background:'linear-gradient(90deg,'+C.purple+'80,'+C.accent+'80)',borderRadius:3,minWidth:pct>0?4:0}}></div>
+              </div>
+            </div>;
+          })}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+            <div style={{padding:8,background:C.bg,borderRadius:6,border:'1px solid '+C.border,textAlign:'center'}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,textTransform:'uppercase',marginBottom:2}}>Low {c.label}</div>
+              <div style={{color:C.gold,fontSize:12,fontWeight:800,fontFamily:F}}>{buckets[0].avgY.toFixed(3)+'%'}</div>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>avg optimal TP%</div>
+            </div>
+            <div style={{padding:8,background:C.bg,borderRadius:6,border:'1px solid '+C.border,textAlign:'center'}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,textTransform:'uppercase',marginBottom:2}}>High {c.label}</div>
+              <div style={{color:C.accent,fontSize:12,fontWeight:800,fontFamily:F}}>{buckets[buckets.length-1].avgY.toFixed(3)+'%'}</div>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>avg optimal TP%</div>
+            </div>
+          </div>
+          <div style={{marginTop:8,padding:'6px 10px',background:C.bg,borderRadius:6,fontSize:8,fontFamily:F,color:C.txt,lineHeight:1.6}}>
+            <span style={{color:C.purple,fontWeight:700}}>Interpretation: </span>
+            {Math.abs(c.r)<0.2?'This feature shows negligible correlation with optimal TP%. It does not appear to be a useful predictor on its own.':
+            c.r>0?'Higher '+c.label+' values are associated with higher optimal TP%. When '+c.label+' is in the top quintile ('+buckets[buckets.length-1].avgY.toFixed(3)+'%), the optimal TP% is '+(((buckets[buckets.length-1].avgY-buckets[0].avgY)/buckets[0].avgY)*100).toFixed(0)+'% higher than the bottom quintile ('+buckets[0].avgY.toFixed(3)+'%).':
+            'Higher '+c.label+' values are associated with lower optimal TP%. When '+c.label+' is in the top quintile ('+buckets[buckets.length-1].avgY.toFixed(3)+'%), the optimal TP% is '+Math.abs(((buckets[buckets.length-1].avgY-buckets[0].avgY)/buckets[0].avgY)*100).toFixed(0)+'% lower than the bottom quintile ('+buckets[0].avgY.toFixed(3)+'%).'}
+          </div>
+        </Cd>;
+      }()}
+
+      <Cd>
+        <SectionHead title="Correlation Guide" sub="How to interpret these results"/>
+        <div style={{fontSize:8,fontFamily:F,color:C.txt,lineHeight:1.8}}>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>r = +1.0:</span> Perfect positive correlation. As the feature increases, optimal TP% always increases proportionally.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.warn,fontWeight:700}}>r = -1.0:</span> Perfect negative correlation. As the feature increases, optimal TP% always decreases.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.txtDim,fontWeight:700}}>r = 0.0:</span> No linear relationship. The feature has no predictive value for TP%.</p>
+          <p style={{marginBottom:8}}><span style={{color:C.txtBright,fontWeight:700}}>Practical thresholds:</span></p>
+          <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'2px 12px',paddingLeft:8}}>
+            <span style={{color:C.accent,fontWeight:700}}>|r| 0.7+</span><span>Strong -- feature is a reliable predictor</span>
+            <span style={{color:C.gold,fontWeight:700}}>|r| 0.4-0.7</span><span>Moderate -- useful signal, combine with others</span>
+            <span style={{color:C.blue,fontWeight:700}}>|r| 0.2-0.4</span><span>Weak -- minor signal, may help in ensemble</span>
+            <span style={{color:C.txtDim,fontWeight:700}}>|r| 0-0.2</span><span>Negligible -- not useful as standalone predictor</span>
+          </div>
+          <p style={{marginTop:8,color:C.txtDim}}>Two r values are shown: <span style={{color:C.txtBright}}>r (TP%)</span> = correlation with the best TP% value, <span style={{color:C.txtBright}}>r (Profit)</span> = correlation with the net profit at that TP%. A feature may predict which TP% is best without predicting how profitable it will be, or vice versa.</p>
+          <p style={{marginTop:4,color:C.txtDim}}>Tap any row in the matrix to see a quintile deep-dive with average optimal TP% across different ranges of that feature.</p>
+        </div>
+      </Cd>
+    </div>}
+  </div>;
+}
+
 function AIAgentsOverviewPage(p){
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -5700,7 +5952,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -5714,6 +5966,7 @@ function App(){
     {page==='features'&&<FeaturesListPage onBack={function(){setPage('objectives');}}/>}
     {page==='aiagents'&&<AIAgentsOverviewPage onBack={function(){setPage('objectives');}}/>}
     {page==='builddata'&&<BuildDataSetPage apiKey={pgKey} onBack={function(){setPage('objectives');}}/>}
+    {page==='corrfinder'&&<CorrelationFinderPage onBack={function(){setPage('objectives');}}/>}
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='adaptive'&&<AdaptiveOptPage onBack={function(){setPage('main');}}/>}
