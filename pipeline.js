@@ -468,6 +468,7 @@ async function runNightly(tickers) {
 
   for (var ticker of tickers) {
     console.log(`\n[NIGHTLY] ${ticker} ${date}`);
+    await reportProgress({ mode: 'nightly', ticker, status: 'running', current_day: date, current_stage: 'fetch', message: 'Nightly: ' + ticker + ' ' + date });
 
     // 1. Fetch ticks
     console.log('  Fetching ticks...');
@@ -578,6 +579,7 @@ async function runHourly(tickers) {
 
   for (var ticker of tickers) {
     console.log(`\n[HOURLY] ${ticker} ${todayStr} hour ${prevHour} -> predict hour ${etHour}`);
+    await reportProgress({ mode: 'hourly', ticker, status: 'running', current_day: todayStr, current_stage: 'fetch', message: 'Hourly: ' + ticker + ' H' + prevHour + ' -> predict H' + etHour });
 
     // 1. Fetch just the previous hour ticks
     console.log('  Fetching hour ' + prevHour + ' ticks...');
@@ -704,6 +706,24 @@ async function checkExisting(ticker, date) {
   } catch (e) { return { hasFeatures: false, hasOptimal: false, hasAnalyses: false }; }
 }
 
+// ── Progress Reporting ───────────────────────────────────
+var RUN_ID = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
+async function reportProgress(data) {
+  try {
+    var row = Object.assign({ run_id: RUN_ID, updated_at: new Date().toISOString() }, data);
+    // Try update first, then insert
+    var r = await fetch(SB_URL + '/rest/v1/pipeline_status?run_id=eq.' + RUN_ID, { method: 'GET', headers: sbHeaders() });
+    var existing = await r.json();
+    if (existing.length > 0) {
+      await fetch(SB_URL + '/rest/v1/pipeline_status?run_id=eq.' + RUN_ID, { method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(row) });
+    } else {
+      row.started_at = new Date().toISOString();
+      await fetch(SB_URL + '/rest/v1/pipeline_status', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
+    }
+  } catch (e) { /* don't let progress reporting crash the pipeline */ }
+}
+
 // ── Trading Days ─────────────────────────────────────────
 function getTradingDays(start, end) {
   var days = [];
@@ -727,6 +747,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
 
   var stats = { processed: 0, skipped: 0, noData: 0, errors: 0, totalTicks: 0 };
   var startTime = Date.now();
+  await reportProgress({ mode: 'backfill', ticker: tickers.join(','), status: 'running', days_total: days.length * tickers.length, message: 'Starting backfill: ' + tickers.join(',') + ' ' + startDate + ' to ' + endDate });
 
   for (var ti = 0; ti < tickers.length; ti++) {
     var ticker = tickers[ti];
@@ -747,6 +768,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         if (existing.hasFeatures && existing.hasOptimal && existing.hasAnalyses) {
           console.log('  SKIP: already complete in database');
           stats.skipped++;
+          await reportProgress({ current_day: date, ticker, progress_pct: pct, days_processed: stats.processed, days_skipped: stats.skipped, current_stage: 'skip', message: ticker + ' ' + date + ': skipped (already in DB)' });
           // Still fetch prev day close for next day's gap calculation
           try {
             var prevR = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=day_close&limit=1');
@@ -770,9 +792,11 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
       if (trades.length < 100) {
         console.log('  SKIP: too few ticks (holiday/no data)');
         stats.noData++;
+        await reportProgress({ current_day: date, ticker, progress_pct: pct, days_processed: stats.processed, current_stage: 'no_data', message: ticker + ' ' + date + ': no data (holiday?)' });
         continue;
       }
       stats.totalTicks += trades.length;
+      await reportProgress({ current_day: date, ticker, progress_pct: pct, total_ticks: stats.totalTicks, current_stage: 'fetched', message: ticker + ' ' + date + ': ' + trades.length.toLocaleString() + ' ticks fetched' });
 
       // 2. Get prev day close (for first day only)
       if (prevDayClose === null && di === 0) {
@@ -821,6 +845,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
           }
         }
         console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
+        await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage1', message: ticker + ' ' + date + ': Stage 1 done (' + result.summary.totalCycles + ' cycles)' });
 
         // Save cached_seasonality
         console.log('  Stage 1: Seasonality...');
@@ -853,6 +878,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
           }
         }
         console.log('  Stage 2: ' + optRows.length + ' rows');
+        await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 done (100 TP% x 16 hrs)' });
         await fetch(SB_URL + '/rest/v1/optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date, { method: 'DELETE', headers: sbHeaders() });
         await sbUpsert('optimal_tp_hourly', optRows);
 
@@ -874,10 +900,12 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         prevDayClose = trades[trades.length - 1].price;
         stats.processed++;
         console.log('  DONE: Stages 1+2+3 complete');
+        await reportProgress({ current_day: date, ticker, progress_pct: pct, days_processed: stats.processed, total_ticks: stats.totalTicks, current_stage: 'complete', message: ticker + ' ' + date + ': all stages complete' });
 
       } catch (e) {
         console.log('  ERROR: ' + e.message);
         stats.errors++;
+        await reportProgress({ current_day: date, ticker, progress_pct: pct, days_error: stats.errors, current_stage: 'error', message: ticker + ' ' + date + ': ERROR - ' + e.message });
       }
 
       // Rate limit pause between days
@@ -895,6 +923,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
   console.log(`  Total ticks: ${stats.totalTicks.toLocaleString()}`);
   console.log(`  Time: ${totalElapsed}s (${Math.round(totalElapsed / 60)}m)`);
   console.log(`${'='.repeat(50)}`);
+  await reportProgress({ status: 'complete', progress_pct: 100, days_processed: stats.processed, days_skipped: stats.skipped, days_error: stats.errors, total_ticks: stats.totalTicks, current_stage: 'done', message: 'Complete: ' + stats.processed + ' processed, ' + stats.skipped + ' skipped, ' + stats.errors + ' errors. ' + Math.round(totalElapsed / 60) + 'm' });
 }
 
 // ── CLI Entry Point ──────────────────────────────────────

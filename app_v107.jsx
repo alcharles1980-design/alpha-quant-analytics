@@ -6798,6 +6798,24 @@ function HourlyPredictionPage(p){
   var sb1=useState('2026-01-02'),bfStart=sb1[0],setBfStart=sb1[1];
   var sb2=useState(new Date().toISOString().slice(0,10)),bfEnd=sb2[0],setBfEnd=sb2[1];
   var sb3=useState(''),bfStatus=sb3[0],setBfStatus=sb3[1];
+  var sb4=useState(null),pipelineProgress=sb4[0],setPipelineProgress=sb4[1];
+  var pollRef=useRef(null);
+
+  var startPolling=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?order=updated_at.desc&limit=1',{headers:getSbHeaders()});
+        var d=await r.json();
+        if(d.length){
+          setPipelineProgress(d[0]);
+          if(d[0].status==='complete'||d[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;}
+        }
+      }catch(e){}
+    },3000);
+  };
+
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
@@ -7009,7 +7027,7 @@ function HourlyPredictionPage(p){
           setErr(null);setProg('Triggering nightly pipeline...');
           try{
             var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'nightly',tickers:ticker}})});
-            if(r.status===204)setProg('Nightly pipeline triggered for '+ticker+'. Check GitHub Actions for progress.');
+            if(r.status===204){setProg('Nightly pipeline triggered for '+ticker);startPolling();}
             else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
           }catch(e2){setErr('GitHub trigger failed: '+e2.message);}
         }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff'})}>Trigger Nightly</button>
@@ -7018,7 +7036,7 @@ function HourlyPredictionPage(p){
           setErr(null);setProg('Triggering hourly pipeline...');
           try{
             var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'hourly',tickers:ticker}})});
-            if(r.status===204)setProg('Hourly pipeline triggered for '+ticker+'. Check GitHub Actions for progress.');
+            if(r.status===204){setProg('Hourly pipeline triggered for '+ticker);startPolling();}
             else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
           }catch(e2){setErr('GitHub trigger failed: '+e2.message);}
         }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#3d9eff,#2070d0)',color:'#fff'})}>Trigger Hourly</button>
@@ -7043,11 +7061,32 @@ function HourlyPredictionPage(p){
         setErr(null);setBfStatus('Triggering backfill...');
         try{
           var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'backfill',tickers:ticker,start_date:bfStart,end_date:bfEnd,force:'false'}})});
-          if(r.status===204)setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+'. Stages 1+2+3 running on GitHub. Check Actions tab for progress.');
+          if(r.status===204){setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+'. Stages 1+2+3 running on GitHub. Check Actions tab for progress.');startPolling();}
           else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setBfStatus('');}
         }catch(e2){setErr('GitHub trigger failed: '+e2.message);setBfStatus('');}
       }} style={Object.assign({},bB,{marginTop:10,background:'linear-gradient(135deg,#ff8c00,#e06000)',color:'#fff'})}>Run Backfill on GitHub</button>
       {bfStatus&&<div style={{color:C.accent,fontSize:8,fontFamily:F,marginTop:6}}>{bfStatus}</div>}
+      {pipelineProgress&&<div style={{marginTop:10,padding:10,background:C.bg,borderRadius:6,border:'1px solid '+(pipelineProgress.status==='complete'?C.accent:pipelineProgress.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+          <span style={{color:pipelineProgress.status==='complete'?C.accent:pipelineProgress.status==='error'?C.warn:C.purple,fontSize:8,fontWeight:700,fontFamily:F,textTransform:'uppercase'}}>{pipelineProgress.status==='complete'?'\u2713 Complete':pipelineProgress.status==='error'?'\u2717 Error':'\u25CF Running'}</span>
+          <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{pipelineProgress.mode} | {pipelineProgress.ticker}</span>
+        </div>
+        <div style={{width:'100%',height:6,background:C.border,borderRadius:3,marginBottom:6,overflow:'hidden'}}>
+          <div style={{width:(pipelineProgress.progress_pct||0)+'%',height:'100%',background:pipelineProgress.status==='complete'?C.accent:pipelineProgress.status==='error'?C.warn:'linear-gradient(90deg,'+C.purple+','+C.blue+')',borderRadius:3,transition:'width 0.5s'}}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:C.txtBright,fontSize:8,fontFamily:F,fontWeight:700}}>{pipelineProgress.progress_pct||0}%</span>
+          <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{pipelineProgress.current_stage==='stage1'?'Stage 1: Cycles':pipelineProgress.current_stage==='stage2'?'Stage 2: TP% Scan':pipelineProgress.current_stage==='stage3'?'Stage 3: Features':pipelineProgress.current_stage==='fetched'?'Fetching ticks':pipelineProgress.current_stage==='complete'?'All stages done':pipelineProgress.current_stage==='skip'?'Skipped':pipelineProgress.current_stage||''}</span>
+        </div>
+        <div style={{color:C.txt,fontSize:7,fontFamily:F,marginBottom:4}}>{pipelineProgress.message}</div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {pipelineProgress.days_processed>0&&<span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u2713 '}{pipelineProgress.days_processed} processed</span>}
+          {pipelineProgress.days_skipped>0&&<span style={{color:C.gold,fontSize:7,fontFamily:F}}>{'\u21B7 '}{pipelineProgress.days_skipped} skipped</span>}
+          {pipelineProgress.days_error>0&&<span style={{color:C.warn,fontSize:7,fontFamily:F}}>{'\u2717 '}{pipelineProgress.days_error} errors</span>}
+          {pipelineProgress.total_ticks>0&&<span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{Number(pipelineProgress.total_ticks).toLocaleString()} ticks</span>}
+        </div>
+      </div>}
+      <div style={{marginTop:6}}><button onClick={function(){startPolling();}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:7,fontFamily:F,padding:'4px 8px',cursor:'pointer'}}>Refresh Progress</button></div>
       <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:8,lineHeight:1.6}}>
         <p>Runs on GitHub Actions (7GB RAM, 6hr max). Processes each day: fetch ticks from Polygon, run cycle analysis (Stage 1), scan 100 TP% x 16 hours (Stage 2), extract 32+ features (Stage 3). Skips days already in database. Heavy stocks like SOXL (250K+ ticks/day) work fine on GitHub but crash in browser.</p>
       </div>
