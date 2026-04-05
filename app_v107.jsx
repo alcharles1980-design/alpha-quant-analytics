@@ -6774,6 +6774,339 @@ function RawDataPage(p){
   </div>;
 }
 
+function HourlyPredictionPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(''),prog=s4[0],setProg=s4[1];
+  var s5=useState(null),results=s5[0],setResults=s5[1];
+  var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
+  var s7=useState(5),topN=s7[0],setTopN=s7[1];
+  var s8=useState(80),trainPct=s8[0],setTrainPct=s8[1];
+
+  useEffect(function(){
+    if(!SB_URL||!SB_KEY)return;
+    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&limit=1000',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){
+      var u={};for(var i=0;i<d.length;i++)u[d[i].ticker]=true;setAvailTickers(Object.keys(u).sort());
+    }).catch(function(){});
+  },[]);
+
+  var run=async function(){
+    if(!SB_URL||!SB_KEY){setErr('No Supabase config');return;}
+    if(!ticker){setErr('Select a ticker');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Loading features...');
+    try{
+      var h=getSbHeaders();
+      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:Object.assign({},h,{'Range':'0-49999'})});
+      var features=r1.ok?await r1.json():[];
+      if(!features.length){setErr('No feature data for '+ticker);setLoading(false);return;}
+      setProg('Loading optimal TP% (paginated)...');
+      var optRows=[];var optOffset=0;
+      while(true){
+        var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit=1000&offset='+optOffset,{headers:getSbHeaders()});
+        var batch=r2.ok?await r2.json():[];
+        if(!batch.length)break;
+        for(var bi=0;bi<batch.length;bi++)optRows.push(batch[bi]);
+        if(optRows.length%5000<1000)setProg('Loading optimal TP%... '+optRows.length+' rows');
+        if(batch.length<1000)break;
+        optOffset+=1000;
+      }
+      if(!optRows.length){setErr('No optimal TP% data');setLoading(false);return;}
+      setProg('Building prediction model ('+optRows.length+' optimal rows)...');
+      // Build bestTP lookup
+      var bestTP={};
+      for(var i=0;i<optRows.length;i++){var ok=optRows[i].trade_date+'|'+optRows[i].hour;if(!bestTP[ok])bestTP[ok]={tp:optRows[i].tp_pct,np:optRows[i].net_profit};}
+      // Build allTP lookup for test evaluation
+      var allTP={};
+      for(var i=0;i<optRows.length;i++){var ok2=optRows[i].trade_date+'|'+optRows[i].hour+'|'+optRows[i].tp_pct;allTP[ok2]=optRows[i].net_profit;}
+      // Join features with best TP%
+      var joined=[];var dates={};
+      for(var i=0;i<features.length;i++){
+        var fk=features[i].trade_date+'|'+features[i].hour;
+        if(bestTP[fk]){
+          var row=Object.assign({},features[i]);
+          row.best_tp_pct=bestTP[fk].tp;row.best_net_profit=bestTP[fk].np;
+          // Prev hour features
+          if(joined.length>0&&joined[joined.length-1].trade_date===row.trade_date){
+            var ph=joined[joined.length-1];
+            row.prev_hour_atr_pct=parseFloat(ph.hour_atr_pct)||null;
+            row.prev_hour_volume=parseFloat(ph.hour_volume)||null;
+            row.prev_hour_trades=parseFloat(ph.hour_trades)||null;
+            row.prev_hour_realized_vol=parseFloat(ph.hour_realized_vol)||null;
+            row.prev_hour_reversal_rate=parseFloat(ph.hour_reversal_rate)||null;
+            row.prev_hour_trade_intensity=parseFloat(ph.hour_trade_intensity)||null;
+            row.prev_hour_avg_trade_size=parseFloat(ph.hour_avg_trade_size)||null;
+            row.prev_hour_oscillation_score=parseFloat(ph.hour_oscillation_score)||null;
+            row.prev_hour_ece=parseFloat(ph.hour_ece_pct)||null;
+            row.prev_hour_best_tp=ph.best_tp_pct;
+          }
+          // Derived
+          var isRth=(parseInt(row.hour)>=9&&parseInt(row.hour)<16)?1:0;
+          row.is_rth=isRth;
+          row.hour_vol_pct_of_day=(parseFloat(row.hour_volume)||0)/(parseFloat(row.day_volume)||1)*100;
+          joined.push(row);dates[row.trade_date]=true;
+        }
+      }
+      if(joined.length<10){setErr('Only '+joined.length+' data points. Need 10+.');setLoading(false);return;}
+      var dayList=Object.keys(dates).sort();
+      var trainDays=Math.max(3,Math.floor(dayList.length*trainPct/100));
+      var trainDateSet={};for(var di=0;di<trainDays;di++)trainDateSet[dayList[di]]=true;
+      var train=[];var test=[];
+      for(var i=0;i<joined.length;i++){
+        if(trainDateSet[joined[i].trade_date])train.push(joined[i]);else test.push(joined[i]);
+      }
+      if(train.length<5){setErr('Training set too small ('+train.length+' points)');setLoading(false);return;}
+      if(test.length<1){setErr('No test data. Increase date range or decrease train %.');setLoading(false);return;}
+      setProg('Selecting top '+topN+' leadable features...');
+      // Compute correlations on training set for leadable features only
+      var leadableKeys=['is_rth','prev_hour_atr_pct','prev_hour_volume','prev_hour_trades','prev_hour_realized_vol','prev_hour_reversal_rate','prev_hour_trade_intensity','prev_hour_avg_trade_size','prev_hour_oscillation_score','prev_hour_ece','prev_hour_best_tp','overnight_gap_pct','vix_close','day_of_week','hour','cumulative_volume_pct','price_vs_day_open_pct','intraday_range_pct','hour_vol_pct_of_day'];
+      var pearson=function(x,y){if(x.length<3)return 0;var n=x.length,sx=0,sy=0,sxy=0,sx2=0,sy2=0;for(var i=0;i<n;i++){sx+=x[i];sy+=y[i];sxy+=x[i]*y[i];sx2+=x[i]*x[i];sy2+=y[i]*y[i];}var num=n*sxy-sx*sy;var d1=n*sx2-sx*sx;var d2=n*sy2-sy*sy;return(d1>0&&d2>0)?num/Math.sqrt(d1*d2):0;};
+      var featureCorrs=[];
+      for(var fi=0;fi<leadableKeys.length;fi++){
+        var fKey=leadableKeys[fi];
+        var xv=[],yp=[];
+        for(var ti=0;ti<train.length;ti++){
+          var v=parseFloat(train[ti][fKey]);
+          if(!isNaN(v)&&v!==null){xv.push(v);yp.push(train[ti].best_net_profit);}
+        }
+        if(xv.length>=5){var rP=pearson(xv,yp);var rT=pearson(xv,yp.map(function(_,i){return train.filter(function(t2){var v2=parseFloat(t2[fKey]);return!isNaN(v2);})[i].best_tp_pct;}));featureCorrs.push({key:fKey,rProfit:rP,rTp:rT,n:xv.length});}
+      }
+      featureCorrs.sort(function(a,b){return Math.abs(b.rProfit)-Math.abs(a.rProfit);});
+      var selectedFeatures=featureCorrs.slice(0,topN);
+      setProg('Building quintile lookup tables...');
+      // Build quintile boundaries for each selected feature from training data
+      for(var si=0;si<selectedFeatures.length;si++){
+        var sf=selectedFeatures[si];
+        var vals=[];
+        for(var ti=0;ti<train.length;ti++){var v=parseFloat(train[ti][sf.key]);if(!isNaN(v))vals.push({v:v,tp:train[ti].best_tp_pct,np:train[ti].best_net_profit});}
+        vals.sort(function(a,b){return a.v-b.v;});
+        var quintiles=[];
+        for(var qi=0;qi<5;qi++){
+          var qStart=Math.floor(vals.length*qi/5);var qEnd=Math.floor(vals.length*(qi+1)/5);
+          var qVals=vals.slice(qStart,qEnd);
+          var tpSum=0,npSum=0;for(var qj=0;qj<qVals.length;qj++){tpSum+=qVals[qj].tp;npSum+=qVals[qj].np;}
+          quintiles.push({q:qi+1,min:qVals[0].v,max:qVals[qVals.length-1].v,avgTp:tpSum/qVals.length,avgProfit:npSum/qVals.length,n:qVals.length});
+        }
+        sf.quintiles=quintiles;
+        sf.allVals=vals;
+      }
+      setProg('Running backtest on '+test.length+' test points...');
+      // Predict for each test point
+      var predictions=[];var flatProfit=0;var predictedProfit=0;var actualProfit=0;
+      // Find best flat TP% from training data
+      var flatTpCounts={};
+      for(var ti=0;ti<train.length;ti++){var tp=train[ti].best_tp_pct;flatTpCounts[tp]=(flatTpCounts[tp]||0)+1;}
+      var flatTp=null;var flatMax=0;
+      for(var tp in flatTpCounts){if(flatTpCounts[tp]>flatMax){flatMax=flatTpCounts[tp];flatTp=parseFloat(tp);}}
+      // Actually compute best flat by total profit
+      var flatTpProfit={};
+      for(var ti=0;ti<train.length;ti++){
+        var dt=train[ti].trade_date;var hr=train[ti].hour;
+        // For each TP%, sum profit across all training points
+      }
+      // Simpler: median best TP% from training
+      var trainTps=[];for(var ti=0;ti<train.length;ti++)trainTps.push(train[ti].best_tp_pct);
+      trainTps.sort(function(a,b){return a-b;});
+      flatTp=trainTps[Math.floor(trainTps.length/2)];
+
+      for(var ti2=0;ti2<test.length;ti2++){
+        var pt=test[ti2];
+        // Predict: average quintile TP% across selected features
+        var tpPreds=[];var profPreds=[];
+        for(var si2=0;si2<selectedFeatures.length;si2++){
+          var sf2=selectedFeatures[si2];
+          var val=parseFloat(pt[sf2.key]);
+          if(isNaN(val))continue;
+          // Find which quintile this value falls in
+          for(var qi2=0;qi2<sf2.quintiles.length;qi2++){
+            var q=sf2.quintiles[qi2];
+            if(val<=q.max||qi2===4){tpPreds.push(q.avgTp);profPreds.push(q.avgProfit);break;}
+          }
+        }
+        var predTp=null;
+        if(tpPreds.length>0){var s=0;for(var pi=0;pi<tpPreds.length;pi++)s+=tpPreds[pi];predTp=Math.round(s/tpPreds.length*100)/100;}
+        // Lookup actual profit at predicted TP% and flat TP%
+        var dk=pt.trade_date+'|'+pt.hour;
+        // Find closest available TP% to predicted
+        var predNp=0;var flatNp=0;var actualNp=pt.best_net_profit;
+        if(predTp!==null){
+          // Search allTP for closest match
+          var bestDist=Infinity;
+          for(var tpSearch=0.01;tpSearch<=1.0;tpSearch+=0.01){
+            var tpR=Math.round(tpSearch*100)/100;
+            var lk=dk+'|'+tpR;
+            if(allTP[lk]!==undefined&&Math.abs(tpR-predTp)<bestDist){bestDist=Math.abs(tpR-predTp);predNp=allTP[lk];}
+          }
+        }
+        var flatLk=dk+'|'+flatTp;
+        if(allTP[flatLk]!==undefined)flatNp=allTP[flatLk];
+        predictedProfit+=predNp;flatProfit+=flatNp;actualProfit+=actualNp;
+        predictions.push({date:pt.trade_date,hour:pt.hour,predTp:predTp,actualTp:pt.best_tp_pct,predProfit:predNp,flatProfit:flatNp,actualProfit:actualNp});
+      }
+      // Build cumulative profit series
+      var cumPred=0,cumFlat=0,cumActual=0;
+      var cumSeries=[];
+      for(var ci=0;ci<predictions.length;ci++){
+        cumPred+=predictions[ci].predProfit;cumFlat+=predictions[ci].flatProfit;cumActual+=predictions[ci].actualProfit;
+        cumSeries.push({idx:ci,pred:Math.round(cumPred*100)/100,flat:Math.round(cumFlat*100)/100,actual:Math.round(cumActual*100)/100});
+      }
+      var edge=predictedProfit-flatProfit;var edgePct=flatProfit!==0?((edge/Math.abs(flatProfit))*100):0;
+      var captureRate=actualProfit!==0?((predictedProfit/actualProfit)*100):0;
+      setResults({
+        selectedFeatures:selectedFeatures,predictions:predictions,cumSeries:cumSeries,
+        trainDays:trainDays,testDays:dayList.length-trainDays,trainPoints:train.length,testPoints:test.length,
+        predictedProfit:Math.round(predictedProfit*100)/100,flatProfit:Math.round(flatProfit*100)/100,actualProfit:Math.round(actualProfit*100)/100,
+        edge:Math.round(edge*100)/100,edgePct:Math.round(edgePct*10)/10,captureRate:Math.round(captureRate*10)/10,
+        flatTp:flatTp,ticker:ticker,dayList:dayList
+      });
+      setProg('');setLoading(false);
+    }catch(e){setErr(e.message);setProg('');setLoading(false);}
+  };
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
+  var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Hourly TP% Predictor</div>
+    </div>
+
+    <Cd>
+      <SectionHead title="Regime Lookup Predictor" sub="Predict next hour optimal TP% using quintile-based feature lookup"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.6,marginBottom:10}}>
+        <p>Splits historical data into train/test. For each top leadable feature, groups training data into 5 quintiles and records average optimal TP% per quintile. At prediction time, looks up which quintile each current feature value falls in, averages across features.</p>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8}}>
+        <div><label style={lS}>Ticker</label>
+          {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={iS}><option value="">Select...</option>{availTickers.map(function(t){return <option key={t} value={t}>{t}</option>;})}</select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Top N Features</label><select value={topN} onChange={function(e){setTopN(parseInt(e.target.value));}} style={iS}><option value="3">3</option><option value="5">5</option><option value="7">7</option><option value="10">10</option></select></div>
+        <div><label style={lS}>Train %</label><select value={trainPct} onChange={function(e){setTrainPct(parseInt(e.target.value));}} style={iS}><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></div>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:10,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Run Backtest'}</button>
+      {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6,animation:'pulse 1.5s infinite'}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+
+    {results&&<div>
+      <Cd glow>
+        <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | TRAIN '+results.trainDays+' DAYS | TEST '+results.testDays+' DAYS | '+results.testPoints+' PREDICTIONS'}</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+          <Mt label="Predicted Profit" value={'$'+results.predictedProfit.toFixed(2)} color={results.edge>0?C.accent:C.warn} size="lg"/>
+          <Mt label="Flat TP% Profit" value={'$'+results.flatProfit.toFixed(2)} color={C.gold} size="lg"/>
+          <Mt label="Actual Best" value={'$'+results.actualProfit.toFixed(2)} color={C.blue} size="md"/>
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+          <Mt label="Edge vs Flat" value={(results.edge>0?'+':'')+'$'+results.edge.toFixed(2)} color={results.edge>0?C.accent:C.warn} size="md"/>
+          <Mt label="Edge %" value={(results.edgePct>0?'+':'')+results.edgePct.toFixed(1)+'%'} color={results.edgePct>0?C.accent:C.warn} size="md"/>
+          <Mt label="Capture Rate" value={results.captureRate.toFixed(1)+'%'} color={C.purple} size="md"/>
+          <Mt label="Flat TP%" value={results.flatTp+'%'} color={C.txtDim} size="md"/>
+        </div>
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Cumulative Profit: Predicted vs Flat vs Actual" sub="Out-of-sample backtest on test period"/>
+        <div style={{height:200,marginTop:8}}>
+          {typeof Recharts!=='undefined'&&React.createElement(Recharts.ResponsiveContainer,{width:'100%',height:'100%'},
+            React.createElement(Recharts.LineChart,{data:results.cumSeries,margin:{top:5,right:5,left:5,bottom:5}},
+              React.createElement(Recharts.XAxis,{dataKey:'idx',tick:false}),
+              React.createElement(Recharts.YAxis,{tick:{fontSize:7,fill:C.txtDim},width:45}),
+              React.createElement(Recharts.Tooltip,{contentStyle:{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,fontSize:8,fontFamily:F},labelFormatter:function(v){var pt=results.predictions[v];return pt?pt.date+' H'+pt.hour:'';}}),
+              React.createElement(Recharts.Line,{type:'monotone',dataKey:'pred',stroke:C.accent,dot:false,strokeWidth:2,name:'Predicted'}),
+              React.createElement(Recharts.Line,{type:'monotone',dataKey:'flat',stroke:C.gold,dot:false,strokeWidth:2,name:'Flat'}),
+              React.createElement(Recharts.Line,{type:'monotone',dataKey:'actual',stroke:C.blue,dot:false,strokeWidth:1,strokeDasharray:'4 2',name:'Actual Best'})
+            )
+          )}
+        </div>
+        <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:6}}>
+          <span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u25CF'} Predicted</span>
+          <span style={{color:C.gold,fontSize:7,fontFamily:F}}>{'\u25CF'} Flat ({results.flatTp}%)</span>
+          <span style={{color:C.blue,fontSize:7,fontFamily:F}}>{'\u25CF'} Actual Best</span>
+        </div>
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Selected Features" sub={'Top '+results.selectedFeatures.length+' leadable features by r(Profit) on training set'}/>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,marginTop:8}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Feature</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r(Profit)</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>n</th>
+          </tr></thead>
+          <tbody>{results.selectedFeatures.map(function(sf,idx){
+            return <tr key={sf.key} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'4px 3px',color:C.txtDim}}>{idx+1}</td>
+              <td style={{padding:'4px 3px',color:C.txtBright,fontWeight:700}}>{sf.key}</td>
+              <td style={{padding:'4px 3px',color:sf.rProfit>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{(sf.rProfit>0?'+':'')+sf.rProfit.toFixed(3)}</td>
+              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{sf.n}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </Cd>
+
+      {results.selectedFeatures.map(function(sf,idx){
+        return <Cd key={sf.key}>
+          <SectionHead title={'Quintile Lookup: '+sf.key} sub={'r(Profit) = '+(sf.rProfit>0?'+':'')+sf.rProfit.toFixed(3)}/>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,marginTop:6}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'left'}}>Q</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Range</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Avg TP%</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Avg Profit</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>n</th>
+            </tr></thead>
+            <tbody>{sf.quintiles.map(function(q){
+              var maxProfit=Math.max.apply(null,sf.quintiles.map(function(qq){return qq.avgProfit;}));
+              var isBest=q.avgProfit===maxProfit;
+              return <tr key={q.q} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.08)':'transparent'}}>
+                <td style={{padding:'4px 3px',color:isBest?C.accent:C.txt,fontWeight:isBest?700:400}}>{'Q'+q.q}</td>
+                <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{q.min.toFixed(2)+' - '+q.max.toFixed(2)}</td>
+                <td style={{padding:'4px 3px',color:C.gold,textAlign:'right',fontWeight:700}}>{q.avgTp.toFixed(3)+'%'}</td>
+                <td style={{padding:'4px 3px',color:q.avgProfit>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+q.avgProfit.toFixed(2)}</td>
+                <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{q.n}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </Cd>;
+      })}
+
+      <Cd>
+        <SectionHead title="Prediction Detail" sub="Per-hour predicted vs actual TP% and profit"/>
+        <div style={{overflowX:'auto',maxHeight:400}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Hr</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Pred TP%</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Actual TP%</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Pred $</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Flat $</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Best $</th>
+            </tr></thead>
+            <tbody>{results.predictions.map(function(pr,idx){
+              var won=pr.predProfit>pr.flatProfit;
+              return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:won?'rgba(0,229,160,0.04)':'transparent'}}>
+                <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{pr.date}</td>
+                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{pr.hour}</td>
+                <td style={{padding:'3px',color:C.purple,textAlign:'right',fontWeight:700}}>{pr.predTp!==null?pr.predTp.toFixed(2)+'%':'--'}</td>
+                <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{pr.actualTp.toFixed(2)+'%'}</td>
+                <td style={{padding:'3px',color:pr.predProfit>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+pr.predProfit.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+pr.flatProfit.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{'$'+pr.actualProfit.toFixed(2)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </Cd>
+    </div>}
+  </div>;
+}
+
 function App(){
   var AreaChart=RC.AreaChart||null,Area=RC.Area||null,XAxis=RC.XAxis||null,YAxis=RC.YAxis||null,CartesianGrid=RC.CartesianGrid||null,RTooltip=RC.Tooltip||null,ResponsiveContainer=RC.ResponsiveContainer||null;
   var hasCharts=!!RC.AreaChart;
@@ -7020,7 +7353,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -7035,6 +7368,7 @@ function App(){
     {page==='aiagents'&&<AIAgentsOverviewPage onBack={function(){setPage('objectives');}}/>}
     {page==='builddata'&&<BuildDataSetPage apiKey={pgKey} onBack={function(){setPage('objectives');}}/>}
     {page==='corrfinder'&&<CorrelationFinderPage onBack={function(){setPage('objectives');}}/>}
+    {page==='predict'&&<HourlyPredictionPage onBack={function(){setPage('objectives');}}/>}
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='adaptive'&&<AdaptiveOptPage onBack={function(){setPage('main');}}/>}
