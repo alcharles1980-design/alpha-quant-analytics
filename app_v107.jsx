@@ -7231,8 +7231,12 @@ function App(){
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
-  var GH_TOKEN_DEFAULT=(function(){try{var s=localStorage.getItem('aq_gh_token');if(s)return s;}catch(e){}return '';})();
+  var GH_TOKEN_DEFAULT='';
   var sGh=useState(GH_TOKEN_DEFAULT),ghToken=sGh[0],setGhToken=sGh[1];
+  useEffect(function(){
+    if(!SB_URL||!SB_KEY)return;
+    fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setGhToken(d[0].value);}).catch(function(){});
+  },[]);
   var s8=useState(false),ld=s8[0],setLd=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
   var s10=useState(null),err=s10[0],setErr=s10[1];
@@ -7481,7 +7485,7 @@ function App(){
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('main');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
-    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);try{localStorage.setItem('aq_gh_token',t);}catch(e){}}} onBack={function(){setPage('main');}}/>}
+    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}
