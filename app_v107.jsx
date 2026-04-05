@@ -4502,7 +4502,7 @@ function BuildDataSetPage(p){
           // Shannon entropy of return directions (normalized 0-1)
           var retEntropy=null;
           var entTotal=hEntUp[h]+hEntDown[h]+hEntFlat[h];
-          if(entTotal>=10){var entH=0;var cats=[hEntUp[h],hEntDown[h],hEntFlat[h]];for(var ei2=0;ei2<3;ei2++){if(cats[ei2]>0){var p=cats[ei2]/entTotal;entH-=p*Math.log(p)/Math.log(2);}}retEntropy=entH/Math.log(3)*Math.log(2);} // normalize to 0-1 (max entropy = log2(3))
+          if(entTotal>=10){var entH=0;var cats=[hEntUp[h],hEntDown[h],hEntFlat[h]];for(var ei2=0;ei2<3;ei2++){if(cats[ei2]>0){var ep=cats[ei2]/entTotal;entH-=ep*Math.log(ep)/Math.log(2);}}retEntropy=entH/Math.log(3)*Math.log(2);} // normalize to 0-1 (max entropy = log2(3))
           // Order flow imbalance (-1 to +1)
           var ofi=hOfiVol[h]>0?(hOfiSum[h]/hOfiVol[h]):null;
           // VWAP deviation
