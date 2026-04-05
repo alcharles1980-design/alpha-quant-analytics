@@ -709,8 +709,10 @@ async function checkExisting(ticker, date) {
     var features = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
     var optimal = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
     var analyses = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
-    return { hasFeatures: features.length > 0, hasOptimal: optimal.length > 0, hasAnalyses: analyses.length > 0 };
-  } catch (e) { return { hasFeatures: false, hasOptimal: false, hasAnalyses: false }; }
+    var dailyOpt = await sbFetch('cached_daily_optimal_tp?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=tp_pct&limit=1');
+    var levels = analyses.length > 0 ? await sbFetch('cached_levels?analysis_id=eq.' + analyses[0].id + '&select=id&limit=1') : [];
+    return { complete: features.length > 0 && optimal.length > 0 && analyses.length > 0 && dailyOpt.length > 0 && levels.length > 0 };
+  } catch (e) { return { complete: false }; }
 }
 
 // ── Progress Reporting ───────────────────────────────────
@@ -796,8 +798,8 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
       // Resume check
       if (skipExisting) {
         var existing = await checkExisting(ticker, date);
-        if (existing.hasFeatures && existing.hasOptimal && existing.hasAnalyses) {
-          console.log('  SKIP: already complete in database');
+        if (existing.complete) {
+          console.log('  SKIP: already complete in database (all 8 tables)');
           stats.skipped++;
           await reportProgress({ current_day: date, ticker, progress_pct: pct, days_processed: stats.processed, days_skipped: stats.skipped, current_stage: 'skip', message: ticker + ' ' + date + ': skipped (already in DB)' });
           // Still fetch prev day close for next day's gap calculation
@@ -919,22 +921,49 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         for (var hh = 4; hh < 20; hh++) hcRows.push({ ticker, trade_date: date, hour: hh, tp_pct: 1.0, session_type: 'all', cycles: hcDefault[hh] || 0 });
         await sbDeleteInsert('cached_hourly_cycles', 'ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', hcRows, 'hourly_cycles');
 
+        // ── Daily Optimal TP% (flat scan for the whole day) ──
+        console.log('  Stage 2b: Daily flat TP% scan...');
+        var dailyOptRows = [];
+        for (var dtpInt = 1; dtpInt <= 100; dtpInt++) {
+          var dtp = dtpInt / 100;
+          var dRes = analyzePriceLevels(trades, dtp);
+          var dtpDollar = Math.round((Math.ceil(sharePrice * (1 + dtp / 100) * 100) / 100 - sharePrice) * 100) / 100;
+          if (dtpDollar < 0.01) dtpDollar = 0.01;
+          var dGrossPC = fracQty * dtpDollar;
+          var dNetPC = dGrossPC - adjFee;
+          var dCycles = dRes.summary.totalCycles;
+          dailyOptRows.push({
+            ticker, trade_date: date, tp_pct: dtp, tp_dollar: dtpDollar,
+            cycles: dCycles, gross_per_cycle: Math.round(dGrossPC * 10000) / 10000,
+            adj_fee: Math.round(adjFee * 10000) / 10000, net_per_cycle: Math.round(dNetPC * 10000) / 10000,
+            gross_total: Math.round(dCycles * dGrossPC * 100) / 100,
+            net_total: Math.round(dCycles * dNetPC * 100) / 100,
+            cap_deployed: Math.round(dRes.summary.activeLevels * CAP_PER_LEVEL * 100) / 100,
+            roi: dRes.summary.activeLevels > 0 ? Math.round((dCycles * dNetPC) / (dRes.summary.activeLevels * CAP_PER_LEVEL) * 100 * 100) / 100 : 0,
+            total_trades: trades.length, share_price: sharePrice,
+            cap_per_level: CAP_PER_LEVEL, fee_per_share: FEE_PER_SHARE
+          });
+        }
+        await sbDeleteInsert('cached_daily_optimal_tp', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, dailyOptRows, 'daily_optimal');
+        console.log('  Stage 2b: ' + dailyOptRows.length + ' daily optimal rows');
+
         // ── STAGE 3: Feature Extraction ──
         console.log('  Stage 3: Extracting features...');
         var featureRows = await extractDayFeatures(ticker, date, trades, prevDayClose);
         console.log('  Stage 3: ' + featureRows.length + ' feature rows');
         await sbDeleteInsert('hourly_features', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, featureRows, 'features');
 
-        // ── VERIFY ALL 6 TABLES ──
+        // ── VERIFY ALL 8 TABLES ──
         var vA = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
         var vS = await sbFetch('cached_seasonality?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vO = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vF = await sbFetch('hourly_features?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vH = await sbFetch('cached_hourly_cycles?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=hour&limit=1');
         var vSe = await sbFetch('cached_sessions?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=session_type&limit=1');
+        var vD = await sbFetch('cached_daily_optimal_tp?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=tp_pct&limit=1');
         var vL = analysisId ? await sbFetch('cached_levels?analysis_id=eq.' + analysisId + '&select=id&limit=1') : [];
-        if (vA.length===0||vS.length===0||vO.length===0||vF.length===0||vH.length===0||vSe.length===0||vL.length===0) console.log('  WARNING: Verify failed! A='+vA.length+' S='+vS.length+' O='+vO.length+' F='+vF.length+' H='+vH.length+' Se='+vSe.length+' L='+vL.length);
-        else console.log('  VERIFIED: All 7 tables populated');
+        if (vA.length===0||vS.length===0||vO.length===0||vF.length===0||vH.length===0||vSe.length===0||vD.length===0||vL.length===0) console.log('  WARNING: Verify failed! A='+vA.length+' S='+vS.length+' O='+vO.length+' F='+vF.length+' H='+vH.length+' Se='+vSe.length+' D='+vD.length+' L='+vL.length);
+        else console.log('  VERIFIED: All 8 tables populated');
 
 
         // Update prevDayClose for next day
