@@ -1806,10 +1806,16 @@ function DbManagePage(p){
       });
       setFeatData({stocks:featArr,totalRows:featRows.length});
 
-      // Load Stage 2 optimal TP% data
-      var rh3=getSbHeaders();rh3['Range']='0-49999';
-      var ro=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date,hour,tp_pct,net_profit&order=ticker.asc,trade_date.asc',{headers:rh3});
-      var optRows=ro.ok?await ro.json():[];
+      // Load Stage 2 optimal TP% data (paginated - PostgREST max 1000 rows)
+      var optRows=[];var optPage=0;var optBatch=1000;
+      while(true){
+        var rh3=getSbHeaders();rh3['Range']=(optPage*optBatch)+'-'+((optPage+1)*optBatch-1);rh3['Prefer']='count=exact';
+        var ro=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date,hour,tp_pct,net_profit&order=ticker.asc,trade_date.asc',{headers:rh3});
+        var batch3=ro.ok?await ro.json():[];
+        for(var bi=0;bi<batch3.length;bi++)optRows.push(batch3[bi]);
+        if(batch3.length<optBatch)break;
+        optPage++;
+      }
       var optStocks={};
       for(var oi=0;oi<optRows.length;oi++){
         var or2=optRows[oi];var ok2=or2.ticker;
