@@ -5406,7 +5406,7 @@ function CorrelationFinderPage(p){
 
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
-    var h=getSbHeaders();
+    var h=getSbHeaders();h['Range']='0-9999';
     fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(rows){
       var tks={};for(var i=0;i<rows.length;i++)tks[rows[i].ticker]=true;
       var arr=Object.keys(tks).sort();setAvailTickers(arr);if(arr.length>0&&!ticker)setTicker(arr[0]);
