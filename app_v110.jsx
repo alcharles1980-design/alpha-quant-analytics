@@ -6738,6 +6738,183 @@ function RawDataPage(p){
   </div>;
 }
 
+function PredictionLogicPage(p){
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Prediction Logic</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Stage 4: Prediction Engine" sub="Predicting optimal TP% before each hour using historical feature patterns" info="Stage 4 uses the features extracted in Stage 3 and the optimal TP% data from Stage 2 to build a prediction model. The model learns which market conditions (features) historically preceded which optimal TP% values, then predicts the best TP% for upcoming hours."/>
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <p style={{marginBottom:10}}>Stage 3 established correlations between market microstructure features and optimal TP%. Stage 4 turns those correlations into actionable predictions. Given the current market conditions (features observable before an hour begins), the model predicts which TP% will maximize profit in the upcoming hour.</p>
+        <p style={{marginBottom:10,color:C.gold,fontWeight:700}}>The core question: can we use previous-hour features to predict the next hour's optimal TP%, and does this outperform a fixed flat TP%?</p>
+      </div>
+    </Cd>
+
+    <CollapseStage title="Prediction Pipeline" sub="From raw data to TP% recommendation">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>The prediction pipeline has five stages, each building on the previous. Data flows from Polygon tick data through feature extraction, correlation ranking, quintile bucketing, and finally prediction.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Pipeline Flow</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>1. <span style={{color:C.gold}}>Polygon Ticks</span> - Raw trade data fetched for each day (price, size, timestamp, exchange)</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>2. <span style={{color:C.gold}}>Stage 1: Cycle Analysis</span> - analyzePriceLevels counts cycles, seasonality, sessions, hold times</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>3. <span style={{color:C.gold}}>Stage 2: TP% Scan</span> - Tests 100 TP% values x 16 hours, finds best TP% per hour per day</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>4. <span style={{color:C.gold}}>Stage 3: Feature Extraction</span> - 54 columns of market microstructure data per hour (ATR, volume, volatility, oscillation metrics)</p>
+          <p style={{paddingLeft:8,fontSize:9}}>5. <span style={{color:C.gold}}>Stage 4: Prediction</span> - Join features (X) with optimal TP% (Y), train model, predict unseen hours</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Data Tables Used</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>hourly_features</span> - 54 feature columns per hour per day (X variables)</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>optimal_tp_hourly</span> - 1,600 rows per day (100 TP% x 16 hours, Y variable)</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>cached_daily_optimal_tp</span> - Best daily flat TP% for benchmark comparison</p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Leadable Features" sub="Features known before the hour they predict">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>Not all features can be used for prediction. A feature computed from hour 10 data cannot predict hour 10's optimal TP% -- that would be look-ahead bias. Only <span style={{color:C.accent,fontWeight:700}}>leadable</span> features are valid predictors: values known before the hour begins.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>26 Leadable Features</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9,color:C.gold,fontWeight:700}}>Previous Hour (17 features):</p>
+          <p style={{marginBottom:4,paddingLeft:16,fontSize:9}}>prev_hour_atr_pct, prev_hour_volume, prev_hour_trades, prev_hour_realized_vol, prev_hour_reversal_rate, prev_hour_trade_intensity, prev_hour_avg_trade_size, prev_hour_oscillation_score, prev_hour_ece, prev_hour_best_tp, prev_hour_trend_r2, prev_hour_return_entropy, prev_hour_order_flow_imbalance, prev_hour_vwap_deviation, prev_hour_hurst, prev_hour_autocorr, prev_hour_avg_run_length</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9,color:C.gold,fontWeight:700}}>Day Context (9 features):</p>
+          <p style={{paddingLeft:16,fontSize:9}}>is_rth, hour, day_of_week, overnight_gap_pct, vix_close, cumulative_volume_pct, price_vs_day_open_pct, intraday_range_pct, hour_vol_pct_of_day</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Why These Features Matter</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Previous hour volatility</span> (ATR%, realized vol, tick volatility) - High volatility hours tend to favor different TP% than low volatility hours. If the previous hour was volatile, the next hour may continue the regime.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Oscillation metrics</span> (reversal rate, oscillation score, Hurst exponent) - Stocks that are oscillating (mean-reverting) favor smaller TP%. Trending stocks favor larger TP%. The previous hour's oscillation profile predicts the next hour's behavior.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Volume and intensity</span> (trades, volume, trade intensity) - High activity periods create more opportunities for small cycles. Low activity suggests waiting for larger moves.</p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Quintile Lookup Model" sub="Non-parametric regime-based prediction">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>The predictor uses a quintile-based regime lookup model. This is a non-parametric approach that avoids assumptions about linear relationships. Instead of fitting a regression line, it groups historical data into 5 buckets (quintiles) and looks up which bucket the current conditions fall into.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>How It Works</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>1. <span style={{color:C.gold}}>Feature Selection:</span> Rank all 26 leadable features by |r(Profit)| on training data. Select top N (default 5).</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>2. <span style={{color:C.gold}}>Quintile Construction:</span> For each selected feature, sort all training data points by that feature's value and divide into 5 equal groups (quintiles Q1-Q5). Record the average optimal TP% within each quintile.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>3. <span style={{color:C.gold}}>Prediction:</span> For a new data point, look up which quintile each feature falls into. Each quintile has an associated average TP%. Average the TP% predictions across all N features.</p>
+          <p style={{paddingLeft:8,fontSize:9}}>4. <span style={{color:C.gold}}>Profit Lookup:</span> Use the predicted TP% to look up the actual profit that TP% would have generated in the optimal_tp_hourly table. Compare vs flat benchmark.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Why Quintiles (Not Linear Regression)</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Non-linear relationships:</span> The relationship between ATR% and optimal TP% may not be linear. Very low ATR% and very high ATR% might both favor small TP% for different reasons, while moderate ATR% favors larger TP%. Quintiles capture this naturally.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Robustness:</span> Quintiles are not sensitive to outliers. A single extreme day does not distort the entire model (unlike OLS regression).</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Interpretability:</span> Each quintile can be inspected directly: "When ATR% is in the bottom 20% (0.1-0.3%), optimal TP% averages 0.45%. When in the top 20% (1.5-3.0%), it averages 0.12%." This is immediately understandable.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Example Prediction</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Current conditions: prev_hour_atr_pct = 1.2%, prev_hour_trades = 5000, is_rth = 1</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Feature 1 (prev_hour_atr_pct): 1.2% falls in Q4 (0.9-1.5%), Q4 avg TP% = 0.18%</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Feature 2 (prev_hour_trades): 5000 falls in Q3 (3500-6000), Q3 avg TP% = 0.25%</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Feature 3 (is_rth): 1 falls in Q5 (all RTH hours), Q5 avg TP% = 0.22%</p>
+          <p style={{paddingLeft:8,fontSize:9}}>Predicted TP% = average(0.18, 0.25, 0.22) = <span style={{color:C.accent,fontWeight:700}}>0.22%</span></p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Train/Test Methodology" sub="Walk-forward validation with temporal split">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>Financial data has temporal dependencies -- you cannot randomly shuffle days into train and test sets. The model must be trained on past data and tested on future data, exactly as it would operate live.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Temporal Split</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Days are sorted chronologically. The first N% become training data, the remaining (100-N)% become test data.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Default: 80% train / 20% test. With 250 days: 200 train, 50 test.</p>
+          <p style={{paddingLeft:8,fontSize:9}}>This ensures the model never sees future data during training -- no look-ahead bias.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Data Requirements</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>Minimum:</span> 30 trading days (24 train / 6 test). Results will be noisy and unreliable.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Recommended:</span> 200+ trading days (160 train / 40 test). Quintiles have 32+ samples each.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>Ideal:</span> 500+ trading days across multiple market regimes (bull, bear, sideways). Captures how optimal TP% shifts with broader market conditions.</p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Flat Benchmark" sub="The baseline the predictor must beat">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>The flat benchmark answers: "What is the best you could do by using a single fixed TP% for every hour of every day?" If the predictor cannot beat this, adaptive TP% is not adding value.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Computation</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>1. For each of the 100 possible TP% values (0.01% to 1.00%):</p>
+          <p style={{marginBottom:4,paddingLeft:16,fontSize:9}}>Sum the actual net profit that TP% would have generated across ALL test hours</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>2. The TP% with the highest total profit wins</p>
+          <p style={{paddingLeft:8,fontSize:9}}>3. This is the <span style={{color:C.gold,fontWeight:700}}>best possible flat strategy</span> -- it has the advantage of hindsight on the test period</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Why This Is a Hard Benchmark</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>The flat benchmark uses the optimal fixed TP% for the test period specifically. In live trading, you would not know which fixed TP% is best in advance. So beating the flat benchmark means the predictor is adding genuine value beyond what any fixed strategy could achieve.</p>
+          <p style={{paddingLeft:8,fontSize:9}}>If the predictor loses to flat, it means the hourly variation in optimal TP% is either (a) not predictable from these features, (b) too noisy with the available data, or (c) the flat strategy happens to be near-optimal for this stock.</p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Evaluation Metrics" sub="How to interpret backtest results">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Key Metrics</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Edge vs Flat ($):</span> Total predicted profit minus total flat profit. Positive = predictor wins. This is the dollar value added by adaptive TP% selection.</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Edge % :</span> Edge dollars as a percentage of flat profit. Measures relative improvement. +10% means 10% more profit than the best fixed strategy.</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Win Rate:</span> Percentage of individual hour predictions where the predicted TP% generated more profit than the flat TP%. Above 50% means the predictor beats flat more often than not.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Capture Rate:</span> Predicted profit as a percentage of actual best possible profit (if you had perfect foresight for every hour). 100% = perfect prediction. 50% = capturing half the available edge.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Interpreting Results</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>Edge {'>'} 0, Win Rate {'>'} 50%:</span> Model is adding value. Consider deploying with safety bounds.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Edge {'>'} 0, Win Rate {'<'} 50%:</span> Model wins big when right, loses small when wrong. May be viable but risky.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>Edge {'<'} 0:</span> Model underperforms flat. Do not deploy. May need more data, different features, or a different model type.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.txtDim}}>Capture {'<'} 30%:</span> Large gap between predicted and actual best. The optimal TP% varies a lot hour-to-hour but the model is not capturing this variation effectively.</p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Connection to Stage 5" sub="From prediction to live execution">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>Stage 4 produces predictions that Stage 5 will execute. The prediction API (Cloudflare Worker at predict-api.alcharles1980.workers.dev) serves the latest predictions for the Go trading bot to consume.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Live Prediction Flow</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>1. <span style={{color:C.gold}}>Nightly Pipeline</span> (1AM ET) - Processes previous day: fetch ticks, cycle analysis, TP% scan, feature extraction, prediction for next day</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>2. <span style={{color:C.gold}}>Hourly Pipeline</span> (:05 past each hour) - Updates features from the just-completed hour, re-predicts remaining hours</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>3. <span style={{color:C.gold}}>Predict API</span> - GET /predict/:ticker returns daily prediction, /hourly returns per-hour schedule</p>
+          <p style={{paddingLeft:8,fontSize:9}}>4. <span style={{color:C.gold}}>Go Bot</span> - Reads prediction at startup and each hour boundary, adjusts TP% parameter</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Safety Bounds</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Floor TP%:</span> Never go below a minimum TP% (e.g. 0.05%) to avoid excessive trading and fees.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Ceiling TP%:</span> Never go above a maximum TP% (e.g. 0.50%) to avoid missing too many cycles.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Confidence Threshold:</span> If the model's selected features have weak correlations (|r| {'<'} 0.1), fall back to the flat TP%.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Gradual Adjustment:</span> Do not jump from 0.10% to 0.50% in one step. Limit hourly TP% changes to a maximum delta (e.g. 0.10% per hour).</p>
+        </div>
+      </div>
+    </CollapseStage>
+
+    <CollapseStage title="Model Limitations" sub="Known constraints and future improvements">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Current Limitations</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>Single stock:</span> The model trains on one stock at a time. Cross-stock signals (sector rotation, correlation breakdown) are not captured.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>Quintile granularity:</span> 5 buckets is coarse. With more data, decile (10) or percentile (100) buckets would give finer predictions.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>Equal feature weighting:</span> All selected features contribute equally to the prediction. Features with stronger correlations should have more influence.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>No regime detection:</span> The model treats all training data equally. A VIX-aware model that weights recent similar-regime days more heavily would likely perform better.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Future Improvements (Stage 5)</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Weighted feature averaging:</span> Weight each feature's prediction by its |r(Profit)| value.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Ensemble methods:</span> Combine quintile lookup with LightGBM or XGBoost for non-linear feature interactions.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Rolling window training:</span> Instead of a fixed train/test split, use a rolling 60-day window that retrains daily.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Reinforcement learning:</span> PPO/SAC agent that directly optimizes cumulative profit by adjusting TP% in response to market state, learning from its own execution history.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function HourlyPredictionPage(p){
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
@@ -7442,7 +7619,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -7457,6 +7634,7 @@ function App(){
     {page==='aiagents'&&<AIAgentsOverviewPage onBack={function(){setPage('objectives');}}/>}
     {page==='builddata'&&<BuildDataSetPage apiKey={pgKey} onBack={function(){setPage('objectives');}}/>}
     {page==='corrfinder'&&<CorrelationFinderPage onBack={function(){setPage('objectives');}}/>}
+    {page==='predictlogic'&&<PredictionLogicPage onBack={function(){setPage('objectives');}}/>}
     {page==='predict'&&<HourlyPredictionPage ghToken={ghToken} onBack={function(){setPage('objectives');}}/>}
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
