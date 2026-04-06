@@ -890,28 +890,36 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
           if (ohlcR2.ok) ohlc = await ohlcR2.json();
         } catch (e) {}
 
-        // Save cached_analyses
-        var analysisBody = { ticker, trade_date: date, tp_pct: tpPct, session_type: 'all', total_cycles: result.summary.totalCycles, active_levels: result.summary.activeLevels, total_levels: result.summary.totalLevels, total_trades: trades.length, tick_min: minP, tick_max: maxP, open_price: sharePrice, pre_seed_max: preSeedMax };
-        if (ohlc && ohlc.open) { analysisBody.ohlc_open = ohlc.open; analysisBody.ohlc_high = ohlc.high; analysisBody.ohlc_low = ohlc.low; analysisBody.ohlc_close = ohlc.close; analysisBody.ohlc_volume = ohlc.volume; }
-        await sbDeleteInsert('cached_analyses', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, [analysisBody], 'analyses');
-        await sleep(200);
-        var savedA = await sbFetch('cached_analyses?ticker=eq.' + ticker + '&trade_date=eq.' + date + '&select=id&limit=1');
-        var analysisId = savedA.length > 0 ? savedA[0].id : null;
+        // Save cached_analyses via RPC (bypasses PostgREST silent failures)
+        var rpcBody = {
+          p_ticker: ticker, p_trade_date: date, p_tp_pct: tpPct, p_session_type: 'all',
+          p_total_cycles: result.summary.totalCycles, p_active_levels: result.summary.activeLevels,
+          p_total_levels: result.summary.totalLevels, p_total_trades: trades.length,
+          p_tick_min: minP, p_tick_max: maxP, p_open_price: sharePrice, p_pre_seed_max: preSeedMax
+        };
+        if (ohlc && ohlc.open) { rpcBody.p_ohlc_open = ohlc.open; rpcBody.p_ohlc_high = ohlc.high; rpcBody.p_ohlc_low = ohlc.low; rpcBody.p_ohlc_close = ohlc.close; rpcBody.p_ohlc_volume = ohlc.volume; }
+        var rpcR = await fetch(SB_URL + '/rest/v1/rpc/upsert_analysis', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(rpcBody) });
+        var analysisId = null;
+        if (rpcR.ok) {
+          var rpcResult = await rpcR.json();
+          analysisId = rpcResult;
+        } else {
+          var rpcErr = await rpcR.text();
+          console.log('  ERROR: upsert_analysis RPC failed: ' + rpcR.status + ' ' + rpcErr.slice(0, 300));
+        }
 
-        // Save cached_levels (requires delete+insert since no UNIQUE on data columns)
+        // Save cached_levels
         if (analysisId) {
           var levelRows = [];
           for (var lv of result.levels || []) { if (lv && lv.cycles > 0) levelRows.push({ analysis_id: analysisId, level_price: lv.price, target_price: lv.target, cycles: lv.cycles }); }
           if (levelRows.length) {
-            await fetch(SB_URL + '/rest/v1/cached_levels?analysis_id=eq.' + analysisId, { method: 'DELETE', headers: sbHeaders() });
-            await sleep(100);
             for (var li = 0; li < levelRows.length; li += 200) {
               var lvBatch = levelRows.slice(li, li + 200);
               var lvR = await fetch(SB_URL + '/rest/v1/cached_levels', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(lvBatch) });
               if (!lvR.ok) console.log('    WARN: levels POST failed batch ' + li + ': ' + lvR.status);
             }
           }
-          console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels');
+          console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles, ' + levelRows.length + ' active levels (ID: ' + analysisId + ')');
         } else {
           console.log('  Stage 1: ' + result.summary.totalCycles + ' cycles (WARNING: analyses ID not found)');
         }
