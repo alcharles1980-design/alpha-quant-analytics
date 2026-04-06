@@ -110,8 +110,7 @@ async function handleRequest(request){
           allRows.push({
             ticker:ticker,trade_date:date,hour:h,tp_pct:tpPct,
             cycles:hCycles[h],net_profit:Math.round(hProfit[h]*100)/100,
-            tp_dollar:td,gross_per_cycle:Math.round(gpc*10000)/10000,
-            fee_per_cycle:Math.round(af*10000)/10000,net_per_cycle:Math.round(npc*10000)/10000
+            tp_dollar:td
           });
         }
       }
