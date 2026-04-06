@@ -1337,8 +1337,8 @@ async function runAutotune(tickers) {
             wins: wins, run_date: runDate
           });
 
-          if (comboNum % 8 === 0) {
-            await reportProgress({ mode: 'autotune', ticker: ticker, status: 'running', progress_pct: pct, message: ticker + ': ' + comboNum + '/' + totalCombos + ' (' + model.name + ' N=' + topN + ' T=' + trainPct + '%)' });
+          if (comboNum % 4 === 0 || comboNum === totalCombos) {
+            await reportProgress({ mode: 'autotune', ticker: ticker, status: 'running', progress_pct: pct, message: model.name + ' | N=' + topN + ' | Train ' + trainPct + '% | ' + comboNum + '/' + totalCombos });
           }
         }
       }

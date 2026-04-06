@@ -6799,6 +6799,36 @@ function MLModelFinderPage(p){
   var s5=useState(''),prog=s5[0],setProg=s5[1];
   var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
   var s7=useState('edge_dollars'),sortBy=s7[0],setSortBy=s7[1];
+  var s8=useState(null),pipeProgress=s8[0],setPipeProgress=s8[1];
+  var pollRef=useRef(null);
+
+  var startPolling=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.autotune&order=updated_at.desc&limit=1',{headers:getSbHeaders()});
+        var d=await r.json();
+        if(d.length){
+          setPipeProgress(d[0]);
+          if(d[0].status==='complete'){
+            clearInterval(pollRef.current);pollRef.current=null;
+            if(ticker)loadLeaderboard(ticker);
+          }
+          if(d[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;}
+        }
+      }catch(e){}
+    },3000);
+  };
+
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  // Auto-load latest autotune status on mount
+  useEffect(function(){
+    if(!SB_URL||!SB_KEY)return;
+    fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.autotune&order=updated_at.desc&limit=1',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){
+      if(d.length){setPipeProgress(d[0]);if(d[0].status==='running')startPolling();}
+    }).catch(function(){});
+  },[]);
 
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
@@ -6830,7 +6860,7 @@ function MLModelFinderPage(p){
     setErr(null);setProg('Triggering auto-tune...');
     try{
       var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'autotune',tickers:ticker}})});
-      if(r.status===204)setProg('Auto-tune triggered for '+ticker+'. Running 64 model combinations on GitHub...');
+      if(r.status===204){setProg('Auto-tune triggered for '+ticker);startPolling();}
       else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setProg('');}
     }catch(e){setErr('Trigger failed: '+e.message);setProg('');}
   };
@@ -6860,6 +6890,21 @@ function MLModelFinderPage(p){
       {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
       <button onClick={function(){loadLeaderboard();}} style={{width:'100%',marginTop:8,background:'transparent',border:'1px solid '+C.border,borderRadius:8,color:C.txt,fontFamily:F,fontSize:8,fontWeight:600,padding:'8px',cursor:'pointer'}}>Refresh Leaderboard</button>
     </Cd>
+
+    {pipeProgress&&<Cd>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <span style={{color:pipeProgress.status==='complete'?C.accent:pipeProgress.status==='error'?C.warn:C.purple,fontSize:9,fontWeight:700,fontFamily:F,textTransform:'uppercase'}}>{pipeProgress.status==='complete'?'\u2713 Auto-Tune Complete':pipeProgress.status==='error'?'\u2717 Error':'\u25CF Running Auto-Tune'}</span>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{pipeProgress.ticker||''}</span>
+      </div>
+      <div style={{width:'100%',height:8,background:C.border,borderRadius:4,marginBottom:8,overflow:'hidden'}}>
+        <div style={{width:(pipeProgress.progress_pct||0)+'%',height:'100%',background:pipeProgress.status==='complete'?C.accent:pipeProgress.status==='error'?C.warn:'linear-gradient(90deg,'+C.purple+','+C.blue+')',borderRadius:4,transition:'width 0.5s'}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{pipeProgress.progress_pct||0}%</span>
+        <span style={{color:C.txt,fontSize:8,fontFamily:F}}>{pipeProgress.message||''}</span>
+      </div>
+      {pipeProgress.status==='complete'&&<button onClick={function(){loadLeaderboard();}} style={{width:'100%',marginTop:8,background:'linear-gradient(135deg,#00e5a0,#00c488)',border:'none',borderRadius:8,color:C.bg,fontFamily:F,fontSize:9,fontWeight:700,padding:'10px',cursor:'pointer',letterSpacing:1}}>LOAD RESULTS</button>}
+    </Cd>}
 
     {best&&<Cd glow={true}>
       <SectionHead title="Best Configuration" sub={best.model+' | Top '+best.top_n+' | Train '+best.train_pct+'%'}/>
