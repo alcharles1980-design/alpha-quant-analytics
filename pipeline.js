@@ -937,25 +937,57 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         await sbDeleteInsert('cached_sessions', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, sessionRows, 'sessions');
 
         // ── STAGE 2: Hourly Optimal TP% ──
-        console.log('  Stage 2: Scanning 100 TP% x 16 hours...');
-        var fracQty = sharePrice > 0 ? CAP_PER_LEVEL / sharePrice : 0;
-        var adjFee = FEE_PER_SHARE * fracQty;
-        var optRows = [];
-        for (var tpInt = 1; tpInt <= 100; tpInt++) {
-          var tp = tpInt / 100;
-          var hc = computeHourlyCycles(trades, tp);
-          var tpDollar = Math.round((Math.ceil(sharePrice * (1 + tp / 100) * 100) / 100 - sharePrice) * 100) / 100;
-          if (tpDollar < 0.01) tpDollar = 0.01;
-          var grossPC = fracQty * tpDollar;
-          var netPC = grossPC - adjFee;
-          for (var h = 4; h < 20; h++) {
-            var cy = hc[h] || 0;
-            optRows.push({ ticker, trade_date: date, hour: h, tp_pct: tp, session_type: 'full', cycles: cy, tp_dollar: tpDollar, net_profit: Math.round(cy * netPC * 100) / 100 });
+        var WORKER_THRESHOLD = 500000;
+        if (trades.length > WORKER_THRESHOLD) {
+          // Offload to Cloudflare Worker for heavy stocks
+          console.log('  Stage 2: HEAVY (' + trades.length + ' ticks) -> offloading to CF Worker...');
+          await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 offloaded to CF Worker (' + trades.length + ' ticks)' });
+          try {
+            var wResp = await fetch('https://hourly-tp-scanner.alcharles1980.workers.dev/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ticker: ticker, date: date, polygon_key: POLYGON_KEY,
+                cap_per_level: CAP_PER_LEVEL, fee_per_share: FEE_PER_SHARE,
+                supabase_url: SB_URL, supabase_key: SB_KEY,
+                max_ticks: 2000000
+              })
+            });
+            var wData = await wResp.json();
+            if (wData.status === 'processed') {
+              console.log('  Stage 2: Worker done - ' + wData.total_rows + ' rows saved, ' + wData.processed_ticks + ' ticks' + (wData.subsampled ? ' (subsampled from ' + wData.original_ticks + ')' : ''));
+            } else {
+              console.log('  Stage 2: Worker error - ' + (wData.error || JSON.stringify(wData).slice(0, 200)));
+              daysError++;
+              continue;
+            }
+          } catch (wErr) {
+            console.log('  Stage 2: Worker call failed - ' + wErr.message);
+            daysError++;
+            continue;
           }
+        } else {
+          // Run locally for normal-size stocks
+          console.log('  Stage 2: Scanning 100 TP% x 16 hours...');
+          var fracQty = sharePrice > 0 ? CAP_PER_LEVEL / sharePrice : 0;
+          var adjFee = FEE_PER_SHARE * fracQty;
+          var optRows = [];
+          for (var tpInt = 1; tpInt <= 100; tpInt++) {
+            var tp = tpInt / 100;
+            var hc = computeHourlyCycles(trades, tp);
+            var tpDollar = Math.round((Math.ceil(sharePrice * (1 + tp / 100) * 100) / 100 - sharePrice) * 100) / 100;
+            if (tpDollar < 0.01) tpDollar = 0.01;
+            var grossPC = fracQty * tpDollar;
+            var netPC = grossPC - adjFee;
+            for (var h = 4; h < 20; h++) {
+              var cy = hc[h] || 0;
+              optRows.push({ ticker, trade_date: date, hour: h, tp_pct: tp, session_type: 'full', cycles: cy, tp_dollar: tpDollar, net_profit: Math.round(cy * netPC * 100) / 100 });
+            }
+          }
+          console.log('  Stage 2: ' + optRows.length + ' rows');
+          await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 done (100 TP% x 16 hrs)' });
+          await sbDeleteInsert('optimal_tp_hourly', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, optRows, 'optimal');
         }
-        console.log('  Stage 2: ' + optRows.length + ' rows');
-        await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 done (100 TP% x 16 hrs)' });
-        await sbDeleteInsert('optimal_tp_hourly', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, optRows, 'optimal');
         var hcDefault = computeHourlyCycles(trades, 1.0);
         var hcRows = [];
         for (var hh = 4; hh < 20; hh++) hcRows.push({ ticker, trade_date: date, hour: hh, tp_pct: 1.0, session_type: 'all', cycles: hcDefault[hh] || 0 });
