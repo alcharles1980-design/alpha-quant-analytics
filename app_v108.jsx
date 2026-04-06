@@ -1807,20 +1807,19 @@ function DbManagePage(p){
       });
       setFeatData({stocks:featArr,totalRows:featRows.length});
 
-      // Load Stage 2 optimal TP% summary (fast: HEAD for count + distinct dates)
+      // Load Stage 2 optimal TP% summary (1 row per date via tp_pct filter + HEAD for total)
       var rh3=getSbHeaders();rh3['Prefer']='count=exact';rh3['Range']='0-0';
       var roCount=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=id',{headers:rh3});
       var totalOpt=0;var cr=roCount.headers.get('content-range');if(cr){var m=cr.match(/\/(\d+)/);if(m)totalOpt=parseInt(m[1]);}
-      // Get tickers and date ranges
-      var rh3b=getSbHeaders();
-      var roTickers=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date&order=ticker.asc,trade_date.asc&limit=1000',{headers:rh3b});
+      // Get all dates by fetching only tp_pct=0.01&hour=4 (1 row per day per ticker)
+      var rh3b=getSbHeaders();rh3b['Range']='0-9999';
+      var roTickers=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date&tp_pct=eq.0.01&hour=eq.4&order=ticker.asc,trade_date.asc',{headers:rh3b});
       var optSample=roTickers.ok?await roTickers.json():[];
       var optStocks={};
       for(var oi=0;oi<optSample.length;oi++){
         var ok2=optSample[oi].ticker;var odKey=optSample[oi].trade_date;
         if(!optStocks[ok2])optStocks[ok2]={ticker:ok2,dates:{},totalRows:0};
         if(!optStocks[ok2].dates[odKey])optStocks[ok2].dates[odKey]={hours:16,rows:1600};
-        optStocks[ok2].totalRows=0;
       }
       var optArr=Object.values(optStocks).map(function(os){
         var dk=Object.keys(os.dates).sort();
