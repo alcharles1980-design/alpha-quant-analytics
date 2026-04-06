@@ -6960,7 +6960,7 @@ function MLModelFinderPage(p){
     {sorted.length===0&&!loading&&ticker&&<Cd>
       <div style={{textAlign:'center',padding:20}}>
         <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginBottom:8}}>No leaderboard data for {ticker}</div>
-        <div style={{color:C.txt,fontSize:9,fontFamily:F}}>Run Auto-Tune to test all 64 model/parameter combinations.</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F}}>Run Auto-Tune to test all 160 model/parameter combinations.</div>
       </div>
     </Cd>}
   </div>;
