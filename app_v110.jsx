@@ -1302,6 +1302,59 @@ function CollapseStage(p){
     {open&&<div style={{marginTop:12}}>{p.children}</div>}
   </Cd>;
 }
+function HomePage(p){
+  var stages=[
+    {num:'1',title:'Fixed Profit Taker Analysis',color:C.accent,desc:'Analyzes how many cycles and how much profit are generated with your current fixed profit-taker percentage over a given period of time. This is your baseline -- what you are actually earning today.'},
+    {num:'2',title:'Optimal Flat Profit Taker',color:C.gold,desc:'Runs an iterative process testing every possible profit-taker percentage to find which single flat rate would have generated the most money over the same period. This tells you: are you using the right setting?'},
+    {num:'3',title:'Daily Adaptive Profit Taker',color:C.purple,desc:'Deeper analysis finds what would have been the best profit taker for each individual day -- a rate that is set every day before pre-market open. Different days have different optimal settings based on volatility, volume, and market conditions.'},
+    {num:'4',title:'Hourly Adaptive Profit Taker',color:C.blue,desc:'The most granular analysis finds the best profit taker for each hour of the trading day. Market microstructure changes throughout the day -- the optimal setting at 9:30 AM open is rarely the same as the quiet midday hours or the power-hour close.'}
+  ];
+
+  return <div>
+    <Cd glow={true}>
+      <SectionHead title="The Problem" sub="Why fixed profit takers leave money on the table"/>
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <p style={{marginBottom:10}}>We set configurations with one fixed profit taker at the time of creation and <span style={{color:C.warn,fontWeight:700}}>hope</span> this percentage will always make us the most money every day, regardless of changing market conditions.</p>
+        <p style={{color:C.gold,fontWeight:700}}>This app replaces hope with data.</p>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="The Process" sub="4 levels of analysis, each more precise than the last"/>
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <p>Alpha Quant Analytics follows a logical progression from measurement to prediction. Each stage builds on the previous, revealing deeper patterns in how profit-taker settings interact with market conditions.</p>
+      </div>
+    </Cd>
+
+    {stages.map(function(st){
+      return <Cd key={st.num}>
+        <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+          <div style={{minWidth:36,height:36,borderRadius:8,background:'rgba('+( st.color===C.accent?'0,229,160':st.color===C.gold?'255,176,32':st.color===C.purple?'168,85,247':'61,158,255' )+',0.15)',border:'1px solid '+st.color,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <span style={{color:st.color,fontSize:16,fontWeight:800,fontFamily:F}}>{st.num}</span>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{color:st.color,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:4}}>{st.title}</div>
+            <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7}}>{st.desc}</div>
+          </div>
+        </div>
+      </Cd>;
+    })}
+
+    <Cd glow={true}>
+      <SectionHead title="The Goal" sub="From analysis to prediction"/>
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <p style={{marginBottom:10}}>This analysis generates <span style={{color:C.accent,fontWeight:700}}>target variables</span> -- the optimal profit-taker values that would have maximized returns under different strategies (flat, daily adaptive, hourly adaptive).</p>
+        <p style={{marginBottom:10}}>These target variables are then used for <span style={{color:C.purple,fontWeight:700}}>machine learning</span> against features extracted from trade tick data to find pattern correlations. The goal: <span style={{color:C.gold,fontWeight:700}}>predict with high accuracy, ahead of time, the best profit taker to set</span> -- whether daily or hourly -- before the market opens or before each hour begins.</p>
+      </div>
+    </Cd>
+
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:4}}>
+      <button onClick={function(){p.onNav('objectives');}} style={{width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,cursor:'pointer',background:'linear-gradient(135deg,#00e5a0,#00c488)',color:C.bg}}>5-STAGE ROADMAP</button>
+      <button onClick={function(){p.onNav('main');}} style={{width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,cursor:'pointer',background:'linear-gradient(135deg,#3d9eff,#2070d0)',color:'#fff'}}>CYCLES ANALYSIS</button>
+    </div>
+  </div>;
+}
+
 function ObjectivesPage(p){
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -7552,14 +7605,14 @@ function App(){
   var toggleTheme=function(){var nt=theme==='dark'?'light':'dark';applyTheme(nt);setThemeState(nt);};
   var setPage=function(p){setPageRaw(p);window.location.hash=p;};
   useEffect(function(){
-    var onPop=function(){var h=window.location.hash.slice(1);if(h)setPageRaw(h);else setPageRaw('main');};
+    var onPop=function(){var h=window.location.hash.slice(1);if(h)setPageRaw(h);else setPageRaw('home');};
     window.addEventListener('popstate',onPop);
-    if(!window.location.hash)window.location.hash='main';
+    if(!window.location.hash)window.location.hash='home';
     return function(){window.removeEventListener('popstate',onPop);};
   },[]);
   var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
-  var ps=useState(function(){var h=window.location.hash.slice(1);return h||'main';}),page=ps[0],setPageRaw=ps[1];
+  var ps=useState(function(){var h=window.location.hash.slice(1);return h||'home';}),page=ps[0],setPageRaw=ps[1];
   var opi=useState(null),optPageInit=opi[0],setOptPageInit=opi[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
@@ -7796,7 +7849,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -7820,7 +7873,8 @@ function App(){
     {page==='trends'&&<TrendPage onBack={function(){setPage('main');}}/>}
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
-    {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('main');}}/> }
+    {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
+    {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
     {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
