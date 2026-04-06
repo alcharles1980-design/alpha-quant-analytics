@@ -1,6 +1,6 @@
 {
   "name": "alpha-quant-analytics",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "build": "node build.js"
