@@ -7477,7 +7477,7 @@ function HourlyPredictionPage(p){
         </table>
       </Cd>
 
-      {results.selectedFeatures.map(function(sf,idx){
+      {(modelType==='quintile'||modelType==='weighted')&&results.selectedFeatures[0]&&results.selectedFeatures[0].quintiles&&results.selectedFeatures.map(function(sf,idx){
         var isOpen=expandedQ===sf.key;
         return <Cd key={sf.key}>
           <div onClick={function(){setExpandedQ(isOpen?null:sf.key);}} style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
