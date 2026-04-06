@@ -1163,11 +1163,179 @@ async function runAutotune(tickers) {
     return preds;
   }
 
+  // Model 5: Ensemble Average
+  function runEnsemble(trainD, testD, selFeat) {
+    var p1 = runQuintile(trainD, testD, selFeat, false);
+    var p2 = runQuintile(trainD, testD, selFeat, true);
+    var p3 = runKNN(trainD, testD, selFeat, 7);
+    var p4 = runLinearReg(trainD, testD, selFeat);
+    var preds = [];
+    for (var i = 0; i < testD.length; i++) {
+      var vals = []; if (p1[i] !== null) vals.push(p1[i]); if (p2[i] !== null) vals.push(p2[i]); if (p3[i] !== null) vals.push(p3[i]); if (p4[i] !== null) vals.push(p4[i]);
+      if (vals.length > 0) { var s = 0; for (var j = 0; j < vals.length; j++) s += vals[j]; preds.push(Math.round(s / vals.length * 100) / 100); }
+      else preds.push(null);
+    }
+    return preds;
+  }
+
+  // Model 6: Weighted KNN (inverse distance)
+  function runWeightedKNN(trainD, testD, selFeat, k) {
+    var fStats = {};
+    for (var si = 0; si < selFeat.length; si++) {
+      var fk = selFeat[si].key; var mn = Infinity, mx = -Infinity;
+      for (var ti = 0; ti < trainD.length; ti++) { var v = parseFloat(trainD[ti][fk]); if (!isNaN(v)) { if (v < mn) mn = v; if (v > mx) mx = v; } }
+      fStats[fk] = { range: mx - mn > 0 ? mx - mn : 1 };
+    }
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2]; var dists = [];
+      for (var tri = 0; tri < trainD.length; tri++) {
+        var dist = 0; var validF = 0;
+        for (var si2 = 0; si2 < selFeat.length; si2++) {
+          var fk2 = selFeat[si2].key; var v1 = parseFloat(pt[fk2]); var v2 = parseFloat(trainD[tri][fk2]);
+          if (!isNaN(v1) && !isNaN(v2)) { var d = (v1 - v2) / fStats[fk2].range; dist += d * d; validF++; }
+        }
+        if (validF > 0) dists.push({ dist: Math.sqrt(dist / validF), tp: trainD[tri].best_tp_pct });
+      }
+      dists.sort(function(a, b) { return a.dist - b.dist; });
+      var topK = dists.slice(0, k);
+      if (topK.length > 0) {
+        var wSum = 0, wTot = 0;
+        for (var ki = 0; ki < topK.length; ki++) { var w = 1 / (topK[ki].dist + 0.001); wSum += topK[ki].tp * w; wTot += w; }
+        preds.push(Math.round(wSum / wTot * 100) / 100);
+      } else preds.push(null);
+    }
+    return preds;
+  }
+
+  // Model 7: Recency-Weighted KNN
+  function runRecencyKNN(trainD, testD, selFeat, k) {
+    var fStats = {};
+    for (var si = 0; si < selFeat.length; si++) {
+      var fk = selFeat[si].key; var mn = Infinity, mx = -Infinity;
+      for (var ti = 0; ti < trainD.length; ti++) { var v = parseFloat(trainD[ti][fk]); if (!isNaN(v)) { if (v < mn) mn = v; if (v > mx) mx = v; } }
+      fStats[fk] = { range: mx - mn > 0 ? mx - mn : 1 };
+    }
+    // Get all training dates for recency scoring
+    var allDates = {}; for (var ti = 0; ti < trainD.length; ti++) allDates[trainD[ti].trade_date] = true;
+    var dateArr = Object.keys(allDates).sort(); var dateRank = {}; for (var di = 0; di < dateArr.length; di++) dateRank[dateArr[di]] = di;
+    var maxRank = dateArr.length - 1;
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2]; var dists = [];
+      for (var tri = 0; tri < trainD.length; tri++) {
+        var dist = 0; var validF = 0;
+        for (var si2 = 0; si2 < selFeat.length; si2++) {
+          var fk2 = selFeat[si2].key; var v1 = parseFloat(pt[fk2]); var v2 = parseFloat(trainD[tri][fk2]);
+          if (!isNaN(v1) && !isNaN(v2)) { var d = (v1 - v2) / fStats[fk2].range; dist += d * d; validF++; }
+        }
+        var recency = maxRank > 0 ? (dateRank[trainD[tri].trade_date] || 0) / maxRank : 0.5;
+        if (validF > 0) dists.push({ dist: Math.sqrt(dist / validF), tp: trainD[tri].best_tp_pct, recency: recency });
+      }
+      dists.sort(function(a, b) { return a.dist - b.dist; });
+      var topK = dists.slice(0, k);
+      if (topK.length > 0) {
+        var wSum = 0, wTot = 0;
+        for (var ki = 0; ki < topK.length; ki++) { var w = (1 / (topK[ki].dist + 0.001)) * (0.5 + topK[ki].recency); wSum += topK[ki].tp * w; wTot += w; }
+        preds.push(Math.round(wSum / wTot * 100) / 100);
+      } else preds.push(null);
+    }
+    return preds;
+  }
+
+  // Model 8: Decile Lookup (10 buckets)
+  function runDecile(trainD, testD, selFeat, weighted) {
+    var nBuckets = 10;
+    for (var si = 0; si < selFeat.length; si++) {
+      var sf = selFeat[si]; var vals = [];
+      for (var ti = 0; ti < trainD.length; ti++) { var v = parseFloat(trainD[ti][sf.key]); if (!isNaN(v)) vals.push({ v: v, tp: trainD[ti].best_tp_pct }); }
+      vals.sort(function(a, b) { return a.v - b.v; });
+      var buckets = [];
+      for (var qi = 0; qi < nBuckets; qi++) {
+        var qS = Math.floor(vals.length * qi / nBuckets); var qE = Math.floor(vals.length * (qi + 1) / nBuckets);
+        var qV = vals.slice(qS, Math.max(qS + 1, qE)); var tS = 0;
+        for (var qj = 0; qj < qV.length; qj++) tS += qV[qj].tp;
+        buckets.push({ min: qV[0].v, max: qV[qV.length - 1].v, avgTp: tS / qV.length });
+      }
+      sf.deciles = buckets;
+    }
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2]; var tpPreds = []; var weights = [];
+      for (var si2 = 0; si2 < selFeat.length; si2++) {
+        var sf2 = selFeat[si2]; var val = parseFloat(pt[sf2.key]); if (isNaN(val)) continue;
+        for (var qi2 = 0; qi2 < sf2.deciles.length; qi2++) {
+          if (val <= sf2.deciles[qi2].max || qi2 === sf2.deciles.length - 1) { tpPreds.push(sf2.deciles[qi2].avgTp); weights.push(Math.abs(sf2.rProfit)); break; }
+        }
+      }
+      if (tpPreds.length > 0) {
+        if (weighted) { var wS = 0, wT = 0; for (var pi = 0; pi < tpPreds.length; pi++) { wS += tpPreds[pi] * weights[pi]; wT += weights[pi]; } preds.push(wT > 0 ? Math.round(wS / wT * 100) / 100 : null); }
+        else { var s = 0; for (var pi = 0; pi < tpPreds.length; pi++) s += tpPreds[pi]; preds.push(Math.round(s / tpPreds.length * 100) / 100); }
+      } else preds.push(null);
+    }
+    return preds;
+  }
+
+  // Model 9: Feature Bagging (random subsets averaged)
+  function runFeatureBagging(trainD, testD, selFeat) {
+    var nIters = 20; var subSize = Math.min(3, selFeat.length);
+    var allPreds = [];
+    // Simple deterministic "random" using feature index permutations
+    for (var iter = 0; iter < nIters; iter++) {
+      var subset = [];
+      for (var si = 0; si < selFeat.length; si++) { if (((iter * 7 + si * 13) % 5) < 3) subset.push(selFeat[si]); }
+      if (subset.length === 0) subset = [selFeat[iter % selFeat.length]];
+      if (subset.length > subSize) subset = subset.slice(0, subSize);
+      var iterPreds = runKNN(trainD, testD, subset, 7);
+      allPreds.push(iterPreds);
+    }
+    var preds = [];
+    for (var i = 0; i < testD.length; i++) {
+      var vals = [];
+      for (var j = 0; j < allPreds.length; j++) { if (allPreds[j][i] !== null) vals.push(allPreds[j][i]); }
+      if (vals.length > 0) { var s = 0; for (var k = 0; k < vals.length; k++) s += vals[k]; preds.push(Math.round(s / vals.length * 100) / 100); }
+      else preds.push(null);
+    }
+    return preds;
+  }
+
+  // Model 10: Regime-Switching (high/low vol separate models)
+  function runRegimeSwitching(trainD, testD, selFeat) {
+    // Split training data by ATR regime (above/below median)
+    var atrVals = [];
+    for (var ti = 0; ti < trainD.length; ti++) { var a = parseFloat(trainD[ti].prev_hour_atr_pct || trainD[ti].hour_atr_pct); if (!isNaN(a)) atrVals.push(a); }
+    atrVals.sort(function(a, b) { return a - b; });
+    var medianATR = atrVals.length > 0 ? atrVals[Math.floor(atrVals.length / 2)] : 0;
+    var trainHigh = []; var trainLow = [];
+    for (var ti = 0; ti < trainD.length; ti++) {
+      var a = parseFloat(trainD[ti].prev_hour_atr_pct || trainD[ti].hour_atr_pct);
+      if (!isNaN(a) && a >= medianATR) trainHigh.push(trainD[ti]); else trainLow.push(trainD[ti]);
+    }
+    // Build separate KNN models for each regime
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2];
+      var a2 = parseFloat(pt.prev_hour_atr_pct || pt.hour_atr_pct);
+      var useHigh = !isNaN(a2) && a2 >= medianATR;
+      var regime = useHigh ? trainHigh : trainLow;
+      if (regime.length < 5) regime = trainD; // fallback
+      var knnPred = runKNN(regime, [pt], selFeat, 7);
+      preds.push(knnPred[0]);
+    }
+    return preds;
+  }
+
   var modelDefs = [
     { id: 'quintile', name: 'Quintile Lookup', fn: function(tr, te, sf) { return runQuintile(tr, te, sf, false); } },
     { id: 'weighted', name: 'Weighted Quintile', fn: function(tr, te, sf) { return runQuintile(tr, te, sf, true); } },
     { id: 'knn', name: 'KNN (K=7)', fn: function(tr, te, sf) { return runKNN(tr, te, sf, 7); } },
-    { id: 'linear', name: 'Linear Regression', fn: function(tr, te, sf) { return runLinearReg(tr, te, sf); } }
+    { id: 'linear', name: 'Linear Regression', fn: function(tr, te, sf) { return runLinearReg(tr, te, sf); } },
+    { id: 'ensemble', name: 'Ensemble Average', fn: function(tr, te, sf) { return runEnsemble(tr, te, sf); } },
+    { id: 'wknn', name: 'Weighted KNN', fn: function(tr, te, sf) { return runWeightedKNN(tr, te, sf, 7); } },
+    { id: 'rknn', name: 'Recency KNN', fn: function(tr, te, sf) { return runRecencyKNN(tr, te, sf, 7); } },
+    { id: 'decile', name: 'Decile Lookup', fn: function(tr, te, sf) { return runDecile(tr, te, sf, true); } },
+    { id: 'bagging', name: 'Feature Bagging', fn: function(tr, te, sf) { return runFeatureBagging(tr, te, sf); } },
+    { id: 'regime', name: 'Regime Switch', fn: function(tr, te, sf) { return runRegimeSwitching(tr, te, sf); } }
   ];
   var topNs = [3, 5, 7, 10];
   var trainPcts = [60, 70, 80, 90];

@@ -6879,7 +6879,7 @@ function MLModelFinderPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Auto-Tune" sub="Test all 64 model/parameter combinations on GitHub" info="Runs 4 models x 4 Top N values x 4 Train % splits = 64 combinations. Each combination trains on historical data, predicts on out-of-sample test data, and measures edge vs flat benchmark. Results saved to leaderboard. Takes ~30 seconds on GitHub Actions."/>
+      <SectionHead title="Auto-Tune" sub="Test all 160 model/parameter combinations on GitHub" info="Runs 10 models x 4 Top N values x 4 Train % splits = 160 combinations. Each combination trains on historical data, predicts on out-of-sample test data, and measures edge vs flat benchmark. Results saved to leaderboard. Takes ~60 seconds on GitHub Actions."/>
       <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
         <div><label style={lS}>Ticker</label>
           {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={iS}><option value="">Select...</option>{availTickers.map(function(t){return <option key={t} value={t}>{t}</option>;})}</select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
@@ -6980,14 +6980,20 @@ function PredictionLogicPage(p){
         <p style={{marginBottom:10,color:C.gold,fontWeight:700}}>The core question: can we use previous-hour features to predict the next hour's optimal TP%, and does this outperform a fixed flat TP%?</p>
       </div>
       <div style={{padding:'12px',background:C.bg,borderRadius:8,border:'1px solid '+C.purple,marginTop:10}}>
-        <div style={{color:C.purple,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:0.5}}>4 PREDICTION MODELS</div>
+        <div style={{color:C.purple,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:0.5}}>10 PREDICTION MODELS</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7}}>
-          <p style={{marginBottom:6}}>The predictor supports 4 interchangeable models, all sharing the same evaluation framework. Each takes training data and selected features as input, outputs a predicted TP% per test hour, and is evaluated against the same flat benchmark.</p>
-          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1. Quintile Lookup</span> - Non-parametric regime bucketing, equal-weight averaging. Simple baseline.<br/>
-          <span style={{color:C.blue,fontWeight:700}}>2. Weighted Quintile</span> - Same quintiles, but weights predictions by |r(Profit)| correlation strength.<br/>
-          <span style={{color:C.purple,fontWeight:700}}>3. KNN (K=7)</span> - Finds 7 most similar historical hours by feature distance, averages their TP%.<br/>
-          <span style={{color:C.gold,fontWeight:700}}>4. Linear Regression</span> - OLS per feature with r-weighted combination. Continuous predictions.</p>
-          <p style={{color:C.txtDim}}>All run entirely in-browser. No server needed. Select model from dropdown on Predictor page.</p>
+          <p style={{marginBottom:6}}>The predictor supports 10 interchangeable models, all sharing the same evaluation framework. Each takes training data and selected features as input, outputs a predicted TP% per test hour, and is evaluated against the same flat benchmark.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1. Quintile Lookup</span> - Non-parametric regime bucketing, equal-weight averaging.<br/>
+          <span style={{color:C.blue,fontWeight:700}}>2. Weighted Quintile</span> - Same quintiles, weighted by |r(Profit)|.<br/>
+          <span style={{color:C.purple,fontWeight:700}}>3. KNN (K=7)</span> - 7 nearest neighbors by normalized feature distance.<br/>
+          <span style={{color:C.gold,fontWeight:700}}>4. Linear Regression</span> - OLS per feature, r-weighted combination.<br/>
+          <span style={{color:C.accent,fontWeight:700}}>5. Ensemble Average</span> - Averages predictions from models 1-4.<br/>
+          <span style={{color:C.blue,fontWeight:700}}>6. Weighted KNN</span> - Inverse distance weighting (closer = more influence).<br/>
+          <span style={{color:C.purple,fontWeight:700}}>7. Recency KNN</span> - Weights recent training days more heavily.<br/>
+          <span style={{color:C.gold,fontWeight:700}}>8. Decile Lookup</span> - 10 buckets instead of 5, finer granularity.<br/>
+          <span style={{color:C.accent,fontWeight:700}}>9. Feature Bagging</span> - KNN on random feature subsets, averaged.<br/>
+          <span style={{color:C.blue,fontWeight:700}}>10. Regime Switch</span> - Separate KNN models for high/low volatility.</p>
+          <p style={{color:C.txtDim}}>All run in-browser or server-side via Auto-Tune (160 combinations: 10 models x 4 Top N x 4 Train %).</p>
         </div>
       </div>
     </Cd>
@@ -7190,10 +7196,58 @@ function PredictionLogicPage(p){
           <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Features with clear linear trends, quick baseline comparison.</p>
         </div>
 
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Model Comparison Strategy</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Run all 4 models on the same ticker with identical settings (same Top N, same Train %). Compare edge, win rate, and capture rate. The best model for one stock may not be the best for another -- different stocks have different microstructure patterns.</p>
-          <p style={{paddingLeft:8,fontSize:9}}>If no model beats flat, the optimal TP% for that stock may not be predictable from these features, or more data is needed.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Run Auto-Tune on the ML Model Finder page to test all 160 combinations (10 models x 4 Top N x 4 Train %) in ~60 seconds on GitHub. The leaderboard ranks every combination by edge, win rate, and capture rate.</p>
+          <p style={{paddingLeft:8,fontSize:9}}>Different stocks favor different models. KNN variants tend to dominate for oscillating stocks. Ensemble provides consistency. Regime Switch excels when volatility patterns are bimodal.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>5. Ensemble Average</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Averages predictions from all 4 base models (Quintile, Weighted Quintile, KNN, Linear). Errors from individual models tend to cancel out.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Most stable predictions. Reduces variance. Almost always beats the weakest individual model. No additional parameters.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Cannot beat the best individual model by definition. Slower (runs 4 models). Diluted by weak models.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Conservative deployment, unknown market conditions.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>6. Weighted KNN (Inverse Distance)</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Same as KNN but closer neighbors contribute more. Weight = 1/(distance + 0.001). A neighbor at distance 0.01 has 100x more influence than one at distance 1.0.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: More precise than equal-weight KNN. Very close matches dominate the prediction. Naturally handles varying density in feature space.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Sensitive to the epsilon term (0.001). Can overfit if one training point is extremely close.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Dense training data with clear local structure.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.purple,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700}}>7. Recency-Weighted KNN</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Combines feature distance with temporal recency. Recent training days get higher weight (0.5 + recency_rank/max_rank). Last week's similar hour matters more than 6 months ago.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Adapts to changing market regimes. Recent patterns naturally dominate. Best for stocks whose microstructure evolves over time.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: May ignore valuable older patterns. Recency bias can hurt during regime changes (new regime has no recent history).</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Stocks with evolving volatility profiles, long training periods (1+ year).</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.gold,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>8. Decile Lookup (10 Buckets)</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Same mechanism as Quintile Lookup but with 10 buckets instead of 5. Finer granularity captures subtler regime differences. Uses r-weighted averaging.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Double the resolution of quintiles. Better for capturing gradual transitions between regimes.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Needs more data (200+ days) for reliable buckets. With small datasets, some deciles may have very few samples.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Large datasets (300+ days), features with gradual effects.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>9. Feature Bagging</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Runs KNN 20 times on different random subsets of 3 features, then averages all predictions. Similar to a simplified random forest. Reduces overfitting to any single feature combination.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Robust to noisy features. Captures different feature interactions per iteration. Reduces variance without sacrificing much accuracy.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Slower (20x KNN runs). Deterministic subsets (not truly random). May dilute strong feature signals.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Many features selected (N=7-10), suspected feature noise.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>10. Regime Switch</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Splits training data into high-volatility and low-volatility regimes using median ATR%. Builds separate KNN models for each. At prediction time, classifies current conditions and uses the appropriate regime model.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Captures bimodal market behavior. Different TP% patterns in calm vs volatile markets get separate treatment. Avoids averaging across incompatible regimes.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Halves effective training size per regime. Binary split is crude (3+ regimes might be better). Median threshold is fixed from training.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Stocks with distinct calm/volatile phases (e.g. earnings seasons, sector rotation).</p>
         </div>
       </div>
     </CollapseStage>
@@ -7471,13 +7525,75 @@ function HourlyPredictionPage(p){
         return preds;
       }
 
+      // Model 5: Ensemble Average
+      function runEnsemble(tr,te,sf){
+        var p1=runQuintile(tr,te,sf,false),p2=runQuintile(tr,te,sf,true),p3=runKNN(tr,te,sf,7),p4=runLinearReg(tr,te,sf);
+        var preds=[];
+        for(var i=0;i<te.length;i++){var vals=[];if(p1[i]!==null)vals.push(p1[i]);if(p2[i]!==null)vals.push(p2[i]);if(p3[i]!==null)vals.push(p3[i]);if(p4[i]!==null)vals.push(p4[i]);
+          if(vals.length>0){var s=0;for(var j=0;j<vals.length;j++)s+=vals[j];preds.push(Math.round(s/vals.length*100)/100);}else preds.push(null);}
+        return preds;
+      }
+      // Model 6: Weighted KNN (inverse distance)
+      function runWeightedKNN(tr,te,sf,k){
+        var fSt={};for(var si=0;si<sf.length;si++){var fk=sf[si].key;var mn=Infinity,mx=-Infinity;for(var ti=0;ti<tr.length;ti++){var v=parseFloat(tr[ti][fk]);if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;}}fSt[fk]={range:mx-mn>0?mx-mn:1};}
+        var preds=[];
+        for(var ti2=0;ti2<te.length;ti2++){var pt=te[ti2];var dists=[];
+          for(var tri=0;tri<tr.length;tri++){var dist=0;var vF=0;for(var si2=0;si2<sf.length;si2++){var fk2=sf[si2].key;var v1=parseFloat(pt[fk2]);var v2=parseFloat(tr[tri][fk2]);if(!isNaN(v1)&&!isNaN(v2)){var d=(v1-v2)/fSt[fk2].range;dist+=d*d;vF++;}}if(vF>0)dists.push({dist:Math.sqrt(dist/vF),tp:tr[tri].best_tp_pct});}
+          dists.sort(function(a,b){return a.dist-b.dist;});var topK=dists.slice(0,k);
+          if(topK.length>0){var wS=0,wT=0;for(var ki=0;ki<topK.length;ki++){var w=1/(topK[ki].dist+0.001);wS+=topK[ki].tp*w;wT+=w;}preds.push(Math.round(wS/wT*100)/100);}else preds.push(null);}
+        return preds;
+      }
+      // Model 7: Recency-Weighted KNN
+      function runRecencyKNN(tr,te,sf,k){
+        var fSt={};for(var si=0;si<sf.length;si++){var fk=sf[si].key;var mn=Infinity,mx=-Infinity;for(var ti=0;ti<tr.length;ti++){var v=parseFloat(tr[ti][fk]);if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;}}fSt[fk]={range:mx-mn>0?mx-mn:1};}
+        var allD={};for(var ti=0;ti<tr.length;ti++)allD[tr[ti].trade_date]=true;var dArr=Object.keys(allD).sort();var dRank={};for(var di=0;di<dArr.length;di++)dRank[dArr[di]]=di;var mxR=dArr.length-1;
+        var preds=[];
+        for(var ti2=0;ti2<te.length;ti2++){var pt=te[ti2];var dists=[];
+          for(var tri=0;tri<tr.length;tri++){var dist=0;var vF=0;for(var si2=0;si2<sf.length;si2++){var fk2=sf[si2].key;var v1=parseFloat(pt[fk2]);var v2=parseFloat(tr[tri][fk2]);if(!isNaN(v1)&&!isNaN(v2)){var d=(v1-v2)/fSt[fk2].range;dist+=d*d;vF++;}}
+            var rec=mxR>0?(dRank[tr[tri].trade_date]||0)/mxR:0.5;if(vF>0)dists.push({dist:Math.sqrt(dist/vF),tp:tr[tri].best_tp_pct,rec:rec});}
+          dists.sort(function(a,b){return a.dist-b.dist;});var topK=dists.slice(0,k);
+          if(topK.length>0){var wS=0,wT=0;for(var ki=0;ki<topK.length;ki++){var w=(1/(topK[ki].dist+0.001))*(0.5+topK[ki].rec);wS+=topK[ki].tp*w;wT+=w;}preds.push(Math.round(wS/wT*100)/100);}else preds.push(null);}
+        return preds;
+      }
+      // Model 8: Decile Lookup (10 buckets)
+      function runDecile(tr,te,sf,weighted){
+        for(var si=0;si<sf.length;si++){var sfv=sf[si];var vals=[];for(var ti=0;ti<tr.length;ti++){var v=parseFloat(tr[ti][sfv.key]);if(!isNaN(v))vals.push({v:v,tp:tr[ti].best_tp_pct});}vals.sort(function(a,b){return a.v-b.v;});
+          var bk=[];for(var qi=0;qi<10;qi++){var qS=Math.floor(vals.length*qi/10);var qE=Math.floor(vals.length*(qi+1)/10);var qV=vals.slice(qS,Math.max(qS+1,qE));var tS=0;for(var qj=0;qj<qV.length;qj++)tS+=qV[qj].tp;bk.push({min:qV[0].v,max:qV[qV.length-1].v,avgTp:tS/qV.length});}sfv.deciles=bk;}
+        var preds=[];
+        for(var ti2=0;ti2<te.length;ti2++){var pt=te[ti2];var tpP=[];var wts=[];
+          for(var si2=0;si2<sf.length;si2++){var sf2=sf[si2];var val=parseFloat(pt[sf2.key]);if(isNaN(val))continue;for(var qi2=0;qi2<sf2.deciles.length;qi2++){if(val<=sf2.deciles[qi2].max||qi2===9){tpP.push(sf2.deciles[qi2].avgTp);wts.push(Math.abs(sf2.rProfit));break;}}}
+          if(tpP.length>0){if(weighted){var wS=0,wT=0;for(var pi=0;pi<tpP.length;pi++){wS+=tpP[pi]*wts[pi];wT+=wts[pi];}preds.push(wT>0?Math.round(wS/wT*100)/100:null);}else{var s=0;for(var pi=0;pi<tpP.length;pi++)s+=tpP[pi];preds.push(Math.round(s/tpP.length*100)/100);}}else preds.push(null);}
+        return preds;
+      }
+      // Model 9: Feature Bagging
+      function runFeatureBagging(tr,te,sf){
+        var nIter=20;var subSz=Math.min(3,sf.length);var allP=[];
+        for(var it=0;it<nIter;it++){var sub=[];for(var si=0;si<sf.length;si++){if(((it*7+si*13)%5)<3)sub.push(sf[si]);}if(!sub.length)sub=[sf[it%sf.length]];if(sub.length>subSz)sub=sub.slice(0,subSz);allP.push(runKNN(tr,te,sub,7));}
+        var preds=[];for(var i=0;i<te.length;i++){var vals=[];for(var j=0;j<allP.length;j++){if(allP[j][i]!==null)vals.push(allP[j][i]);}if(vals.length>0){var s=0;for(var k2=0;k2<vals.length;k2++)s+=vals[k2];preds.push(Math.round(s/vals.length*100)/100);}else preds.push(null);}
+        return preds;
+      }
+      // Model 10: Regime-Switching
+      function runRegimeSwitching(tr,te,sf){
+        var atrV=[];for(var ti=0;ti<tr.length;ti++){var a=parseFloat(tr[ti].prev_hour_atr_pct||tr[ti].hour_atr_pct);if(!isNaN(a))atrV.push(a);}atrV.sort(function(a,b){return a-b;});
+        var medATR=atrV.length>0?atrV[Math.floor(atrV.length/2)]:0;var trH=[];var trL=[];
+        for(var ti=0;ti<tr.length;ti++){var a2=parseFloat(tr[ti].prev_hour_atr_pct||tr[ti].hour_atr_pct);if(!isNaN(a2)&&a2>=medATR)trH.push(tr[ti]);else trL.push(tr[ti]);}
+        var preds=[];for(var ti2=0;ti2<te.length;ti2++){var pt=te[ti2];var a3=parseFloat(pt.prev_hour_atr_pct||pt.hour_atr_pct);var regime=(!isNaN(a3)&&a3>=medATR)?trH:trL;if(regime.length<5)regime=tr;var kp=runKNN(regime,[pt],sf,7);preds.push(kp[0]);}
+        return preds;
+      }
+
       // Run selected model
       var modelPreds;
-      var modelNames={quintile:'Quintile Lookup',weighted:'Weighted Quintile',knn:'KNN (K=7)',linear:'Linear Regression'};
+      var modelNames={quintile:'Quintile Lookup',weighted:'Weighted Quintile',knn:'KNN (K=7)',linear:'Linear Regression',ensemble:'Ensemble Average',wknn:'Weighted KNN',rknn:'Recency KNN',decile:'Decile Lookup',bagging:'Feature Bagging',regime:'Regime Switch'};
       if(modelType==='quintile') modelPreds=runQuintile(train,test,selectedFeatures,false);
       else if(modelType==='weighted') modelPreds=runQuintile(train,test,selectedFeatures,true);
       else if(modelType==='knn') modelPreds=runKNN(train,test,selectedFeatures,7);
       else if(modelType==='linear') modelPreds=runLinearReg(train,test,selectedFeatures);
+      else if(modelType==='ensemble') modelPreds=runEnsemble(train,test,selectedFeatures);
+      else if(modelType==='wknn') modelPreds=runWeightedKNN(train,test,selectedFeatures,7);
+      else if(modelType==='rknn') modelPreds=runRecencyKNN(train,test,selectedFeatures,7);
+      else if(modelType==='decile') modelPreds=runDecile(train,test,selectedFeatures,true);
+      else if(modelType==='bagging') modelPreds=runFeatureBagging(train,test,selectedFeatures);
+      else if(modelType==='regime') modelPreds=runRegimeSwitching(train,test,selectedFeatures);
       else modelPreds=runQuintile(train,test,selectedFeatures,false);
 
       // Find best flat TP%: the single TP% that maximizes total profit across all TEST hours
@@ -7569,6 +7685,12 @@ function HourlyPredictionPage(p){
           <option value="weighted">Weighted Quintile (r-weighted)</option>
           <option value="knn">KNN - K Nearest Neighbors (K=7)</option>
           <option value="linear">Linear Regression (OLS)</option>
+          <option value="ensemble">Ensemble Average (all 4 models)</option>
+          <option value="wknn">Weighted KNN (inverse distance)</option>
+          <option value="rknn">Recency KNN (recent days weighted)</option>
+          <option value="decile">Decile Lookup (10 buckets)</option>
+          <option value="bagging">Feature Bagging (random subsets)</option>
+          <option value="regime">Regime Switch (vol-based split)</option>
         </select>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:12,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Run Backtest'}</button>
@@ -7707,7 +7829,7 @@ function HourlyPredictionPage(p){
         </table>
       </Cd>
 
-      {(modelType==='quintile'||modelType==='weighted')&&results.selectedFeatures[0]&&results.selectedFeatures[0].quintiles&&results.selectedFeatures.map(function(sf,idx){
+      {(modelType==='quintile'||modelType==='weighted'||modelType==='decile')&&results.selectedFeatures[0]&&(results.selectedFeatures[0].quintiles||results.selectedFeatures[0].deciles)&&results.selectedFeatures.map(function(sf,idx){
         var isOpen=expandedQ===sf.key;
         return <Cd key={sf.key}>
           <div onClick={function(){setExpandedQ(isOpen?null:sf.key);}} style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
