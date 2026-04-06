@@ -1060,6 +1060,295 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
 }
 
 // ── CLI Entry Point ──────────────────────────────────────
+// ── AUTO-TUNE: Run all model/param combinations ──────────
+async function runAutotune(tickers) {
+  var runDate = new Date().toISOString().slice(0, 10);
+  await reportProgress({ mode: 'autotune', ticker: tickers.join(','), status: 'running', progress_pct: 0, message: 'Starting auto-tune...' });
+
+  var pearson = function(x, y) {
+    if (x.length < 3) return 0;
+    var n = x.length, sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+    for (var i = 0; i < n; i++) { sx += x[i]; sy += y[i]; sxy += x[i] * y[i]; sx2 += x[i] * x[i]; sy2 += y[i] * y[i]; }
+    var num = n * sxy - sx * sy; var d1 = n * sx2 - sx * sx; var d2 = n * sy2 - sy * sy;
+    return (d1 > 0 && d2 > 0) ? num / Math.sqrt(d1 * d2) : 0;
+  };
+
+  var leadableKeys = ['is_rth', 'prev_hour_atr_pct', 'prev_hour_volume', 'prev_hour_trades', 'prev_hour_realized_vol', 'prev_hour_reversal_rate', 'prev_hour_trade_intensity', 'prev_hour_avg_trade_size', 'prev_hour_oscillation_score', 'prev_hour_ece', 'prev_hour_best_tp', 'prev_hour_trend_r2', 'prev_hour_return_entropy', 'prev_hour_order_flow_imbalance', 'prev_hour_vwap_deviation', 'prev_hour_hurst', 'prev_hour_autocorr', 'prev_hour_avg_run_length', 'overnight_gap_pct', 'vix_close', 'day_of_week', 'hour', 'cumulative_volume_pct', 'price_vs_day_open_pct', 'intraday_range_pct', 'hour_vol_pct_of_day'];
+
+  // ── Model functions ──
+  function runQuintile(trainD, testD, selFeat, weighted) {
+    for (var si = 0; si < selFeat.length; si++) {
+      var sf = selFeat[si]; var vals = [];
+      for (var ti = 0; ti < trainD.length; ti++) { var v = parseFloat(trainD[ti][sf.key]); if (!isNaN(v)) vals.push({ v: v, tp: trainD[ti].best_tp_pct }); }
+      vals.sort(function(a, b) { return a.v - b.v; });
+      var quintiles = [];
+      for (var qi = 0; qi < 5; qi++) {
+        var qS = Math.floor(vals.length * qi / 5); var qE = Math.floor(vals.length * (qi + 1) / 5);
+        var qV = vals.slice(qS, qE); var tS = 0;
+        for (var qj = 0; qj < qV.length; qj++) tS += qV[qj].tp;
+        quintiles.push({ min: qV[0].v, max: qV[qV.length - 1].v, avgTp: tS / qV.length });
+      }
+      sf.quintiles = quintiles;
+    }
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2]; var tpPreds = []; var weights = [];
+      for (var si2 = 0; si2 < selFeat.length; si2++) {
+        var sf2 = selFeat[si2]; var val = parseFloat(pt[sf2.key]);
+        if (isNaN(val)) continue;
+        for (var qi2 = 0; qi2 < sf2.quintiles.length; qi2++) {
+          var q = sf2.quintiles[qi2];
+          if (val <= q.max || qi2 === 4) { tpPreds.push(q.avgTp); weights.push(Math.abs(sf2.rProfit)); break; }
+        }
+      }
+      if (tpPreds.length > 0) {
+        if (weighted) { var wS = 0, wT = 0; for (var pi = 0; pi < tpPreds.length; pi++) { wS += tpPreds[pi] * weights[pi]; wT += weights[pi]; } preds.push(wT > 0 ? Math.round(wS / wT * 100) / 100 : null); }
+        else { var s = 0; for (var pi = 0; pi < tpPreds.length; pi++) s += tpPreds[pi]; preds.push(Math.round(s / tpPreds.length * 100) / 100); }
+      } else preds.push(null);
+    }
+    return preds;
+  }
+
+  function runKNN(trainD, testD, selFeat, k) {
+    var fStats = {};
+    for (var si = 0; si < selFeat.length; si++) {
+      var fk = selFeat[si].key; var mn = Infinity, mx = -Infinity;
+      for (var ti = 0; ti < trainD.length; ti++) { var v = parseFloat(trainD[ti][fk]); if (!isNaN(v)) { if (v < mn) mn = v; if (v > mx) mx = v; } }
+      fStats[fk] = { range: mx - mn > 0 ? mx - mn : 1 };
+    }
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2]; var dists = [];
+      for (var tri = 0; tri < trainD.length; tri++) {
+        var dist = 0; var validF = 0;
+        for (var si2 = 0; si2 < selFeat.length; si2++) {
+          var fk2 = selFeat[si2].key;
+          var v1 = parseFloat(pt[fk2]); var v2 = parseFloat(trainD[tri][fk2]);
+          if (!isNaN(v1) && !isNaN(v2)) { var d = (v1 - v2) / fStats[fk2].range; dist += d * d; validF++; }
+        }
+        if (validF > 0) dists.push({ dist: dist / validF, tp: trainD[tri].best_tp_pct });
+      }
+      dists.sort(function(a, b) { return a.dist - b.dist; });
+      var topK = dists.slice(0, k);
+      if (topK.length > 0) { var tS = 0; for (var ki = 0; ki < topK.length; ki++) tS += topK[ki].tp; preds.push(Math.round(tS / topK.length * 100) / 100); }
+      else preds.push(null);
+    }
+    return preds;
+  }
+
+  function runLinearReg(trainD, testD, selFeat) {
+    var models = [];
+    for (var si = 0; si < selFeat.length; si++) {
+      var fk = selFeat[si].key; var xs = [], ys = [];
+      for (var ti = 0; ti < trainD.length; ti++) { var v = parseFloat(trainD[ti][fk]); if (!isNaN(v)) { xs.push(v); ys.push(trainD[ti].best_tp_pct); } }
+      if (xs.length < 3) { models.push(null); continue; }
+      var n = xs.length, sx = 0, sy = 0, sxy = 0, sx2 = 0;
+      for (var i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxy += xs[i] * ys[i]; sx2 += xs[i] * xs[i]; }
+      var denom = n * sx2 - sx * sx;
+      if (Math.abs(denom) < 1e-12) { models.push(null); continue; }
+      models.push({ slope: (n * sxy - sx * sy) / denom, intercept: (sy - ((n * sxy - sx * sy) / denom) * sx) / n, weight: Math.abs(selFeat[si].rProfit) });
+    }
+    var preds = [];
+    for (var ti2 = 0; ti2 < testD.length; ti2++) {
+      var pt = testD[ti2]; var tpPreds = []; var wts = [];
+      for (var si2 = 0; si2 < selFeat.length; si2++) {
+        if (!models[si2]) continue;
+        var v = parseFloat(pt[selFeat[si2].key]); if (isNaN(v)) continue;
+        var pred = Math.max(0.01, Math.min(1.0, models[si2].slope * v + models[si2].intercept));
+        tpPreds.push(pred); wts.push(models[si2].weight);
+      }
+      if (tpPreds.length > 0) { var wS = 0, wT = 0; for (var pi = 0; pi < tpPreds.length; pi++) { wS += tpPreds[pi] * wts[pi]; wT += wts[pi]; } preds.push(wT > 0 ? Math.round(wS / wT * 100) / 100 : null); }
+      else preds.push(null);
+    }
+    return preds;
+  }
+
+  var modelDefs = [
+    { id: 'quintile', name: 'Quintile Lookup', fn: function(tr, te, sf) { return runQuintile(tr, te, sf, false); } },
+    { id: 'weighted', name: 'Weighted Quintile', fn: function(tr, te, sf) { return runQuintile(tr, te, sf, true); } },
+    { id: 'knn', name: 'KNN (K=7)', fn: function(tr, te, sf) { return runKNN(tr, te, sf, 7); } },
+    { id: 'linear', name: 'Linear Regression', fn: function(tr, te, sf) { return runLinearReg(tr, te, sf); } }
+  ];
+  var topNs = [3, 5, 7, 10];
+  var trainPcts = [60, 70, 80, 90];
+  var totalCombos = modelDefs.length * topNs.length * trainPcts.length;
+
+  for (var tIdx = 0; tIdx < tickers.length; tIdx++) {
+    var ticker = tickers[tIdx];
+    console.log('\n── Auto-Tune: ' + ticker + ' ──');
+    await reportProgress({ mode: 'autotune', ticker: ticker, status: 'running', progress_pct: 0, message: 'Loading data for ' + ticker + '...' });
+
+    // Load features
+    var features = [];
+    var fOff = 0;
+    while (true) {
+      var fb = await sbFetch('hourly_features?ticker=eq.' + ticker + '&select=*&order=trade_date.asc,hour.asc&limit=1000&offset=' + fOff);
+      for (var fi = 0; fi < fb.length; fi++) features.push(fb[fi]);
+      if (fb.length < 1000) break;
+      fOff += 1000;
+    }
+    if (!features.length) { console.log('  No features for ' + ticker); continue; }
+    console.log('  Features: ' + features.length + ' rows');
+
+    // Load optimal TP%
+    var optRows = [];
+    var oOff = 0;
+    while (true) {
+      var ob = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit=1000&offset=' + oOff);
+      for (var oi = 0; oi < ob.length; oi++) optRows.push(ob[oi]);
+      if (ob.length < 1000) break;
+      oOff += 1000;
+    }
+    if (!optRows.length) { console.log('  No optimal TP% for ' + ticker); continue; }
+    console.log('  Optimal: ' + optRows.length + ' rows');
+
+    // Build lookups
+    var bestTP = {};
+    for (var i = 0; i < optRows.length; i++) { var ok = optRows[i].trade_date + '|' + optRows[i].hour; if (!bestTP[ok]) bestTP[ok] = { tp: optRows[i].tp_pct, np: optRows[i].net_profit }; }
+    var allTP = {};
+    for (var i = 0; i < optRows.length; i++) { var ok2 = optRows[i].trade_date + '|' + optRows[i].hour + '|' + parseFloat(optRows[i].tp_pct).toFixed(2); allTP[ok2] = optRows[i].net_profit; }
+
+    // Join features with best TP% + derive prev_hour
+    var joined = []; var dates = {};
+    for (var i = 0; i < features.length; i++) {
+      var fk = features[i].trade_date + '|' + features[i].hour;
+      if (bestTP[fk]) {
+        var row = Object.assign({}, features[i]);
+        row.best_tp_pct = bestTP[fk].tp; row.best_net_profit = bestTP[fk].np;
+        if (joined.length > 0 && joined[joined.length - 1].trade_date === row.trade_date) {
+          var ph = joined[joined.length - 1];
+          row.prev_hour_atr_pct = parseFloat(ph.hour_atr_pct) || null;
+          row.prev_hour_volume = parseFloat(ph.hour_volume) || null;
+          row.prev_hour_trades = parseFloat(ph.hour_trades) || null;
+          row.prev_hour_realized_vol = parseFloat(ph.hour_realized_vol) || null;
+          row.prev_hour_reversal_rate = parseFloat(ph.hour_reversal_rate) || null;
+          row.prev_hour_trade_intensity = parseFloat(ph.hour_trade_intensity) || null;
+          row.prev_hour_avg_trade_size = parseFloat(ph.hour_avg_trade_size) || null;
+          row.prev_hour_oscillation_score = parseFloat(ph.hour_oscillation_score) || null;
+          row.prev_hour_ece = parseFloat(ph.hour_ece_pct) || null;
+          row.prev_hour_best_tp = ph.best_tp_pct;
+          row.prev_hour_trend_r2 = parseFloat(ph.hour_trend_r2) || null;
+          row.prev_hour_return_entropy = parseFloat(ph.hour_return_entropy) || null;
+          row.prev_hour_order_flow_imbalance = parseFloat(ph.hour_order_flow_imbalance) || null;
+          row.prev_hour_vwap_deviation = parseFloat(ph.hour_vwap_deviation) || null;
+          row.prev_hour_hurst = parseFloat(ph.hour_hurst_exponent) || null;
+          row.prev_hour_autocorr = parseFloat(ph.hour_return_autocorr) || null;
+          row.prev_hour_avg_run_length = parseFloat(ph.hour_avg_run_length) || null;
+        }
+        row.is_rth = (parseInt(row.hour) >= 9 && parseInt(row.hour) < 16) ? 1 : 0;
+        row.hour_vol_pct_of_day = (parseFloat(row.hour_volume) || 0) / (parseFloat(row.day_volume) || 1) * 100;
+        joined.push(row); dates[row.trade_date] = true;
+      }
+    }
+    var dayList = Object.keys(dates).sort();
+    console.log('  Joined: ' + joined.length + ' points across ' + dayList.length + ' days');
+    if (joined.length < 20) { console.log('  Too few data points, skipping'); continue; }
+
+    // Delete old leaderboard for this ticker+date
+    await fetch(SB_URL + '/rest/v1/prediction_leaderboard?ticker=eq.' + ticker + '&run_date=eq.' + runDate, { method: 'DELETE', headers: sbHeaders() });
+    await sleep(200);
+
+    var comboNum = 0;
+    var leaderboardRows = [];
+
+    for (var mi = 0; mi < modelDefs.length; mi++) {
+      for (var ni = 0; ni < topNs.length; ni++) {
+        for (var pi = 0; pi < trainPcts.length; pi++) {
+          comboNum++;
+          var model = modelDefs[mi];
+          var topN = topNs[ni];
+          var trainPct = trainPcts[pi];
+          var pct = Math.round(comboNum / totalCombos * 100);
+
+          // Train/test split
+          var trainDays = Math.max(3, Math.floor(dayList.length * trainPct / 100));
+          var trainDateSet = {}; for (var di = 0; di < trainDays; di++) trainDateSet[dayList[di]] = true;
+          var train = []; var test = [];
+          for (var ji = 0; ji < joined.length; ji++) {
+            if (trainDateSet[joined[ji].trade_date]) train.push(joined[ji]); else test.push(joined[ji]);
+          }
+          if (train.length < 5 || test.length < 1) continue;
+
+          // Feature selection
+          var featureCorrs = [];
+          for (var fci = 0; fci < leadableKeys.length; fci++) {
+            var fKey = leadableKeys[fci]; var xv = []; var yp = [];
+            for (var ti = 0; ti < train.length; ti++) { var v = parseFloat(train[ti][fKey]); if (!isNaN(v)) { xv.push(v); yp.push(train[ti].best_net_profit); } }
+            if (xv.length >= 5) featureCorrs.push({ key: fKey, rProfit: pearson(xv, yp) });
+          }
+          featureCorrs.sort(function(a, b) { return Math.abs(b.rProfit) - Math.abs(a.rProfit); });
+          var selFeat = featureCorrs.slice(0, topN);
+          if (selFeat.length === 0) continue;
+
+          // Run model
+          var modelPreds = model.fn(train, test, selFeat);
+
+          // Flat benchmark
+          var flatScores = {};
+          for (var tpInt = 1; tpInt <= 100; tpInt++) {
+            var tpVal = (tpInt / 100).toFixed(2); var totalNp = 0;
+            for (var ti2 = 0; ti2 < test.length; ti2++) { var lk = test[ti2].trade_date + '|' + test[ti2].hour + '|' + tpVal; if (allTP[lk] !== undefined) totalNp += allTP[lk]; }
+            flatScores[tpVal] = totalNp;
+          }
+          var flatTp = 0.01; var flatBest = -Infinity;
+          for (var tp in flatScores) { if (flatScores[tp] > flatBest) { flatBest = flatScores[tp]; flatTp = parseFloat(tp); } }
+
+          // Evaluate
+          var predProfit = 0; var flatProfit = 0; var actualProfit = 0; var wins = 0;
+          for (var ti3 = 0; ti3 < test.length; ti3++) {
+            var pt = test[ti3]; var predTp = modelPreds[ti3];
+            var dk = pt.trade_date + '|' + pt.hour;
+            var predNp = 0; var flatNp = 0;
+            if (predTp !== null) {
+              var predKey = dk + '|' + predTp.toFixed(2);
+              if (allTP[predKey] !== undefined) predNp = allTP[predKey];
+              else { var bDist = Infinity; for (var tpS = 1; tpS <= 100; tpS++) { var tpR = (tpS / 100).toFixed(2); var lk2 = dk + '|' + tpR; if (allTP[lk2] !== undefined && Math.abs(parseFloat(tpR) - predTp) < bDist) { bDist = Math.abs(parseFloat(tpR) - predTp); predNp = allTP[lk2]; } } }
+            }
+            var flatLk = dk + '|' + flatTp.toFixed(2);
+            if (allTP[flatLk] !== undefined) flatNp = allTP[flatLk];
+            if (predNp > flatNp) wins++;
+            predProfit += predNp; flatProfit += flatNp; actualProfit += pt.best_net_profit;
+          }
+
+          var edge = predProfit - flatProfit;
+          var edgePct = flatProfit !== 0 ? (edge / Math.abs(flatProfit)) * 100 : 0;
+          var winRate = test.length > 0 ? (wins / test.length * 100) : 0;
+          var captureRate = actualProfit !== 0 ? (predProfit / actualProfit * 100) : 0;
+          var testDays = dayList.length - trainDays;
+
+          leaderboardRows.push({
+            ticker: ticker, model: model.id, top_n: topN, train_pct: trainPct,
+            edge_dollars: Math.round(edge * 100) / 100, edge_pct: Math.round(edgePct * 10) / 10,
+            win_rate: Math.round(winRate * 10) / 10, capture_rate: Math.round(captureRate * 10) / 10,
+            predicted_profit: Math.round(predProfit * 100) / 100, flat_profit: Math.round(flatProfit * 100) / 100,
+            actual_profit: Math.round(actualProfit * 100) / 100, flat_tp: flatTp,
+            test_days: testDays, test_points: test.length, train_points: train.length,
+            wins: wins, run_date: runDate
+          });
+
+          if (comboNum % 8 === 0) {
+            await reportProgress({ mode: 'autotune', ticker: ticker, status: 'running', progress_pct: pct, message: ticker + ': ' + comboNum + '/' + totalCombos + ' (' + model.name + ' N=' + topN + ' T=' + trainPct + '%)' });
+          }
+        }
+      }
+    }
+
+    // Save leaderboard
+    console.log('  Saving ' + leaderboardRows.length + ' leaderboard rows...');
+    await sbDeleteInsert('prediction_leaderboard', 'ticker=eq.' + ticker + '&run_date=eq.' + runDate, leaderboardRows, 'leaderboard');
+
+    // Log top 5
+    leaderboardRows.sort(function(a, b) { return b.edge_dollars - a.edge_dollars; });
+    console.log('\n  TOP 5 BY EDGE $:');
+    for (var ri = 0; ri < Math.min(5, leaderboardRows.length); ri++) {
+      var r = leaderboardRows[ri];
+      console.log('  ' + (ri + 1) + '. ' + r.model + ' N=' + r.top_n + ' T=' + r.train_pct + '% | Edge: $' + r.edge_dollars + ' (' + r.edge_pct + '%) | Win: ' + r.win_rate + '% | Capture: ' + r.capture_rate + '%');
+    }
+  }
+
+  await reportProgress({ mode: 'autotune', ticker: tickers.join(','), status: 'complete', progress_pct: 100, message: 'Auto-tune complete: ' + totalCombos + ' combinations tested' });
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
@@ -1087,6 +1376,8 @@ async function main() {
     await runBackfill(tickers, startDate, endDate, skipExisting);
   } else if (mode === 'nightly') {
     await runNightly(tickers);
+  } else if (mode === 'autotune') {
+    await runAutotune(tickers);
   } else {
     await runHourly(tickers);
   }

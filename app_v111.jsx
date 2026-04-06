@@ -6791,6 +6791,136 @@ function RawDataPage(p){
   </div>;
 }
 
+function MLModelFinderPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),leaderboard=s2[0],setLeaderboard=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
+  var s7=useState('edge_dollars'),sortBy=s7[0],setSortBy=s7[1];
+
+  useEffect(function(){
+    if(!SB_URL||!SB_KEY)return;
+    var h=getSbHeaders();h['Range']='0-9999';
+    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(d){
+      var u={};for(var i=0;i<d.length;i++)u[d[i].ticker]=true;setAvailTickers(Object.keys(u).sort());
+    }).catch(function(){});
+  },[]);
+
+  var loadLeaderboard=async function(tk){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var h=getSbHeaders();h['Range']='0-999';
+      var r=await fetch(SB_URL+'/rest/v1/prediction_leaderboard?ticker=eq.'+(tk||ticker)+'&order=edge_dollars.desc&select=*',{headers:h});
+      var rows=r.ok?await r.json():[];
+      setLeaderboard(rows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  useEffect(function(){
+    if(ticker)loadLeaderboard(ticker);
+  },[ticker]);
+
+  var triggerAutotune=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    if(!ticker){setErr('Select a ticker');return;}
+    setErr(null);setProg('Triggering auto-tune...');
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'autotune',tickers:ticker}})});
+      if(r.status===204)setProg('Auto-tune triggered for '+ticker+'. Running 64 model combinations on GitHub...');
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setProg('');}
+    }catch(e){setErr('Trigger failed: '+e.message);setProg('');}
+  };
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
+  var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
+
+  var sorted=leaderboard?leaderboard.slice().sort(function(a,b){return (parseFloat(b[sortBy])||0)-(parseFloat(a[sortBy])||0);}):[];
+  var best=sorted.length>0?sorted[0]:null;
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>ML Model Finder</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Auto-Tune" sub="Test all 64 model/parameter combinations on GitHub" info="Runs 4 models x 4 Top N values x 4 Train % splits = 64 combinations. Each combination trains on historical data, predicts on out-of-sample test data, and measures edge vs flat benchmark. Results saved to leaderboard. Takes ~30 seconds on GitHub Actions."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Ticker</label>
+          {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={iS}><option value="">Select...</option>{availTickers.map(function(t){return <option key={t} value={t}>{t}</option>;})}</select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
+        </div>
+      </div>
+      <button onClick={triggerAutotune} style={Object.assign({},bB,{marginTop:10,background:p.ghToken?'linear-gradient(135deg,#9d5cff,#6030c0)':'#333',color:p.ghToken?'#fff':C.txtDim})}>{p.ghToken?'Run Auto-Tune on GitHub':'Add GitHub PAT in Settings'}</button>
+      {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      <button onClick={function(){loadLeaderboard();}} style={{width:'100%',marginTop:8,background:'transparent',border:'1px solid '+C.border,borderRadius:8,color:C.txt,fontFamily:F,fontSize:8,fontWeight:600,padding:'8px',cursor:'pointer'}}>Refresh Leaderboard</button>
+    </Cd>
+
+    {best&&<Cd glow={true}>
+      <SectionHead title="Best Configuration" sub={best.model+' | Top '+best.top_n+' | Train '+best.train_pct+'%'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+        <Mt label="Edge $" value={(best.edge_dollars>0?'+$':'$')+Math.abs(best.edge_dollars).toLocaleString(undefined,{minimumFractionDigits:2})} color={best.edge_dollars>0?C.accent:C.warn} size="lg"/>
+        <Mt label="Edge %" value={(best.edge_pct>0?'+':'')+best.edge_pct.toFixed(1)+'%'} color={best.edge_pct>0?C.accent:C.warn} size="lg"/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
+        <Mt label="Win Rate" value={best.win_rate+'%'} color={best.win_rate>50?C.accent:C.warn} size="sm"/>
+        <Mt label="Capture" value={best.capture_rate+'%'} color={C.purple} size="sm"/>
+        <Mt label="Flat TP" value={best.flat_tp+'%'} color={C.gold} size="sm"/>
+        <Mt label="Test Days" value={best.test_days} color={C.txtDim} size="sm"/>
+      </div>
+    </Cd>}
+
+    {sorted.length>0&&<Cd>
+      <SectionHead title="Leaderboard" sub={sorted.length+' combinations | '+ticker+' | '+sorted[0].run_date}/>
+      <div style={{display:'flex',gap:6,marginTop:6,marginBottom:8,flexWrap:'wrap'}}>
+        {['edge_dollars','edge_pct','win_rate','capture_rate'].map(function(col){
+          var labels={edge_dollars:'Edge $',edge_pct:'Edge %',win_rate:'Win Rate',capture_rate:'Capture'};
+          return <button key={col} onClick={function(){setSortBy(col);}} style={{background:sortBy===col?C.accent:'transparent',color:sortBy===col?C.bg:C.txtDim,border:'1px solid '+(sortBy===col?C.accent:C.border),borderRadius:4,fontFamily:F,fontSize:7,fontWeight:700,padding:'4px 8px',cursor:'pointer'}}>{labels[col]}</button>;
+        })}
+      </div>
+      <div style={{overflowX:'auto',maxHeight:500}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Model</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>N</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Train</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge $</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Edge%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Win%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cap%</th>
+          </tr></thead>
+          <tbody>{sorted.map(function(r,idx){
+            var isBest=idx===0;
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.06)':r.edge_dollars>0?'rgba(0,229,160,0.02)':'transparent'}}>
+              <td style={{padding:'3px',color:isBest?C.accent:C.txtDim,fontWeight:isBest?700:400}}>{idx+1}</td>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700,fontSize:7}}>{r.model}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.top_n}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.train_pct+'%'}</td>
+              <td style={{padding:'3px',color:r.edge_dollars>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{(r.edge_dollars>0?'+':'')+r.edge_dollars.toFixed(0)}</td>
+              <td style={{padding:'3px',color:r.edge_pct>0?C.accent:C.warn,textAlign:'right'}}>{(r.edge_pct>0?'+':'')+r.edge_pct.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:r.win_rate>50?C.accent:r.win_rate>45?C.gold:C.warn,textAlign:'right'}}>{r.win_rate+'%'}</td>
+              <td style={{padding:'3px',color:C.purple,textAlign:'right'}}>{r.capture_rate+'%'}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {sorted.length===0&&!loading&&ticker&&<Cd>
+      <div style={{textAlign:'center',padding:20}}>
+        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginBottom:8}}>No leaderboard data for {ticker}</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F}}>Run Auto-Tune to test all 64 model/parameter combinations.</div>
+      </div>
+    </Cd>}
+  </div>;
+}
+
 function PredictionLogicPage(p){
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -7851,7 +7981,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -7867,6 +7997,7 @@ function App(){
     {page==='builddata'&&<BuildDataSetPage apiKey={pgKey} onBack={function(){setPage('objectives');}}/>}
     {page==='corrfinder'&&<CorrelationFinderPage onBack={function(){setPage('objectives');}}/>}
     {page==='predictlogic'&&<PredictionLogicPage onBack={function(){setPage('objectives');}}/>}
+    {page==='modelfinder'&&<MLModelFinderPage ghToken={ghToken} onBack={function(){setPage('objectives');}}/>}
     {page==='predict'&&<HourlyPredictionPage ghToken={ghToken} onBack={function(){setPage('objectives');}}/>}
     {page==='rawdata'&&<RawDataPage apiKey={pgKey} onBack={function(){setPage('batch');}}/>}
     {page==='hourlyopt'&&<HourlyOptimalPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
