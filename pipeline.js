@@ -1190,23 +1190,34 @@ async function runAutotune(tickers) {
     if (!features.length) { console.log('  No features for ' + ticker); continue; }
     console.log('  Features: ' + features.length + ' rows');
 
-    // Load optimal TP%
-    var optRows = [];
-    var oOff = 0;
-    while (true) {
-      var ob = await sbFetch('optimal_tp_hourly?ticker=eq.' + ticker + '&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit=1000&offset=' + oOff);
-      for (var oi = 0; oi < ob.length; oi++) optRows.push(ob[oi]);
-      if (ob.length < 1000) break;
-      oOff += 1000;
-    }
-    if (!optRows.length) { console.log('  No optimal TP% for ' + ticker); continue; }
-    console.log('  Optimal: ' + optRows.length + ' rows');
-
-    // Build lookups
+    // Load optimal TP% — stream directly into lookups (don't store raw rows)
     var bestTP = {};
-    for (var i = 0; i < optRows.length; i++) { var ok = optRows[i].trade_date + '|' + optRows[i].hour; if (!bestTP[ok]) bestTP[ok] = { tp: optRows[i].tp_pct, np: optRows[i].net_profit }; }
     var allTP = {};
-    for (var i = 0; i < optRows.length; i++) { var ok2 = optRows[i].trade_date + '|' + optRows[i].hour + '|' + parseFloat(optRows[i].tp_pct).toFixed(2); allTP[ok2] = optRows[i].net_profit; }
+    var optCount = 0;
+    var oOff = 0;
+    console.log('  Loading optimal TP% (paginated)...');
+    while (true) {
+      try {
+        var oUrl = 'optimal_tp_hourly?ticker=eq.' + ticker + '&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit=1000&offset=' + oOff;
+        var ob = await sbFetch(oUrl);
+        if (!ob || !ob.length) { if (oOff === 0) console.log('  WARN: First optimal fetch returned empty'); break; }
+        for (var oi = 0; oi < ob.length; oi++) {
+          var ok = ob[oi].trade_date + '|' + ob[oi].hour;
+          if (!bestTP[ok]) bestTP[ok] = { tp: ob[oi].tp_pct, np: ob[oi].net_profit };
+          allTP[ok + '|' + parseFloat(ob[oi].tp_pct).toFixed(2)] = ob[oi].net_profit;
+          optCount++;
+        }
+        if (ob.length < 1000) break;
+        oOff += 1000;
+        if (oOff % 10000 === 0) console.log('  Optimal: ' + optCount + ' rows loaded...');
+        if (oOff % 50000 === 0) await reportProgress({ mode: 'autotune', ticker: ticker, status: 'running', progress_pct: 0, message: 'Loading optimal TP%: ' + optCount + ' rows...' });
+      } catch (loadErr) {
+        console.log('  ERROR loading optimal at offset ' + oOff + ': ' + loadErr.message);
+        break;
+      }
+    }
+    if (optCount === 0) { console.log('  No optimal TP% for ' + ticker); continue; }
+    console.log('  Optimal: ' + optCount + ' rows -> ' + Object.keys(bestTP).length + ' hours');
 
     // Join features with best TP% + derive prev_hour
     var joined = []; var dates = {};
