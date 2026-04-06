@@ -6753,6 +6753,27 @@ function PredictionLogicPage(p){
       </div>
     </Cd>
 
+    <Cd>
+      <SectionHead title="The Model: Quintile Regime Lookup" sub="A non-parametric, interpretable prediction algorithm"/>
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <p style={{marginBottom:10}}>The Stage 4 predictor uses a <span style={{color:C.accent,fontWeight:700}}>Quintile Regime Lookup</span> model. This is a non-parametric approach where historical data is divided into 5 equal-sized buckets (quintiles) per feature, and each bucket stores the average optimal TP% observed within that regime.</p>
+        <p style={{marginBottom:10}}>At prediction time, the model observes the current market state (previous hour volatility, volume, oscillation metrics, etc.), determines which quintile each feature falls into, retrieves the associated TP% for each, and averages them into a single prediction.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Why This Model</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>No assumptions:</span> Unlike linear regression, quintile lookup does not assume a linear relationship between features and TP%. It captures arbitrary non-linear patterns (e.g. both very low and very high volatility favoring small TP%).</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Interpretable:</span> Every prediction can be traced back to specific quintile buckets. "ATR% is in Q4 (high volatility), which historically averaged 0.18% TP" -- no black box.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Robust to outliers:</span> Quintile boundaries are rank-based, not value-based. A single extreme day does not distort the model.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Low data requirement:</span> With 200 training days and 5 quintiles, each bucket has ~40 samples -- enough for stable averages. Parametric models (neural nets, gradient boosting) need 1000+ samples for reliable generalization.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Model Parameters</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Top N Features</span> (default 5) -- How many leadable features to use. More features = more signal but more noise averaging. 3-7 is the practical range.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Train/Test Split</span> (default 80/20) -- Percentage of days used for training vs out-of-sample testing. Higher train % = more training data but less test data for evaluation.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Feature Ranking Criterion</span> -- Features ranked by |r(Profit)| (absolute Pearson correlation with net profit). This selects features most predictive of which hours are profitable, not which TP% to use directly.</p>
+        </div>
+      </div>
+    </Cd>
+
     <CollapseStage title="Prediction Pipeline" sub="From raw data to TP% recommendation">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <p style={{marginBottom:10}}>The prediction pipeline has five stages, each building on the previous. Data flows from Polygon tick data through feature extraction, correlation ranking, quintile bucketing, and finally prediction.</p>
