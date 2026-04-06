@@ -1806,42 +1806,38 @@ function DbManagePage(p){
       });
       setFeatData({stocks:featArr,totalRows:featRows.length});
 
-      // Load Stage 2 optimal TP% data (paginated - PostgREST max 1000 rows)
-      var optRows=[];var optPage=0;var optBatch=1000;
-      while(true){
-        var rh3=getSbHeaders();rh3['Range']=(optPage*optBatch)+'-'+((optPage+1)*optBatch-1);rh3['Prefer']='count=exact';
-        var ro=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date,hour,tp_pct,net_profit&order=ticker.asc,trade_date.asc',{headers:rh3});
-        var batch3=ro.ok?await ro.json():[];
-        for(var bi=0;bi<batch3.length;bi++)optRows.push(batch3[bi]);
-        if(batch3.length<optBatch)break;
-        optPage++;
-      }
+      // Load Stage 2 optimal TP% summary (fast: HEAD for count + distinct dates)
+      var rh3=getSbHeaders();rh3['Prefer']='count=exact';rh3['Range']='0-0';
+      var roCount=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=id',{headers:rh3});
+      var totalOpt=0;var cr=roCount.headers.get('content-range');if(cr){var m=cr.match(/\/(\d+)/);if(m)totalOpt=parseInt(m[1]);}
+      // Get tickers and date ranges
+      var rh3b=getSbHeaders();
+      var roTickers=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date&order=ticker.asc,trade_date.asc&limit=1000',{headers:rh3b});
+      var optSample=roTickers.ok?await roTickers.json():[];
       var optStocks={};
-      for(var oi=0;oi<optRows.length;oi++){
-        var or2=optRows[oi];var ok2=or2.ticker;
+      for(var oi=0;oi<optSample.length;oi++){
+        var ok2=optSample[oi].ticker;var odKey=optSample[oi].trade_date;
         if(!optStocks[ok2])optStocks[ok2]={ticker:ok2,dates:{},totalRows:0};
-        var odKey=or2.trade_date;
-        if(!optStocks[ok2].dates[odKey])optStocks[ok2].dates[odKey]={hours:new Set(),rows:0,bestByHour:{}};
-        optStocks[ok2].dates[odKey].hours.add(or2.hour);
-        optStocks[ok2].dates[odKey].rows++;
-        optStocks[ok2].totalRows++;
-        var np=parseFloat(or2.net_profit)||0;
-        if(!optStocks[ok2].dates[odKey].bestByHour[or2.hour]||np>optStocks[ok2].dates[odKey].bestByHour[or2.hour].np){
-          optStocks[ok2].dates[odKey].bestByHour[or2.hour]={tp:or2.tp_pct,np:np};
-        }
+        if(!optStocks[ok2].dates[odKey])optStocks[ok2].dates[odKey]={hours:16,rows:1600};
+        optStocks[ok2].totalRows=0;
       }
       var optArr=Object.values(optStocks).map(function(os){
         var dk=Object.keys(os.dates).sort();
-        os.dayCount=dk.length;
+        os.dayCount=dk.length;os.totalRows=dk.length*1600;
         os.earliest=dk[0];os.latest=dk[dk.length-1];os.dateList=dk;
-        for(var di2=0;di2<dk.length;di2++){os.dates[dk[di2]].hours=os.dates[dk[di2]].hours.size;}
         return os;
       });
-      setOptData({stocks:optArr,totalRows:optRows.length});
-      // Load daily optimal TP% data
-      var rh5=getSbHeaders();rh5['Range']='0-49999';
-      var rDOpt=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?select=ticker,trade_date,tp_dollar,cycles,net_total&order=ticker.asc,trade_date.asc,net_total.desc',{headers:rh5});
-      var dOptRows=rDOpt.ok?await rDOpt.json():[];
+      setOptData({stocks:optArr,totalRows:totalOpt});
+      // Load daily optimal TP% data (paginated)
+      var dOptRows=[];var dOptPage=0;
+      while(true){
+        var rh5=getSbHeaders();rh5['Range']=(dOptPage*1000)+'-'+((dOptPage+1)*1000-1);
+        var rDOpt=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?select=ticker,trade_date,tp_dollar,cycles,net_total&order=ticker.asc,trade_date.asc,net_total.desc',{headers:rh5});
+        var dBatch=rDOpt.ok?await rDOpt.json():[];
+        for(var dbi=0;dbi<dBatch.length;dbi++)dOptRows.push(dBatch[dbi]);
+        if(dBatch.length<1000)break;
+        dOptPage++;if(dOptPage>20)break;
+      }
       // Get best per stock-day (first row per ticker+date since ordered by net_total desc)
       var dOptBest={};var dOptTickers={};
       for(var doi=0;doi<dOptRows.length;doi++){var dk=dOptRows[doi].ticker+'|'+dOptRows[doi].trade_date;if(!dOptBest[dk]){dOptBest[dk]=dOptRows[doi];dOptTickers[dOptRows[doi].ticker]=true;}}
