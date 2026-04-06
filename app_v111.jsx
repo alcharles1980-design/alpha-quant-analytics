@@ -7061,6 +7061,7 @@ function HourlyPredictionPage(p){
   var sb4=useState(null),pipelineProgress=sb4[0],setPipelineProgress=sb4[1];
   var qExp=useState(null),expandedQ=qExp[0],setExpandedQ=qExp[1];
   var pollRef=useRef(null);
+  var _AC=RC.AreaChart,_A=RC.Area,_XA=RC.XAxis,_YA=RC.YAxis,_TT=RC.Tooltip,_RS=RC.ResponsiveContainer,_CG=RC.CartesianGrid;
 
   var startPolling=function(){
     if(pollRef.current)clearInterval(pollRef.current);
@@ -7489,17 +7490,18 @@ function HourlyPredictionPage(p){
 
       <Cd>
         <SectionHead title="Cumulative Profit" sub="Predicted vs Flat vs Actual Best (out-of-sample)"/>
-        <div style={{height:200,marginTop:8}}>
-          {typeof Recharts!=='undefined'&&Recharts.AreaChart&&React.createElement(Recharts.ResponsiveContainer,{width:'100%',height:'100%'},
-            React.createElement(Recharts.AreaChart,{data:results.cumSeries,margin:{top:5,right:5,left:5,bottom:5}},
-              React.createElement(Recharts.XAxis,{dataKey:'idx',tick:false}),
-              React.createElement(Recharts.YAxis,{tick:{fontSize:7,fill:C.txtDim},width:50,tickFormatter:function(v){return '$'+Math.round(v).toLocaleString();}}),
-              React.createElement(Recharts.Tooltip,{contentStyle:{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,fontSize:8,fontFamily:F},labelFormatter:function(v){var pt=results.predictions[v];return pt?pt.date+' H'+pt.hour:'';},formatter:function(v){return '$'+v.toFixed(2);}}),
-              React.createElement(Recharts.Area,{type:'monotone',dataKey:'actual',stroke:C.blue,fill:'transparent',strokeWidth:1,strokeDasharray:'4 2',name:'Actual Best'}),
-              React.createElement(Recharts.Area,{type:'monotone',dataKey:'flat',stroke:C.gold,fill:'transparent',strokeWidth:2,name:'Flat'}),
-              React.createElement(Recharts.Area,{type:'monotone',dataKey:'pred',stroke:C.accent,fill:'rgba(0,229,160,0.08)',strokeWidth:2,name:'Predicted'})
-            )
-          )}
+        <div style={{height:220,marginTop:8}}>
+          {_AC&&<_RS width="100%" height={220}>
+            <_AC data={results.cumSeries} margin={{top:5,right:5,left:5,bottom:5}}>
+              <_CG strokeDasharray="3 3" stroke={C.grid}/>
+              <_XA dataKey="idx" tick={false}/>
+              <_YA tick={{fill:C.txtDim,fontSize:7,fontFamily:F}} width={50} tickFormatter={function(v){return '$'+Math.round(v).toLocaleString();}}/>
+              <_TT contentStyle={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,fontSize:8,fontFamily:F}} labelFormatter={function(v){var pt=results.predictions[v];return pt?pt.date+' H'+pt.hour:'';}} formatter={function(v,n){return ['$'+v.toFixed(2),n];}}/>
+              <_A type="monotone" dataKey="actual" stroke={C.blue} fill="transparent" strokeWidth={1} strokeDasharray="4 2" name="Actual Best" dot={false}/>
+              <_A type="monotone" dataKey="flat" stroke={C.gold} fill="transparent" strokeWidth={2} name="Flat" dot={false}/>
+              <_A type="monotone" dataKey="pred" stroke={C.accent} fill="rgba(0,229,160,0.08)" strokeWidth={2} name="Predicted" dot={false}/>
+            </_AC>
+          </_RS>}
         </div>
         <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:6}}>
           <span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u25CF Predicted'}</span>
