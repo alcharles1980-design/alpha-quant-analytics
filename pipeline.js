@@ -958,12 +958,12 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
               console.log('  Stage 2: Worker done - ' + wData.total_rows + ' rows saved, ' + wData.processed_ticks + ' ticks' + (wData.subsampled ? ' (subsampled from ' + wData.original_ticks + ')' : ''));
             } else {
               console.log('  Stage 2: Worker error - ' + (wData.error || JSON.stringify(wData).slice(0, 200)));
-              daysError++;
+              stats.errors++;
               continue;
             }
           } catch (wErr) {
             console.log('  Stage 2: Worker call failed - ' + wErr.message);
-            daysError++;
+            stats.errors++;
             continue;
           }
         } else {
