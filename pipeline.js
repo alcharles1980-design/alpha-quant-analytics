@@ -1355,7 +1355,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
