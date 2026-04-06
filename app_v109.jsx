@@ -676,7 +676,8 @@ function TrendPage(p){
       var rChk=await fetch(SB_URL+'/rest/v1/cached_analyses?ticker=eq.'+ticker.toUpperCase()+'&trade_date=gte.'+startDate+'&trade_date=lte.'+endDate+'&tp_pct=eq.'+tpVal+'&select=trade_date,total_cycles&order=trade_date.asc',{headers:h});
       var analysisRows=rChk.ok?await rChk.json():[];
       if(!analysisRows.length){setErr('No cached data for '+ticker.toUpperCase()+' at '+tpVal+'% TP in this date range. Go to Import Stock Data and batch process with TP% = '+tpVal+'.');setLoading(false);return;}
-      var r1=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker.toUpperCase()+'&trade_date=gte.'+startDate+'&trade_date=lte.'+endDate+'&select=*&order=trade_date.asc,hour.asc',{headers:h});
+      var rh1=getSbHeaders();rh1['Range']='0-9999';
+      var r1=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+ticker.toUpperCase()+'&trade_date=gte.'+startDate+'&trade_date=lte.'+endDate+'&select=*&order=trade_date.asc,hour.asc',{headers:rh1});
       if(!r1.ok)throw new Error('API error '+r1.status);
       var rows=await r1.json();
       if(!rows.length){setErr('No cached seasonality data for '+ticker.toUpperCase()+' in this range. Go to Import Stock Data first.');setLoading(false);return;}
@@ -719,7 +720,8 @@ function TrendPage(p){
         }
       }
       // Fetch hourly cycles
-      var r3=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker.toUpperCase()+'&trade_date=gte.'+startDate+'&trade_date=lte.'+endDate+'&tp_pct=eq.'+tpVal+'&select=*&order=trade_date.asc,hour.asc',{headers:h});
+      var rh3c=getSbHeaders();rh3c['Range']='0-9999';
+      var r3=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+ticker.toUpperCase()+'&trade_date=gte.'+startDate+'&trade_date=lte.'+endDate+'&tp_pct=eq.'+tpVal+'&select=*&order=trade_date.asc,hour.asc',{headers:rh3c});
       var cycleRows=r3.ok?await r3.json():[];
       var cyclesByDate={};var maxHourlyCycles=0;
       for(var ci=0;ci<cycleRows.length;ci++){
@@ -4659,7 +4661,7 @@ function BuildDataSetPage(p){
         setLoading(true);setErr(null);setProg('Loading all feature rows for '+ticker.toUpperCase()+'...');
         try{
           var h=getSbHeaders();
-          var rAll=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&select=*&order=trade_date.asc,hour.asc',{headers:Object.assign({},h,{'Range':'0-49999'})});
+          var rhAll=getSbHeaders();rhAll['Range']='0-9999';var rAll=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&select=*&order=trade_date.asc,hour.asc',{headers:rhAll});
           var allRows=rAll.ok?await rAll.json():[];
           if(!allRows.length){setErr('No feature data for '+ticker.toUpperCase());setLoading(false);return;}
           var byDate={};for(var i=0;i<allRows.length;i++){var dk=allRows[i].trade_date;if(!byDate[dk])byDate[dk]=[];byDate[dk].push(allRows[i]);}
@@ -5425,7 +5427,7 @@ function CorrelationFinderPage(p){
     setLoading(true);setErr(null);setResults(null);setProg('Loading features (X)...');
     try{
       var h=getSbHeaders();h['Range']='0-49999';
-      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:Object.assign({},h,{'Range':'0-49999'})});
+      var rhCF=getSbHeaders();rhCF['Range']='0-9999';var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhCF});
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
       setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
@@ -5667,7 +5669,8 @@ function CorrelationFinderPage(p){
     try{
       var h=getSbHeaders();h['Range']='0-49999';
       // Get best flat TP% per day from cached_daily_optimal_tp
-      var r1=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?ticker=eq.'+ticker+'&select=trade_date,tp_pct,net_total,cycles,share_price&order=trade_date.asc,net_total.desc',{headers:h});
+      var rhDO=getSbHeaders();rhDO['Range']='0-9999';
+      var r1=await fetch(SB_URL+'/rest/v1/cached_daily_optimal_tp?ticker=eq.'+ticker+'&select=trade_date,tp_pct,net_total,cycles,share_price&order=trade_date.asc,net_total.desc',{headers:rhDO});
       var dailyRows=r1.ok?await r1.json():[];
       if(!dailyRows.length){setErr('No daily optimal TP% data for '+ticker+'. Run Daily Optimal TP% Finder (multi-day) first.');setLoading(false);return;}
       // Get best TP% per day (first row per date since sorted by net_total desc)
@@ -5677,7 +5680,8 @@ function CorrelationFinderPage(p){
       if(dayKeys.length<3){setErr('Only '+dayKeys.length+' days of daily optimal data. Need at least 3. Run more daily scans.');setLoading(false);return;}
       setProg('Loading hourly features (X) for '+dayKeys.length+' days...');
       // Get hourly features to aggregate into day-level features
-      var r2=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,day_open,day_close,day_high,day_low,day_volume,day_trades,overnight_gap_pct,vix_close,day_of_week,prev_day_close,hour_realized_vol,hour_tick_volatility,hour_return_pct,hour_max_drawdown_pct,hour_avg_trade_size,hour_trade_intensity,hour_reversal_count,hour_reversal_rate,hour_up_down_ratio,first_15min_range_pct,hour_return_autocorr,hour_hurst_exponent,hour_avg_run_length,hour_oscillation_score,hour_ece_pct,hour_cwe_pct,hour_trend_r2,hour_return_entropy,hour_order_flow_imbalance,hour_vwap_deviation,hour_price_level_concentration&order=trade_date.asc,hour.asc',{headers:h});
+      var rhF2=getSbHeaders();rhF2['Range']='0-9999';
+      var r2=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,day_open,day_close,day_high,day_low,day_volume,day_trades,overnight_gap_pct,vix_close,day_of_week,prev_day_close,hour_realized_vol,hour_tick_volatility,hour_return_pct,hour_max_drawdown_pct,hour_avg_trade_size,hour_trade_intensity,hour_reversal_count,hour_reversal_rate,hour_up_down_ratio,first_15min_range_pct,hour_return_autocorr,hour_hurst_exponent,hour_avg_run_length,hour_oscillation_score,hour_ece_pct,hour_cwe_pct,hour_trend_r2,hour_return_entropy,hour_order_flow_imbalance,hour_vwap_deviation,hour_price_level_concentration&order=trade_date.asc,hour.asc',{headers:rhF2});
       var hourlyRows=r2.ok?await r2.json():[];
       setProg('Aggregating day-level features...');
       // Aggregate hourly features into day-level
@@ -6787,7 +6791,7 @@ function HourlyPredictionPage(p){
     setLoading(true);setErr(null);setResults(null);setProg('Loading features...');
     try{
       var h=getSbHeaders();
-      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:Object.assign({},h,{'Range':'0-49999'})});
+      var rhCF=getSbHeaders();rhCF['Range']='0-9999';var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhCF});
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker);setLoading(false);return;}
       setProg('Loading optimal TP% (paginated)...');
