@@ -6752,11 +6752,14 @@ function PredictionLogicPage(p){
         <p style={{marginBottom:10,color:C.gold,fontWeight:700}}>The core question: can we use previous-hour features to predict the next hour's optimal TP%, and does this outperform a fixed flat TP%?</p>
       </div>
       <div style={{padding:'12px',background:C.bg,borderRadius:8,border:'1px solid '+C.purple,marginTop:10}}>
-        <div style={{color:C.purple,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:0.5}}>CURRENT MODEL: QUINTILE REGIME LOOKUP</div>
+        <div style={{color:C.purple,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:0.5}}>4 PREDICTION MODELS</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7}}>
-          <p style={{marginBottom:6}}>A non-parametric, interpretable model that groups historical market conditions into 5 regimes (quintiles) per feature and looks up the average optimal TP% for each regime. At prediction time, it identifies which regime the current conditions match and averages the TP% recommendations across the top N most predictive features.</p>
-          <p style={{marginBottom:6}}>This is deliberately simple as a first-stage predictor. It makes no assumptions about linear relationships, is robust to outliers, and every prediction can be traced back to specific historical regimes. The model serves as a baseline that more sophisticated approaches (ensemble ML, reinforcement learning) must beat to justify their added complexity.</p>
-          <p style={{color:C.txtDim}}>Type: Non-parametric lookup | Training: Quintile bucketing on sorted feature values | Prediction: Multi-feature regime averaging | Complexity: O(N) per prediction where N = selected features</p>
+          <p style={{marginBottom:6}}>The predictor supports 4 interchangeable models, all sharing the same evaluation framework. Each takes training data and selected features as input, outputs a predicted TP% per test hour, and is evaluated against the same flat benchmark.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1. Quintile Lookup</span> - Non-parametric regime bucketing, equal-weight averaging. Simple baseline.<br/>
+          <span style={{color:C.blue,fontWeight:700}}>2. Weighted Quintile</span> - Same quintiles, but weights predictions by |r(Profit)| correlation strength.<br/>
+          <span style={{color:C.purple,fontWeight:700}}>3. KNN (K=7)</span> - Finds 7 most similar historical hours by feature distance, averages their TP%.<br/>
+          <span style={{color:C.gold,fontWeight:700}}>4. Linear Regression</span> - OLS per feature with r-weighted combination. Continuous predictions.</p>
+          <p style={{color:C.txtDim}}>All run entirely in-browser. No server needed. Select model from dropdown on Predictor page.</p>
         </div>
       </div>
     </Cd>
@@ -6923,6 +6926,50 @@ function PredictionLogicPage(p){
       </div>
     </CollapseStage>
 
+    <CollapseStage title="Available Models" sub="4 prediction models with different strengths and tradeoffs">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>All models share the same interface: they receive training data and selected features, and output a predicted TP% for each test point. The evaluation framework (flat benchmark, profit lookup, metrics) is identical across models, enabling direct comparison.</p>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>1. Quintile Lookup (Equal Weight)</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Groups training data into 5 quintiles per feature by sorted value. Each quintile stores the average optimal TP%. At prediction time, looks up which quintile each feature falls into and averages the TP% across all features equally.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Simple, interpretable, robust to outliers, no assumptions about data distribution. Each prediction is traceable to specific historical regimes.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Equal weighting means weak features contribute as much as strong ones. 5 buckets is coarse -- may miss fine-grained patterns.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Initial exploration, small datasets, interpretability requirements.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.blue,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>2. Weighted Quintile (Correlation-Weighted)</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Same quintile bucketing as Model 1, but weights each feature's TP% prediction by its |r(Profit)| correlation strength. Features with stronger correlations have more influence on the final prediction.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Stronger features dominate the prediction. Same interpretability as quintile lookup. Minimal added complexity.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Weights are fixed from training -- does not adapt if correlation strength changes in the test period. Still limited to 5 buckets.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: When feature quality varies widely (some r=0.5, others r=0.1).</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.purple,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700}}>3. KNN - K Nearest Neighbors (K=7)</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Finds the K most similar historical hours by normalized Euclidean distance across all selected features. Averages the actual optimal TP% of those K neighbors. No bucketing -- uses the raw training data directly.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Captures non-linear relationships naturally. No assumptions about data shape. Adapts to local structure in feature space. Fine-grained -- not limited to 5 buckets.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Sensitive to feature scaling (mitigated by normalization). Slower with large training sets. Can overfit with small K. All features weighted equally in distance.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Medium-large datasets (200+ days), complex non-linear patterns.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.gold,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>4. Linear Regression (OLS)</p>
+          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Fits independent univariate regressions (slope + intercept) for each selected feature against optimal TP%. At prediction time, each regression produces a TP% estimate, then combines them via r-weighted averaging. Predictions clamped to 0.01%-1.00%.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.accent}}>Pros: Fast, well-understood, produces continuous predictions (not bucketed). Naturally weights by correlation strength. Extrapolates to unseen feature values.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9,color:C.warn}}>Cons: Assumes linear relationships (may not hold). Sensitive to outliers. Extrapolation can produce unrealistic predictions (mitigated by clamping). Independent regressions miss feature interactions.</p>
+          <p style={{paddingLeft:8,fontSize:9,color:C.txtDim}}>Best for: Features with clear linear trends, quick baseline comparison.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Model Comparison Strategy</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Run all 4 models on the same ticker with identical settings (same Top N, same Train %). Compare edge, win rate, and capture rate. The best model for one stock may not be the best for another -- different stocks have different microstructure patterns.</p>
+          <p style={{paddingLeft:8,fontSize:9}}>If no model beats flat, the optimal TP% for that stock may not be predictable from these features, or more data is needed.</p>
+        </div>
+      </div>
+    </CollapseStage>
+
     <CollapseStage title="Model Limitations" sub="Known constraints and future improvements">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
@@ -6953,6 +7000,7 @@ function HourlyPredictionPage(p){
   var s6=useState(null),availTickers=s6[0],setAvailTickers=s6[1];
   var s7=useState(5),topN=s7[0],setTopN=s7[1];
   var s8=useState(80),trainPct=s8[0],setTrainPct=s8[1];
+  var sModel=useState('quintile'),modelType=sModel[0],setModelType=sModel[1];
   var sb1=useState('2026-01-02'),bfStart=sb1[0],setBfStart=sb1[1];
   var sb2=useState(new Date().toISOString().slice(0,10)),bfEnd=sb2[0],setBfEnd=sb2[1];
   var sb3=useState(''),bfStatus=sb3[0],setBfStatus=sb3[1];
@@ -7084,21 +7132,124 @@ function HourlyPredictionPage(p){
       featureCorrs.sort(function(a,b){return Math.abs(b.rProfit)-Math.abs(a.rProfit);});
       var selectedFeatures=featureCorrs.slice(0,topN);
 
-      setProg('Building quintile lookup tables...');
-      for(var si=0;si<selectedFeatures.length;si++){
-        var sf=selectedFeatures[si];
-        var vals=[];
-        for(var ti=0;ti<train.length;ti++){var v=parseFloat(train[ti][sf.key]);if(!isNaN(v))vals.push({v:v,tp:train[ti].best_tp_pct,np:train[ti].best_net_profit});}
-        vals.sort(function(a,b){return a.v-b.v;});
-        var quintiles=[];
-        for(var qi=0;qi<5;qi++){
-          var qStart=Math.floor(vals.length*qi/5);var qEnd=Math.floor(vals.length*(qi+1)/5);
-          var qVals=vals.slice(qStart,qEnd);
-          var tpSum=0,npSum=0;for(var qj=0;qj<qVals.length;qj++){tpSum+=qVals[qj].tp;npSum+=qVals[qj].np;}
-          quintiles.push({q:qi+1,min:qVals[0].v,max:qVals[qVals.length-1].v,avgTp:tpSum/qVals.length,avgProfit:npSum/qVals.length,n:qVals.length});
+      setProg('Training model: '+modelType+'...');
+
+      // ── MODEL ABSTRACTION LAYER ──
+      // Each model: build from train data + selectedFeatures, predict for each test point
+
+      // Model 1: Quintile Lookup (equal weight)
+      function runQuintile(trainD, testD, selFeat, weighted){
+        for(var si=0;si<selFeat.length;si++){
+          var sf=selFeat[si];var vals=[];
+          for(var ti=0;ti<trainD.length;ti++){var v=parseFloat(trainD[ti][sf.key]);if(!isNaN(v))vals.push({v:v,tp:trainD[ti].best_tp_pct,np:trainD[ti].best_net_profit});}
+          vals.sort(function(a,b){return a.v-b.v;});
+          var quintiles=[];
+          for(var qi=0;qi<5;qi++){
+            var qS=Math.floor(vals.length*qi/5);var qE=Math.floor(vals.length*(qi+1)/5);
+            var qV=vals.slice(qS,qE);var tS=0,nS=0;
+            for(var qj=0;qj<qV.length;qj++){tS+=qV[qj].tp;nS+=qV[qj].np;}
+            quintiles.push({q:qi+1,min:qV[0].v,max:qV[qV.length-1].v,avgTp:tS/qV.length,avgProfit:nS/qV.length,n:qV.length});
+          }
+          sf.quintiles=quintiles;
         }
-        sf.quintiles=quintiles;
+        var preds=[];
+        for(var ti2=0;ti2<testD.length;ti2++){
+          var pt=testD[ti2];var tpPreds=[];var weights=[];
+          for(var si2=0;si2<selFeat.length;si2++){
+            var sf2=selFeat[si2];var val=parseFloat(pt[sf2.key]);
+            if(isNaN(val))continue;
+            for(var qi2=0;qi2<sf2.quintiles.length;qi2++){
+              var q=sf2.quintiles[qi2];
+              if(val<=q.max||qi2===4){tpPreds.push(q.avgTp);weights.push(Math.abs(sf2.rProfit));break;}
+            }
+          }
+          var predTp=null;
+          if(tpPreds.length>0){
+            if(weighted){var wSum=0,wTot=0;for(var pi=0;pi<tpPreds.length;pi++){wSum+=tpPreds[pi]*weights[pi];wTot+=weights[pi];}predTp=wTot>0?Math.round(wSum/wTot*100)/100:null;}
+            else{var s=0;for(var pi=0;pi<tpPreds.length;pi++)s+=tpPreds[pi];predTp=Math.round(s/tpPreds.length*100)/100;}
+          }
+          preds.push(predTp);
+        }
+        return preds;
       }
+
+      // Model 3: KNN
+      function runKNN(trainD, testD, selFeat, k){
+        // Compute feature min/max for normalization from training
+        var fStats={};
+        for(var si=0;si<selFeat.length;si++){
+          var fk=selFeat[si].key;var mn=Infinity,mx=-Infinity;
+          for(var ti=0;ti<trainD.length;ti++){var v=parseFloat(trainD[ti][fk]);if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;}}
+          fStats[fk]={min:mn,max:mx,range:mx-mn>0?mx-mn:1};
+        }
+        var preds=[];
+        for(var ti2=0;ti2<testD.length;ti2++){
+          var pt=testD[ti2];
+          // Compute normalized distance to every training point
+          var dists=[];
+          for(var tri=0;tri<trainD.length;tri++){
+            var dist=0;var validF=0;
+            for(var si2=0;si2<selFeat.length;si2++){
+              var fk2=selFeat[si2].key;
+              var v1=parseFloat(pt[fk2]);var v2=parseFloat(trainD[tri][fk2]);
+              if(!isNaN(v1)&&!isNaN(v2)){var d=(v1-v2)/fStats[fk2].range;dist+=d*d;validF++;}
+            }
+            if(validF>0)dists.push({idx:tri,dist:dist/validF,tp:trainD[tri].best_tp_pct});
+          }
+          dists.sort(function(a,b){return a.dist-b.dist;});
+          var topK=dists.slice(0,k);
+          if(topK.length>0){
+            var tpS=0;for(var ki=0;ki<topK.length;ki++)tpS+=topK[ki].tp;
+            preds.push(Math.round(tpS/topK.length*100)/100);
+          } else preds.push(null);
+        }
+        return preds;
+      }
+
+      // Model 4: Linear Regression (OLS)
+      function runLinearReg(trainD, testD, selFeat){
+        // Simple: regress best_tp_pct on each feature independently, average predictions
+        // (True multivariate OLS needs matrix inversion - too complex for browser)
+        var models=[];
+        for(var si=0;si<selFeat.length;si++){
+          var fk=selFeat[si].key;
+          var xs=[],ys=[];
+          for(var ti=0;ti<trainD.length;ti++){var v=parseFloat(trainD[ti][fk]);if(!isNaN(v)){xs.push(v);ys.push(trainD[ti].best_tp_pct);}}
+          if(xs.length<3){models.push(null);continue;}
+          var n=xs.length,sx=0,sy=0,sxy=0,sx2=0;
+          for(var i=0;i<n;i++){sx+=xs[i];sy+=ys[i];sxy+=xs[i]*ys[i];sx2+=xs[i]*xs[i];}
+          var denom=n*sx2-sx*sx;
+          if(Math.abs(denom)<1e-12){models.push(null);continue;}
+          var slope=(n*sxy-sx*sy)/denom;var intercept=(sy-slope*sx)/n;
+          models.push({slope:slope,intercept:intercept,weight:Math.abs(selFeat[si].rProfit)});
+        }
+        var preds=[];
+        for(var ti2=0;ti2<testD.length;ti2++){
+          var pt=testD[ti2];var tpPreds=[];var wts=[];
+          for(var si2=0;si2<selFeat.length;si2++){
+            if(!models[si2])continue;
+            var v=parseFloat(pt[selFeat[si2].key]);
+            if(isNaN(v))continue;
+            var pred=models[si2].slope*v+models[si2].intercept;
+            pred=Math.max(0.01,Math.min(1.0,pred)); // clamp to valid range
+            tpPreds.push(pred);wts.push(models[si2].weight);
+          }
+          if(tpPreds.length>0){
+            var wSum=0,wTot=0;for(var pi=0;pi<tpPreds.length;pi++){wSum+=tpPreds[pi]*wts[pi];wTot+=wts[pi];}
+            preds.push(wTot>0?Math.round(wSum/wTot*100)/100:null);
+          } else preds.push(null);
+        }
+        return preds;
+      }
+
+      // Run selected model
+      var modelPreds;
+      var modelNames={quintile:'Quintile Lookup',weighted:'Weighted Quintile',knn:'KNN (K=7)',linear:'Linear Regression'};
+      if(modelType==='quintile') modelPreds=runQuintile(train,test,selectedFeatures,false);
+      else if(modelType==='weighted') modelPreds=runQuintile(train,test,selectedFeatures,true);
+      else if(modelType==='knn') modelPreds=runKNN(train,test,selectedFeatures,7);
+      else if(modelType==='linear') modelPreds=runLinearReg(train,test,selectedFeatures);
+      else modelPreds=runQuintile(train,test,selectedFeatures,false);
 
       // Find best flat TP%: the single TP% that maximizes total profit across all TEST hours
       setProg('Computing flat benchmark...');
@@ -7115,24 +7266,13 @@ function HourlyPredictionPage(p){
       var flatTp=0.01;var flatBest=-Infinity;
       for(var tp in flatScores){if(flatScores[tp]>flatBest){flatBest=flatScores[tp];flatTp=parseFloat(tp);}}
 
-      // Predict for each test point
+      // Evaluate predictions
       setProg('Running backtest on '+test.length+' test points...');
       var predictions=[];var flatProfit=0;var predictedProfit=0;var actualProfit=0;
       var wins=0;
       for(var ti2=0;ti2<test.length;ti2++){
         var pt=test[ti2];
-        var tpPreds=[];
-        for(var si2=0;si2<selectedFeatures.length;si2++){
-          var sf2=selectedFeatures[si2];
-          var val=parseFloat(pt[sf2.key]);
-          if(isNaN(val))continue;
-          for(var qi2=0;qi2<sf2.quintiles.length;qi2++){
-            var q=sf2.quintiles[qi2];
-            if(val<=q.max||qi2===4){tpPreds.push(q.avgTp);break;}
-          }
-        }
-        var predTp=null;
-        if(tpPreds.length>0){var s=0;for(var pi=0;pi<tpPreds.length;pi++)s+=tpPreds[pi];predTp=Math.round(s/tpPreds.length*100)/100;}
+        var predTp=modelPreds[ti2];
 
         var dk=pt.trade_date+'|'+pt.hour;
         var predNp=0;var flatNp=0;var actualNp=pt.best_net_profit;
@@ -7140,7 +7280,6 @@ function HourlyPredictionPage(p){
           var predKey=dk+'|'+predTp.toFixed(2);
           if(allTP[predKey]!==undefined)predNp=allTP[predKey];
           else{
-            // Find closest available TP%
             var bestDist=Infinity;
             for(var tpS=1;tpS<=100;tpS++){var tpR=(tpS/100).toFixed(2);var lk2=dk+'|'+tpR;if(allTP[lk2]!==undefined&&Math.abs(parseFloat(tpR)-predTp)<bestDist){bestDist=Math.abs(parseFloat(tpR)-predTp);predNp=allTP[lk2];}}
           }
@@ -7167,7 +7306,8 @@ function HourlyPredictionPage(p){
         trainDays:trainDays,testDays:dayList.length-trainDays,trainPoints:train.length,testPoints:test.length,
         predictedProfit:Math.round(predictedProfit*100)/100,flatProfit:Math.round(flatProfit*100)/100,actualProfit:Math.round(actualProfit*100)/100,
         edge:Math.round(edge*100)/100,edgePct:Math.round(edgePct*10)/10,captureRate:Math.round(captureRate*10)/10,
-        flatTp:flatTp,ticker:ticker,dayList:dayList,winRate:Math.round(winRate*10)/10,wins:wins
+        flatTp:flatTp,ticker:ticker,dayList:dayList,winRate:Math.round(winRate*10)/10,wins:wins,
+        modelName:modelNames[modelType]||modelType
       });
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
@@ -7193,6 +7333,14 @@ function HourlyPredictionPage(p){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
         <div><label style={lS}>Top N Features</label><select value={topN} onChange={function(e){setTopN(parseInt(e.target.value));}} style={iS}><option value="3">3</option><option value="5">5</option><option value="7">7</option><option value="10">10</option></select></div>
         <div><label style={lS}>Train %</label><select value={trainPct} onChange={function(e){setTrainPct(parseInt(e.target.value));}} style={iS}><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></div>
+      </div>
+      <div style={{marginTop:8}}><label style={lS}>Model</label>
+        <select value={modelType} onChange={function(e){setModelType(e.target.value);}} style={iS}>
+          <option value="quintile">Quintile Lookup (equal weight)</option>
+          <option value="weighted">Weighted Quintile (r-weighted)</option>
+          <option value="knn">KNN - K Nearest Neighbors (K=7)</option>
+          <option value="linear">Linear Regression (OLS)</option>
+        </select>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:12,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Run Backtest'}</button>
       {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6,animation:'pulse 1.5s infinite'}}>{prog}</div>}
@@ -7273,7 +7421,7 @@ function HourlyPredictionPage(p){
 
     {results&&<div>
       <Cd glow>
-        <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | TRAIN '+results.trainDays+' DAYS | TEST '+results.testDays+' DAYS | '+results.testPoints+' PREDICTIONS'}</div>
+        <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | '+results.modelName+' | TRAIN '+results.trainDays+'d | TEST '+results.testDays+'d | '+results.testPoints+' pts'}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
           <Mt label="Predicted Profit" value={'$'+results.predictedProfit.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} color={results.edge>0?C.accent:C.warn} size="md"/>
           <Mt label="Flat Profit" value={'$'+results.flatProfit.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} color={C.gold} size="md"/>
