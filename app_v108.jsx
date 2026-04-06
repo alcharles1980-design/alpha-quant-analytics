@@ -1735,6 +1735,7 @@ function DbManagePage(p){
   var dOptDel=useState(null),confirmDailyOptDel=dOptDel[0],setConfirmDailyOptDel=dOptDel[1];
   var dOptExp=useState(null),expandedDailyOpt=dOptExp[0],setExpandedDailyOpt=dOptExp[1];
   var dOptHr=useState(null),dailyOptHourly=dOptHr[0],setDailyOptHourly=dOptHr[1];
+  var dOptDtl=useState(null),dailyOptDetail=dOptDtl[0],setDailyOptDetail=dOptDtl[1];
   var s16=useState(null),dailyOptData2=s16[0],setDailyOptData2=s16[1];
 
   var loadData=async function(){
@@ -2070,83 +2071,69 @@ function DbManagePage(p){
         </div>:
         <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Stage 1 Data</button>}
       </Cd>}
-      {dailyOptData&&<Cd style={{marginTop:16}}>
-        <SectionHead title="Daily Optimal TP% Results" sub="Results from Daily Optimal TP% Finder scans" info="Each scan tests 100 TP% values for a stock-day and saves the deduped results (one per unique penny spread). Ranked by net profit after fees."/>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-          <Mt label="Stocks" value={dailyOptData.stocks} color={C.accent} size="lg"/>
-          <Mt label="Total Rows" value={dailyOptData.totalRows} color={C.purple} size="lg"/>
-          <Mt label="Stock-Days" value={dailyOptData.days} color={C.blue} size="lg"/>
-        </div>
-        {dailyOptData.detail.length>0&&<div style={{overflowX:'auto',maxHeight:250}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Date</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Best TP$</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Net $</th>
-            </tr></thead>
-            <tbody>{dailyOptData.detail.map(function(d){
-              var dayKey=d.ticker+'|'+d.trade_date;
-              var isDayOpen=expandedDailyOpt===dayKey;
-              return <React.Fragment key={dayKey}>
-                <tr onClick={function(){loadDailyOptHourly(d.ticker,d.trade_date);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:isDayOpen?C.blueDim:'transparent'}}>
-                <td style={{padding:'3px 2px',color:C.accent,fontWeight:700}}>{d.ticker}<span style={{color:C.blue,fontSize:7,marginLeft:3}}>{isDayOpen?'\u25B2':'\u25BC'}</span></td>
-                <td style={{padding:'3px 2px',color:C.txt}}>{d.trade_date}</td>
-                <td style={{padding:'3px 2px',color:C.gold,textAlign:'right'}}>{'$'+d.tp_dollar.toFixed(2)}</td>
-                <td style={{padding:'3px 2px',color:C.blue,textAlign:'right'}}>{d.cycles}</td>
-                <td style={{padding:'3px 2px',color:d.net_total>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+d.net_total.toFixed(2)}</td>
-              </tr>
-              {isDayOpen&&<tr><td colSpan="5" style={{padding:0}}>
-                <div style={{padding:'8px 4px',background:C.bgDeep,borderBottom:'2px solid '+C.blue}}>
-                  {!dailyOptHourly&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>Loading hourly data...</div>}
-                  {dailyOptHourly&&dailyOptHourly.length===0&&<div style={{color:C.warn,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>No hourly seasonality data for this day.</div>}
-                  {dailyOptHourly&&dailyOptHourly.length>0&&<div>
-                    <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginBottom:4,fontWeight:700,letterSpacing:1}}>HOURLY DATA INTEGRITY: {d.trade_date}</div>
-                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
-                      <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'left'}}>Hour</th>
-                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Trades</th>
-                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Volume</th>
-                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>High</th>
-                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>Low</th>
-                        <th style={{padding:'2px 2px',color:C.txtDim,textAlign:'right'}}>ATR%</th>
-                      </tr></thead>
-                      <tbody>{dailyOptHourly.map(function(hr){
-                        var isRTH=hr.hour>=9&&hr.hour<16;
-                        var isWarn=isRTH&&hr.trades===0;
-                        return <tr key={hr.hour} style={{borderBottom:'1px solid '+C.grid,background:isWarn?C.warnDim:'transparent'}}>
-                          <td style={{padding:'2px 2px',color:isRTH?C.txtBright:C.txtDim}}>{(hourLabels[hr.hour]||hr.hour)+(isWarn?' \u26A0':'')}</td>
-                          <td style={{padding:'2px 2px',color:isWarn?C.warn:C.txt,textAlign:'right',fontWeight:isRTH?700:400}}>{hr.trades.toLocaleString()}</td>
-                          <td style={{padding:'2px 2px',color:C.txt,textAlign:'right'}}>{Math.round(hr.volume).toLocaleString()}</td>
-                          <td style={{padding:'2px 2px',color:C.txt,textAlign:'right'}}>{hr.high?'$'+parseFloat(hr.high).toFixed(2):'-'}</td>
-                          <td style={{padding:'2px 2px',color:C.txt,textAlign:'right'}}>{hr.low?'$'+parseFloat(hr.low).toFixed(2):'-'}</td>
-                          <td style={{padding:'2px 2px',color:parseFloat(hr.atr_pct)>0.5?C.gold:C.txtDim,textAlign:'right'}}>{parseFloat(hr.atr_pct).toFixed(2)+'%'}</td>
-                        </tr>;
-                      })}</tbody>
-                    </table>
-                  </div>}
+      {dailyOptData&&<div style={{marginTop:16}}>
+        <Cd glow={true}>
+          <SectionHead title="Daily Optimal TP% Results" sub="Results from Daily Optimal TP% Finder scans" info="Each scan tests 100 TP% values for a stock-day and saves the deduped results (one per unique penny spread). Ranked by net profit after fees."/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
+            <Mt label="Stocks" value={dailyOptData.stocks} color={C.accent} size="lg"/>
+            <Mt label="Total Rows" value={dailyOptData.totalRows.toLocaleString()} color={C.purple} size="md"/>
+            <Mt label="Stock-Days" value={dailyOptData.days} color={C.blue} size="md"/>
+          </div>
+        </Cd>
+        {function(){var byTicker={};for(var i=0;i<dailyOptData.detail.length;i++){var d=dailyOptData.detail[i];if(!byTicker[d.ticker])byTicker[d.ticker]={ticker:d.ticker,days:[],totalNet:0};byTicker[d.ticker].days.push(d);byTicker[d.ticker].totalNet+=d.net_total;}
+        return Object.values(byTicker).map(function(tk){
+          var isOpen=dailyOptDetail===tk.ticker;
+          var earliest=tk.days[0].trade_date;var latest=tk.days[tk.days.length-1].trade_date;
+          return <Cd key={'dopt-'+tk.ticker}>
+            <div onClick={function(){setDailyOptDetail(isOpen?null:tk.ticker);}} style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{tk.ticker}</span>
+                  <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{tk.days.length+' day'+(tk.days.length>1?'s':'')}</span>
                 </div>
-              </td></tr>}
-              </React.Fragment>;
-            })}</tbody>
-          </table>
-        </div>}
-        <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
-          {function(){var tickers={};for(var i=0;i<dailyOptData.detail.length;i++)tickers[dailyOptData.detail[i].ticker]=true;return Object.keys(tickers).map(function(tk){
-            return confirmDailyOptDel===tk?<div key={tk} style={{display:'flex',gap:8}}>
-              <button onClick={function(){deleteDailyOptStock(tk);}} style={{background:C.warn,color:C.bg,border:'none',borderRadius:6,fontFamily:F,fontSize:8,fontWeight:700,padding:'6px 10px',cursor:'pointer'}}>Yes, Delete {tk}</button>
-              <button onClick={function(){setConfirmDailyOptDel(null);}} style={{background:C.border,color:C.txt,border:'none',borderRadius:6,fontFamily:F,fontSize:8,padding:'6px 10px',cursor:'pointer'}}>Cancel</button>
-            </div>:<button key={tk} onClick={function(){setConfirmDailyOptDel(tk);}} style={{background:'transparent',border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontFamily:F,fontSize:7,fontWeight:600,padding:'4px 8px',cursor:'pointer'}}>Delete {tk}</button>;
-          });}()}
-        </div>
-        {dailyOptData.totalRows>0&&<div style={{marginTop:6}}>
+                <div style={{color:C.txt,fontSize:9,fontFamily:F}}>{earliest+' to '+latest}</div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{textAlign:'right'}}>
+                  <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F}}>{'$'+tk.totalNet.toFixed(2)}</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>TOTAL NET</div>
+                </div>
+                <div style={{color:C.accent,fontSize:18,fontWeight:300,transform:isOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</div>
+              </div>
+            </div>
+            {isOpen&&<div style={{marginTop:12}}>
+              <div style={{overflowX:'auto',maxHeight:300,marginBottom:10}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
+                  <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP$</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
+                    <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net $</th>
+                  </tr></thead>
+                  <tbody>{tk.days.map(function(d){
+                    return <tr key={d.trade_date} style={{borderBottom:'1px solid '+C.grid}}>
+                      <td style={{padding:'4px 3px',color:C.txt}}>{d.trade_date}</td>
+                      <td style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>{'$'+d.tp_dollar.toFixed(2)}</td>
+                      <td style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>{d.cycles}</td>
+                      <td style={{padding:'4px 3px',color:d.net_total>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+d.net_total.toFixed(2)}</td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+              {confirmDailyOptDel===tk.ticker?<div style={{display:'flex',gap:8}}>
+                <button onClick={function(){deleteDailyOptStock(tk.ticker);}} style={{flex:1,background:C.warn,color:C.bg,border:'none',borderRadius:8,fontFamily:F,fontSize:9,fontWeight:700,padding:'10px',cursor:'pointer'}}>Yes, Delete {tk.ticker}</button>
+                <button onClick={function(){setConfirmDailyOptDel(null);}} style={{flex:1,background:'transparent',border:'1px solid '+C.border,borderRadius:8,color:C.txt,fontFamily:F,fontSize:9,padding:'10px',cursor:'pointer'}}>Cancel</button>
+              </div>:<button onClick={function(){setConfirmDailyOptDel(tk.ticker);}} style={{width:'100%',background:'transparent',border:'1px solid '+C.warn,borderRadius:8,color:C.warn,fontFamily:F,fontSize:8,fontWeight:600,padding:'8px',cursor:'pointer'}}>Delete {tk.ticker} Daily Optimal Data</button>}
+            </div>}
+          </Cd>;
+        });}()}
+        {dailyOptData.totalRows>0&&<Cd>
           {confirmDailyOptDel==='ALL_DAILY'?<div style={{display:'flex',gap:8}}>
-            <button onClick={deleteAllDailyOpt} style={{flex:1,background:C.warn,color:C.bg,border:'none',borderRadius:8,fontFamily:F,fontSize:9,fontWeight:700,padding:'10px',cursor:'pointer',letterSpacing:1}}>Yes, Delete All Daily Optimal Data</button>
-            <button onClick={function(){setConfirmDailyOptDel(null);}} style={{flex:1,background:C.border,color:C.txt,border:'none',borderRadius:8,fontFamily:F,fontSize:9,padding:'10px',cursor:'pointer'}}>Cancel</button>
+            <button onClick={deleteAllDailyOpt} style={{flex:1,background:C.warn,color:C.bg,border:'none',borderRadius:8,fontFamily:F,fontSize:9,fontWeight:700,padding:'10px',cursor:'pointer',letterSpacing:1}}>Yes, Delete All</button>
+            <button onClick={function(){setConfirmDailyOptDel(null);}} style={{flex:1,background:'transparent',border:'1px solid '+C.border,borderRadius:8,color:C.txt,fontFamily:F,fontSize:9,padding:'10px',cursor:'pointer'}}>Cancel</button>
           </div>:<button onClick={function(){setConfirmDailyOptDel('ALL_DAILY');}} style={{width:'100%',background:'transparent',border:'1px solid '+C.warn,borderRadius:8,color:C.warn,fontFamily:F,fontSize:8,fontWeight:600,padding:'8px',cursor:'pointer',letterSpacing:1}}>DELETE ALL DAILY OPTIMAL DATA</button>}
-        </div>}
-      </Cd>}
+        </Cd>}
+      </div>}
       {optData&&<div style={{marginTop:16}}>
         <Cd glow={true}>
           <SectionHead title="Stage 2: Optimal TP% Data" sub="Hourly TP% scan results from Stage 2 scanner" info="Results from the Hourly Optimal TP% Finder. Each stock-day has 1,600 rows (100 TP% values x 16 hours). Used as the target variable (Y) for Stage 3 correlation analysis."/>
