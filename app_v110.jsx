@@ -6751,6 +6751,14 @@ function PredictionLogicPage(p){
         <p style={{marginBottom:10}}>Stage 3 established correlations between market microstructure features and optimal TP%. Stage 4 turns those correlations into actionable predictions. Given the current market conditions (features observable before an hour begins), the model predicts which TP% will maximize profit in the upcoming hour.</p>
         <p style={{marginBottom:10,color:C.gold,fontWeight:700}}>The core question: can we use previous-hour features to predict the next hour's optimal TP%, and does this outperform a fixed flat TP%?</p>
       </div>
+      <div style={{padding:'12px',background:C.bg,borderRadius:8,border:'1px solid '+C.purple,marginTop:10}}>
+        <div style={{color:C.purple,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:0.5}}>CURRENT MODEL: QUINTILE REGIME LOOKUP</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7}}>
+          <p style={{marginBottom:6}}>A non-parametric, interpretable model that groups historical market conditions into 5 regimes (quintiles) per feature and looks up the average optimal TP% for each regime. At prediction time, it identifies which regime the current conditions match and averages the TP% recommendations across the top N most predictive features.</p>
+          <p style={{marginBottom:6}}>This is deliberately simple as a first-stage predictor. It makes no assumptions about linear relationships, is robust to outliers, and every prediction can be traced back to specific historical regimes. The model serves as a baseline that more sophisticated approaches (ensemble ML, reinforcement learning) must beat to justify their added complexity.</p>
+          <p style={{color:C.txtDim}}>Type: Non-parametric lookup | Training: Quintile bucketing on sorted feature values | Prediction: Multi-feature regime averaging | Complexity: O(N) per prediction where N = selected features</p>
+        </div>
+      </div>
     </Cd>
 
     <Cd>
