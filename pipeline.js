@@ -985,8 +985,15 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
             cap_per_level: CAP_PER_LEVEL, fee_per_share: FEE_PER_SHARE
           });
         }
-        await sbDeleteInsert('cached_daily_optimal_tp', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, dailyOptRows, 'daily_optimal');
-        console.log('  Stage 2b: ' + dailyOptRows.length + ' daily optimal rows');
+        // Deduplicate by tp_dollar (UNIQUE constraint includes tp_dollar not tp_pct)
+        var bySpread = {};
+        for (var ddi = 0; ddi < dailyOptRows.length; ddi++) {
+          var dk = dailyOptRows[ddi].tp_dollar.toFixed(2);
+          if (!bySpread[dk] || dailyOptRows[ddi].net_total > bySpread[dk].net_total) bySpread[dk] = dailyOptRows[ddi];
+        }
+        var dedupedRows = []; for (var dsk in bySpread) dedupedRows.push(bySpread[dsk]);
+        await sbDeleteInsert('cached_daily_optimal_tp', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, dedupedRows, 'daily_optimal');
+        console.log('  Stage 2b: ' + dedupedRows.length + ' daily optimal rows (deduped from 100)');
 
         // ── STAGE 3: Feature Extraction ──
         console.log('  Stage 3: Extracting features...');
