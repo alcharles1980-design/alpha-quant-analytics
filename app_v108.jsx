@@ -1735,7 +1735,7 @@ function DbManagePage(p){
   var dOptDel=useState(null),confirmDailyOptDel=dOptDel[0],setConfirmDailyOptDel=dOptDel[1];
   var dOptExp=useState(null),expandedDailyOpt=dOptExp[0],setExpandedDailyOpt=dOptExp[1];
   var dOptHr=useState(null),dailyOptHourly=dOptHr[0],setDailyOptHourly=dOptHr[1];
-  var s16=useState(null),consistency=s16[0],setConsistency=s16[1];
+  var s16=useState(null),dailyOptData2=s16[0],setDailyOptData2=s16[1];
 
   var loadData=async function(){
     setLoading(true);setErr(null);
@@ -1843,33 +1843,6 @@ function DbManagePage(p){
       for(var doi=0;doi<dOptRows.length;doi++){var dk=dOptRows[doi].ticker+'|'+dOptRows[doi].trade_date;if(!dOptBest[dk]){dOptBest[dk]=dOptRows[doi];dOptTickers[dOptRows[doi].ticker]=true;}}
       setDailyOptData({stocks:Object.keys(dOptTickers).length,totalRows:dOptRows.length,days:Object.keys(dOptBest).length,detail:Object.values(dOptBest)});
 
-      // Cross-table consistency check
-      var rh4=getSbHeaders();rh4['Range']='0-9999';
-      var cca=await fetch(SB_URL+'/rest/v1/cached_analyses?select=ticker,trade_date,tp_pct,session_type,total_cycles,total_trades&order=ticker.asc,trade_date.asc',{headers:rh4});
-      var ccaRows=cca.ok?await cca.json():[];
-      var consistency=[];
-      for(var ci=0;ci<ccaRows.length;ci++){
-        var cr=ccaRows[ci];var ck=cr.ticker+'|'+cr.trade_date;
-        var chkS=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&select=hour',{headers:getSbHeaders()});
-        var sRows=chkS.ok?await chkS.json():[];
-        var chkH=await fetch(SB_URL+'/rest/v1/cached_hourly_cycles?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&tp_pct=eq.'+cr.tp_pct+'&select=hour',{headers:getSbHeaders()});
-        var hRows=chkH.ok?await chkH.json():[];
-        var issues=[];
-        if(sRows.length!==16)issues.push('Season:'+sRows.length+'/16');
-        if(hRows.length!==16)issues.push('HrCycles:'+hRows.length+'/16');
-        // Check RTH data quality: load all hourly data and check in JS (PostgREST filters unreliable)
-        var rthMissing=0;
-        if(sRows.length>0){
-          var chkQ=await fetch(SB_URL+'/rest/v1/cached_seasonality?ticker=eq.'+cr.ticker+'&trade_date=eq.'+cr.trade_date+'&select=hour,trades&order=hour.asc',{headers:getSbHeaders()});
-          var allHourData=chkQ.ok?await chkQ.json():[];
-          var zeroRTH=allHourData.filter(function(h){return h.hour>=9&&h.hour<=15&&(!h.trades||h.trades===0);});
-          rthMissing=zeroRTH.length;
-          if(rthMissing>0)issues.push('RTH gaps:'+zeroRTH.map(function(z){return hourLabels[z.hour]||z.hour;}).join(','));
-          if(allHourData.length<16)issues.push('Hours:'+allHourData.length+'/16');
-        }
-        consistency.push({ticker:cr.ticker,date:cr.trade_date,tp:cr.tp_pct,cycles:cr.total_cycles,trades:cr.total_trades,seasonality:sRows.length,hourlyCycles:hRows.length,rthMissing:rthMissing,issues:issues,ok:issues.length===0});
-      }
-      setConsistency(consistency);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -2096,34 +2069,6 @@ function DbManagePage(p){
           <button onClick={function(){setConfirmDel(null);}} style={Object.assign({},bB,{flex:1,background:'transparent',border:'1px solid '+C.border,color:C.txt,fontSize:9})}>Cancel</button>
         </div>:
         <button onClick={function(){setConfirmDel('ALL');}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:9})}>Clear All Stage 1 Data</button>}
-      </Cd>}
-      {consistency&&consistency.length>0&&<Cd style={{marginTop:16}}>
-        <SectionHead title="Cross-Table Integrity" sub="Verify all tables have matching data for each stock-day" info="Each stock-day should have: 1 cached_analyses row, 16 cached_seasonality rows, 16 cached_hourly_cycles rows. Missing data is flagged in red."/>
-        <div style={{marginTop:8,padding:'6px 10px',borderRadius:4,background:(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?C.accentDim:C.warnDim;})(),border:'1px solid '+(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?C.accent:C.warn;})(),marginBottom:8}}>
-          <span style={{fontSize:8,fontFamily:F,fontWeight:700,color:(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?C.accent:C.warn;})()}}>{(function(){var f=consistency.filter(function(c){return!c.ok;}).length;return f===0?'\u2713 ALL '+consistency.length+' STOCK-DAYS CONSISTENT':'\u26A0 '+f+' STOCK-DAY'+(f>1?'S':'')+' WITH MISSING DATA';})()}</span>
-        </div>
-        <div style={{overflowX:'auto',maxHeight:300}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Date</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Analysis</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>Season</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'right'}}>HrCyc</th>
-              <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'center'}}>Status</th>
-            </tr></thead>
-            <tbody>{consistency.map(function(c){
-              return <tr key={c.ticker+c.date} style={{borderBottom:'1px solid '+C.grid,background:c.ok?'transparent':C.warnDim}}>
-                <td style={{padding:'3px 2px',color:C.txtBright,fontWeight:700}}>{c.ticker}</td>
-                <td style={{padding:'3px 2px',color:C.txt}}>{c.date}</td>
-                <td style={{padding:'3px 2px',color:C.accent,textAlign:'right'}}>{'\u2713'}</td>
-                <td style={{padding:'3px 2px',color:c.seasonality===16?C.accent:C.warn,textAlign:'right',fontWeight:c.seasonality!==16?700:400}}>{c.seasonality+'/16'}</td>
-                <td style={{padding:'3px 2px',color:c.hourlyCycles===16?C.accent:C.warn,textAlign:'right',fontWeight:c.hourlyCycles!==16?700:400}}>{c.hourlyCycles+'/16'}</td>
-                <td style={{padding:'3px 2px',textAlign:'center'}}>{c.ok?<span style={{color:C.accent}}>{'\u2713'}</span>:<span style={{color:C.warn,fontSize:8}}>{'\u26A0'}</span>}</td>
-              </tr>;
-            })}</tbody>
-          </table>
-        </div>
       </Cd>}
       {dailyOptData&&<Cd style={{marginTop:16}}>
         <SectionHead title="Daily Optimal TP% Results" sub="Results from Daily Optimal TP% Finder scans" info="Each scan tests 100 TP% values for a stock-day and saves the deduped results (one per unique penny spread). Ranked by net profit after fees."/>
