@@ -7068,13 +7068,12 @@ function HourlyPredictionPage(p){
     {results&&<div>
       <Cd glow>
         <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | TRAIN '+results.trainDays+' DAYS | TEST '+results.testDays+' DAYS | '+results.testPoints+' PREDICTIONS'}</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:8}}>
-          <Mt label="Predicted Profit" value={'$'+results.predictedProfit.toFixed(2)} color={results.edge>0?C.accent:C.warn} size="lg"/>
-          <Mt label="Flat Profit" value={'$'+results.flatProfit.toFixed(2)} color={C.gold} size="lg"/>
-          <Mt label="Actual Best" value={'$'+results.actualProfit.toFixed(2)} color={C.blue} size="lg"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+          <Mt label="Predicted Profit" value={'$'+results.predictedProfit.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} color={results.edge>0?C.accent:C.warn} size="md"/>
+          <Mt label="Flat Profit" value={'$'+results.flatProfit.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} color={C.gold} size="md"/>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
-          <Mt label="Edge vs Flat" value={(results.edge>0?'+':'')+'$'+results.edge.toFixed(2)} color={results.edge>0?C.accent:C.warn} size="sm"/>
+          <Mt label="Edge $" value={(results.edge>0?'+$':'$')+Math.abs(results.edge).toFixed(0)} color={results.edge>0?C.accent:C.warn} size="sm"/>
           <Mt label="Edge %" value={(results.edgePct>0?'+':'')+results.edgePct.toFixed(1)+'%'} color={results.edgePct>0?C.accent:C.warn} size="sm"/>
           <Mt label="Win Rate" value={results.winRate+'%'} color={results.winRate>50?C.accent:C.warn} size="sm"/>
           <Mt label="Capture" value={results.captureRate.toFixed(1)+'%'} color={C.purple} size="sm"/>
@@ -7084,14 +7083,14 @@ function HourlyPredictionPage(p){
       <Cd>
         <SectionHead title="Cumulative Profit" sub="Predicted vs Flat vs Actual Best (out-of-sample)"/>
         <div style={{height:200,marginTop:8}}>
-          {typeof Recharts!=='undefined'&&React.createElement(Recharts.ResponsiveContainer,{width:'100%',height:'100%'},
-            React.createElement(Recharts.LineChart,{data:results.cumSeries,margin:{top:5,right:5,left:5,bottom:5}},
+          {typeof Recharts!=='undefined'&&Recharts.AreaChart&&React.createElement(Recharts.ResponsiveContainer,{width:'100%',height:'100%'},
+            React.createElement(Recharts.AreaChart,{data:results.cumSeries,margin:{top:5,right:5,left:5,bottom:5}},
               React.createElement(Recharts.XAxis,{dataKey:'idx',tick:false}),
-              React.createElement(Recharts.YAxis,{tick:{fontSize:7,fill:C.txtDim},width:45}),
-              React.createElement(Recharts.Tooltip,{contentStyle:{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,fontSize:8,fontFamily:F},labelFormatter:function(v){var pt=results.predictions[v];return pt?pt.date+' H'+pt.hour:'';}}),
-              React.createElement(Recharts.Line,{type:'monotone',dataKey:'pred',stroke:C.accent,dot:false,strokeWidth:2,name:'Predicted'}),
-              React.createElement(Recharts.Line,{type:'monotone',dataKey:'flat',stroke:C.gold,dot:false,strokeWidth:2,name:'Flat'}),
-              React.createElement(Recharts.Line,{type:'monotone',dataKey:'actual',stroke:C.blue,dot:false,strokeWidth:1,strokeDasharray:'4 2',name:'Actual Best'})
+              React.createElement(Recharts.YAxis,{tick:{fontSize:7,fill:C.txtDim},width:50,tickFormatter:function(v){return '$'+Math.round(v).toLocaleString();}}),
+              React.createElement(Recharts.Tooltip,{contentStyle:{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,fontSize:8,fontFamily:F},labelFormatter:function(v){var pt=results.predictions[v];return pt?pt.date+' H'+pt.hour:'';},formatter:function(v){return '$'+v.toFixed(2);}}),
+              React.createElement(Recharts.Area,{type:'monotone',dataKey:'actual',stroke:C.blue,fill:'transparent',strokeWidth:1,strokeDasharray:'4 2',name:'Actual Best'}),
+              React.createElement(Recharts.Area,{type:'monotone',dataKey:'flat',stroke:C.gold,fill:'transparent',strokeWidth:2,name:'Flat'}),
+              React.createElement(Recharts.Area,{type:'monotone',dataKey:'pred',stroke:C.accent,fill:'rgba(0,229,160,0.08)',strokeWidth:2,name:'Predicted'})
             )
           )}
         </div>
