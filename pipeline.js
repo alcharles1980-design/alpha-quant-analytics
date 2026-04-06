@@ -761,26 +761,30 @@ async function reportProgress(data) {
 
 // ── Robust Save Helper ───────────────────────────────────
 async function sbDeleteInsert(table, deleteFilter, rows, label) {
-  // Try upsert first (merge-duplicates handles UNIQUE constraints)
-  var upsertHeaders = Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
-  for (var i = 0; i < rows.length; i += 500) {
-    var batch = rows.slice(i, i + 500);
-    var postR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: upsertHeaders, body: JSON.stringify(batch) });
-    if (!postR.ok) {
-      // Upsert failed — fall back to DELETE+INSERT
+  if (!rows.length) return;
+  // Step 1: DELETE existing
+  var delR = await fetch(SB_URL + '/rest/v1/' + table + '?' + deleteFilter, { method: 'DELETE', headers: sbHeaders() });
+  if (!delR.ok) console.log('    ' + label + ' DELETE ' + delR.status);
+  // Step 2: Wait for DELETE to commit
+  await sleep(300);
+  // Step 3: INSERT in batches with full error logging
+  var totalInserted = 0;
+  for (var i = 0; i < rows.length; i += 200) {
+    var batch = rows.slice(i, i + 200);
+    var postR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+    if (postR.ok) {
+      totalInserted += batch.length;
+    } else {
       var errTxt = await postR.text();
-      console.log('    ' + label + ' upsert failed (' + postR.status + '), falling back to DELETE+INSERT: ' + errTxt.slice(0, 100));
-      if (i === 0) { // Only delete once
-        await fetch(SB_URL + '/rest/v1/' + table + '?' + deleteFilter, { method: 'DELETE', headers: sbHeaders() });
-        await sleep(200);
-      }
+      console.log('    ' + label + ' INSERT FAILED batch ' + i + '-' + (i + batch.length) + ': ' + postR.status + ' ' + errTxt.slice(0, 300));
+      // Retry with longer delay
+      await sleep(1000);
       var retryR = await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
-      if (!retryR.ok) {
-        var retryErr = await retryR.text();
-        console.log('    ERROR: ' + label + ' fallback also failed: ' + retryR.status + ' ' + retryErr.slice(0, 100));
-      }
+      if (retryR.ok) { totalInserted += batch.length; console.log('    ' + label + ' retry OK'); }
+      else { var retryErr = await retryR.text(); console.log('    ' + label + ' retry FAILED: ' + retryR.status + ' ' + retryErr.slice(0, 300)); }
     }
   }
+  if (totalInserted < rows.length) console.log('    ' + label + ': only ' + totalInserted + '/' + rows.length + ' rows inserted');
 }
 
 // ── Trading Days ─────────────────────────────────────────
