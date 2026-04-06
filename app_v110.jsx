@@ -6753,6 +6753,7 @@ function HourlyPredictionPage(p){
   var sb5=useState(false),bfForce=sb5[0],setBfForce=sb5[1];
   var sb4=useState(null),pipelineProgress=sb4[0],setPipelineProgress=sb4[1];
   var pollRef=useRef(null);
+  var sq1=useState(null),expandedQ=sq1[0],setExpandedQ=sq1[1];
 
   var startPolling=function(){
     if(pollRef.current)clearInterval(pollRef.current);
@@ -6770,7 +6771,6 @@ function HourlyPredictionPage(p){
 
   useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
-  // Auto-load latest pipeline status on mount
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
     fetch(SB_URL+'/rest/v1/pipeline_status?order=updated_at.desc&limit=1',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){
@@ -6780,21 +6780,27 @@ function HourlyPredictionPage(p){
 
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
-    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&limit=1000',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){
+    var h=getSbHeaders();h['Range']='0-9999';
+    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(d){
       var u={};for(var i=0;i<d.length;i++)u[d[i].ticker]=true;setAvailTickers(Object.keys(u).sort());
     }).catch(function(){});
   },[]);
+
+  var pearson=function(x,y){if(x.length<3)return 0;var n=x.length,sx=0,sy=0,sxy=0,sx2=0,sy2=0;for(var i=0;i<n;i++){sx+=x[i];sy+=y[i];sxy+=x[i]*y[i];sx2+=x[i]*x[i];sy2+=y[i]*y[i];}var num=n*sxy-sx*sy;var d1=n*sx2-sx*sx;var d2=n*sy2-sy*sy;return(d1>0&&d2>0)?num/Math.sqrt(d1*d2):0;};
 
   var run=async function(){
     if(!SB_URL||!SB_KEY){setErr('No Supabase config');return;}
     if(!ticker){setErr('Select a ticker');return;}
     setLoading(true);setErr(null);setResults(null);setProg('Loading features...');
     try{
-      var h=getSbHeaders();
-      var rhCF=getSbHeaders();rhCF['Range']='0-9999';var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhCF});
+      // Load features
+      var rhF=getSbHeaders();rhF['Range']='0-9999';
+      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhF});
       var features=r1.ok?await r1.json():[];
       if(!features.length){setErr('No feature data for '+ticker);setLoading(false);return;}
       setProg('Loading optimal TP% (paginated)...');
+
+      // Load optimal TP% with pagination
       var optRows=[];var optOffset=0;
       while(true){
         var r2=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?ticker=eq.'+ticker+'&select=trade_date,hour,tp_pct,net_profit&order=trade_date.asc,hour.asc,net_profit.desc&limit=1000&offset='+optOffset,{headers:getSbHeaders()});
@@ -6806,13 +6812,19 @@ function HourlyPredictionPage(p){
         optOffset+=1000;
       }
       if(!optRows.length){setErr('No optimal TP% data');setLoading(false);return;}
-      setProg('Building prediction model ('+optRows.length+' optimal rows)...');
-      // Build bestTP lookup
+      setProg('Building prediction model...');
+
+      // Build bestTP per hour (highest net_profit, first row since sorted desc)
       var bestTP={};
       for(var i=0;i<optRows.length;i++){var ok=optRows[i].trade_date+'|'+optRows[i].hour;if(!bestTP[ok])bestTP[ok]={tp:optRows[i].tp_pct,np:optRows[i].net_profit};}
-      // Build allTP lookup for test evaluation
+
+      // Build allTP lookup: key = "date|hour|tp_pct" -> net_profit
       var allTP={};
-      for(var i=0;i<optRows.length;i++){var ok2=optRows[i].trade_date+'|'+optRows[i].hour+'|'+optRows[i].tp_pct;allTP[ok2]=optRows[i].net_profit;}
+      for(var i=0;i<optRows.length;i++){
+        var tpR=Math.round(optRows[i].tp_pct*100)/100;
+        allTP[optRows[i].trade_date+'|'+optRows[i].hour+'|'+tpR]=optRows[i].net_profit;
+      }
+
       // Join features with best TP%
       var joined=[];var dates={};
       for(var i=0;i<features.length;i++){
@@ -6820,7 +6832,7 @@ function HourlyPredictionPage(p){
         if(bestTP[fk]){
           var row=Object.assign({},features[i]);
           row.best_tp_pct=bestTP[fk].tp;row.best_net_profit=bestTP[fk].np;
-          // Prev hour features
+          // Prev hour features (only within same day)
           if(joined.length>0&&joined[joined.length-1].trade_date===row.trade_date){
             var ph=joined[joined.length-1];
             row.prev_hour_atr_pct=parseFloat(ph.hour_atr_pct)||null;
@@ -6834,14 +6846,14 @@ function HourlyPredictionPage(p){
             row.prev_hour_ece=parseFloat(ph.hour_ece_pct)||null;
             row.prev_hour_best_tp=ph.best_tp_pct;
           }
-          // Derived
-          var isRth=(parseInt(row.hour)>=9&&parseInt(row.hour)<16)?1:0;
-          row.is_rth=isRth;
+          row.is_rth=(parseInt(row.hour)>=9&&parseInt(row.hour)<16)?1:0;
           row.hour_vol_pct_of_day=(parseFloat(row.hour_volume)||0)/(parseFloat(row.day_volume)||1)*100;
           joined.push(row);dates[row.trade_date]=true;
         }
       }
       if(joined.length<10){setErr('Only '+joined.length+' data points. Need 10+.');setLoading(false);return;}
+
+      // Train/test split by date
       var dayList=Object.keys(dates).sort();
       var trainDays=Math.max(3,Math.floor(dayList.length*trainPct/100));
       var trainDateSet={};for(var di=0;di<trainDays;di++)trainDateSet[dayList[di]]=true;
@@ -6851,24 +6863,33 @@ function HourlyPredictionPage(p){
       }
       if(train.length<5){setErr('Training set too small ('+train.length+' points)');setLoading(false);return;}
       if(test.length<1){setErr('No test data. Increase date range or decrease train %.');setLoading(false);return;}
+
       setProg('Selecting top '+topN+' leadable features...');
-      // Compute correlations on training set for leadable features only
+
+      // Compute correlations on training set
       var leadableKeys=['is_rth','prev_hour_atr_pct','prev_hour_volume','prev_hour_trades','prev_hour_realized_vol','prev_hour_reversal_rate','prev_hour_trade_intensity','prev_hour_avg_trade_size','prev_hour_oscillation_score','prev_hour_ece','prev_hour_best_tp','overnight_gap_pct','vix_close','day_of_week','hour','cumulative_volume_pct','price_vs_day_open_pct','intraday_range_pct','hour_vol_pct_of_day'];
-      var pearson=function(x,y){if(x.length<3)return 0;var n=x.length,sx=0,sy=0,sxy=0,sx2=0,sy2=0;for(var i=0;i<n;i++){sx+=x[i];sy+=y[i];sxy+=x[i]*y[i];sx2+=x[i]*x[i];sy2+=y[i]*y[i];}var num=n*sxy-sx*sy;var d1=n*sx2-sx*sx;var d2=n*sy2-sy*sy;return(d1>0&&d2>0)?num/Math.sqrt(d1*d2):0;};
       var featureCorrs=[];
       for(var fi=0;fi<leadableKeys.length;fi++){
         var fKey=leadableKeys[fi];
-        var xv=[],yp=[];
+        var xv=[],yProfit=[],yTp=[];
         for(var ti=0;ti<train.length;ti++){
           var v=parseFloat(train[ti][fKey]);
-          if(!isNaN(v)&&v!==null){xv.push(v);yp.push(train[ti].best_net_profit);}
+          if(!isNaN(v)&&v!==null){xv.push(v);yProfit.push(train[ti].best_net_profit);yTp.push(train[ti].best_tp_pct);}
         }
-        if(xv.length>=5){var rP=pearson(xv,yp);var rT=pearson(xv,yp.map(function(_,i){return train.filter(function(t2){var v2=parseFloat(t2[fKey]);return!isNaN(v2);})[i].best_tp_pct;}));featureCorrs.push({key:fKey,rProfit:rP,rTp:rT,n:xv.length});}
+        if(xv.length>=5){
+          var rP=pearson(xv,yProfit);
+          var rT=pearson(xv,yTp);
+          var strength=Math.max(Math.abs(rP),Math.abs(rT));
+          featureCorrs.push({key:fKey,rProfit:rP,rTp:rT,strength:strength,n:xv.length});
+        }
       }
-      featureCorrs.sort(function(a,b){return Math.abs(b.rProfit)-Math.abs(a.rProfit);});
+      // Sort by combined strength: max(|r_profit|, |r_tp|)
+      featureCorrs.sort(function(a,b){return b.strength-a.strength;});
       var selectedFeatures=featureCorrs.slice(0,topN);
+
       setProg('Building quintile lookup tables...');
-      // Build quintile boundaries for each selected feature from training data
+
+      // Build quintile boundaries from training data
       for(var si=0;si<selectedFeatures.length;si++){
         var sf=selectedFeatures[si];
         var vals=[];
@@ -6878,58 +6899,65 @@ function HourlyPredictionPage(p){
         for(var qi=0;qi<5;qi++){
           var qStart=Math.floor(vals.length*qi/5);var qEnd=Math.floor(vals.length*(qi+1)/5);
           var qVals=vals.slice(qStart,qEnd);
+          if(!qVals.length)continue;
           var tpSum=0,npSum=0;for(var qj=0;qj<qVals.length;qj++){tpSum+=qVals[qj].tp;npSum+=qVals[qj].np;}
           quintiles.push({q:qi+1,min:qVals[0].v,max:qVals[qVals.length-1].v,avgTp:tpSum/qVals.length,avgProfit:npSum/qVals.length,n:qVals.length});
         }
         sf.quintiles=quintiles;
-        sf.allVals=vals;
       }
+
+      setProg('Computing best flat TP% from training data...');
+
+      // Best flat TP%: the single TP% that maximizes total profit across ALL training hours
+      var tpTotals={};
+      for(var ti=0;ti<train.length;ti++){
+        var dk=train[ti].trade_date+'|'+train[ti].hour;
+        for(var tpInt=1;tpInt<=100;tpInt++){
+          var tpVal=Math.round(tpInt)/100;
+          var lk=dk+'|'+tpVal;
+          if(allTP[lk]!==undefined){
+            if(!tpTotals[tpVal])tpTotals[tpVal]=0;
+            tpTotals[tpVal]+=allTP[lk];
+          }
+        }
+      }
+      var flatTp=0.5;var flatMax=-Infinity;
+      for(var tp in tpTotals){if(tpTotals[tp]>flatMax){flatMax=tpTotals[tp];flatTp=parseFloat(tp);}}
+
       setProg('Running backtest on '+test.length+' test points...');
+
       // Predict for each test point
       var predictions=[];var flatProfit=0;var predictedProfit=0;var actualProfit=0;
-      // Find best flat TP% from training data
-      var flatTpCounts={};
-      for(var ti=0;ti<train.length;ti++){var tp=train[ti].best_tp_pct;flatTpCounts[tp]=(flatTpCounts[tp]||0)+1;}
-      var flatTp=null;var flatMax=0;
-      for(var tp in flatTpCounts){if(flatTpCounts[tp]>flatMax){flatMax=flatTpCounts[tp];flatTp=parseFloat(tp);}}
-      // Actually compute best flat by total profit
-      var flatTpProfit={};
-      for(var ti=0;ti<train.length;ti++){
-        var dt=train[ti].trade_date;var hr=train[ti].hour;
-        // For each TP%, sum profit across all training points
-      }
-      // Simpler: median best TP% from training
-      var trainTps=[];for(var ti=0;ti<train.length;ti++)trainTps.push(train[ti].best_tp_pct);
-      trainTps.sort(function(a,b){return a-b;});
-      flatTp=trainTps[Math.floor(trainTps.length/2)];
-
       for(var ti2=0;ti2<test.length;ti2++){
         var pt=test[ti2];
-        // Predict: average quintile TP% across selected features
-        var tpPreds=[];var profPreds=[];
+        // Average quintile TP% across selected features
+        var tpPreds=[];
         for(var si2=0;si2<selectedFeatures.length;si2++){
           var sf2=selectedFeatures[si2];
           var val=parseFloat(pt[sf2.key]);
           if(isNaN(val))continue;
-          // Find which quintile this value falls in
           for(var qi2=0;qi2<sf2.quintiles.length;qi2++){
             var q=sf2.quintiles[qi2];
-            if(val<=q.max||qi2===4){tpPreds.push(q.avgTp);profPreds.push(q.avgProfit);break;}
+            if(val<=q.max||qi2===sf2.quintiles.length-1){tpPreds.push(q.avgTp);break;}
           }
         }
         var predTp=null;
         if(tpPreds.length>0){var s=0;for(var pi=0;pi<tpPreds.length;pi++)s+=tpPreds[pi];predTp=Math.round(s/tpPreds.length*100)/100;}
-        // Lookup actual profit at predicted TP% and flat TP%
+
+        // Lookup profit at predicted and flat TP%
         var dk=pt.trade_date+'|'+pt.hour;
-        // Find closest available TP% to predicted
         var predNp=0;var flatNp=0;var actualNp=pt.best_net_profit;
         if(predTp!==null){
-          // Search allTP for closest match
-          var bestDist=Infinity;
-          for(var tpSearch=0.01;tpSearch<=1.0;tpSearch+=0.01){
-            var tpR=Math.round(tpSearch*100)/100;
-            var lk=dk+'|'+tpR;
-            if(allTP[lk]!==undefined&&Math.abs(tpR-predTp)<bestDist){bestDist=Math.abs(tpR-predTp);predNp=allTP[lk];}
+          var predKey=dk+'|'+predTp;
+          if(allTP[predKey]!==undefined){predNp=allTP[predKey];}
+          else{
+            // Find closest available TP%
+            var bestDist=Infinity;
+            for(var tpS=1;tpS<=100;tpS++){
+              var tpR2=Math.round(tpS)/100;
+              var lk2=dk+'|'+tpR2;
+              if(allTP[lk2]!==undefined&&Math.abs(tpR2-predTp)<bestDist){bestDist=Math.abs(tpR2-predTp);predNp=allTP[lk2];}
+            }
           }
         }
         var flatLk=dk+'|'+flatTp;
@@ -6937,7 +6965,8 @@ function HourlyPredictionPage(p){
         predictedProfit+=predNp;flatProfit+=flatNp;actualProfit+=actualNp;
         predictions.push({date:pt.trade_date,hour:pt.hour,predTp:predTp,actualTp:pt.best_tp_pct,predProfit:predNp,flatProfit:flatNp,actualProfit:actualNp});
       }
-      // Build cumulative profit series
+
+      // Cumulative profit series
       var cumPred=0,cumFlat=0,cumActual=0;
       var cumSeries=[];
       for(var ci=0;ci<predictions.length;ci++){
@@ -6946,12 +6975,15 @@ function HourlyPredictionPage(p){
       }
       var edge=predictedProfit-flatProfit;var edgePct=flatProfit!==0?((edge/Math.abs(flatProfit))*100):0;
       var captureRate=actualProfit!==0?((predictedProfit/actualProfit)*100):0;
+      var winCount=0;for(var wi=0;wi<predictions.length;wi++){if(predictions[wi].predProfit>=predictions[wi].flatProfit)winCount++;}
+      var winRate=predictions.length>0?Math.round(winCount/predictions.length*1000)/10:0;
+
       setResults({
-        selectedFeatures:selectedFeatures,predictions:predictions,cumSeries:cumSeries,
+        selectedFeatures:selectedFeatures,allFeatures:featureCorrs,predictions:predictions,cumSeries:cumSeries,
         trainDays:trainDays,testDays:dayList.length-trainDays,trainPoints:train.length,testPoints:test.length,
         predictedProfit:Math.round(predictedProfit*100)/100,flatProfit:Math.round(flatProfit*100)/100,actualProfit:Math.round(actualProfit*100)/100,
         edge:Math.round(edge*100)/100,edgePct:Math.round(edgePct*10)/10,captureRate:Math.round(captureRate*10)/10,
-        flatTp:flatTp,ticker:ticker,dayList:dayList
+        flatTp:flatTp,ticker:ticker,dayList:dayList,winRate:winRate
       });
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
@@ -6962,17 +6994,9 @@ function HourlyPredictionPage(p){
   var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
 
   return <div>
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
-      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
-      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Hourly TP% Predictor</div>
-    </div>
-
     <Cd>
-      <SectionHead title="Regime Lookup Predictor" sub="Predict next hour optimal TP% using quintile-based feature lookup"/>
-      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.6,marginBottom:10}}>
-        <p>Splits historical data into train/test. For each top leadable feature, groups training data into 5 quintiles and records average optimal TP% per quintile. At prediction time, looks up which quintile each current feature value falls in, averages across features.</p>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8}}>
+      <SectionHead title="Hourly TP% Predictor" sub="Stage 4: Quintile regime lookup with train/test backtest" info="Splits data chronologically into train/test. Selects top N leadable features by combined strength (max of |r(Profit)| and |r(TP%)|). Builds quintile lookup from training data. Predicts optimal TP% per hour by averaging quintile TP% across features. Compares predicted vs best-flat vs actual-best on test set."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
         <div><label style={lS}>Ticker</label>
           {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={iS}><option value="">Select...</option>{availTickers.map(function(t){return <option key={t} value={t}>{t}</option>;})}</select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
         </div>
@@ -6981,28 +7005,7 @@ function HourlyPredictionPage(p){
         <div><label style={lS}>Top N Features</label><select value={topN} onChange={function(e){setTopN(parseInt(e.target.value));}} style={iS}><option value="3">3</option><option value="5">5</option><option value="7">7</option><option value="10">10</option></select></div>
         <div><label style={lS}>Train %</label><select value={trainPct} onChange={function(e){setTrainPct(parseInt(e.target.value));}} style={iS}><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></div>
       </div>
-      <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:10,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Run Backtest'}</button>
-      {p.ghToken&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
-        <button onClick={async function(){
-          if(!ticker){setErr('Select a ticker');return;}
-          setErr(null);setProg('Triggering nightly pipeline...');
-          try{
-            var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'nightly',tickers:ticker}})});
-            if(r.status===204){setProg('Nightly pipeline triggered for '+ticker);startPolling();}
-            else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
-          }catch(e2){setErr('GitHub trigger failed: '+e2.message);}
-        }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff'})}>Trigger Nightly</button>
-        <button onClick={async function(){
-          if(!ticker){setErr('Select a ticker');return;}
-          setErr(null);setProg('Triggering hourly pipeline...');
-          try{
-            var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'hourly',tickers:ticker}})});
-            if(r.status===204){setProg('Hourly pipeline triggered for '+ticker);startPolling();}
-            else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
-          }catch(e2){setErr('GitHub trigger failed: '+e2.message);}
-        }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#3d9eff,#2070d0)',color:'#fff'})}>Trigger Hourly</button>
-      </div>}
-      {!p.ghToken&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>Add a GitHub PAT in Settings to trigger pipelines from here.</div>}
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:12,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00c488)',color:loading?C.txtDim:C.bg})}>{loading?'Running...':'Run Backtest'}</button>
       {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6,animation:'pulse 1.5s infinite'}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
@@ -7033,10 +7036,31 @@ function HourlyPredictionPage(p){
     </Cd>}
 
     {p.ghToken&&<Cd>
-      <SectionHead title="Backfill Data (GitHub)" sub="Run Stages 1+2+3 on GitHub servers for any date range and ticker. Handles heavy stocks (SOXL, NVDA, AMZN). Skips days already in database."/>
-      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
-        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+      <SectionHead title="Pipeline Controls" sub="Trigger data pipelines on GitHub Actions"/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        <button onClick={async function(){
+          if(!ticker){setErr('Select a ticker');return;}
+          setErr(null);setProg('Triggering nightly pipeline...');
+          try{
+            var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'nightly',tickers:ticker}})});
+            if(r.status===204){setProg('Nightly triggered for '+ticker);startPolling();}
+            else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
+          }catch(e2){setErr(e2.message);}
+        }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff'})}>Trigger Nightly</button>
+        <button onClick={async function(){
+          if(!ticker){setErr('Select a ticker');return;}
+          setErr(null);setProg('Triggering hourly pipeline...');
+          try{
+            var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'hourly',tickers:ticker}})});
+            if(r.status===204){setProg('Hourly triggered for '+ticker);startPolling();}
+            else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));}
+          }catch(e2){setErr(e2.message);}
+        }} style={Object.assign({},bB,{background:'linear-gradient(135deg,#3d9eff,#2070d0)',color:'#fff'})}>Trigger Hourly</button>
       </div>
+    </Cd>}
+
+    {p.ghToken&&<Cd>
+      <SectionHead title="Backfill Data" sub="Run Stages 1+2+3 on GitHub servers for any date range"/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
         <div><label style={lS}>Start Date</label><input type="date" value={bfStart} onChange={function(e){setBfStart(e.target.value);}} style={iS}/></div>
         <div><label style={lS}>End Date</label><input type="date" value={bfEnd} onChange={function(e){setBfEnd(e.target.value);}} style={iS}/></div>
@@ -7047,7 +7071,7 @@ function HourlyPredictionPage(p){
         </div>
         <div>
           <span style={{color:bfForce?C.warn:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>Force Re-process</span>
-          <span style={{color:C.txtDim,fontSize:7,fontFamily:F,display:'block',marginTop:1}}>Delete and rebuild all data for selected dates, even if already in database. Use after bug fixes or when data may be incomplete (e.g., missing post-market hours from DST issues).</span>
+          <span style={{color:C.txtDim,fontSize:7,fontFamily:F,display:'block',marginTop:1}}>Delete and rebuild all data for selected dates.</span>
         </div>
       </div>
       <button onClick={async function(){
@@ -7056,34 +7080,32 @@ function HourlyPredictionPage(p){
         setErr(null);setBfStatus('Triggering backfill...');
         try{
           var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'backfill',tickers:ticker,start_date:bfStart,end_date:bfEnd,force:bfForce?'true':'false'}})});
-          if(r.status===204){setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+(bfForce?' (FORCE re-process)':' (skip existing)')+'. Stages 1+2+3 running on GitHub.');startPolling();}
+          if(r.status===204){setBfStatus('Backfill triggered: '+ticker+' '+bfStart+' to '+bfEnd+(bfForce?' (FORCE)':'')); startPolling();}
           else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setBfStatus('');}
-        }catch(e2){setErr('GitHub trigger failed: '+e2.message);setBfStatus('');}
-      }} style={Object.assign({},bB,{marginTop:10,background:'linear-gradient(135deg,#ff8c00,#e06000)',color:'#fff'})}>Run Backfill on GitHub</button>
+        }catch(e2){setErr(e2.message);setBfStatus('');}
+      }} style={Object.assign({},bB,{marginTop:10,background:'linear-gradient(135deg,#ff8c00,#e06000)',color:'#fff'})}>Run Backfill</button>
       {bfStatus&&<div style={{color:C.accent,fontSize:8,fontFamily:F,marginTop:6}}>{bfStatus}</div>}
-      <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:8,lineHeight:1.6}}>
-        <p>Runs on GitHub Actions (7GB RAM, 6hr max). Processes each day: fetch ticks from Polygon, run cycle analysis (Stage 1), scan 100 TP% x 16 hours (Stage 2), extract 32+ features (Stage 3). Skips days already in database. Heavy stocks like SOXL (250K+ ticks/day) work fine on GitHub but crash in browser.</p>
-      </div>
     </Cd>}
+    {!p.ghToken&&<Cd><div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:8}}>Add a GitHub PAT in Settings to trigger pipelines.</div></Cd>}
 
     {results&&<div>
       <Cd glow>
-        <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | TRAIN '+results.trainDays+' DAYS | TEST '+results.testDays+' DAYS | '+results.testPoints+' PREDICTIONS'}</div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+        <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | TRAIN '+results.trainDays+' DAYS | TEST '+results.testDays+' DAYS | '+results.testPoints+' PREDICTIONS'}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
           <Mt label="Predicted Profit" value={'$'+results.predictedProfit.toFixed(2)} color={results.edge>0?C.accent:C.warn} size="lg"/>
-          <Mt label="Flat TP% Profit" value={'$'+results.flatProfit.toFixed(2)} color={C.gold} size="lg"/>
-          <Mt label="Actual Best" value={'$'+results.actualProfit.toFixed(2)} color={C.blue} size="md"/>
+          <Mt label="Flat Profit" value={'$'+results.flatProfit.toFixed(2)} color={C.gold} size="lg"/>
+          <Mt label="Actual Best" value={'$'+results.actualProfit.toFixed(2)} color={C.blue} size="lg"/>
         </div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8}}>
           <Mt label="Edge vs Flat" value={(results.edge>0?'+':'')+'$'+results.edge.toFixed(2)} color={results.edge>0?C.accent:C.warn} size="md"/>
           <Mt label="Edge %" value={(results.edgePct>0?'+':'')+results.edgePct.toFixed(1)+'%'} color={results.edgePct>0?C.accent:C.warn} size="md"/>
-          <Mt label="Capture Rate" value={results.captureRate.toFixed(1)+'%'} color={C.purple} size="md"/>
+          <Mt label="Win Rate" value={results.winRate+'%'} color={results.winRate>50?C.accent:C.warn} size="md"/>
           <Mt label="Flat TP%" value={results.flatTp+'%'} color={C.txtDim} size="md"/>
         </div>
       </Cd>
 
       <Cd>
-        <SectionHead title="Cumulative Profit: Predicted vs Flat vs Actual" sub="Out-of-sample backtest on test period"/>
+        <SectionHead title="Cumulative Profit" sub="Out-of-sample backtest: predicted vs flat vs actual"/>
         <div style={{height:200,marginTop:8}}>
           {typeof Recharts!=='undefined'&&React.createElement(Recharts.ResponsiveContainer,{width:'100%',height:'100%'},
             React.createElement(Recharts.LineChart,{data:results.cumSeries,margin:{top:5,right:5,left:5,bottom:5}},
@@ -7097,57 +7119,69 @@ function HourlyPredictionPage(p){
           )}
         </div>
         <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:6}}>
-          <span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u25CF'} Predicted</span>
-          <span style={{color:C.gold,fontSize:7,fontFamily:F}}>{'\u25CF'} Flat ({results.flatTp}%)</span>
-          <span style={{color:C.blue,fontSize:7,fontFamily:F}}>{'\u25CF'} Actual Best</span>
+          <span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u25CF Predicted'}</span>
+          <span style={{color:C.gold,fontSize:7,fontFamily:F}}>{'\u25CF Flat ('+results.flatTp+'%)'}</span>
+          <span style={{color:C.blue,fontSize:7,fontFamily:F}}>{'\u25CF Actual Best'}</span>
         </div>
       </Cd>
 
       <Cd>
-        <SectionHead title="Selected Features" sub={'Top '+results.selectedFeatures.length+' leadable features by r(Profit) on training set'}/>
+        <SectionHead title="Selected Features" sub={'Top '+results.selectedFeatures.length+' by combined strength: max(|r(Profit)|, |r(TP%)|)'}/>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,marginTop:8}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Feature</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r(Profit)</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>r(TP%)</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>n</th>
           </tr></thead>
           <tbody>{results.selectedFeatures.map(function(sf,idx){
             return <tr key={sf.key} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'4px 3px',color:C.txtDim}}>{idx+1}</td>
-              <td style={{padding:'4px 3px',color:C.txtBright,fontWeight:700}}>{sf.key}</td>
-              <td style={{padding:'4px 3px',color:sf.rProfit>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{(sf.rProfit>0?'+':'')+sf.rProfit.toFixed(3)}</td>
+              <td style={{padding:'4px 3px',color:C.txtBright,fontWeight:700,fontSize:6}}>{sf.key}</td>
+              <td style={{padding:'4px 3px',color:Math.abs(sf.rProfit)>=Math.abs(sf.rTp)?sf.rProfit>0?C.accent:C.warn:C.txtDim,textAlign:'right',fontWeight:Math.abs(sf.rProfit)>=Math.abs(sf.rTp)?700:400}}>{(sf.rProfit>0?'+':'')+sf.rProfit.toFixed(3)}</td>
+              <td style={{padding:'4px 3px',color:Math.abs(sf.rTp)>Math.abs(sf.rProfit)?sf.rTp>0?C.accent:C.warn:C.txtDim,textAlign:'right',fontWeight:Math.abs(sf.rTp)>Math.abs(sf.rProfit)?700:400}}>{(sf.rTp>0?'+':'')+sf.rTp.toFixed(3)}</td>
               <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{sf.n}</td>
             </tr>;
           })}</tbody>
         </table>
       </Cd>
 
-      {results.selectedFeatures.map(function(sf,idx){
-        return <Cd key={sf.key}>
-          <SectionHead title={'Quintile Lookup: '+sf.key} sub={'r(Profit) = '+(sf.rProfit>0?'+':'')+sf.rProfit.toFixed(3)}/>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,marginTop:6}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'left'}}>Q</th>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Range</th>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Avg TP%</th>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Avg Profit</th>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>n</th>
-            </tr></thead>
-            <tbody>{sf.quintiles.map(function(q){
-              var maxProfit=Math.max.apply(null,sf.quintiles.map(function(qq){return qq.avgProfit;}));
-              var isBest=q.avgProfit===maxProfit;
-              return <tr key={q.q} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.08)':'transparent'}}>
-                <td style={{padding:'4px 3px',color:isBest?C.accent:C.txt,fontWeight:isBest?700:400}}>{'Q'+q.q}</td>
-                <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{q.min.toFixed(2)+' - '+q.max.toFixed(2)}</td>
-                <td style={{padding:'4px 3px',color:C.gold,textAlign:'right',fontWeight:700}}>{q.avgTp.toFixed(3)+'%'}</td>
-                <td style={{padding:'4px 3px',color:q.avgProfit>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+q.avgProfit.toFixed(2)}</td>
-                <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{q.n}</td>
-              </tr>;
-            })}</tbody>
-          </table>
-        </Cd>;
-      })}
+      <Cd>
+        <SectionHead title="Quintile Lookup Tables" sub="Training data grouped into 5 bins per feature"/>
+        {results.selectedFeatures.map(function(sf,idx){
+          var isOpen=expandedQ===sf.key;
+          return <div key={sf.key} style={{borderBottom:idx<results.selectedFeatures.length-1?'1px solid '+C.grid:'none'}}>
+            <div onClick={function(){setExpandedQ(isOpen?null:sf.key);}} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',cursor:'pointer'}}>
+              <div>
+                <span style={{color:C.txtBright,fontSize:8,fontWeight:700,fontFamily:F}}>{sf.key}</span>
+                <span style={{color:C.txtDim,fontSize:7,fontFamily:F,marginLeft:8}}>{'r='+sf.strength.toFixed(3)}</span>
+              </div>
+              <span style={{color:C.accent,fontSize:14,fontWeight:300,transform:isOpen?'rotate(45deg)':'none',transition:'transform 0.2s'}}>+</span>
+            </div>
+            {isOpen&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,marginBottom:8}}>
+              <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+                <th style={{padding:'3px',color:C.txtDim,textAlign:'left'}}>Q</th>
+                <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Range</th>
+                <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Avg TP%</th>
+                <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Avg Profit</th>
+                <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>n</th>
+              </tr></thead>
+              <tbody>{sf.quintiles.map(function(q){
+                var maxP=Math.max.apply(null,sf.quintiles.map(function(qq){return qq.avgProfit;}));
+                var isBest=q.avgProfit===maxP;
+                return <tr key={q.q} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.08)':'transparent'}}>
+                  <td style={{padding:'4px 3px',color:isBest?C.accent:C.txt,fontWeight:isBest?700:400}}>{'Q'+q.q}</td>
+                  <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{q.min.toFixed(2)+' - '+q.max.toFixed(2)}</td>
+                  <td style={{padding:'4px 3px',color:C.gold,textAlign:'right',fontWeight:700}}>{q.avgTp.toFixed(3)+'%'}</td>
+                  <td style={{padding:'4px 3px',color:q.avgProfit>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+q.avgProfit.toFixed(2)}</td>
+                  <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{q.n}</td>
+                </tr>;
+              })}</tbody>
+            </table>}
+          </div>;
+        })}
+      </Cd>
 
       <Cd>
         <SectionHead title="Prediction Detail" sub="Per-hour predicted vs actual TP% and profit"/>
@@ -7156,8 +7190,8 @@ function HourlyPredictionPage(p){
             <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
               <th style={{padding:'3px',color:C.txtDim,textAlign:'left'}}>Date</th>
               <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Hr</th>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Pred TP%</th>
-              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Actual TP%</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Pred</th>
+              <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Actual</th>
               <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Pred $</th>
               <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Flat $</th>
               <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Best $</th>
@@ -7180,6 +7214,7 @@ function HourlyPredictionPage(p){
     </div>}
   </div>;
 }
+
 
 function App(){
   var AreaChart=RC.AreaChart||null,Area=RC.Area||null,XAxis=RC.XAxis||null,YAxis=RC.YAxis||null,CartesianGrid=RC.CartesianGrid||null,RTooltip=RC.Tooltip||null,ResponsiveContainer=RC.ResponsiveContainer||null;
