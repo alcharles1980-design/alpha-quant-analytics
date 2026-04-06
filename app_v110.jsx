@@ -6994,8 +6994,13 @@ function HourlyPredictionPage(p){
   var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
 
   return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Hourly TP% Predictor</div>
+    </div>
+
     <Cd>
-      <SectionHead title="Hourly TP% Predictor" sub="Stage 4: Quintile regime lookup with train/test backtest" info="Splits data chronologically into train/test. Selects top N leadable features by combined strength (max of |r(Profit)| and |r(TP%)|). Builds quintile lookup from training data. Predicts optimal TP% per hour by averaging quintile TP% across features. Compares predicted vs best-flat vs actual-best on test set."/>
+      <SectionHead title="Regime Lookup Predictor" sub="Quintile-based feature lookup with train/test backtest" info="Splits data chronologically into train/test. Selects top N leadable features by combined strength (max of |r(Profit)| and |r(TP%)|). Builds quintile lookup from training data. Predicts optimal TP% per hour by averaging quintile TP% across features. Compares predicted vs best-flat vs actual-best on test set."/>
       <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginTop:8}}>
         <div><label style={lS}>Ticker</label>
           {availTickers?<select value={ticker} onChange={function(e){setTicker(e.target.value);}} style={iS}><option value="">Select...</option>{availTickers.map(function(t){return <option key={t} value={t}>{t}</option>;})}</select>:<input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/>}
