@@ -17,6 +17,7 @@ on:
           - nightly
           - hourly
           - backfill
+          - autotune
       tickers:
         description: 'Comma-separated tickers'
         required: true
