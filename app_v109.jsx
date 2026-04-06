@@ -1742,7 +1742,7 @@ function DbManagePage(p){
     setLoading(true);setErr(null);
     try{
       if(!SB_URL||!SB_KEY){setErr('No Supabase config. Set in Settings.');setLoading(false);return;}
-      var h=getSbHeaders();
+      var h=getSbHeaders();h['Range']='0-9999';
       // Get stock summary
       var r1=await fetch(SB_URL+'/rest/v1/cached_analyses?select=ticker,trade_date,tp_pct,session_type,total_cycles,active_levels,total_levels,total_trades&order=ticker.asc,trade_date.asc',{headers:h});
       if(!r1.ok)throw new Error('API error '+r1.status);
@@ -1766,9 +1766,16 @@ function DbManagePage(p){
         return s;
       });
 
-      // Get seasonality count
-      var r2=await fetch(SB_URL+'/rest/v1/cached_seasonality?select=ticker,trade_date&order=ticker.asc',{headers:h});
-      var seasRows=r2.ok?await r2.json():[];
+      // Get seasonality count (paginated)
+      var seasRows=[];var seasPage=0;
+      while(true){
+        var rh2=getSbHeaders();rh2['Range']=(seasPage*1000)+'-'+((seasPage+1)*1000-1);
+        var r2=await fetch(SB_URL+'/rest/v1/cached_seasonality?select=ticker,trade_date&order=ticker.asc',{headers:rh2});
+        var sBatch=r2.ok?await r2.json():[];
+        for(var sbi=0;sbi<sBatch.length;sbi++)seasRows.push(sBatch[sbi]);
+        if(sBatch.length<1000)break;
+        seasPage++;if(seasPage>50)break;
+      }
       var seasByTicker={};
       var seasDates={};
       for(var i=0;i<seasRows.length;i++){
@@ -1787,8 +1794,16 @@ function DbManagePage(p){
       setData({stocks:arr,totalAnalyses:rows.length,totalSeasonality:seasRows.length});
 
       // Load Stage 3 feature data
-      var rf=await fetch(SB_URL+'/rest/v1/hourly_features?select=ticker,trade_date,hour,hour_open,hour_close,hour_high,hour_low,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,vix_close,day_of_week,prev_day_close,overnight_gap_pct,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct&order=ticker.asc,trade_date.asc,hour.asc',{headers:h});
-      var featRows=rf.ok?await rf.json():[];
+      // Load Stage 3 feature data (paginated)
+      var featRows=[];var featPage=0;
+      while(true){
+        var rfh=getSbHeaders();rfh['Range']=(featPage*1000)+'-'+((featPage+1)*1000-1);
+        var rf=await fetch(SB_URL+'/rest/v1/hourly_features?select=ticker,trade_date,hour,hour_open,hour_close,hour_high,hour_low,hour_atr_dollar,hour_atr_pct,hour_volume,hour_trades,hour_vwap,vix_close,day_of_week,prev_day_close,overnight_gap_pct,price_vs_day_open_pct,intraday_range_pct,cumulative_volume_pct&order=ticker.asc,trade_date.asc,hour.asc',{headers:rfh});
+        var fBatch=rf.ok?await rf.json():[];
+        for(var fbi=0;fbi<fBatch.length;fbi++)featRows.push(fBatch[fbi]);
+        if(fBatch.length<1000)break;
+        featPage++;if(featPage>50)break;
+      }
       var featStocks={};
       for(var fi=0;fi<featRows.length;fi++){
         var fr=featRows[fi];var fk=fr.ticker;
