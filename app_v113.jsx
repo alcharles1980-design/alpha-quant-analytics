@@ -6447,7 +6447,7 @@ function TradeFinderPage(p){
     setEtH(Math.floor(totalSec/3600));setEtM(Math.floor((totalSec%3600)/60));setEtS(totalSec%60);
   };
   var exchMap={1:'NYSE',2:'ARCA',3:'AMEX',4:'NASDAQ',5:'NASDAQ',6:'NASDAQ',7:'NASDAQ',8:'INSTINET',9:'ISE',10:'EDGA',11:'EDGX',12:'BATS',13:'BATS',14:'BATS',15:'IEXG',17:'NYSE CHI',18:'NYSE NAT',19:'FINRA',20:'MEMX',21:'MIAX',62:'LTSE',63:'PEARL',64:'SAPPHIRE'};
-  var condMap={0:'Regular',1:'Acquisition',2:'Avg Price',3:'Auto Exec',5:'Intermarket Sweep',7:'Cash Sale',8:'Next Day',9:'Opening',10:'Intermarket Sweep',12:'Cross',13:'Derivatively Priced',14:'Form T',15:'Sold Last',16:'Out of Seq',17:'Contingent',18:'Stopped Stock',19:'Rule 155',20:'SSR',21:'Odd Lot',22:'Corrected Consol',29:'Opening',33:'Ext Hrs',37:'Cross',38:'Closing',39:'Sub-Penny',40:'Corrected Ext',52:'Contingent',53:'Qualified Contingent'};
+  var condMap={0:'Regular',1:'Acquisition',2:'Avg Price',3:'Auto Exec',5:'Intermarket Sweep',7:'Cash Sale',8:'Next Day',9:'Opening',10:'Intermarket Sweep',12:'Cross',13:'Derivatively Priced',14:'Form T',15:'Sold Last',16:'Out of Seq',17:'Contingent',18:'Stopped Stock',19:'Rule 155',20:'SSR',21:'Odd Lot',22:'Corrected Consol',29:'Opening',33:'Ext Hrs',37:'Cross',38:'Closing',39:'Sub-Penny',40:'Corrected Ext',41:'Summary',46:'Contingent',52:'Contingent',53:'Qualified Contingent',56:'Finra Median Price',59:'Market Center Reopen',60:'Market Center Close',61:'Market Center Closing Trade'};
 
   var run=async function(){
     if(!p.apiKey){setErr('No Polygon API key. Set in Settings.');return;}
