@@ -6427,8 +6427,8 @@ function TradeFinderPage(p){
   var s3=useState(9),stH=s3[0],setStH=s3[1];
   var s3b=useState(30),stM=s3b[0],setStM=s3b[1];
   var s3c=useState(0),stS=s3c[0],setStS=s3c[1];
-  var s4=useState(16),etH=s4[0],setEtH=s4[1];
-  var s4b=useState(0),etM=s4b[0],setEtM=s4b[1];
+  var s4=useState(9),etH=s4[0],setEtH=s4[1];
+  var s4b=useState(31),etM=s4b[0],setEtM=s4b[1];
   var s4c=useState(0),etS=s4c[0],setEtS=s4c[1];
   var s5=useState(false),loading=s5[0],setLoading=s5[1];
   var s6=useState(null),err=s6[0],setErr=s6[1];
@@ -6441,6 +6441,11 @@ function TradeFinderPage(p){
   var fmtStart=tPad(stH)+':'+tPad(stM)+':'+tPad(stS);
   var fmtEnd=tPad(etH)+':'+tPad(etM)+':'+tPad(etS);
   var tSel={background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:600,padding:'8px 2px',outline:'none',textAlign:'center',flex:1};
+  var autoEnd=function(h,m,s){
+    var totalSec=h*3600+m*60+s+60; // +1 minute
+    if(totalSec>=86400)totalSec-=86400;
+    setEtH(Math.floor(totalSec/3600));setEtM(Math.floor((totalSec%3600)/60));setEtS(totalSec%60);
+  };
   var exchMap={1:'NYSE',2:'ARCA',3:'AMEX',4:'NASDAQ',5:'NASDAQ',6:'NASDAQ',7:'NASDAQ',8:'INSTINET',9:'ISE',10:'EDGA',11:'EDGX',12:'BATS',13:'BATS',14:'BATS',15:'IEXG',17:'NYSE CHI',18:'NYSE NAT',19:'FINRA',20:'MEMX',21:'MIAX',62:'LTSE',63:'PEARL',64:'SAPPHIRE'};
   var condMap={0:'Regular',1:'Acquisition',2:'Avg Price',3:'Auto Exec',5:'Intermarket Sweep',7:'Cash Sale',8:'Next Day',9:'Opening',10:'Intermarket Sweep',12:'Cross',13:'Derivatively Priced',14:'Form T',15:'Sold Last',16:'Out of Seq',17:'Contingent',18:'Stopped Stock',19:'Rule 155',20:'SSR',21:'Odd Lot',22:'Corrected Consol',29:'Opening',33:'Ext Hrs',37:'Cross',38:'Closing',39:'Sub-Penny',40:'Corrected Ext',52:'Contingent',53:'Qualified Contingent'};
 
@@ -6508,11 +6513,11 @@ function TradeFinderPage(p){
       <div style={{marginTop:8,marginBottom:12}}>
         <label style={lS}>Start Time (ET)</label>
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
-          <select value={stH} onChange={function(e){setStH(parseInt(e.target.value));}} style={tSel}>{Array.from({length:24},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <select value={stH} onChange={function(e){var v=parseInt(e.target.value);setStH(v);autoEnd(v,stM,stS);}} style={tSel}>{Array.from({length:24},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
           <span style={{color:C.txtDim,fontFamily:F,fontWeight:700}}>:</span>
-          <select value={stM} onChange={function(e){setStM(parseInt(e.target.value));}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <select value={stM} onChange={function(e){var v=parseInt(e.target.value);setStM(v);autoEnd(stH,v,stS);}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
           <span style={{color:C.txtDim,fontFamily:F,fontWeight:700}}>:</span>
-          <select value={stS} onChange={function(e){setStS(parseInt(e.target.value));}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <select value={stS} onChange={function(e){var v=parseInt(e.target.value);setStS(v);autoEnd(stH,stM,v);}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
         </div>
         <label style={Object.assign({},lS,{marginTop:8})}>End Time (ET)</label>
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
