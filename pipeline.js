@@ -823,6 +823,19 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
       var date = days[di];
       var elapsed = Math.round((Date.now() - startTime) / 1000);
       var pct = Math.round(((ti * days.length + di) / (tickers.length * days.length)) * 100);
+
+      // Safety: stop before GitHub Actions timeout (5hr of 5h50m limit)
+      var MAX_RUNTIME_SEC = 5 * 3600;
+      if (elapsed > MAX_RUNTIME_SEC) {
+        console.log('\n⏱ MAX RUNTIME REACHED (' + Math.round(elapsed / 60) + 'm). Stopping to allow auto-retrigger.');
+        var remaining = days.length - di;
+        console.log('  Remaining: ' + remaining + ' days for ' + ticker);
+        await reportProgress({ status: 'complete', progress_pct: pct, days_processed: stats.processed, days_skipped: stats.skipped, days_error: stats.errors, total_ticks: stats.totalTicks, current_stage: 'done', message: 'Paused: ' + stats.processed + ' processed, ' + remaining + ' remaining. Will auto-resume.' });
+        // Write marker file for GitHub Actions to detect
+        require('fs').writeFileSync('/tmp/BACKFILL_INCOMPLETE', JSON.stringify({ ticker: ticker, remaining: remaining, start_date: date, end_date: endDate, processed: stats.processed }));
+        return;
+      }
+
       console.log(`\n[${pct}%] ${ticker} ${date} (day ${di + 1}/${days.length}) [${elapsed}s elapsed]`);
 
       // Resume check

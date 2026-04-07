@@ -40,6 +40,9 @@ jobs:
   pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    permissions:
+      actions: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -84,3 +87,19 @@ jobs:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Auto-retrigger if backfill incomplete
+        if: steps.mode.outputs.mode == 'backfill'
+        run: |
+          if [ -f /tmp/BACKFILL_INCOMPLETE ]; then
+            echo "Backfill incomplete, triggering another run..."
+            cat /tmp/BACKFILL_INCOMPLETE
+            curl -s -X POST \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/pipeline.yml/dispatches" \
+              -d "{\"ref\":\"main\",\"inputs\":{\"mode\":\"backfill\",\"tickers\":\"${{ steps.mode.outputs.tickers }}\",\"start_date\":\"${{ steps.mode.outputs.start }}\",\"end_date\":\"${{ steps.mode.outputs.end }}\",\"force\":\"${{ steps.mode.outputs.force }}\"}}"
+            echo "Retrigger dispatched."
+          else
+            echo "Backfill complete, no retrigger needed."
+          fi
