@@ -6564,7 +6564,7 @@ function TradeFinderPage(p){
               return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?'rgba(61,158,255,0.05)':isOddLot?'rgba(157,92,255,0.05)':'transparent'}}>
                 <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
                 <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t.price.toFixed(4)}</td>
-                <td style={{padding:'3px 3px',color:isOddLot?C.purple:C.txt,textAlign:'right'}}>{(t.size||0).toLocaleString()}</td>
+                <td style={{padding:'3px 3px',color:t.size===0?C.warn:isOddLot?C.purple:C.txt,textAlign:'right'}}>{t.size!=null?t.size.toLocaleString():'--'}</td>
                 <td style={{padding:'3px 3px',color:C.gold}}>{t._exchName}</td>
                 <td style={{padding:'3px 3px',color:C.txtDim,fontSize:6}}>{t._condStr}</td>
               </tr>;
