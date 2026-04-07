@@ -6424,8 +6424,8 @@ function AIAgentsOverviewPage(p){
 function TradeFinderPage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),date=s2[0],setDate=s2[1];
-  var s3=useState('09:30'),startTime=s3[0],setStartTime=s3[1];
-  var s4=useState('16:00'),endTime=s4[0],setEndTime=s4[1];
+  var s3=useState('09:30:00'),startTime=s3[0],setStartTime=s3[1];
+  var s4=useState('16:00:00'),endTime=s4[0],setEndTime=s4[1];
   var s5=useState(false),loading=s5[0],setLoading=s5[1];
   var s6=useState(null),err=s6[0],setErr=s6[1];
   var s7=useState(''),prog=s7[0],setProg=s7[1];
@@ -6439,6 +6439,7 @@ function TradeFinderPage(p){
   var run=async function(){
     if(!p.apiKey){setErr('No Polygon API key. Set in Settings.');return;}
     if(!date){setErr('Select a date');return;}
+    if(!/^\d{1,2}:\d{2}(:\d{2})?$/.test(startTime)||!/^\d{1,2}:\d{2}(:\d{2})?$/.test(endTime)){setErr('Time format: HH:MM or HH:MM:SS');setLoading(false);return;}
     setLoading(true);setErr(null);setTrades(null);setProg('Fetching trades...');
     try{
       var etOff=getETOffset(date);
@@ -6498,8 +6499,8 @@ function TradeFinderPage(p){
         <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,marginBottom:12}}>
-        <div><label style={lS}>Start Time (ET)</label><input type="time" value={startTime} onChange={function(e){setStartTime(e.target.value);}} style={iS} step="1"/></div>
-        <div><label style={lS}>End Time (ET)</label><input type="time" value={endTime} onChange={function(e){setEndTime(e.target.value);}} style={iS} step="1"/></div>
+        <div><label style={lS}>Start Time (ET)</label><input type="text" value={startTime} onChange={function(e){setStartTime(e.target.value);}} style={iS} placeholder="HH:MM:SS" maxLength="8"/></div>
+        <div><label style={lS}>End Time (ET)</label><input type="text" value={endTime} onChange={function(e){setEndTime(e.target.value);}} style={iS} placeholder="HH:MM:SS" maxLength="8"/></div>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#3d9eff,#2070d0)',color:loading?C.txtDim:'#fff'})}>{loading?'Searching...':'Search Trades'}</button>
       {prog&&<div style={{marginTop:8,color:C.blue,fontSize:10,fontFamily:F}}>{prog}</div>}
