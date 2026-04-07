@@ -6443,12 +6443,12 @@ function TradeFinderPage(p){
     try{
       var etOff=getETOffset(date);
       var stParts=startTime.split(':');var etParts=endTime.split(':');
-      var stH=parseInt(stParts[0])+etOff;var stM=stParts[1]||'00';
-      var etH=parseInt(etParts[0])+etOff;var etM=etParts[1]||'00';
+      var stH=parseInt(stParts[0])+etOff;var stM=stParts[1]||'00';var stS=stParts[2]||'00';
+      var etH=parseInt(etParts[0])+etOff;var etM=etParts[1]||'00';var etS=etParts[2]||'00';
       var pad=function(n){return String(n).padStart(2,'0');};
       var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
-      var tsGte=stH<24?(date+'T'+pad(stH)+':'+pad(stM)+':00.000Z'):(nextDay+'T'+pad(stH-24)+':'+pad(stM)+':00.000Z');
-      var tsLt=etH<24?(date+'T'+pad(etH)+':'+pad(etM)+':00.000Z'):(nextDay+'T'+pad(etH-24)+':'+pad(etM)+':00.000Z');
+      var tsGte=stH<24?(date+'T'+pad(stH)+':'+pad(stM)+':'+pad(stS)+'.000Z'):(nextDay+'T'+pad(stH-24)+':'+pad(stM)+':'+pad(stS)+'.000Z');
+      var tsLt=etH<24?(date+'T'+pad(etH)+':'+pad(etM)+':'+pad(etS)+'.000Z'):(nextDay+'T'+pad(etH-24)+':'+pad(etM)+':'+pad(etS)+'.000Z');
       var allTrades=[];var pages=0;
       var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
       while(url){
