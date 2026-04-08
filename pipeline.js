@@ -78,16 +78,26 @@ function analyzePriceLevels(trades, tpPct) {
   var lvlPrice = new Float64Array(count);
   var openCents = Math.round(openLvl * 100);
   var preSeedMaxCents = Math.round(preSeedMax * 100);
+  // Active-set: compact buffer of active level indices (avoids scanning all 10K+ levels per tick)
+  var actBuf = new Int32Array(count); var actN = 0;
   for (var c = 0; c < count; c++) {
     lvlPrice[c] = (minCents + c) / 100;
     lvlTarget[c] = Math.ceil(lvlPrice[c] * (1 + tf) * 100) / 100;
-    lvlActive[c] = (minCents + c >= openCents && minCents + c <= preSeedMaxCents) ? 1 : 0;
+    if (minCents + c >= openCents && minCents + c <= preSeedMaxCents) { lvlActive[c] = 1; actBuf[actN++] = c; }
   }
   for (var i = 1; i < trades.length; i++) {
     var p = trades[i].price;
-    for (var j = 0; j < count; j++) { if (lvlActive[j] === 1 && p >= lvlTarget[j]) { lvlCycles[j]++; lvlActive[j] = 0; } }
+    // SELL: scan only active levels
+    var newN = 0;
+    for (var ai = 0; ai < actN; ai++) {
+      var j = actBuf[ai];
+      if (p >= lvlTarget[j]) { lvlCycles[j]++; lvlActive[j] = 0; }
+      else { actBuf[newN++] = j; }
+    }
+    // BUY: activate level at current price
     var idx = Math.floor(p * 100) - minCents;
-    if (idx >= 0 && idx < count && lvlActive[idx] === 0) lvlActive[idx] = 1;
+    if (idx >= 0 && idx < count && lvlActive[idx] === 0) { lvlActive[idx] = 1; actBuf[newN++] = idx; }
+    actN = newN;
   }
   var totalCycles = 0, activeLevels = 0;
   var levels = [];
@@ -103,12 +113,19 @@ function computeHourlyCycles(trades, tpPct) {
   var minC = Math.round(Math.floor(minP * 100) / 100 * 100), maxC = Math.round(Math.ceil(maxP * 100) / 100 * 100), cnt = maxC - minC + 1;
   var openC = Math.round(Math.floor(trades[0].price * 100) / 100 * 100), psC = Math.round(Math.round(Math.floor(trades[0].price * 100) / 100 * 1.01 * 100) / 100 * 100);
   var active = new Uint8Array(cnt), target = new Float64Array(cnt);
-  for (var c = 0; c < cnt; c++) { target[c] = Math.ceil((minC + c) / 100 * (1 + tf) * 100) / 100; active[c] = (minC + c >= openC && minC + c <= psC) ? 1 : 0; }
+  var actBuf = new Int32Array(cnt); var actN = 0;
+  for (var c = 0; c < cnt; c++) { target[c] = Math.ceil((minC + c) / 100 * (1 + tf) * 100) / 100; if (minC + c >= openC && minC + c <= psC) { active[c] = 1; actBuf[actN++] = c; } }
   var hourCycles = {}; for (var h = 4; h < 20; h++) hourCycles[h] = 0;
   for (var i2 = 1; i2 < trades.length; i2++) {
     var p = trades[i2].price; var hr = toETHour(trades[i2].ts);
-    for (var j = 0; j < cnt; j++) { if (active[j] === 1 && p >= target[j]) { active[j] = 0; if (hourCycles[hr] !== undefined) hourCycles[hr]++; } }
-    var idx = Math.floor(p * 100) - minC; if (idx >= 0 && idx < cnt && active[idx] === 0) active[idx] = 1;
+    var newN = 0;
+    for (var ai = 0; ai < actN; ai++) {
+      var j = actBuf[ai];
+      if (p >= target[j]) { active[j] = 0; if (hourCycles[hr] !== undefined) hourCycles[hr]++; }
+      else { actBuf[newN++] = j; }
+    }
+    var idx = Math.floor(p * 100) - minC; if (idx >= 0 && idx < cnt && active[idx] === 0) { active[idx] = 1; actBuf[newN++] = idx; }
+    actN = newN;
   }
   return hourCycles;
 }
@@ -122,13 +139,20 @@ function computeCycleHoldTimes(trades, tpPct) {
   var openC = Math.round(Math.floor(trades[0].price * 100) / 100 * 100), psC = Math.round(Math.round(Math.floor(trades[0].price * 100) / 100 * 1.01 * 100) / 100 * 100);
   var active = new Uint8Array(cnt), target = new Float64Array(cnt), buyMs = new Float64Array(cnt);
   var t0 = trades[0].ts; var t0ms = t0 > 1e15 ? t0 / 1e6 : t0 > 1e12 ? t0 / 1e3 : t0;
-  for (var c = 0; c < cnt; c++) { target[c] = Math.ceil((minC + c) / 100 * (1 + tf) * 100) / 100; if (minC + c >= openC && minC + c <= psC) { active[c] = 1; buyMs[c] = t0ms; } }
+  var actBuf = new Int32Array(cnt); var actN = 0;
+  for (var c = 0; c < cnt; c++) { target[c] = Math.ceil((minC + c) / 100 * (1 + tf) * 100) / 100; if (minC + c >= openC && minC + c <= psC) { active[c] = 1; buyMs[c] = t0ms; actBuf[actN++] = c; } }
   var hourDur = {}; for (var h = 4; h < 20; h++) hourDur[h] = [];
   for (var i2 = 1; i2 < trades.length; i2++) {
     var p = trades[i2].price; var ts = trades[i2].ts; var ms = ts > 1e15 ? ts / 1e6 : ts > 1e12 ? ts / 1e3 : ts;
     var hr = getETHourFromMs(ms);
-    for (var j = 0; j < cnt; j++) { if (active[j] === 1 && p >= target[j]) { active[j] = 0; if (hr >= 4 && hr < 20 && buyMs[j] > 0) { var dur = (ms - buyMs[j]) / 60000; if (dur > 0 && dur < 960) hourDur[hr].push(dur); } buyMs[j] = 0; } }
-    var idx = Math.floor(p * 100) - minC; if (idx >= 0 && idx < cnt && active[idx] === 0) { active[idx] = 1; buyMs[idx] = ms; }
+    var newN = 0;
+    for (var ai = 0; ai < actN; ai++) {
+      var j = actBuf[ai];
+      if (p >= target[j]) { active[j] = 0; if (hr >= 4 && hr < 20 && buyMs[j] > 0) { var dur = (ms - buyMs[j]) / 60000; if (dur > 0 && dur < 960) hourDur[hr].push(dur); } buyMs[j] = 0; }
+      else { actBuf[newN++] = j; }
+    }
+    var idx = Math.floor(p * 100) - minC; if (idx >= 0 && idx < cnt && active[idx] === 0) { active[idx] = 1; buyMs[idx] = ms; actBuf[newN++] = idx; }
+    actN = newN;
   }
   var result = [];
   for (var h2 = 4; h2 < 20; h2++) {
@@ -950,23 +974,13 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         await sbDeleteInsert('cached_sessions', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, sessionRows, 'sessions');
 
         // ── STAGE 2: Hourly Optimal TP% ──
-        var SUBSAMPLE_THRESHOLD = 500000;
-        var scanTrades = trades;
-        if (trades.length > SUBSAMPLE_THRESHOLD) {
-          // Subsample to 500K preserving first, last, and every Nth tick
-          var step = Math.ceil(trades.length / SUBSAMPLE_THRESHOLD);
-          scanTrades = [trades[0]];
-          for (var si = step; si < trades.length - 1; si += step) scanTrades.push(trades[si]);
-          scanTrades.push(trades[trades.length - 1]);
-          console.log('  Stage 2: HEAVY (' + trades.length + ' ticks) -> subsampled to ' + scanTrades.length);
-        }
-        console.log('  Stage 2: Scanning 100 TP% x 16 hours (' + scanTrades.length + ' ticks)...');
+        console.log('  Stage 2: Scanning 100 TP% x 16 hours (' + trades.length + ' ticks, active-set optimized)...');
         var fracQty = sharePrice > 0 ? CAP_PER_LEVEL / sharePrice : 0;
         var adjFee = FEE_PER_SHARE * fracQty;
         var optRows = [];
         for (var tpInt = 1; tpInt <= 100; tpInt++) {
           var tp = tpInt / 100;
-          var hc = computeHourlyCycles(scanTrades, tp);
+          var hc = computeHourlyCycles(trades, tp);
           var tpDollar = Math.round((Math.ceil(sharePrice * (1 + tp / 100) * 100) / 100 - sharePrice) * 100) / 100;
           if (tpDollar < 0.01) tpDollar = 0.01;
           var grossPC = fracQty * tpDollar;
@@ -977,7 +991,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
           }
         }
         console.log('  Stage 2: ' + optRows.length + ' rows');
-        await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 done (100 TP% x 16 hrs' + (scanTrades.length < trades.length ? ', subsampled ' + trades.length + '->' + scanTrades.length : '') + ')' });
+        await reportProgress({ current_day: date, ticker, progress_pct: pct, current_stage: 'stage2', message: ticker + ' ' + date + ': Stage 2 done (' + trades.length + ' ticks, 100 TP% x 16 hrs)' });
         await sbDeleteInsert('optimal_tp_hourly', 'ticker=eq.' + ticker + '&trade_date=eq.' + date, optRows, 'optimal');
         var hcDefault = computeHourlyCycles(trades, 1.0);
         var hcRows = [];
@@ -985,7 +999,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         await sbDeleteInsert('cached_hourly_cycles', 'ticker=eq.' + ticker + '&trade_date=eq.' + date + '&tp_pct=eq.1&session_type=eq.all', hcRows, 'hourly_cycles');
 
         // Save cached_hourly_hold_times (cycle holding durations)
-        if (trades.length < 500000) { // skip for very heavy stocks to avoid memory issues
+        {
           var holdTimes = computeCycleHoldTimes(trades, 1.0);
           var htRows = holdTimes.filter(ht => ht.count > 0).map(ht => ({
             ticker, trade_date: date, hour: ht.hour, tp_pct: 1.0, session_type: 'all',
