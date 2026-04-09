@@ -6818,6 +6818,23 @@ function RawDataPage(p){
   </div>;
 }
 
+async function cancelPipeline(ghToken, onStatus){
+  if(!ghToken){onStatus('error','Add GitHub PAT in Settings');return;}
+  onStatus('prog','Finding running workflows...');
+  try{
+    var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/runs?status=in_progress&per_page=10',{headers:{'Authorization':'Bearer '+ghToken,'Accept':'application/vnd.github.v3+json'}});
+    var d=await r.json();
+    var runs=d.workflow_runs||[];
+    if(!runs.length){onStatus('prog','No running workflows found.');return;}
+    var cancelled=0;
+    for(var i=0;i<runs.length;i++){
+      var cr=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/runs/'+runs[i].id+'/cancel',{method:'POST',headers:{'Authorization':'Bearer '+ghToken,'Accept':'application/vnd.github.v3+json'}});
+      if(cr.status===202)cancelled++;
+    }
+    onStatus('prog','Cancelled '+cancelled+' workflow run'+(cancelled!==1?'s':'')+'.');
+  }catch(e){onStatus('error','Cancel failed: '+e.message);}
+}
+
 function MLModelFinderPage(p){
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(null),leaderboard=s2[0],setLeaderboard=s2[1];
@@ -6931,6 +6948,7 @@ function MLModelFinderPage(p){
         <span style={{color:C.txt,fontSize:8,fontFamily:F}}>{pipeProgress.message||''}</span>
       </div>
       {pipeProgress.status==='complete'&&<button onClick={function(){loadLeaderboard();}} style={{width:'100%',marginTop:8,background:'linear-gradient(135deg,#00e5a0,#00c488)',border:'none',borderRadius:8,color:C.bg,fontFamily:F,fontSize:9,fontWeight:700,padding:'10px',cursor:'pointer',letterSpacing:1}}>LOAD RESULTS</button>}
+      {pipeProgress.status==='running'&&<button onClick={function(){cancelPipeline(p.ghToken,function(t,m){if(t==='error')setErr(m);else setProg(m);});}} style={{width:'100%',marginTop:8,background:'transparent',border:'1px solid '+C.warn,borderRadius:8,color:C.warn,fontFamily:F,fontSize:8,fontWeight:700,padding:'8px',cursor:'pointer',letterSpacing:1}}>CANCEL PIPELINE</button>}
     </Cd>}
 
     {best&&<Cd glow={true}>
@@ -7747,7 +7765,10 @@ function HourlyPredictionPage(p){
           {pipelineProgress.total_ticks>0&&<span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{Number(pipelineProgress.total_ticks).toLocaleString()} ticks</span>}
         </div>
       </div>
-      <div style={{marginTop:6}}><button onClick={function(){startPolling();}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:7,fontFamily:F,padding:'4px 8px',cursor:'pointer'}}>Refresh Progress</button></div>
+      <div style={{marginTop:6,display:'flex',gap:6}}>
+        <button onClick={function(){startPolling();}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:7,fontFamily:F,padding:'4px 8px',cursor:'pointer'}}>Refresh</button>
+        {pipelineProgress.status==='running'&&p.ghToken&&<button onClick={function(){cancelPipeline(p.ghToken,function(t,m){setProg(m);});}} style={{background:'transparent',border:'1px solid '+C.warn,borderRadius:4,color:C.warn,fontSize:7,fontFamily:F,padding:'4px 8px',cursor:'pointer'}}>Cancel Pipeline</button>}
+      </div>
     </Cd>}
 
     {p.ghToken&&<Cd>
