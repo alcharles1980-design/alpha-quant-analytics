@@ -6421,6 +6421,301 @@ function AIAgentsOverviewPage(p){
   </div>;
 }
 
+function VolumeProfilePage(p){
+  var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
+  var s3=useState(''),endDate=s3[0],setEndDate=s3[1];
+  var s4=useState(false),loading=s4[0],setLoading=s4[1];
+  var s5=useState(null),err=s5[0],setErr=s5[1];
+  var s6=useState(''),prog=s6[0],setProg=s6[1];
+  var s7=useState(null),profile=s7[0],setProfile=s7[1];
+  var s8=useState(0.05),bucketSize=s8[0],setBucketSize=s8[1];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
+  var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
+
+  var run=async function(){
+    if(!p.apiKey){setErr('No Polygon API key. Set in Settings.');return;}
+    if(!startDate){setErr('Select a date');return;}
+    var ed=endDate||startDate;
+    setLoading(true);setErr(null);setProfile(null);setProg('');
+
+    try{
+      // Get trading days in range
+      var days=[];
+      var d=new Date(startDate+'T12:00:00Z');
+      var e=new Date(ed+'T12:00:00Z');
+      while(d<=e){var dow=d.getUTCDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}
+
+      var allTrades=[];var dayStats=[];
+      for(var di=0;di<days.length;di++){
+        var date=days[di];
+        setProg('Fetching '+ticker+' '+date+' ('+(di+1)+'/'+days.length+')...');
+        var etOff=getETOffset(date);
+        var pad2=function(n){return String(n).padStart(2,'0');};
+        var hPre=4+etOff;var hEnd=20+etOff;
+        var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
+        var tsGte=date+'T'+pad2(hPre)+':00:00.000Z';
+        var tsLt=hEnd<24?(date+'T'+pad2(hEnd)+':30:00.000Z'):(nextDay+'T'+pad2(hEnd-24)+':30:00.000Z');
+        var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
+        var dayTrades=[];var pages=0;
+        while(url){
+          var r=await fetch(url);if(!r.ok)break;
+          var dd=await r.json();
+          if(dd.results)for(var i=0;i<dd.results.length;i++){
+            var t=dd.results[i];
+            var ts=t.sip_timestamp||t.participant_timestamp;
+            dayTrades.push({price:t.price,size:t.size||0,ts:ts,date:date});
+          }
+          url=dd.next_url?(dd.next_url+'&apiKey='+p.apiKey):null;
+          pages++;
+          if(pages%5===0)setProg('Fetching '+ticker+' '+date+' ... '+dayTrades.length.toLocaleString()+' ticks');
+        }
+        if(dayTrades.length>0){
+          var dMin=Infinity,dMax=-Infinity,dVol=0;
+          for(var i=0;i<dayTrades.length;i++){if(dayTrades[i].price<dMin)dMin=dayTrades[i].price;if(dayTrades[i].price>dMax)dMax=dayTrades[i].price;dVol+=dayTrades[i].size;}
+          dayStats.push({date:date,trades:dayTrades.length,volume:dVol,low:dMin,high:dMax,open:dayTrades[0].price,close:dayTrades[dayTrades.length-1].price});
+          for(var i=0;i<dayTrades.length;i++)allTrades.push(dayTrades[i]);
+        }
+      }
+      if(!allTrades.length){setErr('No trades found');setLoading(false);return;}
+
+      setProg('Building volume profile ('+allTrades.length.toLocaleString()+' ticks)...');
+      var bk=bucketSize;
+
+      // Price range
+      var pMin=Infinity,pMax=-Infinity,totalVol=0,totalTrades=allTrades.length;
+      var vwapNum=0,vwapDen=0;
+      for(var i=0;i<allTrades.length;i++){
+        var pr=allTrades[i].price;var sz=allTrades[i].size;
+        if(pr<pMin)pMin=pr;if(pr>pMax)pMax=pr;
+        totalVol+=sz;vwapNum+=pr*sz;vwapDen+=sz;
+      }
+      var vwap=vwapDen>0?vwapNum/vwapDen:0;
+
+      // Build buckets
+      var bucketMin=Math.floor(pMin/bk)*bk;
+      var bucketMax=Math.ceil(pMax/bk)*bk;
+      var nBuckets=Math.round((bucketMax-bucketMin)/bk)+1;
+      if(nBuckets>5000){setErr('Too many price levels. Increase bucket size.');setLoading(false);return;}
+      var buckets=[];
+      for(var bi=0;bi<nBuckets;bi++){
+        var bPrice=Math.round((bucketMin+bi*bk)*10000)/10000;
+        buckets.push({price:bPrice,volume:0,buyVol:0,sellVol:0,trades:0});
+      }
+
+      // Fill buckets + track buy/sell (price up from prev = buy volume, down = sell volume)
+      var prevPrice=allTrades[0].price;
+      for(var i=0;i<allTrades.length;i++){
+        var pr=allTrades[i].price;var sz=allTrades[i].size;
+        var bIdx=Math.min(nBuckets-1,Math.max(0,Math.round((pr-bucketMin)/bk)));
+        buckets[bIdx].volume+=sz;
+        buckets[bIdx].trades++;
+        if(pr>=prevPrice)buckets[bIdx].buyVol+=sz;else buckets[bIdx].sellVol+=sz;
+        prevPrice=pr;
+      }
+
+      // POC: highest volume bucket
+      var pocIdx=0;var pocVol=0;
+      for(var bi=0;bi<nBuckets;bi++){if(buckets[bi].volume>pocVol){pocVol=buckets[bi].volume;pocIdx=bi;}}
+      var poc=buckets[pocIdx].price;
+
+      // Value Area: 70% of total volume centered on POC
+      var vaTarget=totalVol*0.7;var vaVol=buckets[pocIdx].volume;
+      var vaLo=pocIdx,vaHi=pocIdx;
+      while(vaVol<vaTarget&&(vaLo>0||vaHi<nBuckets-1)){
+        var addLo=(vaLo>0)?buckets[vaLo-1].volume:0;
+        var addHi=(vaHi<nBuckets-1)?buckets[vaHi+1].volume:0;
+        if(addLo>=addHi&&vaLo>0){vaLo--;vaVol+=buckets[vaLo].volume;}
+        else if(vaHi<nBuckets-1){vaHi++;vaVol+=buckets[vaHi].volume;}
+        else if(vaLo>0){vaLo--;vaVol+=buckets[vaLo].volume;}
+        else break;
+      }
+      var valLow=buckets[vaLo].price;var valHigh=buckets[vaHi].price;
+
+      // Hourly volume distribution
+      var hourlyVol={};for(var h=4;h<20;h++)hourlyVol[h]={volume:0,trades:0};
+      var etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+      for(var i=0;i<allTrades.length;i++){
+        var ms=allTrades[i].ts>1e15?allTrades[i].ts/1e6:allTrades[i].ts>1e12?allTrades[i].ts/1e3:allTrades[i].ts;
+        var eh=parseInt(etFmt.format(new Date(ms)))||0;
+        if(hourlyVol[eh]){hourlyVol[eh].volume+=allTrades[i].size;hourlyVol[eh].trades++;}
+      }
+
+      // Session breakdown
+      var sessions={pre:{vol:0,trades:0},rth:{vol:0,trades:0},post:{vol:0,trades:0}};
+      for(var h=4;h<20;h++){
+        var hv=hourlyVol[h];
+        if(h<9||(h===9)){sessions.pre.vol+=hv.volume;sessions.pre.trades+=hv.trades;}
+        if(h>=10&&h<16){sessions.rth.vol+=hv.volume;sessions.rth.trades+=hv.trades;}
+        if(h>=16){sessions.post.vol+=hv.volume;sessions.post.trades+=hv.trades;}
+      }
+      // Hour 9 splits at :30 but we approximate as pre-market
+
+      // Filter to buckets with volume for display
+      var displayBuckets=buckets.filter(function(b){return b.volume>0;});
+      var maxBucketVol=0;for(var bi=0;bi<displayBuckets.length;bi++){if(displayBuckets[bi].volume>maxBucketVol)maxBucketVol=displayBuckets[bi].volume;}
+
+      setProfile({
+        buckets:displayBuckets,maxVol:maxBucketVol,poc:poc,pocVol:pocVol,
+        valLow:valLow,valHigh:valHigh,vwap:vwap,
+        totalVol:totalVol,totalTrades:totalTrades,
+        pMin:pMin,pMax:pMax,nDays:days.length,dayStats:dayStats,
+        hourlyVol:hourlyVol,sessions:sessions,bucketSize:bk
+      });
+      setProg('');setLoading(false);
+    }catch(e2){setErr(e2.message);setProg('');setLoading(false);}
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Volume Profile</div>
+    </div>
+
+    <Cd>
+      <SectionHead title="Build Volume Profile" sub="Aggregate tick-level volume by price across one or more days" info="Fetches all trade ticks from Polygon for the selected date range, buckets by price level, and visualizes where the most volume traded. Shows Point of Control (POC), Value Area (70%), VWAP, and buy/sell volume distribution."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+        <div><label style={lS}>Bucket Size ($)</label>
+          <select value={bucketSize} onChange={function(e){setBucketSize(parseFloat(e.target.value));}} style={iS}>
+            <option value="0.01">$0.01</option>
+            <option value="0.05">$0.05</option>
+            <option value="0.10">$0.10</option>
+            <option value="0.25">$0.25</option>
+            <option value="0.50">$0.50</option>
+            <option value="1.00">$1.00</option>
+          </select>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Start Date</label><input type="date" value={startDate} onChange={function(e){setStartDate(e.target.value);if(!endDate)setEndDate(e.target.value);}} style={iS}/></div>
+        <div><label style={lS}>End Date</label><input type="date" value={endDate} onChange={function(e){setEndDate(e.target.value);}} style={iS}/></div>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{marginTop:12,background:loading?C.border:'linear-gradient(135deg,#a855f7,#7c3aed)',color:loading?C.txtDim:'#fff'})}>{loading?'Building...':'Build Volume Profile'}</button>
+      {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6,animation:'pulse 1.5s infinite'}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+
+    {profile&&<div>
+      <Cd glow={true}>
+        <div style={{display:'inline-block',background:'rgba(168,85,247,0.15)',border:'1px solid '+C.purple,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.purple,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{ticker+' | '+profile.nDays+' day'+(profile.nDays!==1?'s':'')+' | $'+bucketSize+' buckets | '+profile.totalTrades.toLocaleString()+' ticks'}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:8}}>
+          <Mt label="POC" value={'$'+profile.poc.toFixed(2)} color={C.gold} size="lg"/>
+          <Mt label="VWAP" value={'$'+profile.vwap.toFixed(2)} color={C.blue} size="lg"/>
+          <Mt label="Total Volume" value={profile.totalVol.toLocaleString()} color={C.accent} size="md"/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
+          <Mt label="Value Area Low" value={'$'+profile.valLow.toFixed(2)} color={C.purple} size="sm"/>
+          <Mt label="Value Area High" value={'$'+profile.valHigh.toFixed(2)} color={C.purple} size="sm"/>
+          <Mt label="Range Low" value={'$'+profile.pMin.toFixed(2)} color={C.txtDim} size="sm"/>
+          <Mt label="Range High" value={'$'+profile.pMax.toFixed(2)} color={C.txtDim} size="sm"/>
+        </div>
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Volume by Price" sub={'Point of Control: $'+profile.poc.toFixed(2)+' | Value Area: $'+profile.valLow.toFixed(2)+' - $'+profile.valHigh.toFixed(2)}/>
+        <div style={{maxHeight:500,overflowY:'auto',marginTop:8}}>
+          {profile.buckets.map(function(b,idx){
+            var pct=profile.maxVol>0?(b.volume/profile.maxVol*100):0;
+            var buyPct=b.volume>0?(b.buyVol/b.volume*100):50;
+            var isPoc=Math.abs(b.price-profile.poc)<profile.bucketSize/2;
+            var inVA=b.price>=profile.valLow&&b.price<=profile.valHigh;
+            return <div key={idx} style={{display:'flex',alignItems:'center',gap:4,marginBottom:1,height:14}}>
+              <div style={{width:50,textAlign:'right',fontSize:7,fontFamily:F,color:isPoc?C.gold:inVA?C.purple:C.txtDim,fontWeight:isPoc?700:400}}>{'$'+b.price.toFixed(2)}</div>
+              <div style={{flex:1,height:10,background:C.bg,borderRadius:2,overflow:'hidden',position:'relative'}}>
+                <div style={{position:'absolute',left:0,top:0,height:'100%',width:pct+'%',borderRadius:2,display:'flex'}}>
+                  <div style={{width:buyPct+'%',height:'100%',background:isPoc?C.gold:inVA?C.purple:'#3d9eff',borderRadius:'2px 0 0 2px'}}/>
+                  <div style={{width:(100-buyPct)+'%',height:'100%',background:isPoc?'#cc8800':inVA?'#7c3aed':'#ff5c3a',borderRadius:'0 2px 2px 0'}}/>
+                </div>
+              </div>
+              <div style={{width:55,textAlign:'right',fontSize:6,fontFamily:F,color:C.txtDim}}>{b.volume.toLocaleString()}</div>
+            </div>;
+          })}
+        </div>
+        <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:8}}>
+          <span style={{color:'#3d9eff',fontSize:7,fontFamily:F}}>{'\u25CF Buy volume'}</span>
+          <span style={{color:'#ff5c3a',fontSize:7,fontFamily:F}}>{'\u25CF Sell volume'}</span>
+          <span style={{color:C.gold,fontSize:7,fontFamily:F}}>{'\u25CF POC'}</span>
+          <span style={{color:C.purple,fontSize:7,fontFamily:F}}>{'\u25CF Value Area'}</span>
+        </div>
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Volume by Hour" sub="Session distribution across the trading day"/>
+        <div style={{marginTop:8}}>
+          {(function(){var maxHV=0;for(var h=4;h<20;h++){if(profile.hourlyVol[h].volume>maxHV)maxHV=profile.hourlyVol[h].volume;}
+            return Array.from({length:16},function(_,i){var h=i+4;var hv=profile.hourlyVol[h];var pct=maxHV>0?(hv.volume/maxHV*100):0;
+              var isRth=h>=10&&h<16;var sess=h<10?'pre':h<16?'rth':'post';
+              var barColor=sess==='pre'?C.blue:sess==='rth'?C.accent:'#9d5cff';
+              return <div key={h} style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}}>
+                <div style={{width:28,textAlign:'right',fontSize:7,fontFamily:F,color:C.txtDim}}>{h+':00'}</div>
+                <div style={{flex:1,height:12,background:C.bg,borderRadius:2,overflow:'hidden'}}>
+                  <div style={{width:pct+'%',height:'100%',background:barColor,borderRadius:2}}/>
+                </div>
+                <div style={{width:55,textAlign:'right',fontSize:6,fontFamily:F,color:C.txtDim}}>{hv.volume.toLocaleString()}</div>
+              </div>;
+            });
+          })()}
+        </div>
+        <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:6}}>
+          <span style={{color:C.blue,fontSize:7,fontFamily:F}}>{'\u25CF Pre-market'}</span>
+          <span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u25CF Regular'}</span>
+          <span style={{color:'#9d5cff',fontSize:7,fontFamily:F}}>{'\u25CF Post-market'}</span>
+        </div>
+      </Cd>
+
+      <Cd>
+        <SectionHead title="Session Breakdown" sub="Pre-market / Regular / Post-market volume split"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:C.blue,fontSize:14,fontWeight:800,fontFamily:F}}>{profile.sessions.pre.vol.toLocaleString()}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>PRE-MARKET</div>
+            <div style={{color:C.txt,fontSize:8,fontFamily:F}}>{profile.totalVol>0?Math.round(profile.sessions.pre.vol/profile.totalVol*100):0}%</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{profile.sessions.rth.vol.toLocaleString()}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>REGULAR</div>
+            <div style={{color:C.txt,fontSize:8,fontFamily:F}}>{profile.totalVol>0?Math.round(profile.sessions.rth.vol/profile.totalVol*100):0}%</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:'#9d5cff',fontSize:14,fontWeight:800,fontFamily:F}}>{profile.sessions.post.vol.toLocaleString()}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>POST-MARKET</div>
+            <div style={{color:C.txt,fontSize:8,fontFamily:F}}>{profile.totalVol>0?Math.round(profile.sessions.post.vol/profile.totalVol*100):0}%</div>
+          </div>
+        </div>
+      </Cd>
+
+      {profile.dayStats.length>1&&<Cd>
+        <SectionHead title="Per-Day Summary" sub={profile.dayStats.length+' trading days'}/>
+        <div style={{overflowX:'auto',maxHeight:400}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F,marginTop:6}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trades</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Volume</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Low</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>High</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Range</th>
+            </tr></thead>
+            <tbody>{profile.dayStats.map(function(ds,idx){
+              return <tr key={idx} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'3px',color:C.txt,fontSize:7}}>{ds.date}</td>
+                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{ds.trades.toLocaleString()}</td>
+                <td style={{padding:'3px',color:C.accent,textAlign:'right'}}>{ds.volume.toLocaleString()}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+ds.low.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+ds.high.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+(ds.high-ds.low).toFixed(2)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </Cd>}
+    </div>}
+  </div>;
+}
+
 function TradeFinderPage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),date=s2[0],setDate=s2[1];
@@ -8196,7 +8491,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -8221,6 +8516,7 @@ function App(){
     {page==='trends'&&<TrendPage onBack={function(){setPage('main');}}/>}
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
+    {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
