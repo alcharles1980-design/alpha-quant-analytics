@@ -6421,6 +6421,169 @@ function AIAgentsOverviewPage(p){
   </div>;
 }
 
+function BotConfigsPage(p){
+  var s1=useState(null),configs=s1[0],setConfigs=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(false),showAdd=s4[0],setShowAdd=s4[1];
+  var s5=useState(null),editing=s5[0],setEditing=s5[1];
+  // Form fields
+  var f1=useState(''),fTicker=f1[0],setFTicker=f1[1];
+  var f2=useState('0.25'),fTp=f2[0],setFTp=f2[1];
+  var f3=useState('1'),fCap=f3[0],setFCap=f3[1];
+  var f4=useState('0.005'),fFee=f4[0],setFFee=f4[1];
+  var f5=useState('100'),fLevels=f5[0],setFLevels=f5[1];
+  var f6=useState('active'),fStatus=f6[0],setFStatus=f6[1];
+  var f7=useState(''),fNotes=f7[0],setFNotes=f7[1];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
+  var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/bot_configurations?order=status.asc,ticker.asc',{headers:getSbHeaders()});
+      setConfigs(r.ok?await r.json():[]);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  useEffect(function(){load();},[]);
+
+  var resetForm=function(){setFTicker('');setFTp('0.25');setFCap('1');setFFee('0.005');setFLevels('100');setFStatus('active');setFNotes('');setEditing(null);};
+
+  var editConfig=function(c){
+    setFTicker(c.ticker);setFTp(String(c.tp_pct));setFCap(String(c.cap_per_level));setFFee(String(c.fee_per_share));setFLevels(String(c.num_levels));setFStatus(c.status);setFNotes(c.notes||'');
+    setEditing(c.id);setShowAdd(true);
+  };
+
+  var save=async function(){
+    if(!fTicker){setErr('Ticker required');return;}
+    setErr(null);
+    var body={ticker:fTicker.toUpperCase(),tp_pct:parseFloat(fTp),cap_per_level:parseFloat(fCap),fee_per_share:parseFloat(fFee),num_levels:parseInt(fLevels),status:fStatus,notes:fNotes||null,updated_at:new Date().toISOString()};
+    try{
+      if(editing){
+        await fetch(SB_URL+'/rest/v1/bot_configurations?id=eq.'+editing,{method:'PATCH',headers:Object.assign({},getSbHeaders(),{'Prefer':'return=minimal'}),body:JSON.stringify(body)});
+      }else{
+        await fetch(SB_URL+'/rest/v1/bot_configurations',{method:'POST',headers:Object.assign({},getSbHeaders(),{'Prefer':'return=minimal'}),body:JSON.stringify(body)});
+      }
+      resetForm();setShowAdd(false);load();
+    }catch(e){setErr(e.message);}
+  };
+
+  var deleteConfig=async function(id){
+    try{
+      await fetch(SB_URL+'/rest/v1/bot_configurations?id=eq.'+id,{method:'DELETE',headers:getSbHeaders()});
+      load();
+    }catch(e){setErr(e.message);}
+  };
+
+  var activeConfigs=configs?configs.filter(function(c){return c.status==='active';}):[];
+  var pausedConfigs=configs?configs.filter(function(c){return c.status!=='active';}):[];
+  var totalCap=0;for(var i=0;i<activeConfigs.length;i++)totalCap+=activeConfigs[i].cap_per_level*activeConfigs[i].num_levels;
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Existing Configurations</div>
+    </div>
+
+    {configs&&configs.length>0&&<Cd glow={true}>
+      <SectionHead title="Portfolio Summary" sub={activeConfigs.length+' active configuration'+(activeConfigs.length!==1?'s':'')}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
+        <Mt label="Active" value={activeConfigs.length} color={C.accent} size="lg"/>
+        <Mt label="Paused" value={pausedConfigs.length} color={C.txtDim} size="lg"/>
+        <Mt label="Total Capital" value={'$'+totalCap.toLocaleString()} color={C.gold} size="md"/>
+      </div>
+    </Cd>}
+
+    {activeConfigs.length>0&&<Cd>
+      <SectionHead title="Active Configurations" sub="Currently running on the trading system"/>
+      {activeConfigs.map(function(c){
+        var deployed=c.cap_per_level*c.num_levels;
+        return <div key={c.id} style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent+'30',marginBottom:8}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{c.ticker}</span>
+              <span style={{background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:3,padding:'1px 6px',fontSize:6,color:C.accent,fontFamily:F,fontWeight:700}}>ACTIVE</span>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button onClick={function(){editConfig(c);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:7,fontFamily:F,padding:'3px 8px',cursor:'pointer'}}>Edit</button>
+              <button onClick={function(){deleteConfig(c.id);}} style={{background:'transparent',border:'1px solid '+C.warn+'50',borderRadius:4,color:C.warn,fontSize:7,fontFamily:F,padding:'3px 8px',cursor:'pointer'}}>Delete</button>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
+            <Mt label="TP%" value={c.tp_pct+'%'} color={C.gold} size="sm"/>
+            <Mt label="$/Level" value={'$'+c.cap_per_level} color={C.txtBright} size="sm"/>
+            <Mt label="Fee/Share" value={'$'+c.fee_per_share} color={C.txtDim} size="sm"/>
+            <Mt label="Levels" value={c.num_levels} color={C.blue} size="sm"/>
+          </div>
+          <div style={{marginTop:4,color:C.txtDim,fontSize:7,fontFamily:F}}>Capital deployed: <span style={{color:C.gold,fontWeight:700}}>{'$'+deployed.toLocaleString()}</span></div>
+          {c.notes&&<div style={{marginTop:4,color:C.txt,fontSize:7,fontFamily:F,fontStyle:'italic'}}>{c.notes}</div>}
+        </div>;
+      })}
+    </Cd>}
+
+    {pausedConfigs.length>0&&<Cd>
+      <SectionHead title="Paused Configurations" sub="Not currently active"/>
+      {pausedConfigs.map(function(c){
+        return <div key={c.id} style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:8,opacity:0.6}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{c.ticker}</span>
+              <span style={{background:C.warnDim,border:'1px solid '+C.warn,borderRadius:3,padding:'1px 6px',fontSize:6,color:C.warn,fontFamily:F,fontWeight:700}}>PAUSED</span>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button onClick={function(){editConfig(c);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:7,fontFamily:F,padding:'3px 8px',cursor:'pointer'}}>Edit</button>
+              <button onClick={function(){deleteConfig(c.id);}} style={{background:'transparent',border:'1px solid '+C.warn+'50',borderRadius:4,color:C.warn,fontSize:7,fontFamily:F,padding:'3px 8px',cursor:'pointer'}}>Delete</button>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
+            <Mt label="TP%" value={c.tp_pct+'%'} color={C.gold} size="sm"/>
+            <Mt label="$/Level" value={'$'+c.cap_per_level} color={C.txtBright} size="sm"/>
+            <Mt label="Fee/Share" value={'$'+c.fee_per_share} color={C.txtDim} size="sm"/>
+            <Mt label="Levels" value={c.num_levels} color={C.blue} size="sm"/>
+          </div>
+          {c.notes&&<div style={{marginTop:4,color:C.txt,fontSize:7,fontFamily:F,fontStyle:'italic'}}>{c.notes}</div>}
+        </div>;
+      })}
+    </Cd>}
+
+    <Cd>
+      {!showAdd&&<button onClick={function(){resetForm();setShowAdd(true);}} style={Object.assign({},bB,{background:'linear-gradient(135deg,#00e5a0,#00c488)',color:C.bg})}>Add Configuration</button>}
+      {showAdd&&<div>
+        <SectionHead title={editing?'Edit Configuration':'New Configuration'} sub={editing?'Editing '+fTicker:'Add a new bot configuration'}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <div><label style={lS}>Ticker</label><input value={fTicker} onChange={function(e){setFTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+          <div><label style={lS}>TP %</label><input value={fTp} onChange={function(e){setFTp(e.target.value);}} style={iS} type="number" step="0.01"/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
+          <div><label style={lS}>$ Per Level</label><input value={fCap} onChange={function(e){setFCap(e.target.value);}} style={iS} type="number" step="0.1"/></div>
+          <div><label style={lS}>Fee/Share</label><input value={fFee} onChange={function(e){setFFee(e.target.value);}} style={iS} type="number" step="0.001"/></div>
+          <div><label style={lS}>Levels</label><input value={fLevels} onChange={function(e){setFLevels(e.target.value);}} style={iS} type="number"/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <div><label style={lS}>Status</label>
+            <select value={fStatus} onChange={function(e){setFStatus(e.target.value);}} style={iS}>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+            </select>
+          </div>
+          <div><label style={lS}>Notes</label><input value={fNotes} onChange={function(e){setFNotes(e.target.value);}} style={iS} placeholder="Optional"/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:12}}>
+          <button onClick={save} style={Object.assign({},bB,{background:'linear-gradient(135deg,#00e5a0,#00c488)',color:C.bg})}>{editing?'Save Changes':'Add'}</button>
+          <button onClick={function(){resetForm();setShowAdd(false);}} style={Object.assign({},bB,{background:'transparent',border:'1px solid '+C.border,color:C.txtDim})}>Cancel</button>
+        </div>
+      </div>}
+    </Cd>
+
+    {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -8491,7 +8654,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s4div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'cfgdiv',type:'divider'},{key:'cfgh',label:'Configurations',type:'header'},{key:'botconfigs',label:'Existing Configurations',icon:'\u2630',indent:true},{key:'settings',label:'Settings',icon:'\u2699',indent:true},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -8521,6 +8684,7 @@ function App(){
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
+    {page==='botconfigs'&&<BotConfigsPage onBack={function(){setPage('home');}}/>}
     {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
