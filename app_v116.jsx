@@ -6763,9 +6763,10 @@ function OscillationScreenerPage(p){
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
           </tr></thead>
-          <tbody>{sorted.slice(0,200).map(function(r,idx){
+          <tbody>{(function(){var displayRows=sorted.slice(0,filter?sorted.length:200);var fullRanks={};if(filter){var allSorted=data?data.slice().map(function(r2){return Object.assign({},r2,{_score:getScore(r2)});}).sort(function(a,b){return(b._score||0)-(a._score||0);}):[];for(var ri=0;ri<allSorted.length;ri++)fullRanks[allSorted[ri].ticker]=ri+1;}return displayRows.map(function(r,idx){
+            var rank=filter?fullRanks[r.ticker]||'--':(idx+1);
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?'rgba(0,229,160,0.03)':'transparent'}}>
-              <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
+              <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{rank}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
@@ -6783,10 +6784,10 @@ function OscillationScreenerPage(p){
               <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(r.atr_pct||0).toFixed(2)+'%'}</td>
               <td style={{padding:'3px',color:r.reversal_pct>50?C.accent:C.txtDim,textAlign:'right'}}>{(r.reversal_pct||0).toFixed(0)+'%'}</td>
             </tr>;
-          })}</tbody>
+          });})()}</tbody>
         </table>
       </div>
-      {sorted.length>200&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 200 of {sorted.length}</div>}
+      {!filter&&sorted.length>200&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 200 of {sorted.length}. Search a ticker to find any stock.</div>}
     </Cd>}
 
     <CollapseStage title="How This Screener Works" sub="1-minute bar analysis, excursion measurement, and optimal oscillation capture">
