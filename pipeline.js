@@ -1613,6 +1613,7 @@ async function runScreener() {
   console.log('Fetching market cap data...');
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 32, message: 'Fetching market cap data...' });
   var mcapMap = {};
+  var typeMap = {};
   var mcUrl = 'https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apiKey=' + POLYGON_KEY;
   var mcPages = 0;
   while (mcUrl && mcPages < 50) {
@@ -1623,6 +1624,7 @@ async function runScreener() {
       if (mcD.results) for (var mi = 0; mi < mcD.results.length; mi++) {
         var mTk = mcD.results[mi];
         if (mTk.ticker && mTk.market_cap) mcapMap[mTk.ticker] = mTk.market_cap;
+        if (mTk.ticker && mTk.type) typeMap[mTk.ticker] = mTk.type;
       }
       mcUrl = mcD.next_url ? mcD.next_url + '&apiKey=' + POLYGON_KEY : null;
       mcPages++;
@@ -1647,7 +1649,7 @@ async function runScreener() {
     for (var bi = 0; bi < bars.length; bi++) totalDolVol += bars[bi].v * ((bars[bi].h + bars[bi].l) / 2);
     var adv = totalDolVol / bars.length;
     if (adv < MIN_ADV) continue;
-    candidates.push({ ticker: tk, bars: bars, price: lastPrice, adv: adv, market_cap: mcapMap[tk] || null });
+    candidates.push({ ticker: tk, bars: bars, price: lastPrice, adv: adv, market_cap: mcapMap[tk] || null, ticker_type: typeMap[tk] || null });
   }
   console.log('Candidates after filter: ' + candidates.length);
   
@@ -1666,7 +1668,7 @@ async function runScreener() {
     for (var mi2 = 0; mi2 < missingMcap.length; mi2++) {
       try {
         var tkR = await fetch('https://api.polygon.io/v3/reference/tickers/' + missingMcap[mi2].ticker + '?apiKey=' + POLYGON_KEY);
-        if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcUpdated++; } }
+        if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcUpdated++; } if (tkD.results && tkD.results.type && !missingMcap[mi2].ticker_type) missingMcap[mi2].ticker_type = tkD.results.type; }
       } catch (e) {}
       if (mi2 % 5 === 0) await sleep(100);
       if (mi2 % 200 === 0) {
@@ -1773,6 +1775,7 @@ async function runScreener() {
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
+      ticker_type: cand.ticker_type || null,
       yz_vol: Math.round(yzVol * 10) / 10,
       parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
@@ -1932,12 +1935,12 @@ async function backfillMcap() {
   var sd = dateRows[0].scan_date;
   console.log('Scan date: ' + sd);
 
-  // Get tickers missing market cap
+  // Get tickers missing market cap or ticker_type
   var h = sbHeaders(); h['Range'] = '0-4999';
-  var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + sd + '&market_cap=is.null&select=ticker', { headers: h });
+  var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + sd + '&or=(market_cap.is.null,ticker_type.is.null)&select=ticker', { headers: h });
   var rows = await r.json();
-  console.log('Tickers missing market cap: ' + rows.length);
-  if (!rows.length) { console.log('All tickers already have market cap'); return; }
+  console.log('Tickers missing market cap or type: ' + rows.length);
+  if (!rows.length) { console.log('All tickers already have market cap and type'); return; }
 
   var updated = 0;
   for (var i = 0; i < rows.length; i++) {
@@ -1946,10 +1949,13 @@ async function backfillMcap() {
       var pr = await fetch('https://api.polygon.io/v3/reference/tickers/' + tk + '?apiKey=' + POLYGON_KEY);
       if (pr.ok) {
         var pd = await pr.json();
-        if (pd.results && pd.results.market_cap) {
+        if (pd.results && (pd.results.market_cap || pd.results.type)) {
+          var patch = {};
+          if (pd.results.market_cap) patch.market_cap = Math.round(pd.results.market_cap);
+          if (pd.results.type) patch.ticker_type = pd.results.type;
           await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?ticker=eq.' + tk + '&scan_date=eq.' + sd, {
             method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }),
-            body: JSON.stringify({ market_cap: Math.round(pd.results.market_cap) })
+            body: JSON.stringify(patch)
           });
           updated++;
         }

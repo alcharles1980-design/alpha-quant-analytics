@@ -6432,6 +6432,7 @@ function OscillationScreenerPage(p){
   var s8=useState(''),prog=s8[0],setProg=s8[1];
   var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
   var s13=useState(false),showColGuide=s13[0],setShowColGuide=s13[1];
+  var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
@@ -6489,11 +6490,18 @@ function OscillationScreenerPage(p){
       if(!dateRows.length){setErr('No screener data. Run the oscillation-screener worker first.');setLoading(false);return;}
       var sd=dateRows[0].scan_date;setScanDate(sd);
       if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
-      // Load all rows for that date
-      var h=getSbHeaders();h['Range']='0-4999';
-      var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&order=osc_score.desc',{headers:h});
-      var rows=r.ok?await r.json():[];
-      setData(rows);
+      // Paginate to get all rows (PostgREST caps at 1000 per request)
+      var allRows=[];var page=0;var pageSize=1000;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*pageSize)+'-'+((page+1)*pageSize-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var bi=0;bi<batch.length;bi++)allRows.push(batch[bi]);
+        if(batch.length<pageSize)break;
+        page++;
+      }
+      setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -6535,6 +6543,8 @@ function OscillationScreenerPage(p){
       if(mc<(mins[mcapFilter]||0))return false;
     }
     if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
+    if(etfFilter==='stocks'&&r.ticker_type&&r.ticker_type!=='CS')return false;
+    if(etfFilter==='etfs'&&r.ticker_type&&r.ticker_type!=='ETF')return false;
     return true;
   }).map(function(r){return Object.assign({},r,{_score:getScore(r)});}).sort(function(a,b){
     if(sortBy==='_score')return sortAsc?(a._score||0)-(b._score||0):(b._score||0)-(a._score||0);
@@ -6561,7 +6571,7 @@ function OscillationScreenerPage(p){
     <Cd glow={true}>
       <SectionHead title="Oscillation Trading Screener" sub="S&P 500 + Russell 1000 ranked by mean-reversion quality" info="Screens ~1500 liquid US stocks for oscillation-trading suitability. Raw volatility is the wrong metric - what matters is intraday mean-reversion: high realized range with low directional trend. A stock dropping 8% straight is useless for oscillation trading; one chopping +/-3% around a mean all day is ideal."/>
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
         <div><label style={lS}>Min Market Cap</label>
           <select value={mcapFilter} onChange={function(e){setMcapFilter(e.target.value);}} style={iS}>
@@ -6573,6 +6583,13 @@ function OscillationScreenerPage(p){
             <option value="10b">$10B+</option>
             <option value="50b">$50B+</option>
             <option value="100b">$100B+</option>
+          </select>
+        </div>
+        <div><label style={lS}>Type</label>
+          <select value={etfFilter} onChange={function(e){setEtfFilter(e.target.value);}} style={iS}>
+            <option value="all">All</option>
+            <option value="stocks">Stocks Only</option>
+            <option value="etfs">ETFs Only</option>
           </select>
         </div>
       </div>
