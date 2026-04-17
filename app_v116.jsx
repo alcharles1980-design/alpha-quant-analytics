@@ -6431,6 +6431,7 @@ function OscillationScreenerPage(p){
   var s7=useState(null),scanDate=s7[0],setScanDate=s7[1];
   var s8=useState(''),prog=s8[0],setProg=s8[1];
   var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
+  var s13=useState(false),showColGuide=s13[0],setShowColGuide=s13[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
@@ -6597,7 +6598,78 @@ function OscillationScreenerPage(p){
     </Cd>
 
     {sorted.length>0&&<Cd>
-      <SectionHead title="Results" sub={sorted.length+' stocks | '+(rankMode==='daily'?'Daily Bars Ranking':rankMode==='intraday'?'5-Min Intraday Ranking':'Combined Ranking')}/>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <SectionHead title="Results" sub={sorted.length+' stocks | '+(rankMode==='daily'?'Daily Bars Ranking':rankMode==='intraday'?'5-Min Intraday Ranking':'Combined Ranking')}/>
+        <button onClick={function(){setShowColGuide(!showColGuide);}} style={{background:showColGuide?C.accent:'transparent',border:'1px solid '+(showColGuide?C.accent:C.border),borderRadius:'50%',width:24,height:24,color:showColGuide?C.bg:C.txtDim,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:F,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>i</button>
+      </div>
+      {showColGuide&&<div style={{padding:'12px',background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10,marginTop:6}}>
+        <div style={{color:C.accent,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8,letterSpacing:1}}>COLUMN GUIDE</div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Ticker</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The stock's ticker symbol (e.g., AAPL = Apple, TSLA = Tesla). This is the unique identifier for each company listed on a stock exchange. You'll use this ticker to look up the stock on any trading platform or brokerage.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Price</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The most recent closing price per share. This matters for oscillation trading because price level affects the dollar value of each price increment. A $500 stock moving 1% = $5, while a $5 stock moving 1% = $0.05. Higher-priced stocks offer more dollar profit per cycle but require more capital per level.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>MCap (Market Capitalization)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The total value of all outstanding shares (share price multiplied by total shares). Measured in billions (B) or millions (M). Larger market cap generally means more institutional ownership, more analyst coverage, and more predictable behavior. Mega-cap stocks ($100B+) like Apple or Microsoft tend to have smoother, more liquid price action. Smaller caps can be more volatile but also more prone to sudden directional moves that are bad for oscillation trading.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>ADV (Average Daily Volume)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The average dollar value of shares traded per day over the measurement period. High ADV means the stock is liquid — your buy and sell orders will fill quickly with minimal price impact (slippage). Low ADV means fewer participants, wider bid-ask spreads, and potential difficulty getting orders filled at your target price. For oscillation trading, ADV above $50M is generally comfortable; above $1B is excellent.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Score (Oscillation Score, 0–100)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>A composite rating that combines multiple metrics into a single number. Higher = better candidate for oscillation trading. The score weights differ by ranking mode. In Combined mode, it blends daily and intraday metrics, emphasizing intraday behavior since that's where oscillation trading cycles actually complete. Think of it as a "report card" — a score of 80+ is excellent, 60-80 is good, below 50 may not oscillate enough to be profitable after fees.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>dHurst (Daily Hurst Exponent)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>Measures whether the stock's day-to-day price changes tend to reverse (mean-revert) or continue in the same direction (trend). Calculated using R/S (Rescaled Range) analysis on daily returns over 20+ trading days. The scale goes from 0 to 1: below 0.5 (shown in green) means mean-reverting — the price tends to pull back after moving in one direction, creating natural oscillation. Equal to 0.5 means random walk — no predictable pattern. Above 0.5 (shown in red) means trending — moves tend to continue, which is dangerous for oscillation trading because all your buy levels fill without selling. Ideal oscillation stocks have Hurst below 0.45.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>iHurst (Intraday Hurst Exponent)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same Hurst exponent concept but computed on 5-minute bars instead of daily bars. This is arguably the most important column because oscillation trading cycles typically complete within hours, not days. A stock might trend across days (high daily Hurst) but oscillate beautifully within each day (low intraday Hurst) — that's a great candidate. Green ({'{<'}0.4) = strongly mean-reverting intraday. Gold (0.4-0.5) = mildly mean-reverting. Red ({'>'}0.5) = trending intraday, avoid.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>dOsc (Daily Oscillation/Drift Ratio)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>Compares how much the price moved in total versus how much it moved net directionally over the measurement period. Computed as: total daily ranges summed up, divided by the absolute net price change from start to end. A stock that goes up $5 then down $5 then up $5 has a high ratio (lots of movement, little net direction). A stock that goes up $15 straight has a low ratio (all movement is directional). Higher is better for oscillation trading. A ratio above 10 means the stock is churning back and forth with very little net trend — perfect for capturing buy-sell cycles.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>iOsc (Intraday Oscillation Ratio)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same oscillation concept but measured within each day using 5-minute bars. For each day, it sums up all the absolute 5-minute price moves and divides by the net move from open to close. Higher values mean the price is churning back and forth during the day — exactly what oscillation trading needs. A value of 20+ means the stock moves 20x more in total than it moves net. Values below 5 suggest mostly directional intraday movement.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>YZ% (Yang-Zhang Volatility)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>An annualized volatility measure that's superior to simple volatility because it captures three components: overnight gaps (close-to-open moves), intraday range (high-low), and close-to-close direction. Named after its inventors. A YZ% of 60% means the stock's annual standard deviation of returns is 60%. Higher YZ% means more raw price movement, which provides more opportunities for oscillation cycles — but only if that movement is oscillatory, not directional. That's why YZ% alone isn't enough; it needs to be combined with Hurst to distinguish useful volatility from dangerous trending.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>VX (VWAP Crossings per Day)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>VWAP stands for Volume-Weighted Average Price — it represents the "fair value" where most volume traded that day. VX counts how many times the stock's price crosses above and below its VWAP during a typical trading day. Each crossing represents the price oscillating around the day's average — exactly the kind of mean-reverting behavior oscillation trading profits from. High VX (15+, shown in green) means the stock bounces back and forth around fair value frequently. Low VX ({'{<'}5) means price tends to stay on one side of VWAP — more trending behavior.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>ATR% (Average True Range Percentage)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The average daily trading range (high minus low, accounting for overnight gaps) expressed as a percentage of the stock price. An ATR% of 5% on a $100 stock means it typically moves about $5 within a single day. This is the raw "opportunity size" — wider range means more price levels get crossed, creating more potential buy-sell cycles. However, high ATR% without mean-reversion (low Hurst) is just a stock crashing or spiking, which is bad for oscillation trading. The ideal combination is high ATR% plus low Hurst — lots of movement that keeps reversing.</div>
+        </div>
+
+        <div style={{marginBottom:0}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Rev% (Daily Reversal Percentage)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The percentage of days where the stock's close-to-close direction reversed from the previous day. If the stock went up yesterday and down today, that's a reversal. A Rev% of 50% means the stock reverses direction about half the time — essentially a coin flip, indicating no persistent trend. Above 50% (shown in green) means the stock actively tends to reverse — after an up day, it's more likely to go down the next day, and vice versa. This daily-level mean-reversion complements the intraday metrics. Below 40% suggests the stock trends across multiple days, which increases the risk of prolonged drawdowns in oscillation trading.</div>
+        </div>
+      </div>}
       <div style={{display:'flex',gap:6,marginTop:4,marginBottom:10}}>
         {['combined','daily','intraday'].map(function(m){
           var labels={combined:'Combined',daily:'Daily Bars',intraday:'5-Min Bars'};
