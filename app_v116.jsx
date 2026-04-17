@@ -6565,6 +6565,7 @@ function OscillationScreenerPage(p){
             <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
+            <th onClick={function(){doSort('adv_dollars');}} style={thS('adv_dollars')}>ADV</th>
             <th onClick={function(){doSort('_score');}} style={thS('_score')}>Score</th>
             {rankMode!=='intraday'&&<th onClick={function(){doSort('hurst');}} style={thS('hurst')}>dHurst</th>}
             {rankMode!=='intraday'&&<th onClick={function(){doSort('osc_drift_ratio');}} style={thS('osc_drift_ratio')}>dOsc</th>}
@@ -6581,6 +6582,7 @@ function OscillationScreenerPage(p){
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.adv_dollars)}</td>
               <td style={{padding:'3px',color:scoreColor(r._score),textAlign:'right',fontWeight:700}}>{r._score!=null?r._score.toFixed(1):'--'}</td>
               {rankMode!=='intraday'&&<td style={{padding:'3px',color:hurstColor(r.hurst),textAlign:'right',fontWeight:700}}>{(r.hurst||0).toFixed(3)}</td>}
               {rankMode!=='intraday'&&<td style={{padding:'3px',color:r.osc_drift_ratio>3?C.accent:r.osc_drift_ratio>1.5?C.gold:C.warn,textAlign:'right'}}>{(r.osc_drift_ratio||0).toFixed(1)}</td>}
