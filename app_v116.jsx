@@ -6436,6 +6436,72 @@ function OscillationScreenerPage(p){
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(false),refreshing=s16[0],setRefreshing=s16[1];
   var s17=useState('all'),sessionFilter=s17[0],setSessionFilter=s17[1];
+  var s18=useState(null),hourlyData=s18[0],setHourlyData=s18[1];
+  var s19=useState(false),loadingHourly=s19[0],setLoadingHourly=s19[1];
+  var s20=useState(''),hourlyTicker=s20[0],setHourlyTicker=s20[1];
+
+  var fetchHourlyOsc=async function(ticker){
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoadingHourly(true);setHourlyData(null);setHourlyTicker(ticker);
+    try{
+      // Get last 5 trading days
+      var days2=[];var d2=new Date();d2.setDate(d2.getDate()-1);
+      while(days2.length<8){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
+      var from2=days2[Math.min(days2.length-1,4)];var to2=days2[0];
+      var url2='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var r2=await fetch(url2);
+      if(!r2.ok){setErr('Polygon error '+r2.status);setLoadingHourly(false);return;}
+      var d2r=await r2.json();
+      var bars2=d2r.results||[];
+      if(bars2.length<20){setErr('Insufficient data for '+ticker);setLoadingHourly(false);return;}
+
+      var etFmt3=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false});
+      // Group bars by hour
+      var hourBars={};for(var h=4;h<20;h++)hourBars[h]=[];
+      for(var i=0;i<bars2.length;i++){
+        var bt=etFmt3.format(new Date(bars2[i].t));
+        var bh=parseInt(bt.split(':')[0])||0;
+        if(hourBars[bh])hourBars[bh].push(bars2[i]);
+      }
+
+      // Count oscillations per hour
+      var nDays=0;
+      var daySet={};for(var i=0;i<bars2.length;i++){var dd=new Date(bars2[i].t).toISOString().slice(0,10);daySet[dd]=true;}
+      nDays=Object.keys(daySet).length||1;
+
+      var hourlyResult=[];
+      for(var h=4;h<20;h++){
+        var hb=hourBars[h];
+        var oscCount=0;var excursions=[];
+        if(hb.length>=3){
+          var runStart=hb[0].c;var runDir=0;
+          for(var i=1;i<hb.length;i++){
+            var mv=hb[i].c-hb[i-1].c;var dr=mv>0?1:mv<0?-1:0;
+            if(dr===0)continue;
+            if(runDir===0){runDir=dr;runStart=hb[i-1].c;}
+            else if(dr!==runDir){
+              var ex=Math.abs(hb[i-1].c-runStart);
+              if(ex>0){oscCount++;excursions.push(ex);}
+              runStart=hb[i-1].c;runDir=dr;
+            }
+          }
+        }
+        var avgExc=0;if(excursions.length>0){for(var j=0;j<excursions.length;j++)avgExc+=excursions[j];avgExc/=excursions.length;}
+        var price=hb.length>0?hb[hb.length-1].c:(bars2[bars2.length-1]?bars2[bars2.length-1].c:1);
+        hourlyResult.push({
+          hour:h,
+          label:(h<10?'0':'')+h+':00',
+          osc:Math.round(oscCount/nDays*10)/10,
+          avgExcDollar:Math.round(avgExc*100)/100,
+          avgExcPct:Math.round(avgExc/price*10000)/100,
+          bars:hb.length,
+          session:h<9||(h===9)?'pre':h<16?'rth':'post'
+        });
+      }
+      setHourlyData({ticker:ticker,days:nDays,totalBars:bars2.length,hours:hourlyResult});
+    }catch(e2){setErr(e2.message);}
+    setLoadingHourly(false);
+  };
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
@@ -6789,6 +6855,59 @@ function OscillationScreenerPage(p){
       </div>
       {!filter&&sorted.length>200&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 200 of {sorted.length}. Search a ticker to find any stock.</div>}
     </Cd>}
+
+    <Cd>
+      <SectionHead title="Hourly Oscillation Profile" sub="Oscillations per hour for a specific stock (1-min bars, 5 days)"/>
+      <div style={{display:'flex',gap:6,marginTop:4}}>
+        <input value={hourlyTicker} onChange={function(e){setHourlyTicker(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. AAPL"/>
+        <button onClick={function(){if(hourlyTicker)fetchHourlyOsc(hourlyTicker);}} disabled={loadingHourly} style={Object.assign({},bB,{width:'auto',padding:'10px 20px',background:loadingHourly?C.border:'linear-gradient(135deg,#3d9eff,#1860c0)',color:loadingHourly?C.txtDim:'#fff',fontSize:8})}>{loadingHourly?'Loading...':'View'}</button>
+      </div>
+      {hourlyData&&<div style={{marginTop:12}}>
+        <div style={{display:'inline-block',background:'rgba(61,158,255,0.15)',border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8}}>{hourlyData.ticker+' | '+hourlyData.days+' days | '+hourlyData.totalBars.toLocaleString()+' bars'}</div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:4,letterSpacing:1}}>OSCILLATIONS PER HOUR (AVG/DAY)</div>
+          {(function(){var maxOsc=0;for(var i=0;i<hourlyData.hours.length;i++)if(hourlyData.hours[i].osc>maxOsc)maxOsc=hourlyData.hours[i].osc;
+            return hourlyData.hours.map(function(h){
+              var pct=maxOsc>0?(h.osc/maxOsc*100):0;
+              var barColor=h.session==='pre'?C.blue:h.session==='rth'?C.accent:'#9d5cff';
+              return <div key={h.hour} style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}}>
+                <div style={{width:32,textAlign:'right',fontSize:7,fontFamily:F,color:C.txtDim}}>{h.label}</div>
+                <div style={{flex:1,height:14,background:C.bg,borderRadius:2,overflow:'hidden',position:'relative'}}>
+                  <div style={{width:pct+'%',height:'100%',background:barColor,borderRadius:2,transition:'width 0.3s'}}/>
+                </div>
+                <div style={{width:28,textAlign:'right',fontSize:8,fontFamily:F,color:C.txtBright,fontWeight:700}}>{h.osc.toFixed(1)}</div>
+                <div style={{width:38,textAlign:'right',fontSize:6,fontFamily:F,color:C.gold}}>{'$'+h.avgExcDollar.toFixed(2)}</div>
+              </div>;
+            });
+          })()}
+          <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:6}}>
+            <span style={{color:C.blue,fontSize:7,fontFamily:F}}>{'\u25CF Pre-market'}</span>
+            <span style={{color:C.accent,fontSize:7,fontFamily:F}}>{'\u25CF Regular'}</span>
+            <span style={{color:'#9d5cff',fontSize:7,fontFamily:F}}>{'\u25CF Post-market'}</span>
+          </div>
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Osc/Day</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg Osc$</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg Osc%</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bars</th>
+            </tr></thead>
+            <tbody>{hourlyData.hours.map(function(h){
+              return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim}}>{h.label}</td>
+                <td style={{padding:'3px',color:h.osc>10?C.accent:h.osc>5?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{h.osc.toFixed(1)}</td>
+                <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+h.avgExcDollar.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{h.avgExcPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.bars}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </div>}
+    </Cd>
 
     <CollapseStage title="How This Screener Works" sub="1-minute bar analysis, excursion measurement, and optimal oscillation capture">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
@@ -8990,7 +9109,7 @@ function App(){
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
-    {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
