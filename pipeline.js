@@ -1660,16 +1660,21 @@ async function runScreener() {
   
   // Fetch individual market cap for candidates missing from grouped fetch
   var missingMcap = candidates.filter(function(c) { return !c.market_cap; });
-  if (missingMcap.length > 0 && missingMcap.length < 500) {
+  if (missingMcap.length > 0) {
     console.log('Fetching individual market cap for ' + missingMcap.length + ' candidates...');
+    var mcUpdated = 0;
     for (var mi2 = 0; mi2 < missingMcap.length; mi2++) {
       try {
         var tkR = await fetch('https://api.polygon.io/v3/reference/tickers/' + missingMcap[mi2].ticker + '?apiKey=' + POLYGON_KEY);
-        if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcapMap[missingMcap[mi2].ticker] = tkD.results.market_cap; } }
+        if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcUpdated++; } }
       } catch (e) {}
       if (mi2 % 5 === 0) await sleep(100);
+      if (mi2 % 200 === 0) {
+        console.log('  Market cap: ' + mi2 + '/' + missingMcap.length + ' (' + mcUpdated + ' found)');
+        await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 33 + Math.round((mi2 / missingMcap.length) * 5), message: 'Fetching market cap: ' + mi2 + '/' + missingMcap.length });
+      }
     }
-    console.log('Individual fetches done. Total with mcap: ' + candidates.filter(function(c) { return !!c.market_cap; }).length);
+    console.log('Market cap fetched: ' + mcUpdated + '/' + missingMcap.length);
   }
 
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 35, message: 'Computing metrics for ' + candidates.length + ' stocks...' });

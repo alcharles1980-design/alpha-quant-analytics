@@ -6430,6 +6430,7 @@ function OscillationScreenerPage(p){
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(null),scanDate=s7[0],setScanDate=s7[1];
   var s8=useState(''),prog=s8[0],setProg=s8[1];
+  var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
@@ -6482,10 +6483,11 @@ function OscillationScreenerPage(p){
     setLoading(true);setErr(null);
     try{
       // Get latest scan date
-      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});
       var dateRows=rDate.ok?await rDate.json():[];
       if(!dateRows.length){setErr('No screener data. Run the oscillation-screener worker first.');setLoading(false);return;}
       var sd=dateRows[0].scan_date;setScanDate(sd);
+      if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
       // Load all rows for that date
       var h=getSbHeaders();h['Range']='0-4999';
       var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&order=osc_score.desc',{headers:h});
@@ -6557,7 +6559,7 @@ function OscillationScreenerPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Oscillation Trading Screener" sub="S&P 500 + Russell 1000 ranked by mean-reversion quality" info="Screens ~1500 liquid US stocks for oscillation-trading suitability. Raw volatility is the wrong metric - what matters is intraday mean-reversion: high realized range with low directional trend. A stock dropping 8% straight is useless for oscillation trading; one chopping +/-3% around a mean all day is ideal."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+scanDate+' | '+((data&&data.length)||0)+' stocks'}</div>}
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
         <div><label style={lS}>Market Cap</label>
