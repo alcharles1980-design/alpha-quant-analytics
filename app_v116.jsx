@@ -7174,6 +7174,10 @@ function TradeFinderPage(p){
   var s6=useState(null),err=s6[0],setErr=s6[1];
   var s7=useState(''),prog=s7[0],setProg=s7[1];
   var s8=useState(null),trades=s8[0],setTrades=s8[1];
+  var s9=useState(''),fMinSize=s9[0],setFMinSize=s9[1];
+  var s10=useState(''),fMaxSize=s10[0],setFMaxSize=s10[1];
+  var s11=useState(''),fMinPrice=s11[0],setFMinPrice=s11[1];
+  var s12=useState(''),fMaxPrice=s12[0],setFMaxPrice=s12[1];
   var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
@@ -7289,29 +7293,52 @@ function TradeFinderPage(p){
       </Cd>
       <Cd>
         <SectionHead title="Trade Log" sub={trades.length.toLocaleString()+' executions'}/>
-        <div style={{overflowX:'auto',maxHeight:600}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Time (ET)</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Price</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Size</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Exchange</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Conditions</th>
-            </tr></thead>
-            <tbody>{trades.slice(0,5000).map(function(t,idx){
-              var isOddLot=t.conditions&&t.conditions.indexOf(21)>=0;
-              var isExtHrs=t.conditions&&(t.conditions.indexOf(14)>=0||t.conditions.indexOf(33)>=0);
-              return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?'rgba(61,158,255,0.05)':isOddLot?'rgba(157,92,255,0.05)':'transparent'}}>
-                <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
-                <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t.price.toFixed(4)}</td>
-                <td style={{padding:'3px 3px',color:t.size===0?C.warn:isOddLot?C.purple:C.txt,textAlign:'right'}}>{t.size!=null?t.size.toLocaleString():'--'}</td>
-                <td style={{padding:'3px 3px',color:C.gold}}>{t._exchName}</td>
-                <td style={{padding:'3px 3px',color:C.txtDim,fontSize:6}}>{t._condStr}</td>
-              </tr>;
-            })}</tbody>
-          </table>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6,marginBottom:8}}>
+          <div><label style={lS}>Min Size</label><input value={fMinSize} onChange={function(e){setFMinSize(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 100" type="number"/></div>
+          <div><label style={lS}>Max Size</label><input value={fMaxSize} onChange={function(e){setFMaxSize(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 5000" type="number"/></div>
+          <div><label style={lS}>Min Price</label><input value={fMinPrice} onChange={function(e){setFMinPrice(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 633" type="number" step="0.01"/></div>
+          <div><label style={lS}>Max Price</label><input value={fMaxPrice} onChange={function(e){setFMaxPrice(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 635" type="number" step="0.01"/></div>
         </div>
-        {trades.length>5000&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:8}}>Showing first 5,000 of {trades.length.toLocaleString()} trades. Use CSV export for full data.</div>}
+        {(function(){
+          var ft=trades.filter(function(t){
+            if(fMinSize&&(t.size||0)<parseFloat(fMinSize))return false;
+            if(fMaxSize&&(t.size||0)>parseFloat(fMaxSize))return false;
+            if(fMinPrice&&t.price<parseFloat(fMinPrice))return false;
+            if(fMaxPrice&&t.price>parseFloat(fMaxPrice))return false;
+            return true;
+          });
+          var fVol=0;for(var i=0;i<ft.length;i++)fVol+=(ft[i].size||0);
+          return <div>
+            {(fMinSize||fMaxSize||fMinPrice||fMaxPrice)&&<div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
+              <span style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:700}}>{ft.length.toLocaleString()+' of '+trades.length.toLocaleString()+' trades'}</span>
+              <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Vol: '+fVol.toLocaleString()}</span>
+              <button onClick={function(){setFMinSize('');setFMaxSize('');setFMinPrice('');setFMaxPrice('');}} style={{background:'transparent',border:'1px solid '+C.warn+'60',borderRadius:4,color:C.warn,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>Clear</button>
+            </div>}
+            <div style={{overflowX:'auto',maxHeight:600}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+                <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Time (ET)</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Price</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Size</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Exchange</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Conditions</th>
+                </tr></thead>
+                <tbody>{ft.slice(0,5000).map(function(t,idx){
+                  var isOddLot=t.conditions&&t.conditions.indexOf(21)>=0;
+                  var isExtHrs=t.conditions&&(t.conditions.indexOf(14)>=0||t.conditions.indexOf(33)>=0);
+                  return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?'rgba(61,158,255,0.05)':isOddLot?'rgba(157,92,255,0.05)':'transparent'}}>
+                    <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
+                    <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t.price.toFixed(4)}</td>
+                    <td style={{padding:'3px 3px',color:t.size===0?C.warn:isOddLot?C.purple:C.txt,textAlign:'right'}}>{t.size!=null?t.size.toLocaleString():'--'}</td>
+                    <td style={{padding:'3px 3px',color:C.gold}}>{t._exchName}</td>
+                    <td style={{padding:'3px 3px',color:C.txtDim,fontSize:6}}>{t._condStr}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+            {ft.length>5000&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:8}}>Showing first 5,000 of {ft.length.toLocaleString()} filtered trades.</div>}
+          </div>;
+        })()}
       </Cd>
     </div>}
     <Cd>
