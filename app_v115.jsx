@@ -6425,12 +6425,37 @@ function OscillationScreenerPage(p){
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
-  var s4=useState('grid_score'),sortBy=s4[0],setSortBy=s4[1];
+  var s4=useState('_score'),sortBy=s4[0],setSortBy=s4[1];
   var s5=useState(false),sortAsc=s5[0],setSortAsc=s5[1];
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(null),scanDate=s7[0],setScanDate=s7[1];
   var s8=useState(''),prog=s8[0],setProg=s8[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
+  var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
+
+  // Compute separate scores client-side from saved metrics
+  var dailyScore=function(r){
+    var h=Math.max(0,Math.min(100,(0.5-(r.hurst||0.5))*200+50));
+    var a=Math.min(100,(r.atr_pct||0)*20);
+    var o=Math.min(100,(r.osc_drift_ratio||0)*10);
+    var rv=Math.min(100,(r.reversal_pct||0)*2);
+    var yz=Math.min(100,(r.yz_vol||0)*1.5);
+    return Math.round((h*0.35+a*0.25+o*0.20+rv*0.10+yz*0.10)*10)/10;
+  };
+  var intradayScore=function(r){
+    if(r.intraday_hurst==null)return null;
+    var h=Math.max(0,Math.min(100,(0.5-(r.intraday_hurst||0.5))*200+50));
+    var o=Math.min(100,(r.intraday_osc_ratio||0)*8);
+    var rv=Math.min(100,(r.intraday_reversal_rate||0)*2);
+    var vx=Math.min(100,(r.avg_vwap_crossings||0)*5);
+    var a=Math.min(100,(r.atr_pct||0)*20);
+    return Math.round((h*0.30+o*0.25+rv*0.15+vx*0.15+a*0.15)*10)/10;
+  };
+  var getScore=function(r){
+    if(rankMode==='daily')return dailyScore(r);
+    if(rankMode==='intraday')return intradayScore(r);
+    return r.grid_score||0;
+  };
 
   var load=async function(){
     if(!SB_URL||!SB_KEY)return;
@@ -6476,8 +6501,13 @@ function OscillationScreenerPage(p){
       if(mcapFilter==='small'&&(mc<300e6||mc>=2e9))return false;
       if(mcapFilter==='micro'&&mc>=300e6)return false;
     }
+    if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
     return true;
-  }).sort(function(a,b){
+  }).map(function(r){return Object.assign({},r,{_score:getScore(r)});}).sort(function(a,b){
+    if(sortBy==='_score')return sortAsc?(a._score||0)-(b._score||0):(b._score||0)-(a._score||0);
+    var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
     var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
     return sortAsc?(va-vb):(vb-va);
   }):[];
@@ -6523,20 +6553,29 @@ function OscillationScreenerPage(p){
     </Cd>
 
     {sorted.length>0&&<Cd>
-      <SectionHead title="Results" sub={sorted.length+' stocks | sorted by '+(sortBy==='grid_score'?'Grid Score':sortBy==='yz_vol'?'YZ Vol':sortBy==='hurst'?'Hurst':sortBy==='atr_pct'?'ATR%':sortBy==='osc_drift_ratio'?'Osc/Drift':sortBy==='parkinson_vol'?'Parkinson':sortBy==='reversal_pct'?'Reversals':sortBy==='price'?'Price':sortBy==='adv_dollars'?'ADV':sortBy)}/>
+      <SectionHead title="Results" sub={sorted.length+' stocks | '+(rankMode==='daily'?'Daily Bars Ranking':rankMode==='intraday'?'5-Min Intraday Ranking':'Combined Ranking')}/>
+      <div style={{display:'flex',gap:6,marginTop:4,marginBottom:10}}>
+        {['combined','daily','intraday'].map(function(m){
+          var labels={combined:'Combined',daily:'Daily Bars',intraday:'5-Min Bars'};
+          var colors={combined:C.accent,daily:C.gold,intraday:C.purple};
+          return <button key={m} onClick={function(){setRankMode(m);setSortBy('_score');setSortAsc(false);}} style={{flex:1,padding:'10px',border:'1px solid '+(rankMode===m?colors[m]:C.border),borderRadius:6,background:rankMode===m?colors[m]:'transparent',color:rankMode===m?C.bg:C.txtDim,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer',letterSpacing:1}}>{labels[m]}</button>;
+        })}
+      </div>
       <div style={{overflowX:'auto',maxHeight:600}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
-            <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>#</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
-            <th onClick={function(){doSort('grid_score');}} style={thS('grid_score')}>Score</th>
-            <th onClick={function(){doSort('intraday_hurst');}} style={thS('intraday_hurst')}>iHurst</th>
-            <th onClick={function(){doSort('hurst');}} style={thS('hurst')}>dHurst</th>
+            <th onClick={function(){doSort('_score');}} style={thS('_score')}>Score</th>
+            {rankMode!=='intraday'&&<th onClick={function(){doSort('hurst');}} style={thS('hurst')}>dHurst</th>}
+            {rankMode!=='intraday'&&<th onClick={function(){doSort('osc_drift_ratio');}} style={thS('osc_drift_ratio')}>dOsc</th>}
+            {rankMode!=='intraday'&&<th onClick={function(){doSort('yz_vol');}} style={thS('yz_vol')}>YZ%</th>}
+            {rankMode!=='daily'&&<th onClick={function(){doSort('intraday_hurst');}} style={thS('intraday_hurst')}>iHurst</th>}
+            {rankMode!=='daily'&&<th onClick={function(){doSort('intraday_osc_ratio');}} style={thS('intraday_osc_ratio')}>iOsc</th>}
+            {rankMode!=='daily'&&<th onClick={function(){doSort('avg_vwap_crossings');}} style={thS('avg_vwap_crossings')}>VX</th>}
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
-            <th onClick={function(){doSort('intraday_osc_ratio');}} style={thS('intraday_osc_ratio')}>iOsc</th>
-            <th onClick={function(){doSort('avg_vwap_crossings');}} style={thS('avg_vwap_crossings')}>VX</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
           </tr></thead>
           <tbody>{sorted.slice(0,200).map(function(r,idx){
@@ -6545,12 +6584,14 @@ function OscillationScreenerPage(p){
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
-              <td style={{padding:'3px',color:scoreColor(r.grid_score),textAlign:'right',fontWeight:700}}>{(r.grid_score||0).toFixed(1)}</td>
-              <td style={{padding:'3px',color:hurstColor(r.intraday_hurst),textAlign:'right',fontWeight:700}}>{r.intraday_hurst!=null?(r.intraday_hurst).toFixed(3):'--'}</td>
-              <td style={{padding:'3px',color:hurstColor(r.hurst),textAlign:'right'}}>{(r.hurst||0).toFixed(3)}</td>
+              <td style={{padding:'3px',color:scoreColor(r._score),textAlign:'right',fontWeight:700}}>{r._score!=null?r._score.toFixed(1):'--'}</td>
+              {rankMode!=='intraday'&&<td style={{padding:'3px',color:hurstColor(r.hurst),textAlign:'right',fontWeight:700}}>{(r.hurst||0).toFixed(3)}</td>}
+              {rankMode!=='intraday'&&<td style={{padding:'3px',color:r.osc_drift_ratio>3?C.accent:r.osc_drift_ratio>1.5?C.gold:C.warn,textAlign:'right'}}>{(r.osc_drift_ratio||0).toFixed(1)}</td>}
+              {rankMode!=='intraday'&&<td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{(r.yz_vol||0).toFixed(1)+'%'}</td>}
+              {rankMode!=='daily'&&<td style={{padding:'3px',color:hurstColor(r.intraday_hurst),textAlign:'right',fontWeight:700}}>{r.intraday_hurst!=null?r.intraday_hurst.toFixed(3):'--'}</td>}
+              {rankMode!=='daily'&&<td style={{padding:'3px',color:r.intraday_osc_ratio>5?C.accent:r.intraday_osc_ratio>2?C.gold:C.warn,textAlign:'right'}}>{r.intraday_osc_ratio!=null?r.intraday_osc_ratio.toFixed(1):'--'}</td>}
+              {rankMode!=='daily'&&<td style={{padding:'3px',color:r.avg_vwap_crossings>10?C.accent:r.avg_vwap_crossings>5?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_vwap_crossings!=null?r.avg_vwap_crossings.toFixed(0):'--'}</td>}
               <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(r.atr_pct||0).toFixed(2)+'%'}</td>
-              <td style={{padding:'3px',color:r.intraday_osc_ratio>5?C.accent:r.intraday_osc_ratio>2?C.gold:C.warn,textAlign:'right'}}>{r.intraday_osc_ratio!=null?(r.intraday_osc_ratio).toFixed(1):'--'}</td>
-              <td style={{padding:'3px',color:r.avg_vwap_crossings>10?C.accent:r.avg_vwap_crossings>5?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_vwap_crossings!=null?(r.avg_vwap_crossings).toFixed(0):'--'}</td>
               <td style={{padding:'3px',color:r.reversal_pct>50?C.accent:C.txtDim,textAlign:'right'}}>{(r.reversal_pct||0).toFixed(0)+'%'}</td>
             </tr>;
           })}</tbody>
