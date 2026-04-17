@@ -1651,6 +1651,13 @@ async function runScreener() {
   }
   console.log('Candidates after filter: ' + candidates.length);
   
+  // Limit to top ~1500 by ADV (S&P 500 + Russell 1000 equivalent)
+  if (candidates.length > 1500) {
+    candidates.sort(function(a, b) { return b.adv - a.adv; });
+    candidates = candidates.slice(0, 1500);
+    console.log('Trimmed to top 1500 by ADV');
+  }
+  
   // Fetch individual market cap for candidates missing from grouped fetch
   var missingMcap = candidates.filter(function(c) { return !c.market_cap; });
   if (missingMcap.length > 0 && missingMcap.length < 500) {

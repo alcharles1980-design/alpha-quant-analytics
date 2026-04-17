@@ -6432,6 +6432,26 @@ function OscillationScreenerPage(p){
   var s8=useState(''),prog=s8[0],setProg=s8[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
+  var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var pollRef=useRef(null);
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){
+          setPipeStatus(rows[0]);
+          if(rows[0].status==='complete'||rows[0].status==='error'){
+            clearInterval(pollRef.current);pollRef.current=null;
+            if(rows[0].status==='complete')load();
+          }
+        }
+      }catch(e){}
+    },3000);
+  };
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
   // Compute separate scores client-side from saved metrics
   var dailyScore=function(r){
@@ -6481,7 +6501,7 @@ function OscillationScreenerPage(p){
     setErr(null);setProg('Triggering oscillation screener...');
     try{
       var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
-      if(r.status===204)setProg('Screener triggered. Processing ~1500 stocks...');
+      if(r.status===204){setProg('Screener triggered. Processing ~1500 stocks...');pollProgress();}
       else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setProg('');}
     }catch(e){setErr('Trigger failed: '+e.message);setProg('');}
   };
@@ -6544,8 +6564,21 @@ function OscillationScreenerPage(p){
       <div style={{marginTop:8}}>
         <button onClick={function(){load();}} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:C.accent,border:'1px solid '+C.accent})}>Refresh Data</button>
       </div>
-      {p.ghToken&&<button onClick={triggerScan} style={Object.assign({},bB,{marginTop:8,background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff',fontSize:8,padding:'10px'})}>Run New Scan on GitHub</button>}
-      {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6}}>{prog}</div>}
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginTop:8}}>
+        <button onClick={triggerScan} style={Object.assign({},bB,{flex:1,background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff',fontSize:8,padding:'10px'})}>Run New Scan</button>
+        {pipeStatus&&pipeStatus.status==='running'&&<button onClick={function(){cancelPipeline(p.ghToken,function(t,m){setProg(m);});}} style={Object.assign({},bB,{flex:0,width:'auto',padding:'10px 14px',background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:8})}>Cancel</button>}
+      </div>}
+      {pipeStatus&&<div style={{marginTop:8,padding:'10px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:8,fontWeight:700,fontFamily:F,textTransform:'uppercase'}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{width:'100%',height:6,background:C.border,borderRadius:4,overflow:'hidden'}}>
+          <div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:'linear-gradient(90deg,'+C.purple+','+C.blue+')',borderRadius:4,transition:'width 0.5s'}}/>
+        </div>
+        <div style={{color:C.txt,fontSize:7,fontFamily:F,marginTop:4}}>{pipeStatus.message||''}</div>
+      </div>}
+      {prog&&!pipeStatus&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6,padding:'8px 10px',background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
