@@ -1904,6 +1904,7 @@ async function runScreener() {
       var avgExcDollar = 0;
       if (allExcursions.length > 0) { for (var j = 0; j < allExcursions.length; j++) avgExcDollar += allExcursions[j]; avgExcDollar /= allExcursions.length; }
       var avgExcPct = res.price > 0 ? (avgExcDollar / res.price) * 100 : 0;
+      var oscPerDay = dayKeys.length > 0 ? Math.round(allExcursions.length / dayKeys.length * 10) / 10 : 0;
 
       res.intraday_hurst = Math.round(iHurst * 1000) / 1000;
       res.intraday_osc_ratio = Math.round(avgOscRatio * 10) / 10;
@@ -1911,6 +1912,7 @@ async function runScreener() {
       res.avg_vwap_crossings = Math.round(avgCrossings * 10) / 10;
       res.avg_osc_pct = Math.round(avgExcPct * 1000) / 1000;
       res.avg_osc_dollar = Math.round(avgExcDollar * 100) / 100;
+      res.osc_per_day = oscPerDay;
 
       // Per-session metrics
       var sessionDefs = {pre:[4,0,9,30],rth:[9,30,16,0],post:[16,0,20,0],night:[20,0,24,0],morning:[0,0,4,0]};
@@ -1971,7 +1973,8 @@ async function runScreener() {
         var aVX = 0; if (sVX.length) { for (var j = 0; j < sVX.length; j++) aVX += sVX[j]; aVX /= sVX.length; }
         var aED = 0; if (sExc.length) { for (var j = 0; j < sExc.length; j++) aED += sExc[j]; aED /= sExc.length; }
         var aEP = res.price > 0 ? (aED / res.price) * 100 : 0;
-        sesMetrics[sk] = { bars: sesBars.length, hurst: Math.round(sH*1000)/1000, osc_ratio: Math.round(aOR*10)/10, rev_rate: Math.round(aRR*10)/10, vx: Math.round(aVX*10)/10, osc_pct: Math.round(aEP*1000)/1000, osc_dollar: Math.round(aED*100)/100 };
+        var sOscPerDay = sDayKeys.length > 0 ? Math.round(sExc.length / sDayKeys.length * 10) / 10 : 0;
+        sesMetrics[sk] = { bars: sesBars.length, hurst: Math.round(sH*1000)/1000, osc_ratio: Math.round(aOR*10)/10, rev_rate: Math.round(aRR*10)/10, vx: Math.round(aVX*10)/10, osc_pct: Math.round(aEP*1000)/1000, osc_dollar: Math.round(aED*100)/100, osc_per_day: sOscPerDay };
       }
       res.session_metrics = JSON.stringify(sesMetrics);
 
@@ -1986,7 +1989,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; }
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);

@@ -6565,11 +6565,11 @@ function OscillationScreenerPage(p){
         if(ses&&ses.bars>=5){
           row.intraday_hurst=ses.hurst;row.intraday_osc_ratio=ses.osc_ratio;
           row.intraday_reversal_rate=ses.rev_rate;row.avg_vwap_crossings=ses.vx;
-          row.avg_osc_pct=ses.osc_pct;row.avg_osc_dollar=ses.osc_dollar;
+          row.avg_osc_pct=ses.osc_pct;row.avg_osc_dollar=ses.osc_dollar;row.osc_per_day=ses.osc_per_day;
           row._score=getScore(row);
         }else{
           row.intraday_hurst=null;row.intraday_osc_ratio=null;
-          row.avg_vwap_crossings=null;row.avg_osc_pct=null;row.avg_osc_dollar=null;
+          row.avg_vwap_crossings=null;row.avg_osc_pct=null;row.avg_osc_dollar=null;row.osc_per_day=null;
         }
       }catch(e){}
     }
@@ -6716,6 +6716,11 @@ function OscillationScreenerPage(p){
         </div>
 
         <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Osc/D (Oscillations Per Day)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The average number of completed directional swings per trading day, measured from 1-minute bars. Each time the price moves in one direction and then reverses, that counts as one completed oscillation. A stock with 150 Osc/D means the price changes direction about 150 times per day on 1-minute bars. This is directly proportional to your daily cycle count — more oscillations = more potential buy-sell cycles = more profit opportunities. Multiply Osc/D × Osc$ for a rough estimate of gross daily profit per level (before applying a capture rate for your TP% setting). Green ({'>'}100/day) means very active oscillation with many cycle opportunities. Gold (50-100) means moderate. Dim ({'{<'}50) means fewer opportunities — the stock may move in longer trends with fewer reversals. When combined with session filtering, this shows you WHEN the oscillations happen — a stock might have 150 Osc/D total but 100 of them occur during Main Market hours.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
           <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>ATR% (Average True Range Percentage)</div>
           <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The average daily trading range (high minus low, accounting for overnight gaps) expressed as a percentage of the stock price. An ATR% of 5% on a $100 stock means it typically moves about $5 within a single day. This is the raw "opportunity size" — wider range means more price levels get crossed, creating more potential buy-sell cycles. However, high ATR% without mean-reversion (low Hurst) is just a stock crashing or spiking, which is bad for oscillation trading. The ideal combination is high ATR% plus low Hurst — lots of movement that keeps reversing.</div>
         </div>
@@ -6754,6 +6759,7 @@ function OscillationScreenerPage(p){
             {rankMode!=='daily'&&<th onClick={function(){doSort('avg_vwap_crossings');}} style={thS('avg_vwap_crossings')}>VX</th>}
             <th onClick={function(){doSort('avg_osc_pct');}} style={thS('avg_osc_pct')}>Osc%</th>
             <th onClick={function(){doSort('avg_osc_dollar');}} style={thS('avg_osc_dollar')}>Osc$</th>
+            <th onClick={function(){doSort('osc_per_day');}} style={thS('osc_per_day')}>Osc/D</th>
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
           </tr></thead>
@@ -6773,6 +6779,7 @@ function OscillationScreenerPage(p){
               {rankMode!=='daily'&&<td style={{padding:'3px',color:r.avg_vwap_crossings>10?C.accent:r.avg_vwap_crossings>5?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_vwap_crossings!=null?r.avg_vwap_crossings.toFixed(0):'--'}</td>}
               <td style={{padding:'3px',color:r.avg_osc_pct>0.3?C.accent:r.avg_osc_pct>0.15?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.avg_osc_pct!=null?r.avg_osc_pct.toFixed(3)+'%':'--'}</td>
               <td style={{padding:'3px',color:r.avg_osc_dollar>0.5?C.accent:r.avg_osc_dollar>0.2?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_osc_dollar!=null?'$'+r.avg_osc_dollar.toFixed(2):'--'}</td>
+              <td style={{padding:'3px',color:r.osc_per_day>100?C.accent:r.osc_per_day>50?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.osc_per_day!=null?r.osc_per_day.toFixed(0):'--'}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(r.atr_pct||0).toFixed(2)+'%'}</td>
               <td style={{padding:'3px',color:r.reversal_pct>50?C.accent:C.txtDim,textAlign:'right'}}>{(r.reversal_pct||0).toFixed(0)+'%'}</td>
             </tr>;
