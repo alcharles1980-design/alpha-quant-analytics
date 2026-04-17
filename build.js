@@ -38,7 +38,8 @@ html,body{transition:background 0.3s;overflow-x:hidden}
 input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
 input:focus{border-color:#1e3050 !important}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-button:active{transform:scale(0.95)!important;opacity:0.7!important;transition:all 0.05s!important;}
+button{-webkit-tap-highlight-color:rgba(255,255,255,0.2);touch-action:manipulation;transition:transform 0.1s,opacity 0.1s;}
+button:active{transform:scale(0.93)!important;opacity:0.6!important;}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:#0c1219}
 ::-webkit-scrollbar-thumb{background:#1a2236;border-radius:4px}
 @media(min-width:700px){body{padding:0 20px}}
@@ -46,7 +47,7 @@ button:active{transform:scale(0.95)!important;opacity:0.7!important;transition:a
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
 </head>
-<body>
+<body ontouchstart="">
 <div id="root"></div>
 <script>
 var rs=document.createElement("script");rs.src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js";rs.crossOrigin="anonymous";

@@ -6602,10 +6602,10 @@ function OscillationScreenerPage(p){
         </div>
       </div>
       <div style={{marginTop:8}}>
-        <button onClick={doRefresh} disabled={refreshing} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:refreshing?C.txtDim:C.accent,border:'1px solid '+(refreshing?C.border:C.accent),opacity:refreshing?0.6:1,transition:'all 0.15s'})}>{refreshing?'Refreshing...':'Refresh Data'}</button>
+        <button onClick={doRefresh} disabled={refreshing} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:refreshing?C.bg:C.accent,border:'1px solid '+C.accent,background:refreshing?C.accent:'transparent',transition:'all 0.2s'})}>{refreshing?'\u21BB Refreshing...':'Refresh Data'}</button>
       </div>
       {p.ghToken&&<div style={{display:'flex',gap:6,marginTop:8}}>
-        <button onClick={triggerScan} disabled={scanning} style={Object.assign({},bB,{flex:1,background:scanning?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.txtDim:'#fff',fontSize:8,padding:'10px',opacity:scanning?0.6:1,transition:'all 0.15s'})}>{scanning?'\u2713 Scan Triggered':'Run New Scan'}</button>
+        <button onClick={triggerScan} disabled={scanning} style={Object.assign({},bB,{flex:1,background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',fontSize:8,padding:'10px',transition:'all 0.2s'})}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
         {pipeStatus&&pipeStatus.status==='running'&&<button onClick={function(){cancelPipeline(p.ghToken,function(t,m){setProg(m);});}} style={Object.assign({},bB,{flex:0,width:'auto',padding:'10px 14px',background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:8})}>Cancel</button>}
       </div>}
       {pipeStatus&&<div style={{marginTop:8,padding:'10px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
