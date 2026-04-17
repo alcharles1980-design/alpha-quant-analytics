@@ -6430,6 +6430,7 @@ function OscillationScreenerPage(p){
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(null),scanDate=s7[0],setScanDate=s7[1];
   var s8=useState(''),prog=s8[0],setProg=s8[1];
+  var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
 
   var load=async function(){
     if(!SB_URL||!SB_KEY)return;
@@ -6466,8 +6467,16 @@ function OscillationScreenerPage(p){
   };
 
   var sorted=data?data.slice().filter(function(r){
-    if(!filter)return true;
-    return r.ticker.toLowerCase().indexOf(filter.toLowerCase())>=0;
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapFilter!=='all'){
+      var mc=r.market_cap||0;
+      if(mcapFilter==='mega'&&mc<200e9)return false;
+      if(mcapFilter==='large'&&(mc<10e9||mc>=200e9))return false;
+      if(mcapFilter==='mid'&&(mc<2e9||mc>=10e9))return false;
+      if(mcapFilter==='small'&&(mc<300e6||mc>=2e9))return false;
+      if(mcapFilter==='micro'&&mc>=300e6)return false;
+    }
+    return true;
   }).sort(function(a,b){
     var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
     return sortAsc?(va-vb):(vb-va);
@@ -6479,6 +6488,7 @@ function OscillationScreenerPage(p){
 
   var scoreColor=function(v){return v>=70?C.accent:v>=50?C.gold:v>=30?'#ff8c00':C.warn;};
   var hurstColor=function(v){return v<0.4?C.accent:v<0.5?C.gold:C.warn;};
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
 
   var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400};};
 
@@ -6493,9 +6503,19 @@ function OscillationScreenerPage(p){
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+scanDate+' | '+((data&&data.length)||0)+' stocks'}</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
-        <div><label style={lS}>{'\u00A0'}</label>
-          <button onClick={function(){load();}} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:C.accent,border:'1px solid '+C.accent})}>Refresh Data</button>
+        <div><label style={lS}>Market Cap</label>
+          <select value={mcapFilter} onChange={function(e){setMcapFilter(e.target.value);}} style={iS}>
+            <option value="all">All Caps</option>
+            <option value="mega">Mega ($200B+)</option>
+            <option value="large">Large ($10B-$200B)</option>
+            <option value="mid">Mid ($2B-$10B)</option>
+            <option value="small">Small ($300M-$2B)</option>
+            <option value="micro">Micro ({'<'}$300M)</option>
+          </select>
         </div>
+      </div>
+      <div style={{marginTop:8}}>
+        <button onClick={function(){load();}} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:C.accent,border:'1px solid '+C.accent})}>Refresh Data</button>
       </div>
       {p.ghToken&&<button onClick={triggerScan} style={Object.assign({},bB,{marginTop:8,background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff',fontSize:8,padding:'10px'})}>Run New Scan on GitHub</button>}
       {prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,marginTop:6}}>{prog}</div>}
@@ -6510,6 +6530,7 @@ function OscillationScreenerPage(p){
             <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>#</th>
             <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('grid_score');}} style={thS('grid_score')}>Score</th>
             <th onClick={function(){doSort('yz_vol');}} style={thS('yz_vol')}>YZ Vol</th>
             <th onClick={function(){doSort('hurst');}} style={thS('hurst')}>Hurst</th>
@@ -6522,6 +6543,7 @@ function OscillationScreenerPage(p){
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
               <td style={{padding:'3px',color:scoreColor(r.grid_score),textAlign:'right',fontWeight:700}}>{(r.grid_score||0).toFixed(1)}</td>
               <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{(r.yz_vol||0).toFixed(1)+'%'}</td>
               <td style={{padding:'3px',color:hurstColor(r.hurst),textAlign:'right',fontWeight:700}}>{(r.hurst||0).toFixed(3)}</td>

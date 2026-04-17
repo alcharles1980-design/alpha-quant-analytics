@@ -1609,6 +1609,28 @@ async function runScreener() {
   var allTickers = Object.keys(tickerData);
   console.log('Tickers with data: ' + allTickers.length);
 
+  // Step 1b: Fetch market cap data from Polygon reference tickers
+  console.log('Fetching market cap data...');
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 32, message: 'Fetching market cap data...' });
+  var mcapMap = {};
+  var mcUrl = 'https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apiKey=' + POLYGON_KEY;
+  var mcPages = 0;
+  while (mcUrl && mcPages < 20) {
+    try {
+      var mcR = await fetch(mcUrl);
+      if (!mcR.ok) break;
+      var mcD = await mcR.json();
+      if (mcD.results) for (var mi = 0; mi < mcD.results.length; mi++) {
+        var mTk = mcD.results[mi];
+        if (mTk.ticker && mTk.market_cap) mcapMap[mTk.ticker] = mTk.market_cap;
+      }
+      mcUrl = mcD.next_url ? mcD.next_url + '&apiKey=' + POLYGON_KEY : null;
+      mcPages++;
+      await sleep(250);
+    } catch (e) { console.log('  Market cap fetch error: ' + e.message); break; }
+  }
+  console.log('Market cap data for ' + Object.keys(mcapMap).length + ' tickers');
+
   // Step 2: Filter to liquid stocks (ADV > $10M, price > $3, >= 15 days data)
   var MIN_ADV = 10000000;
   var MIN_PRICE = 3;
@@ -1625,7 +1647,7 @@ async function runScreener() {
     for (var bi = 0; bi < bars.length; bi++) totalDolVol += bars[bi].v * ((bars[bi].h + bars[bi].l) / 2);
     var adv = totalDolVol / bars.length;
     if (adv < MIN_ADV) continue;
-    candidates.push({ ticker: tk, bars: bars, price: lastPrice, adv: adv });
+    candidates.push({ ticker: tk, bars: bars, price: lastPrice, adv: adv, market_cap: mcapMap[tk] || null });
   }
   console.log('Candidates after filter: ' + candidates.length);
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 35, message: 'Computing metrics for ' + candidates.length + ' stocks...' });
@@ -1723,7 +1745,8 @@ async function runScreener() {
 
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
-      adv_dollars: Math.round(cand.adv), yz_vol: Math.round(yzVol * 10) / 10,
+      adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
+      yz_vol: Math.round(yzVol * 10) / 10,
       parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
       reversal_pct: Math.round(reversalPct * 10) / 10, grid_score: gridScore,
