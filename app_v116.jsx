@@ -6597,7 +6597,7 @@ function OscillationScreenerPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Oscillation Trading Screener" sub="S&P 500 + Russell 1000 ranked by mean-reversion quality" info="Screens ~1500 liquid US stocks for oscillation-trading suitability. Raw volatility is the wrong metric - what matters is intraday mean-reversion: high realized range with low directional trend. A stock dropping 8% straight is useless for oscillation trading; one chopping +/-3% around a mean all day is ideal."/>
+      <SectionHead title="Oscillation Trading Screener" sub="S&P 500 + Russell 2000 ranked by mean-reversion quality" info="Screens ~2500 liquid US stocks for oscillation-trading suitability. Raw volatility is the wrong metric - what matters is intraday mean-reversion: high realized range with low directional trend. A stock dropping 8% straight is useless for oscillation trading; one chopping +/-3% around a mean all day is ideal."/>
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
@@ -6803,7 +6803,7 @@ function OscillationScreenerPage(p){
           <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 1: Daily Bars (25 trading days)</p>
           <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Uses Polygon grouped daily bars — a single API call returns open/high/low/close/volume for every US stock for that day. Across 25 days, we compute daily-timeframe metrics: Yang-Zhang volatility, Parkinson volatility, daily Hurst exponent, ATR%, oscillation-to-drift ratio, and reversal percentage. These capture the stock's multi-day character — does it trend across days or mean-revert?</p>
           <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 2: 1-Minute Bars (5 trading days, per stock)</p>
-          <p style={{paddingLeft:8,fontSize:9}}>Fetches 1-minute OHLCV bars for each of the ~1,500 candidates individually. This produces ~2,400 data points per stock (480 minutes × 5 days). From these bars we compute intraday metrics that capture what happens <span style={{color:C.accent,fontWeight:700}}>within</span> each trading day — the timescale where oscillation cycles actually complete. 1-minute resolution catches reversals that 5-minute or 15-minute bars would smooth over.</p>
+          <p style={{paddingLeft:8,fontSize:9}}>Fetches 1-minute OHLCV bars for each of the ~2,500 candidates individually. This produces ~2,400 data points per stock (480 minutes × 5 days). From these bars we compute intraday metrics that capture what happens <span style={{color:C.accent,fontWeight:700}}>within</span> each trading day — the timescale where oscillation cycles actually complete. 1-minute resolution catches reversals that 5-minute or 15-minute bars would smooth over.</p>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent+'80',marginBottom:12}}>
