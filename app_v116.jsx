@@ -6494,7 +6494,17 @@ function OscillationScreenerPage(p){
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
-  useEffect(function(){load();},[]);
+  useEffect(function(){
+    load();
+    // Load latest pipeline status on mount
+    (async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}
+      }catch(e){}
+    })();
+  },[]);
 
   var triggerScan=async function(){
     if(!p.ghToken){setErr('Add GitHub PAT in Settings to trigger scans');return;}
