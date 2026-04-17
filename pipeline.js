@@ -1615,7 +1615,7 @@ async function runScreener() {
   var mcapMap = {};
   var mcUrl = 'https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apiKey=' + POLYGON_KEY;
   var mcPages = 0;
-  while (mcUrl && mcPages < 20) {
+  while (mcUrl && mcPages < 50) {
     try {
       var mcR = await fetch(mcUrl);
       if (!mcR.ok) break;
@@ -1626,10 +1626,10 @@ async function runScreener() {
       }
       mcUrl = mcD.next_url ? mcD.next_url + '&apiKey=' + POLYGON_KEY : null;
       mcPages++;
-      await sleep(250);
+      if (mcPages % 10 === 0) await sleep(250);
     } catch (e) { console.log('  Market cap fetch error: ' + e.message); break; }
   }
-  console.log('Market cap data for ' + Object.keys(mcapMap).length + ' tickers');
+  console.log('Market cap data for ' + Object.keys(mcapMap).length + ' tickers (' + mcPages + ' pages)');
 
   // Step 2: Filter to liquid stocks (ADV > $10M, price > $3, >= 15 days data)
   var MIN_ADV = 10000000;
@@ -1650,6 +1650,21 @@ async function runScreener() {
     candidates.push({ ticker: tk, bars: bars, price: lastPrice, adv: adv, market_cap: mcapMap[tk] || null });
   }
   console.log('Candidates after filter: ' + candidates.length);
+  
+  // Fetch individual market cap for candidates missing from grouped fetch
+  var missingMcap = candidates.filter(function(c) { return !c.market_cap; });
+  if (missingMcap.length > 0 && missingMcap.length < 500) {
+    console.log('Fetching individual market cap for ' + missingMcap.length + ' candidates...');
+    for (var mi2 = 0; mi2 < missingMcap.length; mi2++) {
+      try {
+        var tkR = await fetch('https://api.polygon.io/v3/reference/tickers/' + missingMcap[mi2].ticker + '?apiKey=' + POLYGON_KEY);
+        if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcapMap[missingMcap[mi2].ticker] = tkD.results.market_cap; } }
+      } catch (e) {}
+      if (mi2 % 5 === 0) await sleep(100);
+    }
+    console.log('Individual fetches done. Total with mcap: ' + candidates.filter(function(c) { return !!c.market_cap; }).length);
+  }
+
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 35, message: 'Computing metrics for ' + candidates.length + ' stocks...' });
 
   // Step 3: Compute metrics for each candidate
