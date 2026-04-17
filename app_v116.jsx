@@ -6616,7 +6616,7 @@ function OscillationScreenerPage(p){
 
     {sorted.length>0&&<Cd>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <SectionHead title="Results" sub={sorted.length+' stocks | '+(rankMode==='daily'?'Daily Bars Ranking':rankMode==='intraday'?'5-Min Intraday Ranking':'Combined Ranking')}/>
+        <SectionHead title="Results" sub={sorted.length+' stocks | '+(rankMode==='daily'?'Daily Bars Ranking':rankMode==='intraday'?'1-Min Intraday Ranking':'Combined Ranking')}/>
         <button onClick={function(){setShowColGuide(!showColGuide);}} style={{background:showColGuide?C.accent:'transparent',border:'1px solid '+(showColGuide?C.accent:C.border),borderRadius:'50%',width:24,height:24,color:showColGuide?C.bg:C.txtDim,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:F,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>i</button>
       </div>
       {showColGuide&&<div style={{padding:'12px',background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10,marginTop:6}}>
@@ -6654,7 +6654,7 @@ function OscillationScreenerPage(p){
 
         <div style={{marginBottom:10}}>
           <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>iHurst (Intraday Hurst Exponent)</div>
-          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same Hurst exponent concept but computed on 5-minute bars instead of daily bars. This is arguably the most important column because oscillation trading cycles typically complete within hours, not days. A stock might trend across days (high daily Hurst) but oscillate beautifully within each day (low intraday Hurst) — that's a great candidate. Green ({'{<'}0.4) = strongly mean-reverting intraday. Gold (0.4-0.5) = mildly mean-reverting. Red ({'>'}0.5) = trending intraday, avoid.</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same Hurst exponent concept but computed on 1-minute bars instead of daily bars. This is arguably the most important column because oscillation trading cycles typically complete within hours, not days. A stock might trend across days (high daily Hurst) but oscillate beautifully within each day (low intraday Hurst) — that's a great candidate. Green ({'{<'}0.4) = strongly mean-reverting intraday. Gold (0.4-0.5) = mildly mean-reverting. Red ({'>'}0.5) = trending intraday, avoid.</div>
         </div>
 
         <div style={{marginBottom:10}}>
@@ -6664,7 +6664,7 @@ function OscillationScreenerPage(p){
 
         <div style={{marginBottom:10}}>
           <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>iOsc (Intraday Oscillation Ratio)</div>
-          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same oscillation concept but measured within each day using 5-minute bars. For each day, it sums up all the absolute 5-minute price moves and divides by the net move from open to close. Higher values mean the price is churning back and forth during the day — exactly what oscillation trading needs. A value of 20+ means the stock moves 20x more in total than it moves net. Values below 5 suggest mostly directional intraday movement.</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same oscillation concept but measured within each day using 1-minute bars. For each day, it sums up all the absolute 5-minute price moves and divides by the net move from open to close. Higher values mean the price is churning back and forth during the day — exactly what oscillation trading needs. A value of 20+ means the stock moves 20x more in total than it moves net. Values below 5 suggest mostly directional intraday movement.</div>
         </div>
 
         <div style={{marginBottom:10}}>
@@ -6689,7 +6689,7 @@ function OscillationScreenerPage(p){
       </div>}
       <div style={{display:'flex',gap:6,marginTop:4,marginBottom:10}}>
         {['combined','daily','intraday'].map(function(m){
-          var labels={combined:'Combined',daily:'Daily Bars',intraday:'5-Min Bars'};
+          var labels={combined:'Combined',daily:'Daily Bars',intraday:'1-Min Bars'};
           var colors={combined:C.accent,daily:C.gold,intraday:C.purple};
           return <button key={m} onClick={function(){setRankMode(m);setSortBy('_score');setSortAsc(false);}} style={{flex:1,padding:'10px',border:'1px solid '+(rankMode===m?colors[m]:C.border),borderRadius:6,background:rankMode===m?colors[m]:'transparent',color:rankMode===m?C.bg:C.txtDim,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer',letterSpacing:1}}>{labels[m]}</button>;
         })}

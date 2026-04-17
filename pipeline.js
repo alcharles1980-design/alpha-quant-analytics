@@ -177,7 +177,7 @@ async function fetchTicks(ticker, date) {
   ];
   var allRaw = [];
   for (var w of windows) {
-    var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + w.from + '&timestamp.lt=' + w.to + '&limit=50000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
+    var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + w.from + '&timestamp.lt=' + w.to + '&limit=500000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
     while (url) {
       var r = await fetch(url);
       if (!r.ok) break;
@@ -204,7 +204,7 @@ async function fetchHourlyTicks(ticker, date, hour) {
   var fromTs = utcStart < 24 ? date + 'T' + pad(utcStart) + ':00:00Z' : nextDay + 'T' + pad(utcStart - 24) + ':00:00Z';
   var toTs = utcEnd < 24 ? date + 'T' + pad(utcEnd) + ':00:00Z' : nextDay + 'T' + pad(utcEnd - 24) + ':00:00Z';
   var allRaw = [];
-  var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + fromTs + '&timestamp.lt=' + toTs + '&limit=50000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
+  var url = 'https://api.polygon.io/v3/trades/' + ticker + '?timestamp.gte=' + fromTs + '&timestamp.lt=' + toTs + '&limit=500000&sort=timestamp&order=asc&apiKey=' + POLYGON_KEY;
   while (url) {
     var r = await fetch(url);
     if (!r.ok) break;
@@ -1789,8 +1789,8 @@ async function runScreener() {
     }
   }
 
-  // Step 3b: Fetch 5-min bars for intraday metrics
-  console.log('\nFetching 5-min intraday bars for ' + results.length + ' stocks...');
+  // Step 3b: Fetch 1-min bars for intraday metrics
+  console.log('\nFetching 1-min intraday bars for ' + results.length + ' stocks...');
   var intradayFrom = days[Math.max(0, days.length - 6)]; // last 5 trading days
   var intradayTo = days[days.length - 1];
   var processed5m = 0;
@@ -1798,23 +1798,23 @@ async function runScreener() {
   for (var ri = 0; ri < results.length; ri++) {
     var res = results[ri];
     try {
-      var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/5/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=5000&apiKey=' + POLYGON_KEY;
+      var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/1/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
       var r5 = await fetch(url5);
       if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
       if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; continue; }
 
-      // Compute 5-min returns
+      // Compute 1-min returns
       var returns5 = [];
       for (var bi5 = 1; bi5 < bars5.length; bi5++) {
         if (bars5[bi5 - 1].c > 0) returns5.push(Math.log(bars5[bi5].c / bars5[bi5 - 1].c));
       }
 
-      // Intraday Hurst (R/S on 5-min returns)
+      // Intraday Hurst (R/S on 1-min returns)
       var iHurst = 0.5;
       if (returns5.length >= 20) {
-        var iWins = [8, 12, 16, 20, 30];
+        var iWins = [10, 20, 40, 80, 120, 200];
         var iLogN = [], iLogRS = [];
         for (var wi = 0; wi < iWins.length; wi++) {
           var ws = iWins[wi]; if (ws > returns5.length) continue;
@@ -1838,7 +1838,7 @@ async function runScreener() {
         }
       }
 
-      // Intraday Oscillation Ratio: sum of |5-min moves| / |net move| per day
+      // Intraday Oscillation Ratio: sum of |1-min moves| / |net move| per day
       // Group bars by day
       var dayBars = {};
       for (var bi5 = 0; bi5 < bars5.length; bi5++) {
@@ -1899,7 +1899,7 @@ async function runScreener() {
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);
-      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct3, message: 'Intraday 5-min: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)' });
+      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct3, message: 'Intraday 1-min: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)' });
     }
     if (ri % 5 === 0) await sleep(100); // rate limiting
   }
