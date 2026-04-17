@@ -1764,7 +1764,7 @@ async function runScreener() {
       yz_vol: Math.round(yzVol * 10) / 10,
       parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
-      reversal_pct: Math.round(reversalPct * 10) / 10, grid_score: gridScore,
+      reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: gridScore,
       days_sampled: n, scan_date: scanDate
     });
 
@@ -1877,7 +1877,7 @@ async function runScreener() {
       var dOscS = Math.min(100, res.osc_drift_ratio * 10);
       var iRevS = Math.min(100, avgRevRate * 2);
       var crossS = Math.min(100, avgCrossings * 5);
-      res.grid_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
+      res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
     } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; }
@@ -1891,11 +1891,11 @@ async function runScreener() {
   console.log('Intraday data: ' + processed5m + '/' + results.length + ' stocks');
 
   // Sort by grid score
-  results.sort(function(a, b) { return b.grid_score - a.grid_score; });
+  results.sort(function(a, b) { return b.osc_score - a.osc_score; });
   console.log('\nTop 20 Grid Candidates:');
   for (var ri = 0; ri < Math.min(20, results.length); ri++) {
     var r = results[ri];
-    console.log('  ' + (ri + 1) + '. ' + r.ticker + ' $' + r.price + ' | Score: ' + r.grid_score + ' | dH: ' + r.hurst + ' iH: ' + (r.intraday_hurst||'--') + ' | ATR: ' + r.atr_pct + '% | iOsc: ' + (r.intraday_osc_ratio||'--') + ' | VWAP-X: ' + (r.avg_vwap_crossings||'--'));
+    console.log('  ' + (ri + 1) + '. ' + r.ticker + ' $' + r.price + ' | Score: ' + r.osc_score + ' | dH: ' + r.hurst + ' iH: ' + (r.intraday_hurst||'--') + ' | ATR: ' + r.atr_pct + '% | iOsc: ' + (r.intraday_osc_ratio||'--') + ' | VWAP-X: ' + (r.avg_vwap_crossings||'--'));
   }
 
   // Step 4: Save to Supabase
@@ -1907,7 +1907,7 @@ async function runScreener() {
     await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
   }
   console.log('Saved ' + results.length + ' stocks to cached_oscillation_screener');
-  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + results.length + ' stocks scored. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].grid_score + ')' : 'none') });
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + results.length + ' stocks scored. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });
 }
 
 async function main() {
