@@ -6433,6 +6433,8 @@ function OscillationScreenerPage(p){
   var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
   var s13=useState(false),showColGuide=s13[0],setShowColGuide=s13[1];
   var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
+  var s15=useState(false),scanning=s15[0],setScanning=s15[1];
+  var s16=useState(false),refreshing=s16[0],setRefreshing=s16[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
@@ -6519,12 +6521,18 @@ function OscillationScreenerPage(p){
 
   var triggerScan=async function(){
     if(!p.ghToken){setErr('Add GitHub PAT in Settings to trigger scans');return;}
-    setErr(null);setProg('Triggering oscillation screener...');
+    setErr(null);setScanning(true);
     try{
       var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
-      if(r.status===204){setProg('Screener triggered. Processing ~1500 stocks...');pollProgress();}
-      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setProg('');}
-    }catch(e){setErr('Trigger failed: '+e.message);setProg('');}
+      if(r.status===204){setProg('Scan triggered successfully');pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
+
+  var doRefresh=async function(){
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   };
 
   var doSort=function(col){
@@ -6594,10 +6602,10 @@ function OscillationScreenerPage(p){
         </div>
       </div>
       <div style={{marginTop:8}}>
-        <button onClick={function(){load();}} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:C.accent,border:'1px solid '+C.accent})}>Refresh Data</button>
+        <button onClick={doRefresh} disabled={refreshing} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:refreshing?C.txtDim:C.accent,border:'1px solid '+(refreshing?C.border:C.accent),opacity:refreshing?0.6:1,transition:'all 0.15s'})}>{refreshing?'Refreshing...':'Refresh Data'}</button>
       </div>
       {p.ghToken&&<div style={{display:'flex',gap:6,marginTop:8}}>
-        <button onClick={triggerScan} style={Object.assign({},bB,{flex:1,background:'linear-gradient(135deg,#9d5cff,#6030c0)',color:'#fff',fontSize:8,padding:'10px'})}>Run New Scan</button>
+        <button onClick={triggerScan} disabled={scanning} style={Object.assign({},bB,{flex:1,background:scanning?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.txtDim:'#fff',fontSize:8,padding:'10px',opacity:scanning?0.6:1,transition:'all 0.15s'})}>{scanning?'\u2713 Scan Triggered':'Run New Scan'}</button>
         {pipeStatus&&pipeStatus.status==='running'&&<button onClick={function(){cancelPipeline(p.ghToken,function(t,m){setProg(m);});}} style={Object.assign({},bB,{flex:0,width:'auto',padding:'10px 14px',background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontSize:8})}>Cancel</button>}
       </div>}
       {pipeStatus&&<div style={{marginTop:8,padding:'10px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
