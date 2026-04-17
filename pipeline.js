@@ -1879,10 +1879,38 @@ async function runScreener() {
       var avgRevRate = 0; if (revRates.length > 0) { for (var j = 0; j < revRates.length; j++) avgRevRate += revRates[j]; avgRevRate /= revRates.length; }
       var avgCrossings = 0; if (vwapCross.length > 0) { for (var j = 0; j < vwapCross.length; j++) avgCrossings += vwapCross[j]; avgCrossings /= vwapCross.length; }
 
+      // Expected Completed Excursion (ECE): avg size of each directional run
+      // Track consecutive moves in same direction, measure size when direction reverses
+      var allExcursions = [];
+      for (var dk2 = 0; dk2 < dayKeys.length; dk2++) {
+        var db2 = dayBars[dayKeys[dk2]];
+        if (db2.length < 5) continue;
+        var runStart = db2[0].c;
+        var runDir = 0; // 0=none, 1=up, -1=down
+        for (var bi6 = 1; bi6 < db2.length; bi6++) {
+          var move = db2[bi6].c - db2[bi6 - 1].c;
+          var dir = move > 0 ? 1 : move < 0 ? -1 : 0;
+          if (dir === 0) continue;
+          if (runDir === 0) { runDir = dir; runStart = db2[bi6 - 1].c; }
+          else if (dir !== runDir) {
+            // Direction reversed — completed excursion
+            var excSize = Math.abs(db2[bi6 - 1].c - runStart);
+            if (excSize > 0) allExcursions.push(excSize);
+            runStart = db2[bi6 - 1].c;
+            runDir = dir;
+          }
+        }
+      }
+      var avgExcDollar = 0;
+      if (allExcursions.length > 0) { for (var j = 0; j < allExcursions.length; j++) avgExcDollar += allExcursions[j]; avgExcDollar /= allExcursions.length; }
+      var avgExcPct = res.price > 0 ? (avgExcDollar / res.price) * 100 : 0;
+
       res.intraday_hurst = Math.round(iHurst * 1000) / 1000;
       res.intraday_osc_ratio = Math.round(avgOscRatio * 10) / 10;
       res.intraday_reversal_rate = Math.round(avgRevRate * 10) / 10;
       res.avg_vwap_crossings = Math.round(avgCrossings * 10) / 10;
+      res.avg_osc_pct = Math.round(avgExcPct * 1000) / 1000;
+      res.avg_osc_dollar = Math.round(avgExcDollar * 100) / 100;
 
       // Recalculate Grid Score with intraday metrics weighted heavily
       var iHurstScore = Math.max(0, Math.min(100, (0.5 - iHurst) * 200 + 50));
@@ -1895,7 +1923,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; }
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);

@@ -6686,6 +6686,16 @@ function OscillationScreenerPage(p){
         </div>
 
         <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Osc% (Average Oscillation Percentage)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The average size of each completed directional "swing" measured from 1-minute bars, expressed as a percentage of the stock price. This is the Expected Completed Excursion (ECE) — the core metric for setting your take-profit percentage. Here's how it works: on 1-min bars, the system tracks consecutive price moves in the same direction. When the direction reverses, that completed "run" has a measurable size. The Osc% is the average across all such runs over the measurement period. If Osc% is 0.25%, that means the stock's typical swing is 0.25% before reversing — so a TP% set at or slightly below 0.25% would capture most oscillations. This is THE number that maps directly to your optimal TP% setting. Green ({'>'}0.3%) means large swings with room for profitable cycles even after fees. Gold (0.15-0.3%) means moderate swings. Dim ({'{<'}0.15%) means very tight oscillation — may not cover transaction fees.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>Osc$ (Average Oscillation in Dollars)</div>
+          <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The same average swing size as Osc% but expressed as a dollar amount per share. If Osc$ is $0.50 on a $200 stock, each typical oscillation moves $0.50 before reversing. This is your expected gross profit per cycle per share before fees. Compare this to your fee per share (typically $0.005-$0.01) to understand profitability: if Osc$ is $0.50 and your round-trip fee is $0.01, that's a 50:1 gross-to-fee ratio — highly profitable. If Osc$ is $0.05 with a $0.01 fee, that's only 5:1 — thin margin. Higher-priced stocks tend to have larger Osc$ even with the same Osc%, making them more profitable per cycle in absolute terms. Green ({'>'}$0.50) means comfortably profitable per swing. Gold ($0.20-$0.50) means solid. Dim ({'{<'}$0.20) means tight margins.</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
           <div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:3}}>ATR% (Average True Range Percentage)</div>
           <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.6}}>The average daily trading range (high minus low, accounting for overnight gaps) expressed as a percentage of the stock price. An ATR% of 5% on a $100 stock means it typically moves about $5 within a single day. This is the raw "opportunity size" — wider range means more price levels get crossed, creating more potential buy-sell cycles. However, high ATR% without mean-reversion (low Hurst) is just a stock crashing or spiking, which is bad for oscillation trading. The ideal combination is high ATR% plus low Hurst — lots of movement that keeps reversing.</div>
         </div>
@@ -6717,6 +6727,8 @@ function OscillationScreenerPage(p){
             {rankMode!=='daily'&&<th onClick={function(){doSort('intraday_hurst');}} style={thS('intraday_hurst')}>iHurst</th>}
             {rankMode!=='daily'&&<th onClick={function(){doSort('intraday_osc_ratio');}} style={thS('intraday_osc_ratio')}>iOsc</th>}
             {rankMode!=='daily'&&<th onClick={function(){doSort('avg_vwap_crossings');}} style={thS('avg_vwap_crossings')}>VX</th>}
+            <th onClick={function(){doSort('avg_osc_pct');}} style={thS('avg_osc_pct')}>Osc%</th>
+            <th onClick={function(){doSort('avg_osc_dollar');}} style={thS('avg_osc_dollar')}>Osc$</th>
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
           </tr></thead>
@@ -6734,6 +6746,8 @@ function OscillationScreenerPage(p){
               {rankMode!=='daily'&&<td style={{padding:'3px',color:hurstColor(r.intraday_hurst),textAlign:'right',fontWeight:700}}>{r.intraday_hurst!=null?r.intraday_hurst.toFixed(3):'--'}</td>}
               {rankMode!=='daily'&&<td style={{padding:'3px',color:r.intraday_osc_ratio>5?C.accent:r.intraday_osc_ratio>2?C.gold:C.warn,textAlign:'right'}}>{r.intraday_osc_ratio!=null?r.intraday_osc_ratio.toFixed(1):'--'}</td>}
               {rankMode!=='daily'&&<td style={{padding:'3px',color:r.avg_vwap_crossings>10?C.accent:r.avg_vwap_crossings>5?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_vwap_crossings!=null?r.avg_vwap_crossings.toFixed(0):'--'}</td>}
+              <td style={{padding:'3px',color:r.avg_osc_pct>0.3?C.accent:r.avg_osc_pct>0.15?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.avg_osc_pct!=null?r.avg_osc_pct.toFixed(3)+'%':'--'}</td>
+              <td style={{padding:'3px',color:r.avg_osc_dollar>0.5?C.accent:r.avg_osc_dollar>0.2?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_osc_dollar!=null?'$'+r.avg_osc_dollar.toFixed(2):'--'}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(r.atr_pct||0).toFixed(2)+'%'}</td>
               <td style={{padding:'3px',color:r.reversal_pct>50?C.accent:C.txtDim,textAlign:'right'}}>{(r.reversal_pct||0).toFixed(0)+'%'}</td>
             </tr>;
