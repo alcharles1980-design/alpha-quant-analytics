@@ -1565,13 +1565,204 @@ async function runAutotune(tickers) {
   await reportProgress({ mode: 'autotune', ticker: tickers.join(','), status: 'complete', progress_pct: 100, message: 'Auto-tune complete: ' + totalCombos + ' combinations tested' });
 }
 
+// ── SCREENER: Stock Oscillation Scanner ──────────────────
+async function runScreener() {
+  var scanDate = new Date().toISOString().slice(0, 10);
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting oscillation screener...' });
+
+  // Step 1: Get last 25 trading days of grouped daily bars (all US stocks in one call per day)
+  var LOOKBACK = 25;
+  var days = [];
+  var d = new Date(); d.setDate(d.getDate() - 1); // start yesterday
+  while (days.length < LOOKBACK + 10) { // extra buffer for weekends/holidays
+    var dow = d.getDay();
+    if (dow !== 0 && dow !== 6) days.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() - 1);
+  }
+  days = days.slice(0, LOOKBACK + 5); // take enough to get 20 valid days
+  days.reverse(); // oldest first
+
+  console.log('Fetching ' + days.length + ' days of grouped daily bars...');
+  var tickerData = {}; // ticker -> [{o,h,l,c,v,date}]
+
+  for (var di = 0; di < days.length; di++) {
+    var date = days[di];
+    var pct = Math.round((di / days.length) * 30);
+    await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Fetching grouped daily: ' + date + ' (' + (di + 1) + '/' + days.length + ')' });
+    try {
+      var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
+      var r = await fetch(url);
+      if (!r.ok) { console.log('  Grouped daily ' + date + ': HTTP ' + r.status); continue; }
+      var body = await r.json();
+      if (!body.results) { console.log('  Grouped daily ' + date + ': no results (holiday?)'); continue; }
+      for (var i = 0; i < body.results.length; i++) {
+        var bar = body.results[i];
+        var tk = bar.T;
+        if (!tk || tk.indexOf('.') >= 0 || tk.indexOf('/') >= 0 || tk.length > 5) continue; // skip warrants, classes, etc
+        if (!tickerData[tk]) tickerData[tk] = [];
+        tickerData[tk].push({ o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v || 0, date: date });
+      }
+    } catch (e) { console.log('  Grouped daily ' + date + ' error: ' + e.message); }
+    await sleep(250); // rate limit
+  }
+
+  var allTickers = Object.keys(tickerData);
+  console.log('Tickers with data: ' + allTickers.length);
+
+  // Step 2: Filter to liquid stocks (ADV > $10M, price > $3, >= 15 days data)
+  var MIN_ADV = 10000000;
+  var MIN_PRICE = 3;
+  var MIN_DAYS = 15;
+  var candidates = [];
+
+  for (var ti = 0; ti < allTickers.length; ti++) {
+    var tk = allTickers[ti];
+    var bars = tickerData[tk];
+    if (bars.length < MIN_DAYS) continue;
+    var lastPrice = bars[bars.length - 1].c;
+    if (lastPrice < MIN_PRICE) continue;
+    var totalDolVol = 0;
+    for (var bi = 0; bi < bars.length; bi++) totalDolVol += bars[bi].v * ((bars[bi].h + bars[bi].l) / 2);
+    var adv = totalDolVol / bars.length;
+    if (adv < MIN_ADV) continue;
+    candidates.push({ ticker: tk, bars: bars, price: lastPrice, adv: adv });
+  }
+  console.log('Candidates after filter: ' + candidates.length);
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 35, message: 'Computing metrics for ' + candidates.length + ' stocks...' });
+
+  // Step 3: Compute metrics for each candidate
+  var results = [];
+  for (var ci = 0; ci < candidates.length; ci++) {
+    var cand = candidates[ci];
+    var bars = cand.bars;
+    var n = bars.length;
+
+    // ATR%
+    var atrSum = 0;
+    for (var i = 1; i < n; i++) {
+      var tr = Math.max(bars[i].h - bars[i].l, Math.abs(bars[i].h - bars[i - 1].c), Math.abs(bars[i].l - bars[i - 1].c));
+      atrSum += tr;
+    }
+    var atr = atrSum / (n - 1);
+    var atrPct = (atr / cand.price) * 100;
+
+    // Yang-Zhang Volatility
+    var logOC = [], logCO = [], logHL = [];
+    for (var i = 0; i < n; i++) {
+      logOC.push(Math.log(bars[i].c / bars[i].o));
+      if (i > 0) logCO.push(Math.log(bars[i].o / bars[i - 1].c));
+      logHL.push(Math.log(bars[i].h / bars[i].l));
+    }
+    var meanOC = 0; for (var i = 0; i < logOC.length; i++) meanOC += logOC[i]; meanOC /= logOC.length;
+    var varOC = 0; for (var i = 0; i < logOC.length; i++) varOC += (logOC[i] - meanOC) * (logOC[i] - meanOC); varOC /= (logOC.length - 1);
+    var meanCO = 0; for (var i = 0; i < logCO.length; i++) meanCO += logCO[i]; meanCO /= logCO.length;
+    var varCO = 0; for (var i = 0; i < logCO.length; i++) varCO += (logCO[i] - meanCO) * (logCO[i] - meanCO); varCO /= Math.max(1, logCO.length - 1);
+    var k = 0.34 / (1.34 + (n + 1) / (n - 1));
+    var varRS = 0; for (var i = 0; i < n; i++) { var u = Math.log(bars[i].h / bars[i].o); var d2 = Math.log(bars[i].l / bars[i].o); varRS += u * (u - Math.log(bars[i].c / bars[i].o)) + d2 * (d2 - Math.log(bars[i].c / bars[i].o)); } varRS /= n;
+    var yzVar = varCO + k * varOC + (1 - k) * varRS;
+    var yzVol = Math.sqrt(Math.max(0, yzVar) * 252) * 100; // annualized %
+
+    // Parkinson Volatility
+    var parkSum = 0;
+    for (var i = 0; i < n; i++) { var lhl = Math.log(bars[i].h / bars[i].l); parkSum += lhl * lhl; }
+    var parkVol = Math.sqrt(parkSum / (n * 4 * Math.log(2)) * 252) * 100;
+
+    // Hurst Exponent (R/S analysis on daily returns)
+    var returns = [];
+    for (var i = 1; i < n; i++) returns.push(Math.log(bars[i].c / bars[i - 1].c));
+    var hurst = 0.5; // default random walk
+    if (returns.length >= 10) {
+      var winSizes = [4, 6, 8, 10];
+      var logN = [], logRS = [];
+      for (var wi = 0; wi < winSizes.length; wi++) {
+        var ws = winSizes[wi];
+        if (ws > returns.length) continue;
+        var rsVals = [];
+        for (var start = 0; start + ws <= returns.length; start += ws) {
+          var seg = returns.slice(start, start + ws);
+          var mean = 0; for (var j = 0; j < seg.length; j++) mean += seg[j]; mean /= seg.length;
+          var cumDev = 0, maxD = -Infinity, minD = Infinity, ss = 0;
+          for (var j = 0; j < seg.length; j++) { cumDev += seg[j] - mean; if (cumDev > maxD) maxD = cumDev; if (cumDev < minD) minD = cumDev; ss += (seg[j] - mean) * (seg[j] - mean); }
+          var stdDev = Math.sqrt(ss / seg.length);
+          if (stdDev > 0) rsVals.push((maxD - minD) / stdDev);
+        }
+        if (rsVals.length > 0) { var avgRS = 0; for (var j = 0; j < rsVals.length; j++) avgRS += rsVals[j]; avgRS /= rsVals.length; logN.push(Math.log(ws)); logRS.push(Math.log(avgRS)); }
+      }
+      if (logN.length >= 2) {
+        var sX = 0, sY = 0, sXY = 0, sX2 = 0, nP = logN.length;
+        for (var j = 0; j < nP; j++) { sX += logN[j]; sY += logRS[j]; sXY += logN[j] * logRS[j]; sX2 += logN[j] * logN[j]; }
+        var denom = nP * sX2 - sX * sX;
+        if (Math.abs(denom) > 1e-12) hurst = (nP * sXY - sX * sY) / denom;
+        hurst = Math.max(0, Math.min(1, hurst));
+      }
+    }
+
+    // Oscillation/Drift Ratio
+    var totalRange = 0, netDrift = 0;
+    for (var i = 0; i < n; i++) totalRange += bars[i].h - bars[i].l;
+    netDrift = Math.abs(bars[n - 1].c - bars[0].o);
+    var oscDrift = netDrift > 0 ? totalRange / netDrift : totalRange > 0 ? 99 : 0;
+
+    // Reversal %
+    var reversals = 0;
+    for (var i = 2; i < n; i++) {
+      var prev = bars[i - 1].c - bars[i - 2].c;
+      var curr = bars[i].c - bars[i - 1].c;
+      if ((prev > 0 && curr < 0) || (prev < 0 && curr > 0)) reversals++;
+    }
+    var reversalPct = n > 2 ? (reversals / (n - 2)) * 100 : 0;
+
+    // Composite Grid Score (0-100)
+    var hurstScore = Math.max(0, Math.min(100, (0.5 - hurst) * 200 + 50)); // H=0.3 -> 90, H=0.5 -> 50, H=0.7 -> 10
+    var atrScore = Math.min(100, atrPct * 20); // 5% ATR -> 100
+    var oscScore2 = Math.min(100, oscDrift * 10); // ratio 10 -> 100
+    var revScore = Math.min(100, reversalPct * 2); // 50% -> 100
+    var yzScore = Math.min(100, yzVol * 1.5); // 66% annualized -> 100
+    var gridScore = hurstScore * 0.30 + atrScore * 0.25 + oscScore2 * 0.25 + revScore * 0.10 + yzScore * 0.10;
+    gridScore = Math.round(gridScore * 10) / 10;
+
+    results.push({
+      ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
+      adv_dollars: Math.round(cand.adv), yz_vol: Math.round(yzVol * 10) / 10,
+      parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
+      atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
+      reversal_pct: Math.round(reversalPct * 10) / 10, grid_score: gridScore,
+      days_sampled: n, scan_date: scanDate
+    });
+
+    if (ci % 200 === 0) {
+      var pct2 = 35 + Math.round((ci / candidates.length) * 50);
+      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct2, message: 'Computing: ' + ci + '/' + candidates.length + ' stocks' });
+    }
+  }
+
+  // Sort by grid score
+  results.sort(function(a, b) { return b.grid_score - a.grid_score; });
+  console.log('\nTop 20 Grid Candidates:');
+  for (var ri = 0; ri < Math.min(20, results.length); ri++) {
+    var r = results[ri];
+    console.log('  ' + (ri + 1) + '. ' + r.ticker + ' $' + r.price + ' | Score: ' + r.grid_score + ' | H: ' + r.hurst + ' | ATR: ' + r.atr_pct + '% | O/D: ' + r.osc_drift_ratio);
+  }
+
+  // Step 4: Save to Supabase
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 90, message: 'Saving ' + results.length + ' results...' });
+  await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+  await sleep(300);
+  for (var bi = 0; bi < results.length; bi += 200) {
+    var batch = results.slice(bi, bi + 200);
+    await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+  }
+  console.log('Saved ' + results.length + ' stocks to cached_oscillation_screener');
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + results.length + ' stocks scored. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].grid_score + ')' : 'none') });
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -1594,6 +1785,8 @@ async function main() {
     await runNightly(tickers);
   } else if (mode === 'autotune') {
     await runAutotune(tickers);
+  } else if (mode === 'screener') {
+    await runScreener();
   } else {
     await runHourly(tickers);
   }
