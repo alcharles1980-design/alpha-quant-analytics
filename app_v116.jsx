@@ -6527,11 +6527,11 @@ function OscillationScreenerPage(p){
     if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
     if(mcapFilter!=='all'){
       var mc=r.market_cap||0;
-      if(mcapFilter==='mega'&&mc<200e9)return false;
-      if(mcapFilter==='large'&&(mc<10e9||mc>=200e9))return false;
-      if(mcapFilter==='mid'&&(mc<2e9||mc>=10e9))return false;
-      if(mcapFilter==='small'&&(mc<300e6||mc>=2e9))return false;
-      if(mcapFilter==='micro'&&mc>=300e6)return false;
+      var mins={
+        '100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,
+        '10b':10e9,'50b':50e9,'100b':100e9
+      };
+      if(mc<(mins[mcapFilter]||0))return false;
     }
     if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
     return true;
@@ -6562,14 +6562,16 @@ function OscillationScreenerPage(p){
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
-        <div><label style={lS}>Market Cap</label>
+        <div><label style={lS}>Min Market Cap</label>
           <select value={mcapFilter} onChange={function(e){setMcapFilter(e.target.value);}} style={iS}>
-            <option value="all">All Caps</option>
-            <option value="mega">Mega ($200B+)</option>
-            <option value="large">Large ($10B-$200B)</option>
-            <option value="mid">Mid ($2B-$10B)</option>
-            <option value="small">Small ($300M-$2B)</option>
-            <option value="micro">Micro ({'<'}$300M)</option>
+            <option value="all">All</option>
+            <option value="100m">$100M+</option>
+            <option value="500m">$500M+</option>
+            <option value="1b">$1B+</option>
+            <option value="5b">$5B+</option>
+            <option value="10b">$10B+</option>
+            <option value="50b">$50B+</option>
+            <option value="100b">$100B+</option>
           </select>
         </div>
       </div>
