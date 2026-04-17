@@ -1839,10 +1839,11 @@ async function runScreener() {
       }
 
       // Intraday Oscillation Ratio: sum of |1-min moves| / |net move| per day
-      // Group bars by day
+      // Group bars by day (ET-aware to avoid cross-day contamination)
+      var etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
       var dayBars = {};
       for (var bi5 = 0; bi5 < bars5.length; bi5++) {
-        var bDate = new Date(bars5[bi5].t).toISOString().slice(0, 10);
+        var bDate = etDateFmt.format(new Date(bars5[bi5].t));
         if (!dayBars[bDate]) dayBars[bDate] = [];
         dayBars[bDate].push(bars5[bi5]);
       }
@@ -1953,7 +1954,7 @@ async function runScreener() {
         var sOscR = [], sRevR = [], sVX = [], sExc = [];
         // Group session bars by day
         var sDayBars = {};
-        for (var j = 0; j < sesBars.length; j++) { var dd = new Date(sesBars[j].t).toISOString().slice(0, 10); if (!sDayBars[dd]) sDayBars[dd] = []; sDayBars[dd].push(sesBars[j]); }
+        for (var j = 0; j < sesBars.length; j++) { var dd = etDateFmt.format(new Date(sesBars[j].t)); if (!sDayBars[dd]) sDayBars[dd] = []; sDayBars[dd].push(sesBars[j]); }
         var sDayKeys = Object.keys(sDayBars);
         for (var dki = 0; dki < sDayKeys.length; dki++) {
           var sdb = sDayBars[sDayKeys[dki]]; if (sdb.length < 3) continue;
