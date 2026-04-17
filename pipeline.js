@@ -1763,14 +1763,14 @@ async function runScreener() {
     }
     var reversalPct = n > 2 ? (reversals / (n - 2)) * 100 : 0;
 
-    // Composite Grid Score (0-100)
-    var hurstScore = Math.max(0, Math.min(100, (0.5 - hurst) * 200 + 50)); // H=0.3 -> 90, H=0.5 -> 50, H=0.7 -> 10
-    var atrScore = Math.min(100, atrPct * 20); // 5% ATR -> 100
-    var oscScore2 = Math.min(100, oscDrift * 10); // ratio 10 -> 100
-    var revScore = Math.min(100, reversalPct * 2); // 50% -> 100
-    var yzScore = Math.min(100, yzVol * 1.5); // 66% annualized -> 100
-    var gridScore = hurstScore * 0.30 + atrScore * 0.25 + oscScore2 * 0.25 + revScore * 0.10 + yzScore * 0.10;
-    gridScore = Math.round(gridScore * 10) / 10;
+    // Composite Oscillation Score (daily-only, will be overwritten if intraday succeeds)
+    var hurstScore = Math.max(0, Math.min(100, (0.5 - hurst) * 200 + 50));
+    var atrScore = Math.min(100, atrPct * 20);
+    var oscScore2 = Math.min(100, oscDrift * 10);
+    var revScore = Math.min(100, reversalPct * 2);
+    var yzScore = Math.min(100, yzVol * 1.5);
+    // Daily-only score penalized by 0.7x since no intraday validation
+    var dailyOnlyScore = Math.round((hurstScore * 0.30 + atrScore * 0.25 + oscScore2 * 0.25 + revScore * 0.10 + yzScore * 0.10) * 0.7 * 10) / 10;
 
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
@@ -1779,7 +1779,7 @@ async function runScreener() {
       yz_vol: Math.round(yzVol * 10) / 10,
       parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
-      reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: gridScore,
+      reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: dailyOnlyScore,
       days_sampled: n, scan_date: scanDate
     });
 
@@ -1800,15 +1800,26 @@ async function runScreener() {
     try {
       var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/1/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
       var r5 = await fetch(url5);
-      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; continue; }
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
-      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; continue; }
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; continue; }
 
-      // Compute 1-min returns
+      // Compute 1-min returns PER DAY (exclude overnight gaps)
+      var etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+      var dayBarsForReturns = {};
+      for (var bi5 = 0; bi5 < bars5.length; bi5++) {
+        var bDateR = etDateFmt.format(new Date(bars5[bi5].t));
+        if (!dayBarsForReturns[bDateR]) dayBarsForReturns[bDateR] = [];
+        dayBarsForReturns[bDateR].push(bars5[bi5]);
+      }
       var returns5 = [];
-      for (var bi5 = 1; bi5 < bars5.length; bi5++) {
-        if (bars5[bi5 - 1].c > 0) returns5.push(Math.log(bars5[bi5].c / bars5[bi5 - 1].c));
+      var dbrKeys = Object.keys(dayBarsForReturns);
+      for (var dri = 0; dri < dbrKeys.length; dri++) {
+        var dbr = dayBarsForReturns[dbrKeys[dri]];
+        for (var bi5 = 1; bi5 < dbr.length; bi5++) {
+          if (dbr[bi5 - 1].c > 0) returns5.push(Math.log(dbr[bi5].c / dbr[bi5 - 1].c));
+        }
       }
 
       // Intraday Hurst (R/S on 1-min returns)
@@ -1839,8 +1850,7 @@ async function runScreener() {
       }
 
       // Intraday Oscillation Ratio: sum of |1-min moves| / |net move| per day
-      // Group bars by day (ET-aware to avoid cross-day contamination)
-      var etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+      // Group bars by day (ET-aware, reusing etDateFmt from above)
       var dayBars = {};
       for (var bi5 = 0; bi5 < bars5.length; bi5++) {
         var bDate = etDateFmt.format(new Date(bars5[bi5].t));
@@ -1936,7 +1946,7 @@ async function runScreener() {
         var sRet = []; for (var j = 1; j < sesBars.length; j++) if (sesBars[j-1].c > 0) sRet.push(Math.log(sesBars[j].c / sesBars[j-1].c));
         var sH = 0.5;
         if (sRet.length >= 16) {
-          var sWins = [8, 12, 16, 20]; var sLN = [], sLR = [];
+          var sWins = sRet.length >= 100 ? [10, 20, 40, 80] : [8, 12, 16, 20]; var sLN = [], sLR = [];
           for (var wi = 0; wi < sWins.length; wi++) {
             var ws = sWins[wi]; if (ws > sRet.length) continue;
             var rsV = [];
@@ -1979,7 +1989,7 @@ async function runScreener() {
       }
       res.session_metrics = JSON.stringify(sesMetrics);
 
-      // Recalculate Grid Score with intraday metrics weighted heavily
+      // Recalculate Oscillation Score with intraday metrics weighted heavily
       var iHurstScore = Math.max(0, Math.min(100, (0.5 - iHurst) * 200 + 50));
       var dHurstScore = Math.max(0, Math.min(100, (0.5 - res.hurst) * 200 + 50));
       var atrS = Math.min(100, res.atr_pct * 20);
@@ -1990,7 +2000,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; }
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);
@@ -2000,9 +2010,9 @@ async function runScreener() {
   }
   console.log('Intraday data: ' + processed5m + '/' + results.length + ' stocks');
 
-  // Sort by grid score
+  // Sort by oscillation score
   results.sort(function(a, b) { return b.osc_score - a.osc_score; });
-  console.log('\nTop 20 Grid Candidates:');
+  console.log('\nTop 20 Oscillation Candidates:');
   for (var ri = 0; ri < Math.min(20, results.length); ri++) {
     var r = results[ri];
     console.log('  ' + (ri + 1) + '. ' + r.ticker + ' $' + r.price + ' | Score: ' + r.osc_score + ' | dH: ' + r.hurst + ' iH: ' + (r.intraday_hurst||'--') + ' | ATR: ' + r.atr_pct + '% | iOsc: ' + (r.intraday_osc_ratio||'--') + ' | VWAP-X: ' + (r.avg_vwap_crossings||'--'));
@@ -2014,7 +2024,8 @@ async function runScreener() {
   await sleep(300);
   for (var bi = 0; bi < results.length; bi += 200) {
     var batch = results.slice(bi, bi + 200);
-    await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+    var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+    if (!saveR.ok) { var errTxt = await saveR.text(); console.log('  Save batch ' + bi + '-' + (bi + batch.length) + ' FAILED: ' + saveR.status + ' ' + errTxt.slice(0, 200)); }
   }
   console.log('Saved ' + results.length + ' stocks to cached_oscillation_screener');
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + results.length + ' stocks scored. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });

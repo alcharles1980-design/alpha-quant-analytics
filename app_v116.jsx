@@ -6466,7 +6466,8 @@ function OscillationScreenerPage(p){
 
       // Count oscillations per hour
       var nDays=0;
-      var daySet={};for(var i=0;i<bars2.length;i++){var dd=new Date(bars2[i].t).toISOString().slice(0,10);daySet[dd]=true;}
+      var etDayFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+      var daySet={};for(var i=0;i<bars2.length;i++){var dd=etDayFmt.format(new Date(bars2[i].t));daySet[dd]=true;}
       nDays=Object.keys(daySet).length||1;
 
       var hourlyResult=[];
@@ -6495,7 +6496,7 @@ function OscillationScreenerPage(p){
           avgExcDollar:Math.round(avgExc*100)/100,
           avgExcPct:Math.round(avgExc/price*10000)/100,
           bars:hb.length,
-          session:h<9||(h===9)?'pre':h<16?'rth':'post'
+          session:h<9?'pre':h<16?'rth':'post'
         });
       }
       setHourlyData({ticker:ticker,days:nDays,totalBars:bars2.length,hours:hourlyResult});
@@ -6618,8 +6619,8 @@ function OscillationScreenerPage(p){
       if(mc<(mins[mcapFilter]||0))return false;
     }
     if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
-    if(etfFilter==='stocks'&&r.ticker_type&&r.ticker_type!=='CS')return false;
-    if(etfFilter==='etfs'&&r.ticker_type&&r.ticker_type!=='ETF')return false;
+    if(etfFilter==='stocks'&&r.ticker_type==='ETF')return false;
+    if(etfFilter==='etfs'&&r.ticker_type!=='ETF')return false;
     return true;
   }).map(function(r){
     var row=Object.assign({},r,{_score:getScore(r)});
