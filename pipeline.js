@@ -1754,17 +1754,133 @@ async function runScreener() {
     });
 
     if (ci % 200 === 0) {
-      var pct2 = 35 + Math.round((ci / candidates.length) * 50);
-      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct2, message: 'Computing: ' + ci + '/' + candidates.length + ' stocks' });
+      var pct2 = 35 + Math.round((ci / candidates.length) * 25);
+      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct2, message: 'Daily metrics: ' + ci + '/' + candidates.length + ' stocks' });
     }
   }
+
+  // Step 3b: Fetch 5-min bars for intraday metrics
+  console.log('\nFetching 5-min intraday bars for ' + results.length + ' stocks...');
+  var intradayFrom = days[Math.max(0, days.length - 6)]; // last 5 trading days
+  var intradayTo = days[days.length - 1];
+  var processed5m = 0;
+
+  for (var ri = 0; ri < results.length; ri++) {
+    var res = results[ri];
+    try {
+      var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/5/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=5000&apiKey=' + POLYGON_KEY;
+      var r5 = await fetch(url5);
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; continue; }
+      var d5 = await r5.json();
+      var bars5 = d5.results || [];
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; continue; }
+
+      // Compute 5-min returns
+      var returns5 = [];
+      for (var bi5 = 1; bi5 < bars5.length; bi5++) {
+        if (bars5[bi5 - 1].c > 0) returns5.push(Math.log(bars5[bi5].c / bars5[bi5 - 1].c));
+      }
+
+      // Intraday Hurst (R/S on 5-min returns)
+      var iHurst = 0.5;
+      if (returns5.length >= 20) {
+        var iWins = [8, 12, 16, 20, 30];
+        var iLogN = [], iLogRS = [];
+        for (var wi = 0; wi < iWins.length; wi++) {
+          var ws = iWins[wi]; if (ws > returns5.length) continue;
+          var rsV = [];
+          for (var st = 0; st + ws <= returns5.length; st += ws) {
+            var seg = returns5.slice(st, st + ws);
+            var mn2 = 0; for (var j = 0; j < seg.length; j++) mn2 += seg[j]; mn2 /= seg.length;
+            var cum = 0, mxC = -Infinity, mnC = Infinity, ss = 0;
+            for (var j = 0; j < seg.length; j++) { cum += seg[j] - mn2; if (cum > mxC) mxC = cum; if (cum < mnC) mnC = cum; ss += (seg[j] - mn2) * (seg[j] - mn2); }
+            var sd = Math.sqrt(ss / seg.length);
+            if (sd > 0) rsV.push((mxC - mnC) / sd);
+          }
+          if (rsV.length > 0) { var avg = 0; for (var j = 0; j < rsV.length; j++) avg += rsV[j]; avg /= rsV.length; iLogN.push(Math.log(ws)); iLogRS.push(Math.log(avg)); }
+        }
+        if (iLogN.length >= 2) {
+          var sX2 = 0, sY2 = 0, sXY2 = 0, sX22 = 0, nP2 = iLogN.length;
+          for (var j = 0; j < nP2; j++) { sX2 += iLogN[j]; sY2 += iLogRS[j]; sXY2 += iLogN[j] * iLogRS[j]; sX22 += iLogN[j] * iLogN[j]; }
+          var den2 = nP2 * sX22 - sX2 * sX2;
+          if (Math.abs(den2) > 1e-12) iHurst = (nP2 * sXY2 - sX2 * sY2) / den2;
+          iHurst = Math.max(0, Math.min(1, iHurst));
+        }
+      }
+
+      // Intraday Oscillation Ratio: sum of |5-min moves| / |net move| per day
+      // Group bars by day
+      var dayBars = {};
+      for (var bi5 = 0; bi5 < bars5.length; bi5++) {
+        var bDate = new Date(bars5[bi5].t).toISOString().slice(0, 10);
+        if (!dayBars[bDate]) dayBars[bDate] = [];
+        dayBars[bDate].push(bars5[bi5]);
+      }
+      var oscRatios = []; var revRates = []; var vwapCross = [];
+      var dayKeys = Object.keys(dayBars);
+      for (var dk = 0; dk < dayKeys.length; dk++) {
+        var db = dayBars[dayKeys[dk]];
+        if (db.length < 5) continue;
+        // Oscillation ratio for this day
+        var sumAbsMoves = 0; var netMove = Math.abs(db[db.length - 1].c - db[0].o);
+        for (var bi5 = 1; bi5 < db.length; bi5++) sumAbsMoves += Math.abs(db[bi5].c - db[bi5 - 1].c);
+        oscRatios.push(netMove > 0 ? sumAbsMoves / netMove : sumAbsMoves > 0 ? 99 : 0);
+        // Reversal rate for this day
+        var revs = 0;
+        for (var bi5 = 2; bi5 < db.length; bi5++) {
+          var prev = db[bi5 - 1].c - db[bi5 - 2].c;
+          var curr = db[bi5].c - db[bi5 - 1].c;
+          if ((prev > 0 && curr < 0) || (prev < 0 && curr > 0)) revs++;
+        }
+        revRates.push(db.length > 2 ? (revs / (db.length - 2)) * 100 : 0);
+        // VWAP crossings: compute VWAP then count crosses
+        var cumVol = 0, cumPV = 0, crosses = 0, prevSide = 0;
+        for (var bi5 = 0; bi5 < db.length; bi5++) {
+          cumVol += db[bi5].v || 0; cumPV += ((db[bi5].h + db[bi5].l + db[bi5].c) / 3) * (db[bi5].v || 0);
+          var vwap = cumVol > 0 ? cumPV / cumVol : db[bi5].c;
+          var side = db[bi5].c >= vwap ? 1 : -1;
+          if (prevSide !== 0 && side !== prevSide) crosses++;
+          prevSide = side;
+        }
+        vwapCross.push(crosses);
+      }
+
+      var avgOscRatio = 0; if (oscRatios.length > 0) { for (var j = 0; j < oscRatios.length; j++) avgOscRatio += oscRatios[j]; avgOscRatio /= oscRatios.length; }
+      var avgRevRate = 0; if (revRates.length > 0) { for (var j = 0; j < revRates.length; j++) avgRevRate += revRates[j]; avgRevRate /= revRates.length; }
+      var avgCrossings = 0; if (vwapCross.length > 0) { for (var j = 0; j < vwapCross.length; j++) avgCrossings += vwapCross[j]; avgCrossings /= vwapCross.length; }
+
+      res.intraday_hurst = Math.round(iHurst * 1000) / 1000;
+      res.intraday_osc_ratio = Math.round(avgOscRatio * 10) / 10;
+      res.intraday_reversal_rate = Math.round(avgRevRate * 10) / 10;
+      res.avg_vwap_crossings = Math.round(avgCrossings * 10) / 10;
+
+      // Recalculate Grid Score with intraday metrics weighted heavily
+      var iHurstScore = Math.max(0, Math.min(100, (0.5 - iHurst) * 200 + 50));
+      var dHurstScore = Math.max(0, Math.min(100, (0.5 - res.hurst) * 200 + 50));
+      var atrS = Math.min(100, res.atr_pct * 20);
+      var iOscS = Math.min(100, avgOscRatio * 8);
+      var dOscS = Math.min(100, res.osc_drift_ratio * 10);
+      var iRevS = Math.min(100, avgRevRate * 2);
+      var crossS = Math.min(100, avgCrossings * 5);
+      res.grid_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
+
+      processed5m++;
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; }
+
+    if (ri % 50 === 0) {
+      var pct3 = 60 + Math.round((ri / results.length) * 30);
+      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct3, message: 'Intraday 5-min: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)' });
+    }
+    if (ri % 5 === 0) await sleep(100); // rate limiting
+  }
+  console.log('Intraday data: ' + processed5m + '/' + results.length + ' stocks');
 
   // Sort by grid score
   results.sort(function(a, b) { return b.grid_score - a.grid_score; });
   console.log('\nTop 20 Grid Candidates:');
   for (var ri = 0; ri < Math.min(20, results.length); ri++) {
     var r = results[ri];
-    console.log('  ' + (ri + 1) + '. ' + r.ticker + ' $' + r.price + ' | Score: ' + r.grid_score + ' | H: ' + r.hurst + ' | ATR: ' + r.atr_pct + '% | O/D: ' + r.osc_drift_ratio);
+    console.log('  ' + (ri + 1) + '. ' + r.ticker + ' $' + r.price + ' | Score: ' + r.grid_score + ' | dH: ' + r.hurst + ' iH: ' + (r.intraday_hurst||'--') + ' | ATR: ' + r.atr_pct + '% | iOsc: ' + (r.intraday_osc_ratio||'--') + ' | VWAP-X: ' + (r.avg_vwap_crossings||'--'));
   }
 
   // Step 4: Save to Supabase

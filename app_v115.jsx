@@ -6532,10 +6532,11 @@ function OscillationScreenerPage(p){
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('grid_score');}} style={thS('grid_score')}>Score</th>
-            <th onClick={function(){doSort('yz_vol');}} style={thS('yz_vol')}>YZ Vol</th>
-            <th onClick={function(){doSort('hurst');}} style={thS('hurst')}>Hurst</th>
+            <th onClick={function(){doSort('intraday_hurst');}} style={thS('intraday_hurst')}>iHurst</th>
+            <th onClick={function(){doSort('hurst');}} style={thS('hurst')}>dHurst</th>
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
-            <th onClick={function(){doSort('osc_drift_ratio');}} style={thS('osc_drift_ratio')}>Osc/D</th>
+            <th onClick={function(){doSort('intraday_osc_ratio');}} style={thS('intraday_osc_ratio')}>iOsc</th>
+            <th onClick={function(){doSort('avg_vwap_crossings');}} style={thS('avg_vwap_crossings')}>VX</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
           </tr></thead>
           <tbody>{sorted.slice(0,200).map(function(r,idx){
@@ -6545,10 +6546,11 @@ function OscillationScreenerPage(p){
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
               <td style={{padding:'3px',color:scoreColor(r.grid_score),textAlign:'right',fontWeight:700}}>{(r.grid_score||0).toFixed(1)}</td>
-              <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{(r.yz_vol||0).toFixed(1)+'%'}</td>
-              <td style={{padding:'3px',color:hurstColor(r.hurst),textAlign:'right',fontWeight:700}}>{(r.hurst||0).toFixed(3)}</td>
+              <td style={{padding:'3px',color:hurstColor(r.intraday_hurst),textAlign:'right',fontWeight:700}}>{r.intraday_hurst!=null?(r.intraday_hurst).toFixed(3):'--'}</td>
+              <td style={{padding:'3px',color:hurstColor(r.hurst),textAlign:'right'}}>{(r.hurst||0).toFixed(3)}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(r.atr_pct||0).toFixed(2)+'%'}</td>
-              <td style={{padding:'3px',color:r.osc_drift_ratio>3?C.accent:r.osc_drift_ratio>1.5?C.gold:C.warn,textAlign:'right'}}>{(r.osc_drift_ratio||0).toFixed(1)}</td>
+              <td style={{padding:'3px',color:r.intraday_osc_ratio>5?C.accent:r.intraday_osc_ratio>2?C.gold:C.warn,textAlign:'right'}}>{r.intraday_osc_ratio!=null?(r.intraday_osc_ratio).toFixed(1):'--'}</td>
+              <td style={{padding:'3px',color:r.avg_vwap_crossings>10?C.accent:r.avg_vwap_crossings>5?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_vwap_crossings!=null?(r.avg_vwap_crossings).toFixed(0):'--'}</td>
               <td style={{padding:'3px',color:r.reversal_pct>50?C.accent:C.txtDim,textAlign:'right'}}>{(r.reversal_pct||0).toFixed(0)+'%'}</td>
             </tr>;
           })}</tbody>
