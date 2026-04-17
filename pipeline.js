@@ -1912,6 +1912,69 @@ async function runScreener() {
       res.avg_osc_pct = Math.round(avgExcPct * 1000) / 1000;
       res.avg_osc_dollar = Math.round(avgExcDollar * 100) / 100;
 
+      // Per-session metrics
+      var sessionDefs = {pre:[4,0,9,30],rth:[9,30,16,0],post:[16,0,20,0],night:[20,0,24,0],morning:[0,0,4,0]};
+      var sesKeys = Object.keys(sessionDefs);
+      var sesMetrics = {};
+      var etFmt2 = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false});
+      for (var si = 0; si < sesKeys.length; si++) {
+        var sk = sesKeys[si]; var sd2 = sessionDefs[sk];
+        var startMin = sd2[0] * 60 + sd2[1]; var endMin = sd2[2] * 60 + sd2[3];
+        // Filter bars to this session
+        var sesBars = [];
+        for (var bi7 = 0; bi7 < bars5.length; bi7++) {
+          var bTime = etFmt2.format(new Date(bars5[bi7].t));
+          var bParts = bTime.split(':'); var bH = parseInt(bParts[0]) || 0; var bM = parseInt(bParts[1]) || 0;
+          var bMin = bH * 60 + bM;
+          if (bMin >= startMin && bMin < endMin) sesBars.push(bars5[bi7]);
+        }
+        if (sesBars.length < 5) { sesMetrics[sk] = {bars:sesBars.length}; continue; }
+        // Hurst on session bars
+        var sRet = []; for (var j = 1; j < sesBars.length; j++) if (sesBars[j-1].c > 0) sRet.push(Math.log(sesBars[j].c / sesBars[j-1].c));
+        var sH = 0.5;
+        if (sRet.length >= 16) {
+          var sWins = [8, 12, 16, 20]; var sLN = [], sLR = [];
+          for (var wi = 0; wi < sWins.length; wi++) {
+            var ws = sWins[wi]; if (ws > sRet.length) continue;
+            var rsV = [];
+            for (var st = 0; st + ws <= sRet.length; st += ws) {
+              var seg = sRet.slice(st, st + ws); var mn2 = 0; for (var j = 0; j < seg.length; j++) mn2 += seg[j]; mn2 /= seg.length;
+              var cum = 0, mxC = -Infinity, mnC = Infinity, ss = 0;
+              for (var j = 0; j < seg.length; j++) { cum += seg[j] - mn2; if (cum > mxC) mxC = cum; if (cum < mnC) mnC = cum; ss += (seg[j] - mn2) * (seg[j] - mn2); }
+              var sd3 = Math.sqrt(ss / seg.length); if (sd3 > 0) rsV.push((mxC - mnC) / sd3);
+            }
+            if (rsV.length > 0) { var avg = 0; for (var j = 0; j < rsV.length; j++) avg += rsV[j]; avg /= rsV.length; sLN.push(Math.log(ws)); sLR.push(Math.log(avg)); }
+          }
+          if (sLN.length >= 2) { var sx = 0, sy = 0, sxy = 0, sx2 = 0, np = sLN.length; for (var j = 0; j < np; j++) { sx += sLN[j]; sy += sLR[j]; sxy += sLN[j] * sLR[j]; sx2 += sLN[j] * sLN[j]; } var dn = np * sx2 - sx * sx; if (Math.abs(dn) > 1e-12) sH = (np * sxy - sx * sy) / dn; sH = Math.max(0, Math.min(1, sH)); }
+        }
+        // Osc ratio, reversals, VWAP crossings, ECE per session-day
+        var sOscR = [], sRevR = [], sVX = [], sExc = [];
+        // Group session bars by day
+        var sDayBars = {};
+        for (var j = 0; j < sesBars.length; j++) { var dd = new Date(sesBars[j].t).toISOString().slice(0, 10); if (!sDayBars[dd]) sDayBars[dd] = []; sDayBars[dd].push(sesBars[j]); }
+        var sDayKeys = Object.keys(sDayBars);
+        for (var dki = 0; dki < sDayKeys.length; dki++) {
+          var sdb = sDayBars[sDayKeys[dki]]; if (sdb.length < 3) continue;
+          var sam = 0, snm = Math.abs(sdb[sdb.length-1].c - sdb[0].o);
+          for (var j = 1; j < sdb.length; j++) sam += Math.abs(sdb[j].c - sdb[j-1].c);
+          sOscR.push(snm > 0 ? sam / snm : sam > 0 ? 99 : 0);
+          var sr = 0; for (var j = 2; j < sdb.length; j++) { var p2 = sdb[j-1].c - sdb[j-2].c, c2 = sdb[j].c - sdb[j-1].c; if ((p2>0&&c2<0)||(p2<0&&c2>0)) sr++; }
+          sRevR.push(sdb.length > 2 ? (sr/(sdb.length-2))*100 : 0);
+          var cv = 0, cpv = 0, cx = 0, ps = 0;
+          for (var j = 0; j < sdb.length; j++) { cv += sdb[j].v||0; cpv += ((sdb[j].h+sdb[j].l+sdb[j].c)/3)*(sdb[j].v||0); var vw = cv>0?cpv/cv:sdb[j].c; var ss2 = sdb[j].c>=vw?1:-1; if (ps!==0&&ss2!==ps) cx++; ps = ss2; }
+          sVX.push(cx);
+          var rs2 = sdb[0].c, rd2 = 0;
+          for (var j = 1; j < sdb.length; j++) { var mv = sdb[j].c - sdb[j-1].c; var dr = mv>0?1:mv<0?-1:0; if (dr===0) continue; if (rd2===0) { rd2=dr; rs2=sdb[j-1].c; } else if (dr!==rd2) { var ex = Math.abs(sdb[j-1].c - rs2); if (ex>0) sExc.push(ex); rs2=sdb[j-1].c; rd2=dr; } }
+        }
+        var aOR = 0; if (sOscR.length) { for (var j = 0; j < sOscR.length; j++) aOR += sOscR[j]; aOR /= sOscR.length; }
+        var aRR = 0; if (sRevR.length) { for (var j = 0; j < sRevR.length; j++) aRR += sRevR[j]; aRR /= sRevR.length; }
+        var aVX = 0; if (sVX.length) { for (var j = 0; j < sVX.length; j++) aVX += sVX[j]; aVX /= sVX.length; }
+        var aED = 0; if (sExc.length) { for (var j = 0; j < sExc.length; j++) aED += sExc[j]; aED /= sExc.length; }
+        var aEP = res.price > 0 ? (aED / res.price) * 100 : 0;
+        sesMetrics[sk] = { bars: sesBars.length, hurst: Math.round(sH*1000)/1000, osc_ratio: Math.round(aOR*10)/10, rev_rate: Math.round(aRR*10)/10, vx: Math.round(aVX*10)/10, osc_pct: Math.round(aEP*1000)/1000, osc_dollar: Math.round(aED*100)/100 };
+      }
+      res.session_metrics = JSON.stringify(sesMetrics);
+
       // Recalculate Grid Score with intraday metrics weighted heavily
       var iHurstScore = Math.max(0, Math.min(100, (0.5 - iHurst) * 200 + 50));
       var dHurstScore = Math.max(0, Math.min(100, (0.5 - res.hurst) * 200 + 50));

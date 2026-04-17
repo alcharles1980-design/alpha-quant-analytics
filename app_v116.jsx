@@ -6435,6 +6435,7 @@ function OscillationScreenerPage(p){
   var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(false),refreshing=s16[0],setRefreshing=s16[1];
+  var s17=useState('all'),sessionFilter=s17[0],setSessionFilter=s17[1];
   var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
@@ -6554,7 +6555,26 @@ function OscillationScreenerPage(p){
     if(etfFilter==='stocks'&&r.ticker_type&&r.ticker_type!=='CS')return false;
     if(etfFilter==='etfs'&&r.ticker_type&&r.ticker_type!=='ETF')return false;
     return true;
-  }).map(function(r){return Object.assign({},r,{_score:getScore(r)});}).sort(function(a,b){
+  }).map(function(r){
+    var row=Object.assign({},r,{_score:getScore(r)});
+    // Override intraday metrics with session-specific data
+    if(sessionFilter!=='all'&&r.session_metrics){
+      try{
+        var sm=typeof r.session_metrics==='string'?JSON.parse(r.session_metrics):r.session_metrics;
+        var ses=sm[sessionFilter];
+        if(ses&&ses.bars>=5){
+          row.intraday_hurst=ses.hurst;row.intraday_osc_ratio=ses.osc_ratio;
+          row.intraday_reversal_rate=ses.rev_rate;row.avg_vwap_crossings=ses.vx;
+          row.avg_osc_pct=ses.osc_pct;row.avg_osc_dollar=ses.osc_dollar;
+          row._score=getScore(row);
+        }else{
+          row.intraday_hurst=null;row.intraday_osc_ratio=null;
+          row.avg_vwap_crossings=null;row.avg_osc_pct=null;row.avg_osc_dollar=null;
+        }
+      }catch(e){}
+    }
+    return row;
+  }).sort(function(a,b){
     if(sortBy==='_score')return sortAsc?(a._score||0)-(b._score||0):(b._score||0)-(a._score||0);
     var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
     return sortAsc?(va-vb):(vb-va);
@@ -6710,6 +6730,11 @@ function OscillationScreenerPage(p){
           var labels={combined:'Combined',daily:'Daily Bars',intraday:'1-Min Bars'};
           var colors={combined:C.accent,daily:C.gold,intraday:C.purple};
           return <button key={m} onClick={function(){setRankMode(m);setSortBy('_score');setSortAsc(false);}} style={{flex:1,padding:'10px',border:'1px solid '+(rankMode===m?colors[m]:C.border),borderRadius:6,background:rankMode===m?colors[m]:'transparent',color:rankMode===m?C.bg:C.txtDim,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer',letterSpacing:1}}>{labels[m]}</button>;
+        })}
+      </div>
+      <div style={{display:'flex',gap:4,marginBottom:10,flexWrap:'wrap'}}>
+        {[{k:'all',l:'All Hours'},{k:'pre',l:'Pre 4-9:30'},{k:'rth',l:'Main 9:30-4'},{k:'post',l:'Post 4-8'},{k:'night',l:'Night 8-12'},{k:'morning',l:'AM 12-4'}].map(function(s){
+          return <button key={s.k} onClick={function(){setSessionFilter(s.k);}} style={{padding:'6px 8px',border:'1px solid '+(sessionFilter===s.k?C.blue:C.border),borderRadius:4,background:sessionFilter===s.k?C.blue:'transparent',color:sessionFilter===s.k?C.bg:C.txtDim,fontFamily:F,fontSize:7,fontWeight:600,cursor:'pointer',letterSpacing:0.5}}>{s.l}</button>;
         })}
       </div>
       <div style={{overflowX:'auto',maxHeight:600}}>
