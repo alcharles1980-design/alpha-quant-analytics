@@ -19,6 +19,7 @@ on:
           - backfill
           - autotune
           - screener
+          - backfill-mcap
       tickers:
         description: 'Comma-separated tickers'
         required: true

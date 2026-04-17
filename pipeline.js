@@ -1910,13 +1910,52 @@ async function runScreener() {
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + results.length + ' stocks scored. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });
 }
 
+// ── BACKFILL MARKET CAP for existing screener data ──────
+async function backfillMcap() {
+  console.log('Backfilling market cap for screener data...');
+  // Get latest scan date
+  var dateR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1', { headers: sbHeaders() });
+  var dateRows = await dateR.json();
+  if (!dateRows.length) { console.log('No screener data found'); return; }
+  var sd = dateRows[0].scan_date;
+  console.log('Scan date: ' + sd);
+
+  // Get tickers missing market cap
+  var h = sbHeaders(); h['Range'] = '0-4999';
+  var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + sd + '&market_cap=is.null&select=ticker', { headers: h });
+  var rows = await r.json();
+  console.log('Tickers missing market cap: ' + rows.length);
+  if (!rows.length) { console.log('All tickers already have market cap'); return; }
+
+  var updated = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var tk = rows[i].ticker;
+    try {
+      var pr = await fetch('https://api.polygon.io/v3/reference/tickers/' + tk + '?apiKey=' + POLYGON_KEY);
+      if (pr.ok) {
+        var pd = await pr.json();
+        if (pd.results && pd.results.market_cap) {
+          await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?ticker=eq.' + tk + '&scan_date=eq.' + sd, {
+            method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }),
+            body: JSON.stringify({ market_cap: Math.round(pd.results.market_cap) })
+          });
+          updated++;
+        }
+      }
+    } catch (e) {}
+    if (i % 5 === 0) await sleep(100);
+    if (i % 100 === 0) console.log('  ' + i + '/' + rows.length + ' checked, ' + updated + ' updated');
+  }
+  console.log('Done: ' + updated + '/' + rows.length + ' updated with market cap');
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -1941,6 +1980,8 @@ async function main() {
     await runAutotune(tickers);
   } else if (mode === 'screener') {
     await runScreener();
+  } else if (mode === 'backfill-mcap') {
+    await backfillMcap();
   } else {
     await runHourly(tickers);
   }
