@@ -6508,9 +6508,6 @@ function OscillationScreenerPage(p){
     var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
     return sortAsc?(va-vb):(vb-va);
   }):[];
-    var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
-    return sortAsc?(va-vb):(vb-va);
-  }):[];
 
   var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
   var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
