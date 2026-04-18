@@ -7165,6 +7165,162 @@ function ATRScreenerPage(p){
   </div>;
 }
 
+function ATRScreenerPage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
+  var s5=useState(''),filter=s5[0],setFilter=s5[1];
+  var s6=useState('_score'),sortBy=s6[0],setSortBy=s6[1];
+  var s7=useState(false),sortAsc=s7[0],setSortAsc=s7[1];
+  // Per-hour ATR% thresholds (4-19 ET)
+  var s8=useState({}),thresholds=s8[0],setThresholds=s8[1];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+  var bB={width:'100%',border:'none',borderRadius:8,padding:'14px',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer'};
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
+      var dateRows=rDate.ok?await rDate.json():[];
+      if(!dateRows.length){setErr('No screener data. Run a scan from the Oscillation Screener first.');setLoading(false);return;}
+      var sd=dateRows[0].scan_date;setScanDate(sd);
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&hourly_atr_profile=not.is.null&select=ticker,price,market_cap,adv_dollars,atr_pct,hourly_atr_profile,osc_score&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var r=batch[i];
+          try{r._atr=typeof r.hourly_atr_profile==='string'?JSON.parse(r.hourly_atr_profile):r.hourly_atr_profile;}catch(e2){r._atr={};}
+          allRows.push(r);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      setData(allRows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  useEffect(function(){load();},[]);
+
+  var setTh=function(hour,val){var n=Object.assign({},thresholds);if(val==='')delete n[hour];else n[hour]=parseFloat(val);setThresholds(n);};
+
+  var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);}};
+
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    var atr=r._atr||{};
+    var thKeys=Object.keys(thresholds);
+    for(var i=0;i<thKeys.length;i++){
+      var h=parseInt(thKeys[i]);var minVal=thresholds[thKeys[i]];
+      if(isNaN(minVal))continue;
+      var actual=atr[h]||0;
+      if(actual<minVal)return false;
+    }
+    return true;
+  }).map(function(r){
+    var atr=r._atr||{};
+    var totalAtr=0;var cnt=0;for(var h=4;h<20;h++){if(atr[h]){totalAtr+=atr[h];cnt++;}}
+    return Object.assign({},r,{_score:cnt>0?Math.round(totalAtr/cnt*1000)/1000:0});
+  }).sort(function(a,b){
+    if(sortBy==='_score')return sortAsc?(a._score-b._score):(b._score-a._score);
+    if(sortBy==='ticker')return sortAsc?a.ticker.localeCompare(b.ticker):b.ticker.localeCompare(a.ticker);
+    if(sortBy.charAt(0)==='h'){var hr=parseInt(sortBy.slice(1));var va2=(a._atr||{})[hr]||0;var vb2=(b._atr||{})[hr]||0;return sortAsc?(va2-vb2):(vb2-va2);}
+    var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
+
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+  var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400};};
+  var atrColor=function(v){return v>=5?C.accent:v>=3?C.gold:v>=1?C.blue:C.txtDim;};
+
+  var activeThresholds=Object.keys(thresholds).filter(function(k){return !isNaN(thresholds[k]);}).length;
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>ATR Stock Screener</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Hourly ATR% Filter" sub="Set minimum ATR% thresholds per hour. Only stocks meeting ALL criteria are shown." info="ATR% (Average True Range %) measures the typical price range within each hour as a percentage of the stock price. This tool lets you set different minimum ATR% requirements for different hours of the day. A stock must meet ALL your thresholds to appear in the results. Data is from the most recent oscillation screener scan (10 trading days of 1-min bars)."/>
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+scanDate+' | '+(data?data.length:0)+' stocks with hourly ATR data'}</div>}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
+        {Array.from({length:16},function(_,i){var h=i+4;var label=(h<10?'0':'')+h+':00';var isRth=h>=9&&h<16;
+          return <div key={h} style={{textAlign:'center'}}>
+            <label style={{color:isRth?C.txtBright:C.txtDim,fontSize:7,fontWeight:700,fontFamily:F,display:'block',marginBottom:2}}>{label}</label>
+            <input value={thresholds[h]!==undefined?thresholds[h]:''} onChange={function(hr){return function(e){setTh(hr,e.target.value);};}(h)} style={{width:'100%',background:thresholds[h]!==undefined?'rgba(0,229,160,0.1)':C.bg,border:'1px solid '+(thresholds[h]!==undefined?C.accent:C.border),borderRadius:4,padding:'6px 4px',color:C.txtBright,fontSize:9,fontFamily:F,outline:'none',textAlign:'center'}} placeholder="%" type="number" step="0.1"/>
+          </div>;
+        })}
+      </div>
+      <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Search ticker..."/>
+        <button onClick={function(){setThresholds({});}} style={{background:'transparent',border:'1px solid '+C.warn+'60',borderRadius:6,color:C.warn,fontSize:7,fontFamily:F,padding:'8px 12px',cursor:'pointer',whiteSpace:'nowrap'}}>Clear All</button>
+      </div>
+      {activeThresholds>0&&<div style={{color:C.accent,fontSize:8,fontFamily:F,marginTop:6}}>{activeThresholds+' hour filter'+(activeThresholds!==1?'s':'')+' active | '+filtered.length+' stocks match'}</div>}
+    </Cd>
+
+    {filtered.length>0&&<Cd>
+      <SectionHead title="Results" sub={filtered.length+' stocks | sorted by '+(sortBy==='_score'?'Avg ATR%':sortBy)}/>
+      <div style={{overflowX:'auto',maxHeight:600}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
+            <th onClick={function(){doSort('_score');}} style={thS('_score')}>Avg ATR%</th>
+            {Array.from({length:16},function(_,i){var h=i+4;var hasFilter=thresholds[h]!==undefined;
+              return <th key={h} onClick={function(hr){return function(){
+                setSortBy('h'+hr);setSortAsc(false);
+              };}(h)} style={{padding:'4px 2px',color:hasFilter?C.accent:sortBy===('h'+h)?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontSize:6,fontWeight:hasFilter||sortBy===('h'+h)?700:400}}>{(h<10?'0':'')+h}</th>;
+            })}
+          </tr></thead>
+          <tbody>{filtered.slice(0,300).map(function(r,idx){
+            var atr=r._atr||{};
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
+              <td style={{padding:'3px',color:atrColor(r._score),textAlign:'right',fontWeight:700}}>{r._score.toFixed(3)+'%'}</td>
+              {Array.from({length:16},function(_,i){var h=i+4;var v=atr[h]||0;var hasFilter=thresholds[h]!==undefined;var passes=!hasFilter||v>=thresholds[h];
+                return <td key={h} style={{padding:'3px 2px',color:passes?atrColor(v):C.warn,textAlign:'right',fontSize:6,background:hasFilter?(passes?'rgba(0,229,160,0.05)':'rgba(255,92,58,0.05)'):'transparent'}}>{v.toFixed(2)}</td>;
+              })}
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {filtered.length>300&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 300 of {filtered.length}</div>}
+    </Cd>}
+
+    <CollapseStage title="How To Use This Tool" sub="Setting hourly ATR% thresholds for stock selection">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What Is Hourly ATR%?</p>
+          <p style={{fontSize:9}}>ATR% measures the typical price range within each hour as a percentage of the stock price. An ATR% of 3% during the 10:00 hour means the stock typically moves 3% from its hourly high to its hourly low during that hour. Higher ATR% = more price movement = more opportunity for oscillation cycles.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Setting Thresholds</p>
+          <p style={{marginBottom:4,fontSize:9}}>Enter a minimum ATR% value in any hour box. Only stocks where that hour's average ATR% meets or exceeds your threshold will appear. Leave hours blank to ignore them.</p>
+          <p style={{marginBottom:4,fontSize:9,color:C.gold}}>Example: Set 09:00 to 4% and 10:00 to 3%. Only stocks that average at least 4% ATR during the 9 AM hour AND at least 3% during the 10 AM hour will show.</p>
+          <p style={{fontSize:9}}>The more thresholds you set, the fewer stocks will match. Start with 1-2 hours during your target trading session, then add more to narrow down.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Reading The Table</p>
+          <p style={{marginBottom:4,fontSize:9}}>Each column (04-19) shows the average ATR% for that hour across 10 trading days. Cells with active filters are highlighted: green background = passes, red = would fail (only visible if you search for a specific ticker that doesn't fully pass).</p>
+          <p style={{fontSize:9}}>The Avg ATR% column is the average across all 16 hours. Sort by any hour column to find stocks with the highest ATR% during that specific hour.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -9289,6 +9445,7 @@ function App(){
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='atrscreener'&&<ATRScreenerPage onBack={function(){setPage('home');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
