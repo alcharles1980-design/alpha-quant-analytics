@@ -8102,6 +8102,216 @@ function DirBiasPage(p){
   </div>;
 }
 
+function RecoveryPage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
+  var s5=useState(null),scanTime=s5[0],setScanTime=s5[1];
+  var s6=useState(''),filter=s6[0],setFilter=s6[1];
+  var s7=useState('bounce_rate_1x'),sortBy=s7[0],setSortBy=s7[1];
+  var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
+  var s10=useState(false),scanning=s10[0],setScanning=s10[1];
+  var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var s12f=useState('all'),mcapMin=s12f[0],setMcapMin=s12f[1];
+  var s13f=useState('all'),mcapMax=s13f[0],setMcapMax=s13f[1];
+  var s14f=useState(''),priceMin=s14f[0],setPriceMin=s14f[1];
+  var s15f=useState(''),priceMax=s15f[0],setPriceMax=s15f[1];
+  var s16f=useState(''),minBounce=s16f[0],setMinBounce=s16f[1];
+  var s17f=useState(''),minDrops=s17f[0],setMinDrops=s17f[1];
+  var pollRef=useRef(null);
+
+  var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+  var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var mcapOptsMax=[{v:'all',l:'No Max'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')load();}}
+      }catch(e){}
+    },3000);
+  };
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setErr(null);setScanning(true);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});
+      var dateRows=rDate.ok?await rDate.json():[];
+      if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}
+      var sd=dateRows[0].scan_date;setScanDate(sd);
+      if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&recovery_profile=not.is.null&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var row=batch[i];
+          try{row._rp=typeof row.recovery_profile==='string'?JSON.parse(row.recovery_profile):row.recovery_profile;}catch(e2){row._rp={};}
+          allRows.push(row);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      setData(allRows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
+
+  var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);}};
+
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapMin!=='all'&&(r.market_cap||0)<(mcapVals[mcapMin]||0))return false;
+    if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
+    if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
+    if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
+    if(!r._rp)return false;
+    if(minBounce&&(r._rp.bounce_rate_1x||0)<parseFloat(minBounce))return false;
+    if(minDrops&&(r._rp.drops_1x||0)<parseFloat(minDrops))return false;
+    return true;
+  }).sort(function(a,b){
+    if(sortBy==='ticker')return sortAsc?a.ticker.localeCompare(b.ticker):b.ticker.localeCompare(a.ticker);
+    var va=(a._rp||{})[sortBy]||parseFloat(a[sortBy])||0;
+    var vb=(b._rp||{})[sortBy]||parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
+
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+  var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400,fontSize:6};};
+  var brColor=function(v){return v>=70?C.accent:v>=60?C.gold:v>=50?C.blue:C.warn;};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Recovery After Drop</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Recovery After Drop" sub="How stocks bounce after large down days (~1 year, 252 trading days)" info="Identifies stocks with strong mean-reversion after large drops. For each stock, finds all days where the close-to-close drop exceeded 1x ATR or 2x ATR, then measures the next day's open-to-close return. High bounce rate + high avg bounce = reliable recovery trade."/>
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
+      </div>}
+      {pipeStatus&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Filter Ticker</label>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+        <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><label style={lS}>Min Bounce Rate %</label><input value={minBounce} onChange={function(e){setMinBounce(e.target.value);}} style={iS} placeholder="e.g. 60" type="number" step="1"/></div>
+        <div><label style={lS}>Min Drop Events</label><input value={minDrops} onChange={function(e){setMinDrops(e.target.value);}} style={iS} placeholder="e.g. 10" type="number" step="1"/></div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1x ATR section:</span> Days where the stock dropped more than its average daily range. These are notable selloffs that stand out from normal trading.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>2x ATR section:</span> Days where the stock dropped more than TWICE its normal range. These are extreme selloffs — rarer but potentially stronger bounce signals.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.gold}}>The trade:</span> Stock drops more than 1x ATR today. You check the table: it has a 72% bounce rate with +1.5% avg bounce. You buy the close, set TP at 1%, and sell the next day. Over time, the edge compounds.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Bounce Rate:</span> % of drop days where next day closed green. <span style={{color:C.accent,fontWeight:700}}>Avg Bounce:</span> Average next-day return. <span style={{color:C.accent,fontWeight:700}}>Recovery Ratio:</span> What fraction of the drop is recovered the next day (0.45 = recovers 45% of the drop).</p>
+          <p style={{marginBottom:0,color:C.txtDim}}>Min Drop Events filter ensures statistical significance. A 100% bounce rate on 2 events means nothing. Look for 15+ drop events with 60%+ bounce rate.</p>
+        </div>
+      </div>
+    </Cd>
+
+    {filtered.length>0&&<Cd>
+      <SectionHead title="Results" sub={filtered.length+' stocks match'}/>
+      <div style={{overflowX:'auto',maxHeight:600}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:6}}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
+            <th onClick={function(){doSort('atr_pct_1y');}} style={thS('atr_pct_1y')}>ATR%</th>
+            <th style={{padding:'4px 1px',color:C.purple,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.purple}} colSpan="5">{'--- 1x ATR Drop ---'}</th>
+            <th style={{padding:'4px 1px',color:C.warn,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.warn}} colSpan="5">{'--- 2x ATR Drop ---'}</th>
+            <th onClick={function(){doSort('days_sampled');}} style={thS('days_sampled')}>Days</th>
+          </tr>
+          <tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:20,background:C.bgCard}}>
+            <th colSpan="5"></th>
+            <th onClick={function(){doSort('drops_1x');}} style={thS('drops_1x')}>Drops</th>
+            <th onClick={function(){doSort('bounce_rate_1x');}} style={thS('bounce_rate_1x')}>Bounce%</th>
+            <th onClick={function(){doSort('avg_bounce_1x');}} style={thS('avg_bounce_1x')}>AvgBnc</th>
+            <th onClick={function(){doSort('avg_drop_1x');}} style={thS('avg_drop_1x')}>AvgDrp</th>
+            <th onClick={function(){doSort('recovery_ratio_1x');}} style={thS('recovery_ratio_1x')}>Recov</th>
+            <th onClick={function(){doSort('drops_2x');}} style={thS('drops_2x')}>Drops</th>
+            <th onClick={function(){doSort('bounce_rate_2x');}} style={thS('bounce_rate_2x')}>Bounce%</th>
+            <th onClick={function(){doSort('avg_bounce_2x');}} style={thS('avg_bounce_2x')}>AvgBnc</th>
+            <th onClick={function(){doSort('avg_drop_2x');}} style={thS('avg_drop_2x')}>AvgDrp</th>
+            <th onClick={function(){doSort('recovery_ratio_2x');}} style={thS('recovery_ratio_2x')}>Recov</th>
+            <th></th>
+          </tr></thead>
+          <tbody>{filtered.slice(0,300).map(function(r,idx){
+            var rp=r._rp||{};
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
+              <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(rp.atr_pct_1y||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{rp.drops_1x||0}</td>
+              <td style={{padding:'3px',color:brColor(rp.bounce_rate_1x||0),textAlign:'right',fontWeight:700}}>{(rp.bounce_rate_1x||0).toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:(rp.avg_bounce_1x||0)>0?C.accent:C.warn,textAlign:'right'}}>{(rp.avg_bounce_1x||0)>0?'+':''}{(rp.avg_bounce_1x||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{(rp.avg_drop_1x||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{((rp.recovery_ratio_1x||0)*100).toFixed(0)+'%'}</td>
+              <td style={{padding:'3px',color:rp.drops_2x>0?C.txtDim:C.grid,textAlign:'right'}}>{rp.drops_2x||0}</td>
+              <td style={{padding:'3px',color:rp.drops_2x>0?brColor(rp.bounce_rate_2x||0):C.grid,textAlign:'right',fontWeight:rp.drops_2x>0?700:400}}>{rp.drops_2x>0?(rp.bounce_rate_2x||0).toFixed(1)+'%':'--'}</td>
+              <td style={{padding:'3px',color:rp.drops_2x>0?((rp.avg_bounce_2x||0)>0?C.accent:C.warn):C.grid,textAlign:'right'}}>{rp.drops_2x>0?((rp.avg_bounce_2x||0)>0?'+':'')+((rp.avg_bounce_2x||0).toFixed(2))+'%':'--'}</td>
+              <td style={{padding:'3px',color:rp.drops_2x>0?C.warn:C.grid,textAlign:'right'}}>{rp.drops_2x>0?(rp.avg_drop_2x||0).toFixed(2)+'%':'--'}</td>
+              <td style={{padding:'3px',color:rp.drops_2x>0?C.gold:C.grid,textAlign:'right'}}>{rp.drops_2x>0?((rp.recovery_ratio_2x||0)*100).toFixed(0)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{rp.days_sampled||0}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {filtered.length>300&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 300 of {filtered.length}</div>}
+    </Cd>}
+
+    {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -10199,7 +10409,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -10231,6 +10441,7 @@ function App(){
     {page==='closehighscreener'&&<CloseHighScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dailyswingscreener'&&<DailySwingScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dirbias'&&<DirBiasPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='recovery'&&<RecoveryPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}

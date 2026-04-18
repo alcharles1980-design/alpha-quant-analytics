@@ -1855,6 +1855,59 @@ async function runScreener() {
     };
     for (var dwk in dowWinRates) dirBias[dwk] = dowWinRates[dwk];
 
+    // Recovery After Drop: bounce behavior after large down days
+    var longATR = 0;
+    if (abn > 1) {
+      var atrS2 = 0;
+      for (var rai = 1; rai < abn; rai++) {
+        atrS2 += Math.max(ab[rai].h - ab[rai].l, Math.abs(ab[rai].h - ab[rai - 1].c), Math.abs(ab[rai].l - ab[rai - 1].c));
+      }
+      longATR = atrS2 / (abn - 1);
+    }
+    var longATRPct = cand.price > 0 ? (longATR / cand.price) * 100 : 0;
+
+    // 1x ATR drops and 2x ATR drops
+    var drops1x = [], drops2x = [];
+    var bounces1x = [], bounces2x = [];
+    var recoveries1x = [], recoveries2x = [];
+    for (var rdi = 1; rdi < abn - 1; rdi++) {
+      var dropPct = (ab[rdi].c - ab[rdi - 1].c) / ab[rdi - 1].c * 100;
+      var dropAbs = Math.abs(ab[rdi].c - ab[rdi - 1].c);
+      if (dropPct >= 0) continue; // not a drop
+      var nextRet = (ab[rdi + 1].c - ab[rdi + 1].o) / ab[rdi + 1].o * 100; // next day open-to-close
+      var nextBounce = ab[rdi + 1].c > ab[rdi + 1].o; // closed green
+      var recovRatio = Math.abs(dropPct) > 0 ? Math.min(nextRet / Math.abs(dropPct), 2) : 0; // cap at 200%
+      if (dropAbs >= longATR) {
+        drops1x.push(dropPct);
+        bounces1x.push(nextBounce ? 1 : 0);
+        recoveries1x.push({ ret: nextRet, ratio: recovRatio });
+      }
+      if (dropAbs >= longATR * 2) {
+        drops2x.push(dropPct);
+        bounces2x.push(nextBounce ? 1 : 0);
+        recoveries2x.push({ ret: nextRet, ratio: recovRatio });
+      }
+    }
+
+    var avg = function(arr) { if (!arr.length) return 0; var s = 0; for (var j = 0; j < arr.length; j++) s += arr[j]; return s / arr.length; };
+    var bounceRate1 = bounces1x.length > 0 ? Math.round(avg(bounces1x) * 1000) / 10 : 0;
+    var bounceRate2 = bounces2x.length > 0 ? Math.round(avg(bounces2x) * 1000) / 10 : 0;
+    var avgBounce1 = recoveries1x.length > 0 ? Math.round(avg(recoveries1x.map(function(r2){return r2.ret;})) * 1000) / 1000 : 0;
+    var avgBounce2 = recoveries2x.length > 0 ? Math.round(avg(recoveries2x.map(function(r2){return r2.ret;})) * 1000) / 1000 : 0;
+    var avgDrop1 = drops1x.length > 0 ? Math.round(avg(drops1x) * 1000) / 1000 : 0;
+    var avgDrop2 = drops2x.length > 0 ? Math.round(avg(drops2x) * 1000) / 1000 : 0;
+    var avgRecov1 = recoveries1x.length > 0 ? Math.round(avg(recoveries1x.map(function(r2){return r2.ratio;})) * 1000) / 1000 : 0;
+    var avgRecov2 = recoveries2x.length > 0 ? Math.round(avg(recoveries2x.map(function(r2){return r2.ratio;})) * 1000) / 1000 : 0;
+
+    var recovProf = {
+      atr_pct_1y: Math.round(longATRPct * 100) / 100,
+      drops_1x: drops1x.length, bounce_rate_1x: bounceRate1, avg_bounce_1x: avgBounce1,
+      avg_drop_1x: avgDrop1, recovery_ratio_1x: avgRecov1,
+      drops_2x: drops2x.length, bounce_rate_2x: bounceRate2, avg_bounce_2x: avgBounce2,
+      avg_drop_2x: avgDrop2, recovery_ratio_2x: avgRecov2,
+      days_sampled: abn
+    };
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -1865,7 +1918,8 @@ async function runScreener() {
       reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: dailyOnlyScore,
       days_sampled: n, scan_date: scanDate,
       daily_close_high_profile: JSON.stringify(dailyCloseHigh),
-      directional_bias: JSON.stringify(dirBias)
+      directional_bias: JSON.stringify(dirBias),
+      recovery_profile: JSON.stringify(recovProf)
     });
 
     if (ci % 200 === 0) {
