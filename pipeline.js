@@ -1570,16 +1570,17 @@ async function runScreener() {
   var scanDate = new Date().toISOString().slice(0, 10);
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting oscillation screener...' });
 
-  // Step 1: Get last 25 trading days of grouped daily bars (all US stocks in one call per day)
-  var LOOKBACK = 25;
+  // Step 1: Get last 260 trading days (~1 year) of grouped daily bars
+  var LOOKBACK = 260;
+  var RECENT = 25; // short-term window for ATR, Hurst, etc.
   var days = [];
   var d = new Date(); d.setDate(d.getDate() - 1); // start yesterday
-  while (days.length < LOOKBACK + 10) { // extra buffer for weekends/holidays
+  while (days.length < LOOKBACK + 20) { // extra buffer for weekends/holidays
     var dow = d.getDay();
     if (dow !== 0 && dow !== 6) days.push(d.toISOString().slice(0, 10));
     d.setDate(d.getDate() - 1);
   }
-  days = days.slice(0, LOOKBACK + 5); // take enough to get 20 valid days
+  days = days.slice(0, LOOKBACK + 10);
   days.reverse(); // oldest first
 
   console.log('Fetching ' + days.length + ' days of grouped daily bars...');
@@ -1587,8 +1588,8 @@ async function runScreener() {
 
   for (var di = 0; di < days.length; di++) {
     var date = days[di];
-    var pct = Math.round((di / days.length) * 30);
-    await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Fetching grouped daily: ' + date + ' (' + (di + 1) + '/' + days.length + ')' });
+    var pct = Math.round((di / days.length) * 25);
+    await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Fetching daily bars: ' + date + ' (' + (di + 1) + '/' + days.length + ')' });
     try {
       var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
       var r = await fetch(url);
@@ -1685,7 +1686,8 @@ async function runScreener() {
   var results = [];
   for (var ci = 0; ci < candidates.length; ci++) {
     var cand = candidates[ci];
-    var bars = cand.bars;
+    var allBars = cand.bars;
+    var bars = allBars.length > RECENT ? allBars.slice(-RECENT) : allBars; // recent window for short-term metrics
     var n = bars.length;
 
     // ATR%
@@ -1799,6 +1801,60 @@ async function runScreener() {
     var dailyCloseHigh = { avg: Math.round(dcAvg * 1000) / 1000, min: Math.round(dcMin * 1000) / 1000, max: Math.round(dcMax * 1000) / 1000, std: Math.round(dcStd * 1000) / 1000, n: dcSwings.length };
     for (var dk in dcDowAvg) dailyCloseHigh[dk] = dcDowAvg[dk];
 
+    // Directional Bias & Consecutive Streaks (full year data)
+    var ab = allBars; var abn = ab.length;
+    var upDays = 0, dnDays = 0, avgUpPct = 0, avgDnPct = 0;
+    var upPcts = [], dnPcts = [];
+    for (var dbi = 0; dbi < abn; dbi++) {
+      var dayRet = (ab[dbi].c - ab[dbi].o) / ab[dbi].o * 100;
+      if (ab[dbi].c > ab[dbi].o) { upDays++; upPcts.push(dayRet); }
+      else if (ab[dbi].c < ab[dbi].o) { dnDays++; dnPcts.push(dayRet); }
+    }
+    var totalDays = upDays + dnDays;
+    var winRate = totalDays > 0 ? Math.round(upDays / totalDays * 1000) / 10 : 50;
+    if (upPcts.length > 0) { for (var j = 0; j < upPcts.length; j++) avgUpPct += upPcts[j]; avgUpPct /= upPcts.length; }
+    if (dnPcts.length > 0) { for (var j = 0; j < dnPcts.length; j++) avgDnPct += dnPcts[j]; avgDnPct /= dnPcts.length; }
+
+    // Per day-of-week win rate
+    var dowWins = {1:0,2:0,3:0,4:0,5:0}; var dowTotal = {1:0,2:0,3:0,4:0,5:0};
+    for (var dbi2 = 0; dbi2 < abn; dbi2++) {
+      var dbDow = new Date(ab[dbi2].date + 'T12:00:00Z').getDay();
+      if (dowTotal[dbDow] !== undefined) {
+        dowTotal[dbDow]++;
+        if (ab[dbi2].c > ab[dbi2].o) dowWins[dbDow]++;
+      }
+    }
+    var dowWinRates = {};
+    for (var dw2 = 1; dw2 <= 5; dw2++) {
+      dowWinRates[dowNames[dw2]] = dowTotal[dw2] > 0 ? Math.round(dowWins[dw2] / dowTotal[dw2] * 1000) / 10 : 50;
+    }
+
+    // Consecutive streaks
+    var upStreaks = [], dnStreaks = [];
+    var curStreak = 0, curDir = 0;
+    for (var dbi3 = 0; dbi3 < abn; dbi3++) {
+      var dir3 = ab[dbi3].c > ab[dbi3].o ? 1 : ab[dbi3].c < ab[dbi3].o ? -1 : 0;
+      if (dir3 === 0) continue;
+      if (dir3 === curDir) { curStreak++; }
+      else {
+        if (curStreak > 0) { if (curDir === 1) upStreaks.push(curStreak); else dnStreaks.push(curStreak); }
+        curStreak = 1; curDir = dir3;
+      }
+    }
+    if (curStreak > 0) { if (curDir === 1) upStreaks.push(curStreak); else dnStreaks.push(curStreak); }
+
+    var avgUpStreak = 0, maxUpStreak = 0, avgDnStreak = 0, maxDnStreak = 0;
+    if (upStreaks.length > 0) { for (var j = 0; j < upStreaks.length; j++) { avgUpStreak += upStreaks[j]; if (upStreaks[j] > maxUpStreak) maxUpStreak = upStreaks[j]; } avgUpStreak /= upStreaks.length; }
+    if (dnStreaks.length > 0) { for (var j = 0; j < dnStreaks.length; j++) { avgDnStreak += dnStreaks[j]; if (dnStreaks[j] > maxDnStreak) maxDnStreak = dnStreaks[j]; } avgDnStreak /= dnStreaks.length; }
+
+    var dirBias = {
+      win_rate: winRate, days_sampled: abn,
+      avg_up_pct: Math.round(avgUpPct * 1000) / 1000, avg_dn_pct: Math.round(avgDnPct * 1000) / 1000,
+      avg_up_streak: Math.round(avgUpStreak * 10) / 10, max_up_streak: maxUpStreak,
+      avg_dn_streak: Math.round(avgDnStreak * 10) / 10, max_dn_streak: maxDnStreak
+    };
+    for (var dwk in dowWinRates) dirBias[dwk] = dowWinRates[dwk];
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -1808,7 +1864,8 @@ async function runScreener() {
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
       reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: dailyOnlyScore,
       days_sampled: n, scan_date: scanDate,
-      daily_close_high_profile: JSON.stringify(dailyCloseHigh)
+      daily_close_high_profile: JSON.stringify(dailyCloseHigh),
+      directional_bias: JSON.stringify(dirBias)
     });
 
     if (ci % 200 === 0) {
