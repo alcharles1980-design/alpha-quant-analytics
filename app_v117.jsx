@@ -9429,6 +9429,275 @@ function RangePositionPage(p){
   </div>;
 }
 
+function ConfluencePage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
+  var s5=useState(null),scanTime=s5[0],setScanTime=s5[1];
+  var s6=useState(''),filter=s6[0],setFilter=s6[1];
+  var s7=useState('_conf'),sortBy=s7[0],setSortBy=s7[1];
+  var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
+  var s10=useState(false),scanning=s10[0],setScanning=s10[1];
+  var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var s12k=useState('all'),mcapMin=s12k[0],setMcapMin=s12k[1];
+  var s13k=useState('all'),mcapMax=s13k[0],setMcapMax=s13k[1];
+  var s14k=useState(''),priceMin=s14k[0],setPriceMin=s14k[1];
+  var s15k=useState(''),priceMax=s15k[0],setPriceMax=s15k[1];
+  var s16k=useState('buy'),viewMode=s16k[0],setViewMode=s16k[1];
+  var s17k=useState(3),minSignals=s17k[0],setMinSignals=s17k[1];
+  var pollRef=useRef(null);
+
+  var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+  var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var mcapOptsMax=[{v:'all',l:'No Max'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')load();}}
+      }catch(e){}
+    },3000);
+  };
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setErr(null);setScanning(true);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});
+      var dateRows=rDate.ok?await rDate.json():[];
+      if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}
+      var sd=dateRows[0].scan_date;setScanDate(sd);
+      if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var row=batch[i];
+          try{row._zp=typeof row.zscore_profile==='string'?JSON.parse(row.zscore_profile):row.zscore_profile||{};}catch(e2){row._zp={};}
+          try{row._rng=typeof row.range_position==='string'?JSON.parse(row.range_position):row.range_position||{};}catch(e2){row._rng={};}
+          try{row._rp=typeof row.recovery_profile==='string'?JSON.parse(row.recovery_profile):row.recovery_profile||{};}catch(e2){row._rp={};}
+          try{row._pp=typeof row.pullback_profile==='string'?JSON.parse(row.pullback_profile):row.pullback_profile||{};}catch(e2){row._pp={};}
+          try{row._db=typeof row.directional_bias==='string'?JSON.parse(row.directional_bias):row.directional_bias||{};}catch(e2){row._db={};}
+          try{row._sq=typeof row.squeeze_profile==='string'?JSON.parse(row.squeeze_profile):row.squeeze_profile||{};}catch(e2){row._sq={};}
+          allRows.push(row);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      setData(allRows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
+
+  var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);}};
+
+  // Signal detection
+  var getSignals=function(r,mode){
+    var signals=[];
+    if(mode==='buy'){
+      if(r._zp.current_z<=-2)signals.push({name:'Z < -2',val:r._zp.current_z.toFixed(2),color:C.warn});
+      else if(r._zp.current_z<=-1.5)signals.push({name:'Z < -1.5',val:r._zp.current_z.toFixed(2),color:'#ff8c00'});
+      if(r._rng.pctile<=20)signals.push({name:'Near 52w Low',val:r._rng.pctile.toFixed(0)+'%',color:C.warn});
+      if(r._rp.bounce_rate_1x>=60&&r._rp.drops_1x>=10)signals.push({name:'Bounce '+r._rp.bounce_rate_1x.toFixed(0)+'%',val:r._rp.drops_1x+' events',color:C.accent});
+      if(r._db.avg_dn_streak&&r._db.avg_dn_streak<=2.5)signals.push({name:'Short Dn Streak',val:r._db.avg_dn_streak.toFixed(1)+'d',color:C.gold});
+      if(r._db.win_rate>=55)signals.push({name:'Win Rate '+r._db.win_rate.toFixed(0)+'%',val:'bullish bias',color:C.accent});
+      if(r._sq.in_squeeze)signals.push({name:'In Squeeze',val:r._sq.days_in_squeeze+'d',color:C.purple});
+    }else{
+      if(r._zp.current_z>=2)signals.push({name:'Z > +2',val:'+'+r._zp.current_z.toFixed(2),color:C.accent});
+      else if(r._zp.current_z>=1.5)signals.push({name:'Z > +1.5',val:'+'+r._zp.current_z.toFixed(2),color:'#00cc88'});
+      if(r._rng.pctile>=80)signals.push({name:'Near 52w High',val:r._rng.pctile.toFixed(0)+'%',color:C.accent});
+      if(r._pp.fade_rate_1x>=60&&r._pp.rallies_1x>=10)signals.push({name:'Fade '+r._pp.fade_rate_1x.toFixed(0)+'%',val:r._pp.rallies_1x+' events',color:C.warn});
+      if(r._db.avg_up_streak&&r._db.avg_up_streak<=2.5)signals.push({name:'Short Up Streak',val:r._db.avg_up_streak.toFixed(1)+'d',color:C.gold});
+      if(r._db.win_rate<=45)signals.push({name:'Win Rate '+r._db.win_rate.toFixed(0)+'%',val:'bearish bias',color:C.warn});
+      if(r._sq.in_squeeze)signals.push({name:'In Squeeze',val:r._sq.days_in_squeeze+'d',color:C.purple});
+    }
+    return signals;
+  };
+
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapMin!=='all'&&(r.market_cap||0)<(mcapVals[mcapMin]||0))return false;
+    if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
+    if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
+    if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
+    if(!r._zp.current_z&&r._zp.current_z!==0)return false;
+    var sigs=getSignals(r,viewMode);
+    return sigs.length>=minSignals;
+  }).map(function(r){
+    var sigs=getSignals(r,viewMode);
+    return Object.assign({},r,{_conf:sigs.length,_signals:sigs});
+  }).sort(function(a,b){
+    if(sortBy==='_conf')return sortAsc?(a._conf-b._conf):(b._conf-a._conf);
+    if(sortBy==='ticker')return sortAsc?a.ticker.localeCompare(b.ticker):b.ticker.localeCompare(a.ticker);
+    if(sortBy==='current_z'){var va2=(a._zp||{}).current_z||0;var vb2=(b._zp||{}).current_z||0;return sortAsc?(va2-vb2):(vb2-va2);}
+    if(sortBy==='pctile'){var va3=(a._rng||{}).pctile||0;var vb3=(b._rng||{}).pctile||0;return sortAsc?(va3-vb3):(vb3-va3);}
+    var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
+
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+  var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400,fontSize:6};};
+  var confColor=function(n){return n>=5?C.accent:n>=4?C.gold:n>=3?C.blue:C.txtDim;};
+  var zColor=function(z){if(z<=-2)return C.warn;if(z<=-1.5)return '#ff8c00';if(z>=2)return C.accent;if(z>=1.5)return '#00cc88';return C.txtDim;};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Multi-Signal Confluence</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Multi-Signal Confluence Scanner" sub="Stocks where multiple trading signals align simultaneously" info="Scans all 2,500 stocks and counts how many independent signals are active RIGHT NOW. More signals aligned = higher conviction trade. A stock that is Z-score oversold, near its 52-week low, has high bounce rate, short down streaks, AND is in a squeeze = maximum confluence."/>
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
+      </div>}
+      {pipeStatus&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
+
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={function(){setViewMode('buy');setSortBy('_conf');setSortAsc(false);}} style={{flex:1,padding:'12px',border:'1px solid '+(viewMode==='buy'?C.accent:C.border),borderRadius:6,background:viewMode==='buy'?C.accent:'transparent',color:viewMode==='buy'?C.bg:C.txtDim,fontFamily:F,fontSize:9,fontWeight:800,cursor:'pointer',letterSpacing:1}}>BUY SIGNALS</button>
+        <button onClick={function(){setViewMode('sell');setSortBy('_conf');setSortAsc(false);}} style={{flex:1,padding:'12px',border:'1px solid '+(viewMode==='sell'?C.warn:C.border),borderRadius:6,background:viewMode==='sell'?C.warn:'transparent',color:viewMode==='sell'?C.bg:C.txtDim,fontFamily:F,fontSize:9,fontWeight:800,cursor:'pointer',letterSpacing:1}}>SELL SIGNALS</button>
+      </div>
+
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Filter Ticker</label>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+        <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
+      </div>
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Min Signals Required</label>
+        <div style={{display:'flex',gap:4}}>
+          {[2,3,4,5].map(function(n){return <button key={n} onClick={function(){setMinSignals(n);}} style={{flex:1,padding:'8px',border:'1px solid '+(minSignals===n?C.accent:C.border),borderRadius:4,background:minSignals===n?C.accent:'transparent',color:minSignals===n?C.bg:C.txtDim,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>{n+'+'}</button>;})}
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>{viewMode==='buy'?'BUY SIGNAL CRITERIA':'SELL SIGNAL CRITERIA'}</div>
+        <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.8}}>
+          {viewMode==='buy'?<div>
+            <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>Z {'<'} -2:</span> Stock is 2+ standard deviations below its 20-day average (deeply oversold)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>Near 52w Low:</span> Price is in the bottom 20% of its yearly range</p>
+            <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>High Bounce Rate:</span> After 1x ATR drops, next day closes green 60%+ of the time (10+ events)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.gold,fontWeight:700}}>Short Down Streak:</span> Average consecutive down days {'<'} 2.5 (reverses quickly)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>Bullish Win Rate:</span> Closes above open 55%+ of the time</p>
+            <p style={{marginBottom:0}}><span style={{color:C.purple,fontWeight:700}}>In Squeeze:</span> Bollinger Bands at extreme compression (breakout imminent)</p>
+          </div>:<div>
+            <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>Z {'>'} +2:</span> Stock is 2+ standard deviations above its 20-day average (overbought)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>Near 52w High:</span> Price is in the top 20% of its yearly range</p>
+            <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>High Fade Rate:</span> After 1x ATR rallies, next day closes red 60%+ of the time (10+ events)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.gold,fontWeight:700}}>Short Up Streak:</span> Average consecutive up days {'<'} 2.5 (reverses quickly)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>Bearish Win Rate:</span> Closes above open less than 45% of the time</p>
+            <p style={{marginBottom:0}}><span style={{color:C.purple,fontWeight:700}}>In Squeeze:</span> Bollinger Bands at extreme compression (breakout imminent)</p>
+          </div>}
+        </div>
+      </div>
+    </Cd>
+
+    {filtered.length>0&&<Cd>
+      <SectionHead title={viewMode==='buy'?'Buy Candidates':'Sell Candidates'} sub={filtered.length+' stocks with '+minSignals+'+ signals'}/>
+      <div style={{overflowX:'auto',maxHeight:700}}>
+        {filtered.slice(0,100).map(function(r,idx){
+          return <div key={r.ticker} style={{padding:'10px 12px',borderBottom:'1px solid '+C.border,background:idx<3?'rgba('+(viewMode==='buy'?'0,229,160':'255,92,58')+',0.04)':'transparent'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{color:confColor(r._conf),fontSize:16,fontWeight:800,fontFamily:F}}>{r._conf}</span>
+                <div>
+                  <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{r.ticker}</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+r.price.toFixed(2)+' | '+fmtMcap(r.market_cap)}</div>
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{color:zColor(r._zp.current_z||0),fontSize:11,fontWeight:700,fontFamily:F}}>{'Z: '+(r._zp.current_z>0?'+':'')+(r._zp.current_z||0).toFixed(2)}</div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Range: '+(r._rng.pctile||0).toFixed(0)+'%'}</div>
+              </div>
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              {r._signals.map(function(sig,si){
+                return <div key={si} style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(255,255,255,0.05)',border:'1px solid '+sig.color+'60',borderRadius:4,padding:'2px 6px'}}>
+                  <span style={{color:sig.color,fontSize:7,fontWeight:700,fontFamily:F}}>{sig.name}</span>
+                  <span style={{color:C.txtDim,fontSize:6,fontFamily:F}}>{sig.val}</span>
+                </div>;
+              })}
+            </div>
+          </div>;
+        })}
+      </div>
+      {filtered.length>100&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 100 of {filtered.length}</div>}
+    </Cd>}
+
+    {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks have {minSignals}+ signals. Try lowering the minimum.</div></Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to trading with multi-signal confluence">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is Confluence?</p>
+          <p style={{marginBottom:4,fontSize:9}}>Confluence means multiple independent signals pointing in the same direction at the same time. One signal alone might be a 55% edge. But when 4 different signals all say "buy" simultaneously, the probability of a successful trade increases significantly because each signal is measuring a different aspect of the stock's behavior.</p>
+          <p style={{fontSize:9}}>This page does the work of checking every other Stage 6 tool for you and shows only the stocks where multiple signals align RIGHT NOW.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Choose BUY SIGNALS or SELL SIGNALS. Buy mode finds oversold stocks with bounce potential. Sell mode finds overbought stocks with pullback potential.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Set minimum signals to 3+ for a balanced view, or 4+ for high-conviction only. 5+ signals is rare but extremely high probability.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Review the results. Each stock shows a large confluence number (how many signals are active) and colored signal badges showing exactly WHICH signals triggered.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> The top 3 results are highlighted. These are your highest-conviction trades today.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Click into individual tools (Z-Score, Recovery, Range Position) for deeper analysis on any stock that interests you.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding The Signal Badges</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Each badge shows:</span> The signal name (e.g. "Z {'<'} -2") and a supporting detail (e.g. "-2.31"). The badge border color matches the signal type for quick visual scanning.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Signal count (large number):</span> The total number of active signals. This is the confluence score. Higher = more signals agree = higher conviction.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Z-score and Range %:</span> Shown to the right of each ticker for quick reference without needing to read every badge.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>You open Buy Signals with 3+ minimum. SOFI appears with confluence score 5: Z {'<'} -2 (-2.3), Near 52w Low (12%), Bounce 68% (22 events), Short Dn Streak (1.8d), Win Rate 57%. Five independent metrics all confirm SOFI is oversold and historically bounces from this level.</p>
+          <p style={{marginBottom:4,fontSize:9}}>You buy SOFI. Over the next 3-5 days, the mean-reversion tendency (confirmed by 5 signals) drives the price back toward its average. You sell at your target.</p>
+          <p style={{fontSize:9,color:C.warn}}>Caution: Even 5+ signals can fail during genuine regime changes (earnings shock, sector crash, Fed surprise). Confluence increases probability but never guarantees outcome. Always size positions appropriately.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -11526,7 +11795,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -11563,6 +11832,7 @@ function App(){
     {page==='zscore'&&<ZScorePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='squeeze'&&<SqueezePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='rangepos'&&<RangePositionPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='confluence'&&<ConfluencePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
