@@ -2568,7 +2568,9 @@ async function runScreener() {
         var hPctile = Math.round(hRank / hSorted.length * 100);
         // Trend: last 3 vs first portion
         var hTrend = 'STABLE';
+        var hAvg3 = hLast;
         if (hArr.length >= 3) {
+          hAvg3 = (hArr[hArr.length - 3].atr + hArr[hArr.length - 2].atr + hArr[hArr.length - 1].atr) / 3;
           var prev2avg = (hArr[hArr.length - 3].atr + hArr[hArr.length - 2].atr) / 2;
           if (prev2avg > 0) {
             var tRatio = hLast / prev2avg;
@@ -2576,7 +2578,7 @@ async function runScreener() {
             else if (tRatio <= 0.8) hTrend = 'CONTRACTING';
           }
         }
-        hrRegime[h3] = { avg: Math.round(hAvg * 1000) / 1000, last: Math.round(hLast * 1000) / 1000, ratio: hRatio, trend: hTrend, pctile: hPctile, n: hArr.length };
+        hrRegime[h3] = { avg: Math.round(hAvg * 1000) / 1000, avg3: Math.round(hAvg3 * 1000) / 1000, last: Math.round(hLast * 1000) / 1000, ratio: hRatio, trend: hTrend, pctile: hPctile, n: hArr.length };
         if (hRatio > hottestRatio) { hottestRatio = hRatio; hottestHr = h3; }
         if (hRatio < coolestRatio) { coolestRatio = hRatio; coolestHr = h3; }
         if (hTrend === 'EXPANDING') expandingCount++;

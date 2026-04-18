@@ -10118,7 +10118,8 @@ function HourlyRegimePage(p){
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
             <thead><tr style={{borderBottom:'1px solid '+C.border}}>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg ATR%</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Avg</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>3d Avg</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Last Day</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Ratio</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Pctile</th>
@@ -10129,6 +10130,7 @@ function HourlyRegimePage(p){
               return <tr key={h} style={{borderBottom:'1px solid '+C.grid,background:h===detailData._hvr.hottest_hr?'rgba(255,92,58,0.06)':h===detailData._hvr.coolest_hr?'rgba(0,229,160,0.06)':'transparent'}}>
                 <td style={{padding:'4px 6px',color:C.txtBright,fontWeight:700}}>{fmtHr(h)}</td>
                 <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{(hr.avg||0).toFixed(3)+'%'}</td>
+                <td style={{padding:'4px 3px',color:(hr.avg3||0)>(hr.avg||0)?C.gold:(hr.avg3||0)<(hr.avg||0)*0.8?C.blue:C.txtDim,textAlign:'right'}}>{(hr.avg3||0).toFixed(3)+'%'}</td>
                 <td style={{padding:'4px 3px',color:C.txt,textAlign:'right',fontWeight:700}}>{(hr.last||0).toFixed(3)+'%'}</td>
                 <td style={{padding:'4px 3px',color:ratioColor(hr.ratio||1),textAlign:'right',fontWeight:700}}>{(hr.ratio||1).toFixed(2)+'x'}</td>
                 <td style={{padding:'4px 3px',color:ratioColor(hr.ratio||1),textAlign:'right'}}>{(hr.pctile||0)+'%'}</td>
