@@ -6503,7 +6503,8 @@ function OscillationScreenerPage(p){
     }catch(e2){setErr(e2.message);}
     setLoadingHourly(false);
   };
-  var s9=useState('all'),mcapFilter=s9[0],setMcapFilter=s9[1];
+  var s9=useState('all'),mcapMin=s9[0],setMcapMin=s9[1];
+  var s9b=useState('all'),mcapMax=s9b[0],setMcapMax=s9b[1];
   var s10=useState('combined'),rankMode=s10[0],setRankMode=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
   var pollRef=useRef(null);
@@ -6610,13 +6611,12 @@ function OscillationScreenerPage(p){
 
   var sorted=data?data.slice().filter(function(r){
     if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
-    if(mcapFilter!=='all'){
+    if(mcapMin!=='all'||mcapMax!=='all'){
       var mc=r.market_cap||0;
-      var mins={
-        '100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,
-        '10b':10e9,'50b':50e9,'100b':100e9
-      };
-      if(mc<(mins[mcapFilter]||0))return false;
+      var mins={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+      var maxs={'all':Infinity,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+      if(mcapMin!=='all'&&mc<(mins[mcapMin]||0))return false;
+      if(mcapMax!=='all'&&mc>(maxs[mcapMax]||Infinity))return false;
     }
     if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
     if(etfFilter==='stocks'&&r.ticker_type==='ETF')return false;
@@ -6666,25 +6666,39 @@ function OscillationScreenerPage(p){
     <Cd glow={true}>
       <SectionHead title="Oscillation Trading Screener" sub="S&P 500 + Russell 2000 ranked by mean-reversion quality" info="Screens ~2500 liquid US stocks for oscillation-trading suitability. Raw volatility is the wrong metric - what matters is intraday mean-reversion: high realized range with low directional trend. A stock dropping 8% straight is useless for oscillation trading; one chopping +/-3% around a mean all day is ideal."/>
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
-        <div><label style={lS}>Min Market Cap</label>
-          <select value={mcapFilter} onChange={function(e){setMcapFilter(e.target.value);}} style={iS}>
-            <option value="all">All</option>
-            <option value="100m">$100M+</option>
-            <option value="500m">$500M+</option>
-            <option value="1b">$1B+</option>
-            <option value="5b">$5B+</option>
-            <option value="10b">$10B+</option>
-            <option value="50b">$50B+</option>
-            <option value="100b">$100B+</option>
-          </select>
-        </div>
         <div><label style={lS}>Type</label>
           <select value={etfFilter} onChange={function(e){setEtfFilter(e.target.value);}} style={iS}>
             <option value="all">All</option>
             <option value="stocks">Stocks Only</option>
             <option value="etfs">ETFs Only</option>
+          </select>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Min Market Cap</label>
+          <select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>
+            <option value="all">No Min</option>
+            <option value="100m">$100M</option>
+            <option value="500m">$500M</option>
+            <option value="1b">$1B</option>
+            <option value="5b">$5B</option>
+            <option value="10b">$10B</option>
+            <option value="50b">$50B</option>
+            <option value="100b">$100B</option>
+          </select>
+        </div>
+        <div><label style={lS}>Max Market Cap</label>
+          <select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>
+            <option value="all">No Max</option>
+            <option value="100m">$100M</option>
+            <option value="500m">$500M</option>
+            <option value="1b">$1B</option>
+            <option value="5b">$5B</option>
+            <option value="10b">$10B</option>
+            <option value="50b">$50B</option>
+            <option value="100b">$100B</option>
           </select>
         </div>
       </div>
