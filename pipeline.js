@@ -1908,6 +1908,46 @@ async function runScreener() {
       days_sampled: abn
     };
 
+    // Pullback After Rally: fade behavior after large up days
+    var rallies1x = [], rallies2x = [];
+    var fades1x = [], fades2x = [];
+    var fadeRatios1x = [], fadeRatios2x = [];
+    for (var rri = 1; rri < abn - 1; rri++) {
+      var rallyPct = (ab[rri].c - ab[rri - 1].c) / ab[rri - 1].c * 100;
+      var rallyAbs = Math.abs(ab[rri].c - ab[rri - 1].c);
+      if (rallyPct <= 0) continue; // not a rally
+      var nextRetR = (ab[rri + 1].c - ab[rri + 1].o) / ab[rri + 1].o * 100;
+      var nextFade = ab[rri + 1].c < ab[rri + 1].o; // closed red
+      var fadeRatio = rallyPct > 0 ? Math.min(Math.abs(nextRetR) / rallyPct, 2) : 0;
+      if (rallyAbs >= longATR) {
+        rallies1x.push(rallyPct);
+        fades1x.push(nextFade ? 1 : 0);
+        fadeRatios1x.push({ ret: nextRetR, ratio: fadeRatio });
+      }
+      if (rallyAbs >= longATR * 2) {
+        rallies2x.push(rallyPct);
+        fades2x.push(nextFade ? 1 : 0);
+        fadeRatios2x.push({ ret: nextRetR, ratio: fadeRatio });
+      }
+    }
+    var fadeRate1 = fades1x.length > 0 ? Math.round(avg(fades1x) * 1000) / 10 : 0;
+    var fadeRate2 = fades2x.length > 0 ? Math.round(avg(fades2x) * 1000) / 10 : 0;
+    var avgFade1 = fadeRatios1x.length > 0 ? Math.round(avg(fadeRatios1x.map(function(r2){return r2.ret;})) * 1000) / 1000 : 0;
+    var avgFade2 = fadeRatios2x.length > 0 ? Math.round(avg(fadeRatios2x.map(function(r2){return r2.ret;})) * 1000) / 1000 : 0;
+    var avgRally1 = rallies1x.length > 0 ? Math.round(avg(rallies1x) * 1000) / 1000 : 0;
+    var avgRally2 = rallies2x.length > 0 ? Math.round(avg(rallies2x) * 1000) / 1000 : 0;
+    var avgFadeRatio1 = fadeRatios1x.length > 0 ? Math.round(avg(fadeRatios1x.map(function(r2){return r2.ratio;})) * 1000) / 1000 : 0;
+    var avgFadeRatio2 = fadeRatios2x.length > 0 ? Math.round(avg(fadeRatios2x.map(function(r2){return r2.ratio;})) * 1000) / 1000 : 0;
+
+    var pullProf = {
+      atr_pct_1y: Math.round(longATRPct * 100) / 100,
+      rallies_1x: rallies1x.length, fade_rate_1x: fadeRate1, avg_fade_1x: avgFade1,
+      avg_rally_1x: avgRally1, fade_ratio_1x: avgFadeRatio1,
+      rallies_2x: rallies2x.length, fade_rate_2x: fadeRate2, avg_fade_2x: avgFade2,
+      avg_rally_2x: avgRally2, fade_ratio_2x: avgFadeRatio2,
+      days_sampled: abn
+    };
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -1919,7 +1959,8 @@ async function runScreener() {
       days_sampled: n, scan_date: scanDate,
       daily_close_high_profile: JSON.stringify(dailyCloseHigh),
       directional_bias: JSON.stringify(dirBias),
-      recovery_profile: JSON.stringify(recovProf)
+      recovery_profile: JSON.stringify(recovProf),
+      pullback_profile: JSON.stringify(pullProf)
     });
 
     if (ci % 200 === 0) {
