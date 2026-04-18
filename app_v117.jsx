@@ -6446,8 +6446,8 @@ function OscillationScreenerPage(p){
     try{
       // Get last 5 trading days
       var days2=[];var d2=new Date();d2.setDate(d2.getDate()-1);
-      while(days2.length<8){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
-      var from2=days2[Math.min(days2.length-1,4)];var to2=days2[0];
+      while(days2.length<15){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
+      var from2=days2[Math.min(days2.length-1,9)];var to2=days2[0];
       var url2='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
       var r2=await fetch(url2);
       if(!r2.ok){setErr('Polygon error '+r2.status);setLoadingHourly(false);return;}
@@ -6858,7 +6858,7 @@ function OscillationScreenerPage(p){
     </Cd>}
 
     <Cd>
-      <SectionHead title="Hourly Oscillation Profile" sub="Oscillations per hour for a specific stock (1-min bars, 5 days)"/>
+      <SectionHead title="Hourly Oscillation Profile" sub="Oscillations per hour for a specific stock (1-min bars, 10 days)"/>
       <div style={{display:'flex',gap:6,marginTop:4}}>
         <input value={hourlyTicker} onChange={function(e){setHourlyTicker(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. AAPL"/>
         <button onClick={function(){if(hourlyTicker)fetchHourlyOsc(hourlyTicker);}} disabled={loadingHourly} style={Object.assign({},bB,{width:'auto',padding:'10px 20px',background:loadingHourly?C.border:'linear-gradient(135deg,#3d9eff,#1860c0)',color:loadingHourly?C.txtDim:'#fff',fontSize:8})}>{loadingHourly?'Loading...':'View'}</button>
@@ -6923,8 +6923,8 @@ function OscillationScreenerPage(p){
           <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Two-Pass Scanning Architecture</p>
           <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 1: Daily Bars (25 trading days)</p>
           <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Uses Polygon grouped daily bars — a single API call returns open/high/low/close/volume for every US stock for that day. Across 25 days, we compute daily-timeframe metrics: Yang-Zhang volatility, Parkinson volatility, daily Hurst exponent, ATR%, oscillation-to-drift ratio, and reversal percentage. These capture the stock's multi-day character — does it trend across days or mean-revert?</p>
-          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 2: 1-Minute Bars (5 trading days, per stock)</p>
-          <p style={{paddingLeft:8,fontSize:9}}>Fetches 1-minute OHLCV bars for each of the ~2,500 candidates individually. This produces ~2,400 data points per stock (480 minutes × 5 days). From these bars we compute intraday metrics that capture what happens <span style={{color:C.accent,fontWeight:700}}>within</span> each trading day — the timescale where oscillation cycles actually complete. 1-minute resolution catches reversals that 5-minute or 15-minute bars would smooth over.</p>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 2: 1-Minute Bars (10 trading days, per stock)</p>
+          <p style={{paddingLeft:8,fontSize:9}}>Fetches 1-minute OHLCV bars for each of the ~2,500 candidates individually. This produces ~9,600 data points per stock (480 minutes x 10 days). From these bars we compute intraday metrics that capture what happens <span style={{color:C.accent,fontWeight:700}}>within</span> each trading day — the timescale where oscillation cycles actually complete. 1-minute resolution catches reversals that 5-minute or 15-minute bars would smooth over.</p>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent+'80',marginBottom:12}}>
@@ -6933,7 +6933,7 @@ function OscillationScreenerPage(p){
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 1:</span> Walk through every 1-minute bar sequentially. Track the current direction — is the price moving up or down from the previous bar?</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 2:</span> As long as the price keeps moving in the same direction, the "run" continues. Record the starting price of the run.</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 3:</span> The moment the direction reverses, the run is "completed." Measure the dollar distance from the run's start to its peak — this is one completed excursion.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 4:</span> Repeat for every run across all 5 days of 1-minute data. Average all completed excursion sizes.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 4:</span> Repeat for every run across all 10 days of 1-minute data. Average all completed excursion sizes.</p>
           <p style={{marginBottom:8,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Result:</span> <span style={{color:C.accent,fontWeight:700}}>Osc$</span> = average swing size in dollars. <span style={{color:C.accent,fontWeight:700}}>Osc%</span> = same as percentage of price.</p>
           <p style={{marginBottom:6,fontSize:9,color:C.txtBright,fontWeight:700}}>Example: TMDX at $109</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>If the system measures 800 completed directional runs over 5 days, and the average run size is $0.28, then Osc$ = $0.28 and Osc% = 0.257%. This means the price typically swings $0.28 before reversing direction.</p>
@@ -6962,7 +6962,7 @@ function OscillationScreenerPage(p){
           <p style={{marginBottom:6,fontSize:9}}>The session toggles (Pre / Main / Post / Night / Morning) let you see which hours produce the best oscillation. Most stocks behave very differently across sessions:</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Pre-Market (4-9:30 AM):</span> Low volume, wide spreads. Some stocks show excellent mean-reversion here as overnight gaps get absorbed. Others barely trade. The Osc% during pre-market tells you if the bot can profitably operate before the open.</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Main Market (9:30-4 PM):</span> Highest volume and tightest spreads. Usually the best oscillation quality. The first 30 minutes often show outsized excursions from the opening auction, while midday (11 AM - 2 PM) tends to be the choppiest with lowest directional trend.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Post-Market (4-8 PM):</span> Volume drops sharply. Oscillation quality varies — some stocks continue to chop on earnings reactions, others flatline. Check the bar count: if a stock only has 20 bars in post-market across 5 days, the metrics aren't reliable.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Post-Market (4-8 PM):</span> Volume drops sharply. Oscillation quality varies — some stocks continue to chop on earnings reactions, others flatline. Check the bar count: if a stock only has 20 bars in post-market across 10 days, the metrics aren't reliable.</p>
           <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Overnight (Night/Morning):</span> Most US stocks don't trade. Only relevant for 24-hour venues. Columns will show '--' for most tickers.</p>
         </div>
 

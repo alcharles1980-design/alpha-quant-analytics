@@ -1791,7 +1791,7 @@ async function runScreener() {
 
   // Step 3b: Fetch 1-min bars for intraday metrics
   console.log('\nFetching 1-min intraday bars for ' + results.length + ' stocks...');
-  var intradayFrom = days[Math.max(0, days.length - 6)]; // last 5 trading days
+  var intradayFrom = days[Math.max(0, days.length - 11)]; // last 10 trading days
   var intradayTo = days[days.length - 1];
   var processed5m = 0;
 
