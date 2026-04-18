@@ -7025,10 +7025,17 @@ function ATRScreenerPage(p){
   var s9=useState({}),hourFilters=s9[0],setHourFilters=s9[1];
   var s10=useState(false),scanning=s10[0],setScanning=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var s12a=useState('all'),mcapMin=s12a[0],setMcapMin=s12a[1];
+  var s13a=useState('all'),mcapMax=s13a[0],setMcapMax=s13a[1];
+  var s14a=useState(''),priceMin=s14a[0],setPriceMin=s14a[1];
+  var s15a=useState(''),priceMax=s15a[0],setPriceMax=s15a[1];
   var pollRef=useRef(null);
 
-  var pollProgress=function(){
-    if(pollRef.current)clearInterval(pollRef.current);
+  var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+  var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var mcapOptsMax=[{v:'all',l:'No Max'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+
+  var pollProgress=function(){    if(pollRef.current)clearInterval(pollRef.current);
     pollRef.current=setInterval(async function(){
       try{
         var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
@@ -7102,6 +7109,10 @@ function ATRScreenerPage(p){
 
   var filtered=data?data.filter(function(r){
     if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapMin!=='all'&&(r.market_cap||0)<(mcapVals[mcapMin]||0))return false;
+    if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
+    if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
+    if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
     if(!r._hatr)return false;
     var hKeys=Object.keys(hourFilters);
     for(var i=0;i<hKeys.length;i++){
@@ -7150,6 +7161,14 @@ function ATRScreenerPage(p){
       <div style={{marginBottom:8}}>
         <label style={lS}>Filter Ticker</label>
         <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+        <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
       </div>
       <div style={{marginBottom:4}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -7232,7 +7251,15 @@ function SwingScreenerPage(p){
   var s9=useState({}),hourFilters=s9[0],setHourFilters=s9[1];
   var s10=useState(false),scanning=s10[0],setScanning=s10[1];
   var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var s12b=useState('all'),mcapMin=s12b[0],setMcapMin=s12b[1];
+  var s13b=useState('all'),mcapMax=s13b[0],setMcapMax=s13b[1];
+  var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
+  var s15b=useState(''),priceMax=s15b[0],setPriceMax=s15b[1];
   var pollRef=useRef(null);
+
+  var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+  var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var mcapOptsMax=[{v:'all',l:'No Max'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
 
   var pollProgress=function(){
     if(pollRef.current)clearInterval(pollRef.current);
@@ -7295,6 +7322,10 @@ function SwingScreenerPage(p){
 
   var filtered=data?data.filter(function(r){
     if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapMin!=='all'&&(r.market_cap||0)<(mcapVals[mcapMin]||0))return false;
+    if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
+    if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
+    if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
     if(!r._swing)return false;
     var hKeys=Object.keys(hourFilters);
     for(var i=0;i<hKeys.length;i++){
@@ -7342,6 +7373,14 @@ function SwingScreenerPage(p){
       <div style={{marginBottom:8}}>
         <label style={lS}>Filter Ticker</label>
         <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+        <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
       </div>
       <div style={{marginBottom:4}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
