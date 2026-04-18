@@ -7213,26 +7213,35 @@ function ATRScreenerPage(p){
 
     {data&&filtered.length===0&&<Cd><div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:20}}>No stocks match your ATR% filters. Try lowering the thresholds.</div></Cd>}
 
-    <CollapseStage title="How To Use This Tool" sub="Finding stocks with enough range during your trading hours">
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to finding stocks with enough price range during your trading hours">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What is Hourly ATR%?</p>
-          <p style={{fontSize:9}}>ATR% (Average True Range as a percentage) measures how much a stock's price moves during a specific hour. An ATR% of 3% at 10:00 means the stock typically moves 3% of its price between 10:00 and 11:00. For a $100 stock, that's $3 of range. This range is the raw material for oscillation trading — wider range means more price levels get crossed, creating more cycle opportunities.</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>ATR stands for Average True Range -- it measures how much a stock's price moves within each hour of the trading day. A higher ATR% means more price movement, which creates more opportunities for trading. This tool shows you the average ATR% for every hour (4 AM to 7 PM ET) across the last 10 trading days for 2,500 stocks.</p>
+          <p style={{marginBottom:4,fontSize:9}}>Think of it like this: if a stock has 5% ATR during the 10 AM hour, that means its price typically swings 5% between its high and low during that single hour. That's a lot of movement to capture.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Setting Filters</p>
-          <p style={{marginBottom:4,fontSize:9}}>Enter a minimum ATR% value for any hour you plan to trade. Leave hours blank if you don't care about that time slot. Only stocks meeting ALL your thresholds will appear in results.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Example 1:</span> Set 09:00 to 3% and 10:00 to 2%. This finds stocks that are volatile at the open AND maintain range into the next hour.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Example 2:</span> Set 16:00 to 1.5% and 17:00 to 1%. This finds stocks with enough post-market range for after-hours oscillation trading.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Example 3:</span> Set every hour from 09:00-15:00 to 1%. This finds stocks that maintain consistent volatility throughout the regular session — no dead zones.</p>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Decide which hours you want to trade. If you can only trade 9 AM to 12 PM, focus on those hours.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Enter your minimum ATR% threshold in the hour boxes. Start with 3% as a baseline -- stocks below 3% ATR don't move enough to generate meaningful profit per cycle.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> The results table instantly filters to show only stocks meeting ALL your thresholds. If too few stocks appear, lower your thresholds. If too many, raise them.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Use the MCap and Price filters to narrow to your preferred stock universe (e.g. $10-$100 price range, $1B+ market cap).</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Sort by any hour column to find which stocks have the highest ATR% during that specific hour.</p>
         </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Color Scale</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:'#ff5c3a'}}>Red (5%+):</span> Extremely volatile. High opportunity but also high risk of directional moves.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Gold (3-5%):</span> Very active. Strong oscillation potential for most TP% settings.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>Green (1.5-3%):</span> Good range. Suitable for moderate TP% settings.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Blue (0.5-1.5%):</span> Moderate. May work with tight TP% on higher-priced stocks.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.txtDim}}>Dim ({'{<'}0.5%):</span> Low range. Unlikely to generate enough movement for profitable cycles.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>#:</span> Rank position in the filtered results.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Ticker:</span> The stock symbol (e.g. AAPL, TSLA, SOFI).</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Price:</span> The most recent closing price of the stock.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>MCap:</span> Market capitalization -- the total value of all shares. $1.5B = $1.5 billion. Larger companies are generally more stable.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg:</span> The average ATR% across all 16 trading hours. A quick summary of overall volatility.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Hour columns (04-19):</span> Each column shows the average ATR% for that specific hour of the day in Eastern Time. Green ({'>'}5%) = very active. Gold ({'>'}3%) = good. Blue ({'>'}1%) = moderate. Dim ({'<'}1%) = quiet.</p>
+          <p style={{marginBottom:4,fontSize:9}}>Hours with active filters show a green background if the stock passes or red if it would fail (visible when searching for a specific ticker).</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>You want to trade during regular market hours (9:30 AM - 4 PM). You set 09:00 = 4%, 10:00 = 3%, 11:00 = 3%. The results show 45 stocks that have at least 4% range in the 9 AM hour AND 3% in both 10 AM and 11 AM.</p>
+          <p style={{marginBottom:4,fontSize:9}}>You sort by the 09:00 column and see SOFI at the top with 8.2% ATR. That means SOFI typically moves 8.2% of its price within the 9 AM hour alone -- plenty of range for your oscillation bot to cycle through buy-sell levels.</p>
         </div>
       </div>
     </CollapseStage>
@@ -7431,21 +7440,31 @@ function SwingScreenerPage(p){
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your swing% filters. Try lowering the thresholds.</div></Cd>}
 
-    <CollapseStage title="How To Use This Tool" sub="Finding stocks with the biggest inter-hour swing opportunities">
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to finding stocks with the biggest inter-hour swing opportunities">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What Is Low-to-Next-High Swing %?</p>
-          <p style={{fontSize:9}}>For each hour, this measures the percentage change from that hour's lowest price to the NEXT hour's highest price. A value of 3% means that on average, the price swings 3% upward from one hour's low to the following hour's high. This captures the maximum potential profit opportunity between consecutive hours.</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>This tool measures the percentage change from one hour's lowest price to the NEXT hour's highest price. It captures the maximum potential swing opportunity between consecutive hours.</p>
+          <p style={{marginBottom:4,fontSize:9}}>If a stock shows 3% for the 09:00 hour, it means: on average over 10 days, the lowest price during the 9 AM hour swings UP 3% to reach the highest price of the 10 AM hour. That 3% upswing is the opportunity window.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Why This Metric Matters</p>
-          <p style={{marginBottom:4,fontSize:9}}>A stock with 4% swing from 9 AM low to 10 AM high means if your bot buys near the 9 AM low, there's typically a 4% upswing in the next hour to capture. This directly maps to cycle profitability: larger swings = more levels crossed = more completed cycles.</p>
-          <p style={{fontSize:9}}>Unlike ATR% which measures range within a single hour, this metric captures the OPPORTUNITY between hours. A stock might have low ATR% within each hour but large swings between hours (gap moves). Conversely, a stock might chop wildly within each hour but end each hour near the same price (no inter-hour opportunity).</p>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Identify the hours you trade. Each hour's value represents the swing FROM that hour's low TO the next hour's high.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Enter minimum swing% thresholds. If you want at least 2% upside potential between 10 AM and 11 AM, enter 2 in the 10:00 box.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Stocks must meet ALL your thresholds simultaneously. Start with 1-2 hours, then add more to narrow results.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Compare with the ATR Screener -- a stock with high swing% but low ATR% might have a big gap between hours but little intra-hour movement.</p>
         </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Setting Thresholds</p>
-          <p style={{marginBottom:4,fontSize:9}}>Enter a minimum swing % for any hour. Only stocks where the average low-to-next-high swing meets or exceeds your threshold will appear. Use AND logic across all hours.</p>
-          <p style={{fontSize:9,color:C.gold}}>Example: Set 09:00 to 3% and 10:00 to 2%. Only stocks where the 9 AM low typically swings 3%+ to the 10 AM high AND the 10 AM low swings 2%+ to the 11 AM high will show.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Ticker / Price / MCap:</span> Stock symbol, last close price, and market capitalization.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg:</span> Average swing% across all hours. Higher = more overall inter-hour movement.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Hour columns (04-18):</span> Each shows: that hour's low to the next hour's high as a percentage. Green ({'>'}5%) = large swing. Gold ({'>'}3%) = good. Blue ({'>'}1%) = moderate. Red (negative) = the next hour's high was below this hour's low (stock dropped between hours).</p>
+          <p style={{marginBottom:4,fontSize:9}}>Hour 19 is disabled because there is no 'next hour' after 7 PM.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>You set 09:00 = 3%. The results show IREN with 4.1% in the 09:00 column. This means: on average, IREN's lowest price during the 9 AM hour swings up 4.1% to reach the highest price of the 10 AM hour. If IREN is at $48 and hits a low of $47.50 at 9:15 AM, the expected high in the 10 AM hour is approximately $49.45.</p>
+          <p style={{marginBottom:4,fontSize:9}}>Negative values (red) mean the stock tends to drop between those hours -- the next hour's high is below the current hour's low. This indicates a consistent downtrend during that window.</p>
         </div>
       </div>
     </CollapseStage>
@@ -7655,28 +7674,31 @@ function CloseHighScreenerPage(p){
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters. Try lowering the thresholds.</div></Cd>}
 
-    <CollapseStage title="How To Read This Data" sub="Understanding the hour close to next hour high relationship">
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to using hour close to next hour high data">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent+'80',marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>How To Read The Columns</p>
-          <p style={{marginBottom:6,fontSize:9}}>Each column header shows an arrow: <span style={{color:C.txtBright,fontWeight:700}}>08{'\u2192'}09</span> means "8 AM close to 9 AM high." The value is the average percentage swing upward from where price closed at the end of the 8 AM hour to the highest price reached during the 9 AM hour.</p>
-          <p style={{marginBottom:6,fontSize:9,color:C.gold,fontWeight:700}}>Example: INTC shows 3.39% in the 08{'\u2192'}09 column</p>
-          <p style={{fontSize:9}}>This means: on average over 10 trading days, INTC's price swung 3.39% upward from where it closed at 8:59 AM to the highest point it reached between 9:00-9:59 AM. If INTC closed the 8 AM hour at $68.00, the 9 AM high was typically around $70.30.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>This measures the percentage change from one hour's CLOSING price to the NEXT hour's HIGHEST price. Unlike Low-to-High which uses the extreme low, this uses where price actually settled at the end of the hour.</p>
+          <p style={{marginBottom:4,fontSize:9}}>This is more realistic because your bot holds positions at recent prices, not at the absolute lowest tick. The close price represents where the market agreed the stock was worth at hour end.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What This Means For Your Bot</p>
-          <p style={{marginBottom:4,fontSize:9}}>If your bot holds positions at the end of an hour, this metric tells you how much upside exists in the NEXT hour. A stock with 2%+ swing from the 9 AM close to the 10 AM high means there's typically a 2% upswing your buy levels could capture.</p>
-          <p style={{fontSize:9}}>The close price is where you'd realistically be positioned, not at the hour's extreme low. This makes the metric more conservative and actionable than the Low-to-High screener.</p>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Read the column headers -- each shows an arrow like '08{'>'}09' meaning: 8 AM hour close to 9 AM hour high.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Set minimum swing% thresholds for the hours you trade. Values here will be smaller than Low-to-High since the close is higher than the low.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Use this alongside Low-to-High. If Low-to-High shows 4% but Close-to-High shows only 1%, most of the swing happens within the hour (from low to close), not between hours.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Filter by MCap and Price to focus on your tradeable universe.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Close vs Low: Which Screener To Use?</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold}}>Low-to-Next-High:</span> The theoretical maximum swing. Assumes you bought at the hour's absolute low. Useful for understanding total range potential but unrealistic — you rarely buy at the exact bottom.</p>
-          <p style={{fontSize:9}}><span style={{color:C.gold}}>Close-to-Next-High:</span> The realistic swing from where price actually settled. Your bot holds positions at recent prices, not at the extreme low. This metric better reflects what the bot would actually capture. Values will always be smaller than Low-to-High for the same stock.</p>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Ticker / Price / MCap:</span> Stock symbol, last close price, market cap.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg:</span> Average close-to-next-high swing across all hours.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Hour columns (04{'>'}05 through 18{'>'}19):</span> The percentage from that hour's close to the next hour's high. The arrow notation makes the relationship clear: 08{'>'}09 = buy at 8 AM close, upside target is 9 AM high.</p>
+          <p style={{marginBottom:4,fontSize:9}}>Green ({'>'}5%) = large upside. Gold ({'>'}3%) = solid. Blue ({'>'}1%) = moderate. Red (negative) = stock typically drops from that hour's close to the next hour's high.</p>
         </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Setting Thresholds</p>
-          <p style={{marginBottom:4,fontSize:9}}>Enter a minimum swing % in any hour box. Only stocks where the average close-to-next-high swing meets your threshold for that hour will appear. All thresholds use AND logic — the stock must pass every active filter.</p>
-          <p style={{fontSize:9,color:C.gold}}>Start with one or two hours during your target trading session. For example, set 09{'\u2192'}10 to 1% to find stocks that typically swing at least 1% from the 9 AM close to the 10 AM high.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Close vs Low: When To Use Which</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Use Low-to-High when:</span> You're trying to understand the absolute maximum potential between hours. Good for sizing position limits and understanding total range.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Use Close-to-High when:</span> You're planning actual entries. Your bot or manual order will execute near recent prices (close), not at the hour's extreme low. This gives you a realistic expected upside.</p>
         </div>
       </div>
     </CollapseStage>
@@ -7895,6 +7917,38 @@ function DailySwingScreenerPage(p){
     </Cd>}
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+
+        <CollapseStage title="Complete User Guide" sub="Step-by-step guide to finding overnight swing opportunities">
+          <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+              <p style={{marginBottom:4,fontSize:9}}>This measures the percentage from one trading day's closing price to the NEXT trading day's highest price. It captures the overnight + next-day upside opportunity.</p>
+              <p style={{marginBottom:4,fontSize:9}}>If AAPL shows 1.5% average, it means: on average over 25 days, buying AAPL at the close gives you a 1.5% upswing to the next day's high. This is the swing trader's core metric -- it tells you how much upside to expect after buying at the close.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Set a minimum Avg Swing% to filter for stocks with enough daily movement. Start with 2% minimum.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Check the day-of-week columns. Some stocks swing more on certain days. If Tuesday shows 3% but Thursday shows 0.5%, you know to enter Monday's close for the Tuesday swing.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Look at Min and Max columns. Min shows the worst single day. If Min is deeply negative, the stock can gap down hard -- know your risk.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> StdDev tells you consistency. Low StdDev ({'{<'}1) = the swing is reliable. High StdDev ({'>'}3) = the average is misleading because the stock varies wildly.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Ticker / Price / MCap:</span> Stock symbol, price, market cap.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg:</span> Average close-to-next-day-high across all days. The core metric.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Min:</span> The worst single day -- the smallest (or most negative) close-to-next-high. Red values mean the next day's high was below the previous close (stock gapped down and never recovered).</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Max:</span> The best single day -- largest close-to-next-high swing.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>StdDev:</span> Standard deviation -- measures consistency. Lower = more predictable. Green ({'<'}1) = very consistent. Gold (1-2) = moderate. Red ({'>'}2) = erratic.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Mon{'>'}Tue through Fri{'>'}Mon:</span> Average swing for each day of the week. Mon{'>'}Tue means Monday close to Tuesday high. Fri{'>'}Mon includes the weekend gap -- some stocks gap significantly over weekends.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+              <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+              <p style={{marginBottom:4,fontSize:9}}>You filter for stocks with Avg {'>'}2%, StdDev {'<'}2, MCap {'>'}$1B. SOFI appears with Avg 2.8%, Mon{'>'}Tue 3.5%, Fri{'>'}Mon 1.2%. You know Monday is the best day to buy SOFI at the close because Tuesday typically swings the highest. Friday close is weaker because the weekend gap is smaller.</p>
+              <p style={{marginBottom:4,fontSize:9}}>You buy SOFI at Monday's close. Tuesday morning, the stock hits its typical 3.5% upswing. You sell at your target.</p>
+            </div>
+          </div>
+        </CollapseStage>
+
   </div>;
 }
 
@@ -8099,6 +8153,39 @@ function DirBiasPage(p){
     </Cd>}
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+
+        <CollapseStage title="Complete User Guide" sub="Step-by-step guide to understanding directional bias and streak patterns">
+          <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+              <p style={{marginBottom:4,fontSize:9}}>This tool answers two questions: (1) Does this stock close higher than it opens more often than not? (2) How many consecutive days does it typically move in the same direction before reversing?</p>
+              <p style={{marginBottom:4,fontSize:9}}>A stock with 62% win rate closes green on 6 out of 10 days. Combined with average up/down magnitudes, this tells you if the stock has a structural bullish or bearish bias. Streak data tells you how long trends last before reversing -- critical for timing entries.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Sort by Win% to find stocks with the strongest directional bias. Above 55% is notable. Above 60% is strong.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Compare Avg Up% vs Avg Down%. A stock with +1.5% avg up and -1.0% avg down has an asymmetric edge -- wins are 50% larger than losses.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Check Avg Down Streak. If it's 1.5, the stock rarely drops more than 2 days in a row. On day 2 of a selloff, you can buy with confidence that a reversal is likely.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Check per-DOW win rates. If Wednesday shows 70% but Friday shows 45%, you know to be bullish mid-week and cautious on Fridays.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Win%:</span> Percentage of days the stock closes above its open over ~252 trading days. Green ({'>'}60%) = strong bullish bias. Gold ({'>'}55%) = moderate. Red ({'<'}50%) = bearish bias.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg Up:</span> Average percentage gain on up days (close {'>'} open). Larger = bigger wins when the stock moves in your favor.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg Dn:</span> Average percentage loss on down days (close {'<'} open). Smaller magnitude = shallower pullbacks.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg Up Arrow / Max Up Arrow:</span> Average and maximum consecutive up days before a down day. Short avg (1-2) = frequent reversals.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg Down Arrow / Max Down Arrow:</span> Average and maximum consecutive down days before an up day. Use Max to understand worst-case drawdown duration.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Days:</span> Total trading days in the sample. More days = more reliable statistics. Look for 200+.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Mon-Fri:</span> Win rate broken down by day of week. Helps identify day-specific patterns.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+              <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+              <p style={{marginBottom:4,fontSize:9}}>AAPL shows Win% 58%, Avg Up +1.1%, Avg Dn -0.9%, Avg Down Streak 1.8, Max Down Streak 5. This tells you: AAPL closes green more often than not, the gains are slightly larger than losses, and it rarely drops more than 2 consecutive days.</p>
+              <p style={{marginBottom:4,fontSize:9}}>When AAPL has been red for 2 days straight, history says it's very likely to reverse tomorrow. You buy at the close of day 2 knowing the avg down streak is only 1.8 days.</p>
+            </div>
+          </div>
+        </CollapseStage>
+
   </div>;
 }
 
@@ -8309,6 +8396,41 @@ function RecoveryPage(p){
     </Cd>}
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+
+        <CollapseStage title="Complete User Guide" sub="Step-by-step guide to trading the bounce after large selloffs">
+          <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+              <p style={{marginBottom:4,fontSize:9}}>When a stock drops significantly in one day (more than its normal daily range), does it bounce back the next day? This tool backtests that exact question across ~252 trading days.</p>
+              <p style={{marginBottom:4,fontSize:9}}>A '1x ATR drop' means the stock fell more than its average daily range -- a notable selloff. A '2x ATR drop' means it fell TWICE the normal range -- an extreme selloff. For each type, the tool measures what happened the following trading day.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Sort by Bounce% in the 1x ATR section to find stocks that most reliably bounce after drops.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Check the Drops count -- this is your sample size. Below 10 events, the bounce rate is unreliable. Look for 15+ drops for confidence.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Look at AvgBnc (average bounce). This is your expected return if you buy the close after a drop. Positive = profitable on average.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Check the 2x ATR section. Extreme drops often produce even stronger bounces, but with fewer events. If a stock has 5+ events at 2x ATR with 80%+ bounce rate, that's a high-conviction signal.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Set Min Bounce Rate to 60% and Min Drop Events to 15 to filter for statistically significant, reliable bouncers.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>ATR%:</span> The stock's average true range as a percentage of price, computed over ~1 year. This is the baseline for what counts as a 'large drop'.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Drops:</span> How many times the stock dropped more than 1x (or 2x) ATR in the past year. This is your sample size.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Bounce%:</span> Of those drop days, what percentage closed green the next day. Green ({'>'}70%) = very reliable bouncer. Gold ({'>'}60%) = good. Red ({'<'}50%) = doesn't reliably bounce.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgBnc:</span> Average next-day open-to-close return after a drop. Positive (green) = stock goes up on average. This is your expected profit per trade.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgDrp:</span> Average magnitude of the drops that triggered the signal. Larger drops may mean more volatile stocks.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Recov:</span> Recovery ratio -- what fraction of the drop is recovered the next day. 45% means the stock recovers about half the previous day's loss.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Days:</span> Total trading days in the sample (~252).</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+              <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>The Trade Setup</p>
+              <p style={{marginBottom:4,fontSize:9}}>Today SOFI drops 5% (more than its 1x ATR of 3.8%). You open this tool and check SOFI: 32 drop events, 72% bounce rate, +1.5% avg bounce. You buy SOFI at today's close.</p>
+              <p style={{marginBottom:4,fontSize:9}}>The next day, SOFI opens and you hold through the close. Historically, 72% of the time it closes green with an average gain of 1.5%. You sell at the close regardless of outcome to maintain discipline.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.warn}}>Risk:</span> The 28% of the time it doesn't bounce, it drops further. Always use position sizing appropriate for the loss scenario.</p>
+            </div>
+          </div>
+        </CollapseStage>
+
   </div>;
 }
 
@@ -8519,6 +8641,40 @@ function PullbackPage(p){
     </Cd>}
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+
+        <CollapseStage title="Complete User Guide" sub="Step-by-step guide to trading the fade after large rallies">
+          <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+              <p style={{marginBottom:4,fontSize:9}}>The mirror image of Recovery After Drop. When a stock rallies significantly in one day (more than its normal daily range), does it pull back the next day? This tool backtests that exact question.</p>
+              <p style={{marginBottom:4,fontSize:9}}>A '1x ATR rally' means the stock gained more than its average daily range -- a notable up day. For each rally, the tool measures if the next day closed red (faded) and by how much.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Sort by Fade% in the 1x ATR section to find stocks that most reliably pull back after rallies.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Check Rallies count for sample size. Need 15+ events for reliability.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Look at AvgFade -- a negative value means the stock drops on average after a big rally. This is your expected profit if you short/sell.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Cross-reference with Recovery After Drop. Stocks that BOTH bounce after drops AND fade after rallies are the strongest mean-reversion candidates -- they reliably snap back in both directions.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> The 2x ATR section shows what happens after extreme rallies. Often the fade is even stronger.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>ATR%:</span> Yearly average true range percentage. Baseline for what counts as a 'large rally'.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Rallies:</span> How many times the stock rallied more than 1x (or 2x) ATR in the past year.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Fade%:</span> Of those rally days, what percentage closed red the next day. Green ({'>'}70%) = very reliable fader. Gold ({'>'}60%) = good.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgFade:</span> Average next-day return after a rally. Negative (red) = stock pulls back on average. This is your expected profit if selling/shorting.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgRally:</span> Average magnitude of the rallies that triggered the signal.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>FadeR:</span> Fade ratio -- what fraction of the rally is given back the next day. 35% means the stock gives back about a third of the prior day's gain.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+              <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>The Trade Setup</p>
+              <p style={{marginBottom:4,fontSize:9}}>TSLA rallies 7% today (more than its 1x ATR of 4.5%). You check this tool: 28 rally events, 64% fade rate, -1.8% avg fade. You sell your position (or short) at today's close.</p>
+              <p style={{marginBottom:4,fontSize:9}}>The next day, 64% of the time TSLA closes red with an average pullback of 1.8%. You buy back at the close.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.warn}}>Risk:</span> 36% of the time the rally continues. Momentum stocks can run for multiple days. This strategy works best on mean-reverting stocks, not momentum names.</p>
+            </div>
+          </div>
+        </CollapseStage>
+
   </div>;
 }
 
@@ -8757,6 +8913,41 @@ function ZScorePage(p){
     </Cd>}
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+
+        <CollapseStage title="Complete User Guide" sub="Step-by-step guide to the most actionable swing trading signal">
+          <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+              <p style={{marginBottom:4,fontSize:9}}>The Z-score measures how far a stock's current price is from its 20-day moving average, expressed in standard deviations. A Z-score of -2 means the stock is 2 standard deviations BELOW its recent average -- deeply oversold. A Z-score of +2 means it's 2 standard deviations ABOVE -- overbought.</p>
+              <p style={{marginBottom:4,fontSize:9}}>This tool goes beyond just showing the Z-score. For each stock, it backtests what happened EVERY TIME the stock reached each Z-level over the past year. So you don't just know the stock is oversold -- you know exactly how it's historically responded to being this oversold.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Choose your mode. OVERSOLD (Buy) sorts the most negative Z-scores first -- these are stocks furthest below their average, potential buy candidates. OVERBOUGHT (Sell) sorts the most positive first -- potential sells.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Select a Z Threshold. Z {'<'} -2 is a standard oversold signal. Z {'<'} -2.5 is extreme oversold (fewer signals but higher conviction). Start with Z {'<'} -2.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Select Hold Days. How long would you hold after entering? 1 day = day trade. 3 days = short swing. 5 days = weekly swing. The backtest shows the avg return and win rate for each.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Set Min Win% to 60% to filter out stocks where the signal doesn't reliably predict a reversal.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Check the Events column. Below 10 events, the statistics are unreliable. 20+ events = high confidence.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+              <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Z:</span> Current Z-score right now (as of last scan). Deep red = very oversold. Bright green = very overbought. This is the primary signal.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Events:</span> How many times this stock hit the selected Z threshold in the past year. More events = more reliable backtest.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg Ret:</span> Average forward return over your selected holding period when the stock was at this Z level. Green positive = profitable on average.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Win%:</span> Percentage of events that resulted in a profitable trade. For oversold, 'win' = positive return. For overbought, 'win' = negative return (pullback). Green ({'>'}70%) = reliable.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>1d/3d/5d Ret:</span> Average returns at 1, 3, and 5 day holding periods. Compare to find the optimal hold time for each stock.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>1d/3d/5d W%:</span> Win rates at each holding period. A stock might have 60% win rate at 1 day but 80% at 5 days -- meaning it needs time to revert.</p>
+            </div>
+            <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:0}}>
+              <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>The Trade Setup</p>
+              <p style={{marginBottom:4,fontSize:9}}>You open the page in Oversold mode. SOFI shows Z = -2.3 (deep red). You select Z {'<'} -2, 3-day hold. The backtest shows: 28 events over the past year, +2.1% avg 3-day return, 75% win rate.</p>
+              <p style={{marginBottom:4,fontSize:9}}>This means: every time SOFI dropped to Z {'<'} -2 in the past year, buying and holding 3 days returned +2.1% on average, and was profitable 75% of the time. You buy today.</p>
+              <p style={{marginBottom:4,fontSize:9}}>Three days later, you sell regardless of what happened. Over many trades, the 75% win rate and +2.1% avg return compound into consistent profits.</p>
+              <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.warn}}>Critical:</span> Z-scores can stay extreme during fundamental changes (earnings miss, sector rotation). Always check if there's a fundamental reason for the drop before blindly buying oversold stocks.</p>
+            </div>
+          </div>
+        </CollapseStage>
+
   </div>;
 }
 
