@@ -7791,7 +7791,7 @@ function DailySwingScreenerPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Previous Day Close to Next Day High %" sub="Filter by avg % swing from one day's close to the next day's high (25-day sample)" info="Measures the percentage change from one trading day's closing price to the following trading day's highest price. Computed from daily OHLC bars across 25 trading days. Shows per day-of-week breakdown since some stocks may swing more on certain days."/>
+      <SectionHead title="Previous Day Close to Next Day High %" sub="Filter by avg % swing from one day's close to the next day's high (~252-day sample)" info="Measures the percentage change from one trading day's closing price to the following trading day's highest price. Computed from daily OHLC bars across ~252 trading days (~1 year). Shows per day-of-week breakdown since some stocks may swing more on certain days."/>
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
       {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
@@ -9458,7 +9458,7 @@ function ConfluencePage(p){
       var allRows=[];var page=0;
       while(true){
         var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,zscore_profile,range_position,recovery_profile,pullback_profile,directional_bias,squeeze_profile&scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
         var batch=pr.ok?await pr.json():[];
         if(!batch.length)break;
         for(var i=0;i<batch.length;i++){
