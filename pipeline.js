@@ -2028,7 +2028,7 @@ async function runScreener() {
       for (var si2 = 0; si2 < hdkAll.length; si2++) {
         var hdd = hrDayData[hdkAll[si2]];
         if (!swingDays[hdd.date]) swingDays[hdd.date] = {};
-        swingDays[hdd.date][hdd.hr] = { high: hdd.high, low: hdd.low };
+        swingDays[hdd.date][hdd.hr] = { high: hdd.high, low: hdd.low, close: hdd.close };
       }
       var swDayKeys = Object.keys(swingDays);
       for (var sdi = 0; sdi < swDayKeys.length; sdi++) {
