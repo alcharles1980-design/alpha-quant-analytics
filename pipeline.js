@@ -1948,6 +1948,66 @@ async function runScreener() {
       days_sampled: abn
     };
 
+    // Mean Reversion Z-Score backtest
+    var zThresholds = [-2.5, -2, -1.5, -1, 1, 1.5, 2, 2.5];
+    var zResults = {}; // key: threshold -> {n, fwd1, fwd3, fwd5, win1, win3, win5}
+    for (var zt = 0; zt < zThresholds.length; zt++) zResults[zThresholds[zt]] = {n:0, fwd1:[], fwd3:[], fwd5:[]};
+
+    // Compute Z-scores and forward returns
+    var currentZ = 0;
+    var ZWIN = 20;
+    if (abn >= ZWIN + 5) {
+      for (var zi = ZWIN; zi < abn; zi++) {
+        // Trailing 20-day mean and stddev of closes
+        var zMean = 0;
+        for (var zj = zi - ZWIN; zj < zi; zj++) zMean += ab[zj].c;
+        zMean /= ZWIN;
+        var zVar = 0;
+        for (var zj = zi - ZWIN; zj < zi; zj++) zVar += (ab[zj].c - zMean) * (ab[zj].c - zMean);
+        var zStd = Math.sqrt(zVar / ZWIN);
+        if (zStd < 0.0001) continue;
+        var zScore = (ab[zi].c - zMean) / zStd;
+
+        // If this is the last bar, record current Z
+        if (zi === abn - 1) currentZ = zScore;
+
+        // Check each threshold and measure forward returns
+        for (var zt2 = 0; zt2 < zThresholds.length; zt2++) {
+          var th = zThresholds[zt2];
+          var match = false;
+          if (th < 0 && zScore <= th) match = true;
+          if (th > 0 && zScore >= th) match = true;
+          if (!match) continue;
+          zResults[th].n++;
+          if (zi + 1 < abn) { var r1 = (ab[zi+1].c - ab[zi].c) / ab[zi].c * 100; zResults[th].fwd1.push(r1); }
+          if (zi + 3 < abn) { var r3 = (ab[zi+3].c - ab[zi].c) / ab[zi].c * 100; zResults[th].fwd3.push(r3); }
+          if (zi + 5 < abn) { var r5 = (ab[zi+5].c - ab[zi].c) / ab[zi].c * 100; zResults[th].fwd5.push(r5); }
+        }
+      }
+    }
+
+    var zProf = { current_z: Math.round(currentZ * 100) / 100, days: abn };
+    for (var zt3 = 0; zt3 < zThresholds.length; zt3++) {
+      var th3 = zThresholds[zt3];
+      var zr = zResults[th3];
+      var tKey = (th3 > 0 ? 'p' : 'n') + Math.abs(th3 * 10); // n25, n20, n15, n10, p10, p15, p20, p25
+      var avg1 = zr.fwd1.length > 0 ? avg(zr.fwd1) : 0;
+      var avg3 = zr.fwd3.length > 0 ? avg(zr.fwd3) : 0;
+      var avg5 = zr.fwd5.length > 0 ? avg(zr.fwd5) : 0;
+      // Win = positive return for oversold (negative Z), negative return for overbought (positive Z)
+      var win1 = 0, win3 = 0, win5 = 0;
+      if (th3 < 0) {
+        win1 = zr.fwd1.length > 0 ? Math.round(zr.fwd1.filter(function(v){return v>0;}).length / zr.fwd1.length * 1000) / 10 : 0;
+        win3 = zr.fwd3.length > 0 ? Math.round(zr.fwd3.filter(function(v){return v>0;}).length / zr.fwd3.length * 1000) / 10 : 0;
+        win5 = zr.fwd5.length > 0 ? Math.round(zr.fwd5.filter(function(v){return v>0;}).length / zr.fwd5.length * 1000) / 10 : 0;
+      } else {
+        win1 = zr.fwd1.length > 0 ? Math.round(zr.fwd1.filter(function(v){return v<0;}).length / zr.fwd1.length * 1000) / 10 : 0;
+        win3 = zr.fwd3.length > 0 ? Math.round(zr.fwd3.filter(function(v){return v<0;}).length / zr.fwd3.length * 1000) / 10 : 0;
+        win5 = zr.fwd5.length > 0 ? Math.round(zr.fwd5.filter(function(v){return v<0;}).length / zr.fwd5.length * 1000) / 10 : 0;
+      }
+      zProf[tKey] = { n: zr.n, r1: Math.round(avg1*1000)/1000, r3: Math.round(avg3*1000)/1000, r5: Math.round(avg5*1000)/1000, w1: win1, w3: win3, w5: win5 };
+    }
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -1960,7 +2020,8 @@ async function runScreener() {
       daily_close_high_profile: JSON.stringify(dailyCloseHigh),
       directional_bias: JSON.stringify(dirBias),
       recovery_profile: JSON.stringify(recovProf),
-      pullback_profile: JSON.stringify(pullProf)
+      pullback_profile: JSON.stringify(pullProf),
+      zscore_profile: JSON.stringify(zProf)
     });
 
     if (ci % 200 === 0) {
