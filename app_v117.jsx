@@ -6935,77 +6935,46 @@ function OscillationScreenerPage(p){
       </div>}
     </Cd>
 
-    <CollapseStage title="How This Screener Works" sub="1-minute bar analysis, excursion measurement, and optimal oscillation capture">
+    <CollapseStage title="Complete User Guide" sub="How to use the oscillation screener to find the best stocks for automated trading">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
 
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent,marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>The Core Problem</p>
-          <p style={{marginBottom:6,fontSize:9}}>A stock that drops 8% in a straight line has high volatility but is terrible for automated oscillation trading — all buy levels fill with no sells. A stock that chops 3% up and 3% down repeatedly around a mean is ideal — every swing completes a buy-sell cycle and generates profit.</p>
-          <p style={{fontSize:9}}>Raw volatility metrics (beta, standard deviation, ATR) cannot distinguish between these two scenarios. This screener can. It measures the <span style={{color:C.accent,fontWeight:700}}>quality</span> of price movement — not just the quantity.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>This screener scans 2,500 US stocks to find the best candidates for automated oscillation trading. It measures the QUALITY of price movement — not just the quantity. A stock that drops 8% in a straight line has high volatility but is terrible for oscillation trading (all buy levels fill with no sells). A stock that chops 3% up and 3% down repeatedly around a mean is ideal (every swing completes a buy-sell cycle).</p>
+          <p style={{marginBottom:4,fontSize:9}}>The screener uses a two-pass architecture: Pass 1 fetches 25 days of daily bars for all stocks in bulk (one API call per day) and computes daily-timeframe metrics. Pass 2 fetches 10 days of 1-minute bars for each candidate individually (~9,600 data points per stock) to compute intraday metrics that capture what happens within each trading day — the timescale where oscillation cycles actually complete.</p>
+          <p style={{fontSize:9}}>The key metric is the Expected Completed Excursion (Osc% and Osc$): the system walks through every 1-minute bar, tracks consecutive moves in the same direction, and when the direction reverses, measures the size of that completed swing. The average of all swings = your expected profit per oscillation cycle.</p>
         </div>
 
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Two-Pass Scanning Architecture</p>
-          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 1: Daily Bars (25 trading days)</p>
-          <p style={{marginBottom:6,paddingLeft:8,fontSize:9}}>Uses Polygon grouped daily bars — a single API call returns open/high/low/close/volume for every US stock for that day. Across 25 days, we compute daily-timeframe metrics: Yang-Zhang volatility, Parkinson volatility, daily Hurst exponent, ATR%, oscillation-to-drift ratio, and reversal percentage. These capture the stock's multi-day character — does it trend across days or mean-revert?</p>
-          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:9}}>Pass 2: 1-Minute Bars (10 trading days, per stock)</p>
-          <p style={{paddingLeft:8,fontSize:9}}>Fetches 1-minute OHLCV bars for each of the ~2,500 candidates individually. This produces ~9,600 data points per stock (480 minutes x 10 days). From these bars we compute intraday metrics that capture what happens <span style={{color:C.accent,fontWeight:700}}>within</span> each trading day — the timescale where oscillation cycles actually complete. 1-minute resolution catches reversals that 5-minute or 15-minute bars would smooth over.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Run a scan (or use existing data). The scan takes ~10-15 minutes to process all 2,500 stocks. Results are cached — you only need to re-scan every few days.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Choose a ranking mode. Combined (green) blends daily + intraday metrics. Daily Bars (gold) uses only daily data. 1-Min Bars (purple) uses only intraday data — this is usually the most relevant for oscillation trading.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Apply session filters. Click Pre/Main/Post to see which hours each stock oscillates best. Most stocks are best during Main Market (9:30-4 PM).</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Use MCap, Price, and Type filters to narrow to your tradeable universe. Use the ticker search to look up any specific stock.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> For promising candidates, scroll down to the Hourly Oscillation Profile and enter the ticker. This shows exactly which hours produce the most oscillations and the average swing size per hour.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 6:</span> Before deploying, verify Osc$ vs your fee per share. Your TP% should be set at Osc% x 0.7 to 0.9 for optimal cycle completion. Osc$ must be significantly larger than your round-trip fee ($0.005-$0.01 per share).</p>
         </div>
 
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent+'80',marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>The Excursion Calculation (Osc% and Osc$)</p>
-          <p style={{marginBottom:6,fontSize:9}}>This is the most important metric in the screener. Here's exactly how it works:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 1:</span> Walk through every 1-minute bar sequentially. Track the current direction — is the price moving up or down from the previous bar?</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 2:</span> As long as the price keeps moving in the same direction, the "run" continues. Record the starting price of the run.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 3:</span> The moment the direction reverses, the run is "completed." Measure the dollar distance from the run's start to its peak — this is one completed excursion.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Step 4:</span> Repeat for every run across all 10 days of 1-minute data. Average all completed excursion sizes.</p>
-          <p style={{marginBottom:8,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Result:</span> <span style={{color:C.accent,fontWeight:700}}>Osc$</span> = average swing size in dollars. <span style={{color:C.accent,fontWeight:700}}>Osc%</span> = same as percentage of price.</p>
-          <p style={{marginBottom:6,fontSize:9,color:C.txtBright,fontWeight:700}}>Example: TMDX at $109</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>If the system measures 800 completed directional runs over 5 days, and the average run size is $0.28, then Osc$ = $0.28 and Osc% = 0.257%. This means the price typically swings $0.28 before reversing direction.</p>
-          <p style={{paddingLeft:8,fontSize:9,color:C.accent}}>Your take-profit should be set at or slightly below Osc$ to capture the majority of these natural oscillations.</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>How to Use Osc% for Optimal TP% Selection</p>
-          <p style={{marginBottom:6,fontSize:9}}>The Osc% directly maps to your optimal take-profit percentage setting. Here's the framework:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>TP% = Osc% × 0.7 to 0.9</span> — Setting TP slightly below the average excursion means most swings are large enough to complete a cycle. Setting at 70-90% of Osc% gives you the sweet spot: high cycle completion rate while still capturing meaningful profit per cycle.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>TP% = Osc%:</span> Exactly matching the average excursion. About 50% of swings will complete the cycle, 50% won't. Moderate completion rate, maximum profit per completed cycle.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>TP% {'>'} Osc%:</span> Setting TP above the average swing. Most swings won't reach your target — low cycle completion rate. Only the larger-than-average swings generate profit. Fewer cycles but larger profit each.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>TP% {'<'} Osc% × 0.5:</span> Setting TP way below the average swing. Almost every swing completes, but the profit per cycle may not cover transaction fees (typically $0.005-$0.01 per share round trip).</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Profitability Check: Osc$ vs Fees</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Before deploying on any stock, verify: <span style={{color:C.accent,fontWeight:700}}>Osc$ must be significantly larger than your round-trip fee per share.</span></p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>Osc$ {'>'} $0.50:</span> Comfortable margin. At $0.01 round-trip fee, that's a 50:1 gross-to-fee ratio. Highly profitable per cycle.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Osc$ = $0.10 - $0.50:</span> Viable but thin. Fees consume 2-10% of each cycle's gross profit. Need high cycle count to compound.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>Osc$ {'<'} $0.10:</span> Dangerous. Fees may consume 10%+ of gross profit. Only works with very low-fee execution or high share volume per level.</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Session Filtering: When Does the Stock Oscillate Best?</p>
-          <p style={{marginBottom:6,fontSize:9}}>The session toggles (Pre / Main / Post / Night / Morning) let you see which hours produce the best oscillation. Most stocks behave very differently across sessions:</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Pre-Market (4-9:30 AM):</span> Low volume, wide spreads. Some stocks show excellent mean-reversion here as overnight gaps get absorbed. Others barely trade. The Osc% during pre-market tells you if the bot can profitably operate before the open.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Main Market (9:30-4 PM):</span> Highest volume and tightest spreads. Usually the best oscillation quality. The first 30 minutes often show outsized excursions from the opening auction, while midday (11 AM - 2 PM) tends to be the choppiest with lowest directional trend.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Post-Market (4-8 PM):</span> Volume drops sharply. Oscillation quality varies — some stocks continue to chop on earnings reactions, others flatline. Check the bar count: if a stock only has 20 bars in post-market across 10 days, the metrics aren't reliable.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Overnight (Night/Morning):</span> Most US stocks don't trade. Only relevant for 24-hour venues. Columns will show '--' for most tickers.</p>
-        </div>
-
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:12}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>The Ideal Oscillation Stock</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>Low iHurst ({'{<'} 0.45):</span> Strongly mean-reverting on 1-minute bars. Price tends to reverse after each move rather than continuing. This is the statistical foundation — without low Hurst, oscillation cycles won't complete reliably.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>High Osc% ({'{>'} 0.20%):</span> Each natural swing is large enough to generate meaningful profit after fees. Combined with the cycle count from low Hurst, this determines total daily profit potential.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>High VX ({'{>'} 15 crossings/day):</span> Price frequently crosses its volume-weighted fair value. Each crossing is a mean-reversion event — the price overshot in one direction and is now pulling back. More crossings = more cycle opportunities.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>High iOsc ({'{>'} 10):</span> The total distance the price travels intraday is 10x+ more than the net directional move. All that "wasted" movement between up and down is exactly what oscillation trading captures.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>High ATR% ({'{>'} 3%):</span> Wide daily range provides the raw price movement for oscillation cycles. But only valuable when paired with low Hurst — high ATR% with high Hurst just means the stock is trending hard in one direction.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Score (0-100):</span> Composite oscillation quality score. Higher = better candidate. Green ({'>'}70) = excellent. Gold (50-70) = good. Red ({'<'}30) = poor. Score uses different weights per ranking mode.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>iHurst:</span> Intraday Hurst exponent from 1-min bars. Below 0.5 = mean-reverting (ideal). Above 0.5 = trending (bad). Green ({'<'}0.45) is the sweet spot.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>iOsc:</span> Intraday oscillation ratio — total distance traveled vs net move. Higher = more back-and-forth relative to direction. A value of 10 means the stock travels 10x more than its net move.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>VX:</span> VWAP crossings per day. Each crossing is a mean-reversion event. More crossings = more cycle opportunities.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Osc%:</span> Average completed excursion as percentage of price. This is your optimal TP% starting point. Set TP% at 70-90% of Osc%.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Osc$:</span> Same in dollars. Must be significantly larger than your fee per share. Green ({'>'}$0.50) = comfortable margin. Gold ($0.20-$0.50) = viable.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Osc/D:</span> Completed oscillations per day. More = more cycle opportunities. Green ({'>'}100) = very active. Gold (50-100) = moderate.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>ATR%:</span> Average true range as percentage of price. Raw volatility measure — only valuable when paired with low Hurst.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>dHurst / dOsc / YZ%:</span> Daily-timeframe metrics (Hurst, osc-drift ratio, Yang-Zhang vol). Visible in Daily Bars ranking mode.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Rev%:</span> Daily reversal percentage. Above 50% = price tends to reverse day-over-day direction.</p>
         </div>
 
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:11}}>Score Interpretation</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>80-100:</span> Excellent oscillation candidate. Strong mean-reversion, wide range, large excursions. Deploy with confidence after verifying Osc$ vs fee ratio.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>60-79:</span> Good candidate. Run the full Stage 1-4 pipeline on this ticker to backtest actual cycle profitability before deploying capital.</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:'#ff8c00'}}>40-59:</span> Marginal. May oscillate some sessions but trend in others. Use session filtering to find the profitable windows. Set tight risk limits.</p>
-          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.warn}}>0-39:</span> Poor candidate. Likely trending, low volatility, or insufficient mean-reversion. Oscillation cycles will frequently fail to complete, leaving positions exposed to directional risk.</p>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>SOFI appears at rank #5 with Score 82, iHurst 0.42, Osc% 0.31%, Osc$ $0.06, Osc/D 433. You select "Main 9:30-4" session filter — the score stays high, confirming oscillation quality during regular hours.</p>
+          <p style={{marginBottom:4,fontSize:9}}>You enter SOFI in the Hourly Oscillation Profile. The chart shows 30+ oscillations per hour during 9-10 AM with $0.08 avg swing, dropping to 25 osc/hr in the afternoon. Best hours are 9-11 AM.</p>
+          <p style={{marginBottom:4,fontSize:9}}>Osc$ is $0.06 and your fee is $0.005 per share — a 12:1 ratio (viable). You set TP% at Osc% x 0.8 = 0.25% and deploy the bot on SOFI during 9:30 AM - 12 PM only.</p>
+          <p style={{fontSize:9,color:C.warn}}>Score interpretation: 80-100 = deploy with confidence. 60-79 = backtest first with Stage 1-4. 40-59 = marginal, use session filtering. Below 40 = avoid.</p>
         </div>
       </div>
     </CollapseStage>
@@ -7630,7 +7599,7 @@ function CloseHighScreenerPage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}>Each column shows: <span style={{color:C.accent,fontWeight:700}}>that hour's close price {'\u2192'} next hour's high price</span> as a percentage.</p>
           <p style={{marginBottom:6}}>Example: INTC column <span style={{color:C.gold}}>08{'\u2192'}09 = 3.39%</span> means on average over 10 days, INTC's closing price at the end of the 8 AM hour swings up 3.39% to reach the high of the 9 AM hour.</p>
@@ -7868,7 +7837,7 @@ function DailySwingScreenerPage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}>Each day column shows: <span style={{color:C.accent,fontWeight:700}}>that day's close {'\u2192'} next trading day's high</span> as a percentage.</p>
           <p style={{marginBottom:6}}>Example: <span style={{color:C.gold}}>Mon{'\u2192'}Tue = 3.5%</span> means on average, buying at Monday's close gives a 3.5% upswing to Tuesday's high.</p>
@@ -8096,7 +8065,7 @@ function DirBiasPage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Win Rate:</span> Percentage of days the stock closes above its open over ~252 trading days. A 60% win rate means 6 out of 10 days are up days. Higher = bullish intraday bias.</p>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Avg Up% / Avg Down%:</span> Average magnitude of up days vs down days. A stock with +1.2% avg up and -0.8% avg down has an asymmetric edge — the wins are larger than the losses.</p>
@@ -8330,7 +8299,7 @@ function RecoveryPage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1x ATR section:</span> Days where the stock dropped more than its average daily range. These are notable selloffs that stand out from normal trading.</p>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>2x ATR section:</span> Days where the stock dropped more than TWICE its normal range. These are extreme selloffs — rarer but potentially stronger bounce signals.</p>
@@ -8575,7 +8544,7 @@ function PullbackPage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1x ATR section:</span> Days where the stock rallied more than its average daily range. These are notable up-days that stand out from normal trading.</p>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>2x ATR section:</span> Days where the stock rallied more than TWICE its normal range. Extreme rallies -- rarer but often followed by stronger pullbacks.</p>
@@ -8858,7 +8827,7 @@ function ZScorePage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO USE THIS</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Current Z:</span> How far the stock's last close is from its 20-day moving average in standard deviations. Z = -2 means the stock is 2 standard deviations below average -- deeply oversold.</p>
           <p style={{marginBottom:6}}><span style={{color:C.gold}}>The trade (Oversold):</span> Find a stock at Z = -2.3 today. The backtest shows: over the past year, every time this stock hit Z {'<'} -2, it returned +2.1% over 3 days with a 75% win rate across 28 events. You buy today, hold 3 days.</p>
@@ -9611,7 +9580,7 @@ function ConfluencePage(p){
 
     <Cd>
       <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
-        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>{viewMode==='buy'?'BUY SIGNAL CRITERIA':'SELL SIGNAL CRITERIA'}</div>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>{viewMode==='buy'?'ACTIVE SIGNAL CRITERIA (BUY)':'ACTIVE SIGNAL CRITERIA (SELL)'}</div>
         <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.8}}>
           {viewMode==='buy'?<div>
             <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>Z {'<'} -2:</span> Stock is 2+ standard deviations below its 20-day average (deeply oversold)</p>
