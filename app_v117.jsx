@@ -7023,6 +7023,37 @@ function ATRScreenerPage(p){
   var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
   // Per-hour min ATR% filters (hours 4-19)
   var s9=useState({}),hourFilters=s9[0],setHourFilters=s9[1];
+  var s10=useState(false),scanning=s10[0],setScanning=s10[1];
+  var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var pollRef=useRef(null);
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){
+          setPipeStatus(rows[0]);
+          if(rows[0].status==='complete'||rows[0].status==='error'){
+            clearInterval(pollRef.current);pollRef.current=null;
+            if(rows[0].status==='complete')load();
+          }
+        }
+      }catch(e){}
+    },3000);
+  };
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings to trigger scans');return;}
+    setErr(null);setScanning(true);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
 
   var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
   var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
@@ -7039,12 +7070,12 @@ function ATRScreenerPage(p){
       var allRows=[];var page=0;
       while(true){
         var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&hourly_atr=not.is.null&order=osc_score.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&hourly_atr_profile=not.is.null&order=osc_score.desc',{headers:ph});
         var batch=pr.ok?await pr.json():[];
         if(!batch.length)break;
         for(var i=0;i<batch.length;i++){
           var row=batch[i];
-          try{row._hatr=typeof row.hourly_atr==='string'?JSON.parse(row.hourly_atr):row.hourly_atr;}catch(e2){row._hatr={};}
+          try{row._hatr=typeof row.hourly_atr_profile==='string'?JSON.parse(row.hourly_atr_profile):row.hourly_atr_profile;}catch(e2){row._hatr={};}
           allRows.push(row);
         }
         if(batch.length<1000)break;
@@ -7054,7 +7085,16 @@ function ATRScreenerPage(p){
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
-  useEffect(function(){load();},[]);
+  useEffect(function(){
+    load();
+    (async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}
+      }catch(e){}
+    })();
+  },[]);
 
   var setHourFilter=function(h,val){var nf=Object.assign({},hourFilters);if(val==='')delete nf[h];else nf[h]=parseFloat(val);setHourFilters(nf);};
 
@@ -7095,6 +7135,18 @@ function ATRScreenerPage(p){
     <Cd glow={true}>
       <SectionHead title="Hourly ATR% Screener" sub="Filter stocks by minimum ATR% per hour (10-day average)" info="Shows the average hourly ATR% (high minus low as percentage of open price) for each trading hour across the last 10 days. Set minimum thresholds per hour to find stocks with enough volatility during your target trading windows."/>
       {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with ATR data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No hourly ATR data found. Run a new scan to populate.</div>}
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
+      </div>}
+      {pipeStatus&&pipeStatus.status==='running'&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+C.purple}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
       <div style={{marginBottom:8}}>
         <label style={lS}>Filter Ticker</label>
         <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
@@ -9292,7 +9344,7 @@ function App(){
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='atrscreener'&&<ATRScreenerPage onBack={function(){setPage('home');}}/>}
+    {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
