@@ -2245,10 +2245,13 @@ async function runScreener() {
       else vrRegime = 'HIGH';
 
       // 5-day ATR vs 20-day ATR (volatility direction)
-      if (rollingATRs.length >= 5) {
-        var last5ATRs = rollingATRs.slice(-5);
-        vrATR5 = 0; for (var vri5 = 0; vri5 < last5ATRs.length; vri5++) vrATR5 += last5ATRs[vri5]; vrATR5 /= 5;
-        vrATR20 = vrCurrentATR; // already the 20-day rolling ATR
+      if (abn >= 6) {
+        var atr5Sum2 = 0;
+        for (var vri5 = abn - 5; vri5 < abn; vri5++) {
+          atr5Sum2 += Math.max(ab[vri5].h - ab[vri5].l, Math.abs(ab[vri5].h - ab[vri5 - 1].c), Math.abs(ab[vri5].l - ab[vri5 - 1].c));
+        }
+        vrATR5 = ab[abn - 1].c > 0 ? (atr5Sum2 / 5 / ab[abn - 1].c) * 100 : 0;
+        vrATR20 = vrCurrentATR;
         vrDirRatio = vrATR20 > 0 ? Math.round(vrATR5 / vrATR20 * 100) / 100 : 1;
         if (vrDirRatio >= 1.2) vrDirection = 'EXPANDING';
         else if (vrDirRatio <= 0.8) vrDirection = 'CONTRACTING';
