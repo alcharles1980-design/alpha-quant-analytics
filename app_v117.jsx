@@ -7619,8 +7619,8 @@ function CloseHighScreenerPage(p){
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('_score');}} style={thS('_score')}>Avg</th>
-            {Array.from({length:15},function(_,i){var h=i+4;var hasFilter=hourFilters[h]!==undefined;
-              return <th key={h} onClick={function(hr){return function(){setSortBy('h'+hr);setSortAsc(false);};}(h)} style={{padding:'4px 2px',color:hasFilter?C.accent:sortBy===('h'+h)?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontSize:6,fontWeight:hasFilter||sortBy===('h'+h)?700:400}}>{(h<10?'0':'')+h}</th>;
+            {Array.from({length:15},function(_,i){var h=i+4;var nh=h+1;var hasFilter=hourFilters[h]!==undefined;
+              return <th key={h} onClick={function(hr){return function(){setSortBy('h'+hr);setSortAsc(false);};}(h)} style={{padding:'4px 1px',color:hasFilter?C.accent:sortBy===('h'+h)?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontSize:5,fontWeight:hasFilter||sortBy===('h'+h)?700:400}}>{(h<10?'0':'')+h+'\u2192'+(nh<10?'0':'')+nh}</th>;
             })}
           </tr></thead>
           <tbody>{filtered.slice(0,300).map(function(r,idx){
@@ -7643,20 +7643,28 @@ function CloseHighScreenerPage(p){
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters. Try lowering the thresholds.</div></Cd>}
 
-    <CollapseStage title="How To Use This Tool" sub="Finding stocks with the biggest close-to-next-high swings">
+    <CollapseStage title="How To Read This Data" sub="Understanding the hour close to next hour high relationship">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What Is Close-to-Next-High Swing %?</p>
-          <p style={{fontSize:9}}>For each hour, this measures the percentage change from that hour's closing price to the NEXT hour's highest price. This is more conservative than Low-to-High because the close is where price settled at the end of the hour, not the extreme low. It represents the realistic upside from where you'd be positioned at hour end.</p>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.accent+'80',marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>How To Read The Columns</p>
+          <p style={{marginBottom:6,fontSize:9}}>Each column header shows an arrow: <span style={{color:C.txtBright,fontWeight:700}}>08{'\u2192'}09</span> means "8 AM close to 9 AM high." The value is the average percentage swing upward from where price closed at the end of the 8 AM hour to the highest price reached during the 9 AM hour.</p>
+          <p style={{marginBottom:6,fontSize:9,color:C.gold,fontWeight:700}}>Example: INTC shows 3.39% in the 08{'\u2192'}09 column</p>
+          <p style={{fontSize:9}}>This means: on average over 10 trading days, INTC's price swung 3.39% upward from where it closed at 8:59 AM to the highest point it reached between 9:00-9:59 AM. If INTC closed the 8 AM hour at $68.00, the 9 AM high was typically around $70.30.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Close vs Low: Which To Use?</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold}}>Low-to-Next-High:</span> The theoretical maximum swing. Assumes you bought at the hour's absolute low. Useful for understanding total range potential.</p>
-          <p style={{fontSize:9}}><span style={{color:C.gold}}>Close-to-Next-High:</span> The realistic swing from where price actually ended up. Your bot holds positions at recent prices, not at the extreme low. This metric better reflects what the bot would actually capture.</p>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What This Means For Your Bot</p>
+          <p style={{marginBottom:4,fontSize:9}}>If your bot holds positions at the end of an hour, this metric tells you how much upside exists in the NEXT hour. A stock with 2%+ swing from the 9 AM close to the 10 AM high means there's typically a 2% upswing your buy levels could capture.</p>
+          <p style={{fontSize:9}}>The close price is where you'd realistically be positioned, not at the hour's extreme low. This makes the metric more conservative and actionable than the Low-to-High screener.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Close vs Low: Which Screener To Use?</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold}}>Low-to-Next-High:</span> The theoretical maximum swing. Assumes you bought at the hour's absolute low. Useful for understanding total range potential but unrealistic — you rarely buy at the exact bottom.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold}}>Close-to-Next-High:</span> The realistic swing from where price actually settled. Your bot holds positions at recent prices, not at the extreme low. This metric better reflects what the bot would actually capture. Values will always be smaller than Low-to-High for the same stock.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Setting Thresholds</p>
-          <p style={{fontSize:9}}>Enter minimum swing % for any hour. Stocks must meet ALL thresholds. Close-to-High values will always be smaller than or equal to Low-to-High values for the same stock and hour, since the close is at or above the low.</p>
+          <p style={{marginBottom:4,fontSize:9}}>Enter a minimum swing % in any hour box. Only stocks where the average close-to-next-high swing meets your threshold for that hour will appear. All thresholds use AND logic — the stock must pass every active filter.</p>
+          <p style={{fontSize:9,color:C.gold}}>Start with one or two hours during your target trading session. For example, set 09{'\u2192'}10 to 1% to find stocks that typically swing at least 1% from the 9 AM close to the 10 AM high.</p>
         </div>
       </div>
     </CollapseStage>
