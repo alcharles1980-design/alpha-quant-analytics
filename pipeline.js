@@ -2568,15 +2568,10 @@ async function runScreener() {
         var hPctile = Math.round(hRank / hSorted.length * 100);
         // Trend: last 3 vs first portion
         var hTrend = 'STABLE';
-        if (hArr.length >= 5) {
-          var last3sum = 0, first7sum = 0;
-          var splitPt = Math.max(1, hArr.length - 3);
-          for (var hi3 = splitPt; hi3 < hArr.length; hi3++) last3sum += hArr[hi3].atr;
-          for (var hi3 = 0; hi3 < splitPt; hi3++) first7sum += hArr[hi3].atr;
-          var last3avg = last3sum / (hArr.length - splitPt);
-          var first7avg = first7sum / splitPt;
-          if (first7avg > 0) {
-            var tRatio = last3avg / first7avg;
+        if (hArr.length >= 3) {
+          var prev2avg = (hArr[hArr.length - 3].atr + hArr[hArr.length - 2].atr) / 2;
+          if (prev2avg > 0) {
+            var tRatio = hLast / prev2avg;
             if (tRatio >= 1.2) hTrend = 'EXPANDING';
             else if (tRatio <= 0.8) hTrend = 'CONTRACTING';
           }
