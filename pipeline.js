@@ -2325,10 +2325,10 @@ async function runScreener() {
     try {
       var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/1/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
       var r5 = await fetch(url5);
-      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; continue; }
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
-      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; continue; }
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; continue; }
 
       // Compute 1-min returns PER DAY (exclude overnight gaps)
       var dayBarsForReturns = {};
@@ -2415,8 +2415,8 @@ async function runScreener() {
       var avgCrossings = 0; if (vwapCross.length > 0) { for (var j = 0; j < vwapCross.length; j++) avgCrossings += vwapCross[j]; avgCrossings /= vwapCross.length; }
 
       // Expected Completed Excursion (ECE): avg size of each directional run
-      // Track consecutive moves in same direction, measure size when direction reverses
-      var allExcursions = [];
+      // Split into UP (profit opportunity) and DOWN (entry opportunity)
+      var upExcursions = [], dnExcursions = [];
       for (var dk2 = 0; dk2 < dayKeys.length; dk2++) {
         var db2 = dayBars[dayKeys[dk2]];
         if (db2.length < 5) continue;
@@ -2430,16 +2430,19 @@ async function runScreener() {
           else if (dir !== runDir) {
             // Direction reversed — completed excursion
             var excSize = Math.abs(db2[bi6 - 1].c - runStart);
-            if (excSize > 0) allExcursions.push(excSize);
+            if (excSize > 0) { if (runDir === 1) upExcursions.push(excSize); else dnExcursions.push(excSize); }
             runStart = db2[bi6 - 1].c;
             runDir = dir;
           }
         }
       }
+      var allExcursions = upExcursions.concat(dnExcursions);
       var avgExcDollar = 0;
       if (allExcursions.length > 0) { for (var j = 0; j < allExcursions.length; j++) avgExcDollar += allExcursions[j]; avgExcDollar /= allExcursions.length; }
       var avgExcPct = res.price > 0 ? (avgExcDollar / res.price) * 100 : 0;
       var oscPerDay = dayKeys.length > 0 ? Math.round(allExcursions.length / dayKeys.length * 10) / 10 : 0;
+      var avgUpExc = 0; if (upExcursions.length > 0) { for (var j = 0; j < upExcursions.length; j++) avgUpExc += upExcursions[j]; avgUpExc /= upExcursions.length; }
+      var avgDnExc = 0; if (dnExcursions.length > 0) { for (var j = 0; j < dnExcursions.length; j++) avgDnExc += dnExcursions[j]; avgDnExc /= dnExcursions.length; }
 
       res.intraday_hurst = Math.round(iHurst * 1000) / 1000;
       res.intraday_osc_ratio = Math.round(avgOscRatio * 10) / 10;
@@ -2447,6 +2450,10 @@ async function runScreener() {
       res.avg_vwap_crossings = Math.round(avgCrossings * 10) / 10;
       res.avg_osc_pct = Math.round(avgExcPct * 1000) / 1000;
       res.avg_osc_dollar = Math.round(avgExcDollar * 100) / 100;
+      res.avg_up_osc_dollar = Math.round(avgUpExc * 100) / 100;
+      res.avg_up_osc_pct = res.price > 0 ? Math.round(avgUpExc / res.price * 100000) / 1000 : 0;
+      res.avg_dn_osc_dollar = Math.round(avgDnExc * 100) / 100;
+      res.avg_dn_osc_pct = res.price > 0 ? Math.round(avgDnExc / res.price * 100000) / 1000 : 0;
       res.osc_per_day = oscPerDay;
 
       // Per-session metrics
@@ -2485,7 +2492,7 @@ async function runScreener() {
           if (sLN.length >= 2) { var sx = 0, sy = 0, sxy = 0, sx2 = 0, np = sLN.length; for (var j = 0; j < np; j++) { sx += sLN[j]; sy += sLR[j]; sxy += sLN[j] * sLR[j]; sx2 += sLN[j] * sLN[j]; } var dn = np * sx2 - sx * sx; if (Math.abs(dn) > 1e-12) sH = (np * sxy - sx * sy) / dn; sH = Math.max(0, Math.min(1, sH)); }
         }
         // Osc ratio, reversals, VWAP crossings, ECE per session-day
-        var sOscR = [], sRevR = [], sVX = [], sExc = [];
+        var sOscR = [], sRevR = [], sVX = [], sExc = [], sUpExc = [], sDnExc = [];
         // Group session bars by day
         var sDayBars = {};
         for (var j = 0; j < sesBars.length; j++) { var dd = etDateFmt.format(new Date(sesBars[j].t)); if (!sDayBars[dd]) sDayBars[dd] = []; sDayBars[dd].push(sesBars[j]); }
@@ -2501,15 +2508,17 @@ async function runScreener() {
           for (var j = 0; j < sdb.length; j++) { cv += sdb[j].v||0; cpv += ((sdb[j].h+sdb[j].l+sdb[j].c)/3)*(sdb[j].v||0); var vw = cv>0?cpv/cv:sdb[j].c; var ss2 = sdb[j].c>=vw?1:-1; if (ps!==0&&ss2!==ps) cx++; ps = ss2; }
           sVX.push(cx);
           var rs2 = sdb[0].c, rd2 = 0;
-          for (var j = 1; j < sdb.length; j++) { var mv = sdb[j].c - sdb[j-1].c; var dr = mv>0?1:mv<0?-1:0; if (dr===0) continue; if (rd2===0) { rd2=dr; rs2=sdb[j-1].c; } else if (dr!==rd2) { var ex = Math.abs(sdb[j-1].c - rs2); if (ex>0) sExc.push(ex); rs2=sdb[j-1].c; rd2=dr; } }
+          for (var j = 1; j < sdb.length; j++) { var mv = sdb[j].c - sdb[j-1].c; var dr = mv>0?1:mv<0?-1:0; if (dr===0) continue; if (rd2===0) { rd2=dr; rs2=sdb[j-1].c; } else if (dr!==rd2) { var ex = Math.abs(sdb[j-1].c - rs2); if (ex>0) { sExc.push(ex); if (rd2===1) sUpExc.push(ex); else sDnExc.push(ex); } rs2=sdb[j-1].c; rd2=dr; } }
         }
         var aOR = 0; if (sOscR.length) { for (var j = 0; j < sOscR.length; j++) aOR += sOscR[j]; aOR /= sOscR.length; }
         var aRR = 0; if (sRevR.length) { for (var j = 0; j < sRevR.length; j++) aRR += sRevR[j]; aRR /= sRevR.length; }
         var aVX = 0; if (sVX.length) { for (var j = 0; j < sVX.length; j++) aVX += sVX[j]; aVX /= sVX.length; }
         var aED = 0; if (sExc.length) { for (var j = 0; j < sExc.length; j++) aED += sExc[j]; aED /= sExc.length; }
+        var aUE = 0; if (sUpExc.length) { for (var j = 0; j < sUpExc.length; j++) aUE += sUpExc[j]; aUE /= sUpExc.length; }
+        var aDnE = 0; if (sDnExc.length) { for (var j = 0; j < sDnExc.length; j++) aDnE += sDnExc[j]; aDnE /= sDnExc.length; }
         var aEP = res.price > 0 ? (aED / res.price) * 100 : 0;
         var sOscPerDay = sDayKeys.length > 0 ? Math.round(sExc.length / sDayKeys.length * 10) / 10 : 0;
-        sesMetrics[sk] = { bars: sesBars.length, hurst: Math.round(sH*1000)/1000, osc_ratio: Math.round(aOR*10)/10, rev_rate: Math.round(aRR*10)/10, vx: Math.round(aVX*10)/10, osc_pct: Math.round(aEP*1000)/1000, osc_dollar: Math.round(aED*100)/100, osc_per_day: sOscPerDay };
+        sesMetrics[sk] = { bars: sesBars.length, hurst: Math.round(sH*1000)/1000, osc_ratio: Math.round(aOR*10)/10, rev_rate: Math.round(aRR*10)/10, vx: Math.round(aVX*10)/10, osc_pct: Math.round(aEP*1000)/1000, osc_dollar: Math.round(aED*100)/100, up_osc_dollar: Math.round(aUE*100)/100, dn_osc_dollar: Math.round(aDnE*100)/100, osc_per_day: sOscPerDay };
       }
       res.session_metrics = JSON.stringify(sesMetrics);
 
@@ -2681,7 +2690,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; }
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);

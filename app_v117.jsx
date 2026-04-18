@@ -6475,7 +6475,7 @@ function OscillationScreenerPage(p){
       var hourlyResult=[];
       for(var h=4;h<20;h++){
         var hdKeys2=Object.keys(hourDayBars).filter(function(k){return hourDayBars[k].h===h;});
-        var totalOsc=0;var allExc=[];var totalBars=0;
+        var totalOsc=0;var allExc=[];var upExc2=[];var dnExc2=[];var totalBars=0;
         for(var di2=0;di2<hdKeys2.length;di2++){
           var hb=hourDayBars[hdKeys2[di2]].bars;
           totalBars+=hb.length;
@@ -6487,19 +6487,25 @@ function OscillationScreenerPage(p){
             if(runDir===0){runDir=dr;runStart=hb[i-1].c;}
             else if(dr!==runDir){
               var ex=Math.abs(hb[i-1].c-runStart);
-              if(ex>0){totalOsc++;allExc.push(ex);}
+              if(ex>0){totalOsc++;allExc.push(ex);if(runDir===1)upExc2.push(ex);else dnExc2.push(ex);}
               runStart=hb[i-1].c;runDir=dr;
             }
           }
         }
         var avgExc=0;if(allExc.length>0){for(var j=0;j<allExc.length;j++)avgExc+=allExc[j];avgExc/=allExc.length;}
+        var avgUp2=0;if(upExc2.length>0){for(var j=0;j<upExc2.length;j++)avgUp2+=upExc2[j];avgUp2/=upExc2.length;}
+        var avgDn2=0;if(dnExc2.length>0){for(var j=0;j<dnExc2.length;j++)avgDn2+=dnExc2[j];avgDn2/=dnExc2.length;}
         var price=bars2[bars2.length-1]?bars2[bars2.length-1].c:1;
         hourlyResult.push({
           hour:h,
           label:(h<10?'0':'')+h+':00',
           osc:Math.round(totalOsc/nDays*10)/10,
           avgExcDollar:Math.round(avgExc*100)/100,
+          avgUpDollar:Math.round(avgUp2*100)/100,
+          avgDnDollar:Math.round(avgDn2*100)/100,
           avgExcPct:Math.round(avgExc/price*10000)/100,
+          avgUpPct:Math.round(avgUp2/price*10000)/100,
+          avgDnPct:Math.round(avgDn2/price*10000)/100,
           bars:totalBars,
           session:h<9?'pre':h<16?'rth':'post'
         });
@@ -6850,7 +6856,8 @@ function OscillationScreenerPage(p){
             {rankMode!=='daily'&&<th onClick={function(){doSort('intraday_osc_ratio');}} style={thS('intraday_osc_ratio')}>iOsc</th>}
             {rankMode!=='daily'&&<th onClick={function(){doSort('avg_vwap_crossings');}} style={thS('avg_vwap_crossings')}>VX</th>}
             <th onClick={function(){doSort('avg_osc_pct');}} style={thS('avg_osc_pct')}>Osc%</th>
-            <th onClick={function(){doSort('avg_osc_dollar');}} style={thS('avg_osc_dollar')}>Osc$</th>
+            <th onClick={function(){doSort('avg_up_osc_dollar');}} style={Object.assign({},thS('avg_up_osc_dollar'),{color:sortBy==='avg_up_osc_dollar'?C.accent:C.accent+'90'})}>Up$</th>
+            <th onClick={function(){doSort('avg_dn_osc_dollar');}} style={Object.assign({},thS('avg_dn_osc_dollar'),{color:sortBy==='avg_dn_osc_dollar'?C.accent:C.warn+'90'})}>Dn$</th>
             <th onClick={function(){doSort('osc_per_day');}} style={thS('osc_per_day')}>Osc/D</th>
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
@@ -6871,7 +6878,8 @@ function OscillationScreenerPage(p){
               {rankMode!=='daily'&&<td style={{padding:'3px',color:r.intraday_osc_ratio>5?C.accent:r.intraday_osc_ratio>2?C.gold:C.warn,textAlign:'right'}}>{r.intraday_osc_ratio!=null?r.intraday_osc_ratio.toFixed(1):'--'}</td>}
               {rankMode!=='daily'&&<td style={{padding:'3px',color:r.avg_vwap_crossings>10?C.accent:r.avg_vwap_crossings>5?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_vwap_crossings!=null?r.avg_vwap_crossings.toFixed(0):'--'}</td>}
               <td style={{padding:'3px',color:r.avg_osc_pct>0.3?C.accent:r.avg_osc_pct>0.15?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.avg_osc_pct!=null?r.avg_osc_pct.toFixed(3)+'%':'--'}</td>
-              <td style={{padding:'3px',color:r.avg_osc_dollar>0.5?C.accent:r.avg_osc_dollar>0.2?C.gold:C.txtDim,textAlign:'right'}}>{r.avg_osc_dollar!=null?'$'+r.avg_osc_dollar.toFixed(2):'--'}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{r.avg_up_osc_dollar!=null?'$'+r.avg_up_osc_dollar.toFixed(2):'--'}</td>
+              <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{r.avg_dn_osc_dollar!=null?'$'+r.avg_dn_osc_dollar.toFixed(2):'--'}</td>
               <td style={{padding:'3px',color:r.osc_per_day>100?C.accent:r.osc_per_day>50?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.osc_per_day!=null?r.osc_per_day.toFixed(0):'--'}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{(r.atr_pct||0).toFixed(2)+'%'}</td>
               <td style={{padding:'3px',color:r.reversal_pct>50?C.accent:C.txtDim,textAlign:'right'}}>{(r.reversal_pct||0).toFixed(0)+'%'}</td>
@@ -6902,7 +6910,7 @@ function OscillationScreenerPage(p){
                   <div style={{width:pct+'%',height:'100%',background:barColor,borderRadius:2,transition:'width 0.3s'}}/>
                 </div>
                 <div style={{width:28,textAlign:'right',fontSize:8,fontFamily:F,color:C.txtBright,fontWeight:700}}>{h.osc.toFixed(1)}</div>
-                <div style={{width:38,textAlign:'right',fontSize:6,fontFamily:F,color:C.gold}}>{'$'+h.avgExcDollar.toFixed(2)}</div>
+                <div style={{width:38,textAlign:'right',fontSize:6,fontFamily:F,color:C.accent}}>{'$'+(h.avgUpDollar||0).toFixed(2)}</div>
               </div>;
             });
           })()}
@@ -6917,16 +6925,22 @@ function OscillationScreenerPage(p){
             <thead><tr style={{borderBottom:'1px solid '+C.border}}>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Osc/Day</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg Osc$</th>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg Osc%</th>
+              <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Up$</th>
+              <th style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>Dn$</th>
+              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg$</th>
+              <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Up%</th>
+              <th style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>Dn%</th>
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bars</th>
             </tr></thead>
             <tbody>{hourlyData.hours.map(function(h){
               return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
                 <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim}}>{h.label}</td>
                 <td style={{padding:'3px',color:h.osc>10?C.accent:h.osc>5?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{h.osc.toFixed(1)}</td>
-                <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+h.avgExcDollar.toFixed(2)}</td>
-                <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{h.avgExcPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+(h.avgUpDollar||0).toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{'$'+(h.avgDnDollar||0).toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+h.avgExcDollar.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{(h.avgUpPct||0).toFixed(3)+'%'}</td>
+                <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{(h.avgDnPct||0).toFixed(3)+'%'}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.bars}</td>
               </tr>;
             })}</tbody>
