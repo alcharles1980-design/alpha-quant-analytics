@@ -2008,6 +2008,89 @@ async function runScreener() {
       zProf[tKey] = { n: zr.n, r1: Math.round(avg1*1000)/1000, r3: Math.round(avg3*1000)/1000, r5: Math.round(avg5*1000)/1000, w1: win1, w3: win3, w5: win5 };
     }
 
+    // Volatility Squeeze Detection (Bollinger Band width)
+    var BBWIN = 20; var SQWIN = 60;
+    var bbWidths = []; // all BB widths for history
+    var sqProf = { in_squeeze: false, days_in_squeeze: 0, bb_width_pct: 0, bb_pctile: 0, days: abn };
+
+    if (abn >= BBWIN + SQWIN) {
+      // Compute BB width at each day from BBWIN onwards
+      for (var bbi = BBWIN; bbi < abn; bbi++) {
+        var bbMean = 0;
+        for (var bbj = bbi - BBWIN; bbj < bbi; bbj++) bbMean += ab[bbj].c;
+        bbMean /= BBWIN;
+        var bbVar = 0;
+        for (var bbj = bbi - BBWIN; bbj < bbi; bbj++) bbVar += (ab[bbj].c - bbMean) * (ab[bbj].c - bbMean);
+        var bbStd = Math.sqrt(bbVar / BBWIN);
+        var bbW = bbMean > 0 ? (2 * bbStd / bbMean) * 100 : 0; // width as % of SMA
+        bbWidths.push({ idx: bbi, width: bbW });
+      }
+
+      // Current BB width and percentile within last 60 days
+      if (bbWidths.length >= SQWIN) {
+        var recent60 = bbWidths.slice(-SQWIN);
+        var currentWidth = bbWidths[bbWidths.length - 1].width;
+        var sorted60 = recent60.slice().sort(function(a, b) { return a.width - b.width; });
+        var rank = 0;
+        for (var si3 = 0; si3 < sorted60.length; si3++) { if (currentWidth > sorted60[si3].width) rank++; }
+        var pctile = Math.round(rank / sorted60.length * 100);
+
+        // Squeeze threshold = 20th percentile of last 120 days (or all if less)
+        var hist120 = bbWidths.slice(-Math.min(120, bbWidths.length));
+        var sorted120 = hist120.slice().sort(function(a, b) { return a.width - b.width; });
+        var sqThresh = sorted120[Math.floor(sorted120.length * 0.2)].width;
+
+        // Days in current squeeze
+        var daysInSq = 0;
+        for (var sqi = bbWidths.length - 1; sqi >= 0; sqi--) {
+          if (bbWidths[sqi].width <= sqThresh) daysInSq++;
+          else break;
+        }
+
+        // Historical squeeze breakouts
+        var sqBreakouts = [];
+        var inSq = false; var sqEnd = -1;
+        for (var sqi2 = 0; sqi2 < bbWidths.length; sqi2++) {
+          if (bbWidths[sqi2].width <= sqThresh) {
+            inSq = true;
+          } else if (inSq) {
+            // Squeeze just ended at this bar
+            sqEnd = bbWidths[sqi2].idx;
+            inSq = false;
+            // Measure 5-day forward return from squeeze end
+            if (sqEnd + 5 < abn) {
+              var sqRet5 = (ab[sqEnd + 5].c - ab[sqEnd].c) / ab[sqEnd].c * 100;
+              var sqRet3 = sqEnd + 3 < abn ? (ab[sqEnd + 3].c - ab[sqEnd].c) / ab[sqEnd].c * 100 : 0;
+              sqBreakouts.push({ r3: sqRet3, r5: sqRet5, up: sqRet5 > 0 });
+            }
+          }
+        }
+
+        var sqUpRate = 0, sqAvgUp = 0, sqAvgDn = 0, sqAvgMag = 0;
+        if (sqBreakouts.length > 0) {
+          var ups = sqBreakouts.filter(function(b) { return b.up; });
+          var dns = sqBreakouts.filter(function(b) { return !b.up; });
+          sqUpRate = Math.round(ups.length / sqBreakouts.length * 1000) / 10;
+          if (ups.length > 0) { var us = 0; for (var j = 0; j < ups.length; j++) us += ups[j].r5; sqAvgUp = Math.round(us / ups.length * 1000) / 1000; }
+          if (dns.length > 0) { var ds = 0; for (var j = 0; j < dns.length; j++) ds += dns[j].r5; sqAvgDn = Math.round(ds / dns.length * 1000) / 1000; }
+          var ms = 0; for (var j = 0; j < sqBreakouts.length; j++) ms += Math.abs(sqBreakouts[j].r5); sqAvgMag = Math.round(ms / sqBreakouts.length * 1000) / 1000;
+        }
+
+        // Avg 3-day return after squeeze
+        var sqAvgR3 = 0;
+        if (sqBreakouts.length > 0) { var r3s = 0; for (var j = 0; j < sqBreakouts.length; j++) r3s += sqBreakouts[j].r3; sqAvgR3 = Math.round(r3s / sqBreakouts.length * 1000) / 1000; }
+
+        sqProf = {
+          in_squeeze: daysInSq > 0, days_in_squeeze: daysInSq,
+          bb_width_pct: Math.round(currentWidth * 1000) / 1000,
+          bb_pctile: pctile, squeeze_count: sqBreakouts.length,
+          breakout_up_rate: sqUpRate, avg_breakout_up: sqAvgUp,
+          avg_breakout_dn: sqAvgDn, avg_breakout_mag: sqAvgMag,
+          avg_r3: sqAvgR3, days: abn
+        };
+      }
+    }
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -2021,7 +2104,8 @@ async function runScreener() {
       directional_bias: JSON.stringify(dirBias),
       recovery_profile: JSON.stringify(recovProf),
       pullback_profile: JSON.stringify(pullProf),
-      zscore_profile: JSON.stringify(zProf)
+      zscore_profile: JSON.stringify(zProf),
+      squeeze_profile: JSON.stringify(sqProf)
     });
 
     if (ci % 200 === 0) {

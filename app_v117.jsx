@@ -8951,6 +8951,254 @@ function ZScorePage(p){
   </div>;
 }
 
+function SqueezePage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
+  var s5=useState(null),scanTime=s5[0],setScanTime=s5[1];
+  var s6=useState(''),filter=s6[0],setFilter=s6[1];
+  var s7=useState('days_in_squeeze'),sortBy=s7[0],setSortBy=s7[1];
+  var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
+  var s10=useState(false),scanning=s10[0],setScanning=s10[1];
+  var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var s12i=useState('all'),mcapMin=s12i[0],setMcapMin=s12i[1];
+  var s13i=useState('all'),mcapMax=s13i[0],setMcapMax=s13i[1];
+  var s14i=useState(''),priceMin=s14i[0],setPriceMin=s14i[1];
+  var s15i=useState(''),priceMax=s15i[0],setPriceMax=s15i[1];
+  var s16i=useState(true),squeezeOnly=s16i[0],setSqueezeOnly=s16i[1];
+  var s17i=useState(''),minBreakouts=s17i[0],setMinBreakouts=s17i[1];
+  var pollRef=useRef(null);
+
+  var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+  var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var mcapOptsMax=[{v:'all',l:'No Max'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')load();}}
+      }catch(e){}
+    },3000);
+  };
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setErr(null);setScanning(true);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});
+      var dateRows=rDate.ok?await rDate.json():[];
+      if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}
+      var sd=dateRows[0].scan_date;setScanDate(sd);
+      if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&squeeze_profile=not.is.null&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var row=batch[i];
+          try{row._sq=typeof row.squeeze_profile==='string'?JSON.parse(row.squeeze_profile):row.squeeze_profile;}catch(e2){row._sq={};}
+          allRows.push(row);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      setData(allRows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
+
+  var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);}};
+
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapMin!=='all'&&(r.market_cap||0)<(mcapVals[mcapMin]||0))return false;
+    if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
+    if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
+    if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
+    if(!r._sq)return false;
+    if(squeezeOnly&&!r._sq.in_squeeze)return false;
+    if(minBreakouts&&(r._sq.squeeze_count||0)<parseFloat(minBreakouts))return false;
+    return true;
+  }).sort(function(a,b){
+    if(sortBy==='ticker')return sortAsc?a.ticker.localeCompare(b.ticker):b.ticker.localeCompare(a.ticker);
+    var va=(a._sq||{})[sortBy]||parseFloat(a[sortBy])||0;
+    var vb=(b._sq||{})[sortBy]||parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
+
+  var inSqueezeCount=data?data.filter(function(r){return r._sq&&r._sq.in_squeeze;}).length:0;
+
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+  var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400,fontSize:6};};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Volatility Squeeze Detector</div>
+    </div>
+
+    {data&&inSqueezeCount>0&&<Cd glow={true}>
+      <div style={{textAlign:'center',padding:'8px 0'}}>
+        <div style={{color:C.gold,fontSize:24,fontWeight:800,fontFamily:F}}>{inSqueezeCount}</div>
+        <div style={{color:C.gold,fontSize:8,fontWeight:700,fontFamily:F,letterSpacing:2,textTransform:'uppercase'}}>Stocks Currently In Squeeze</div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:4}}>Bollinger Band width below 20th percentile of last 120 days</div>
+      </div>
+    </Cd>}
+
+    <Cd glow={true}>
+      <SectionHead title="Volatility Squeeze Scanner" sub="Find stocks where Bollinger Bands are contracting -- breakout imminent" info="A volatility squeeze occurs when Bollinger Band width contracts to its lowest levels. Like a coiled spring, compressed volatility tends to expand -- producing large directional moves. This tool finds stocks in a squeeze right now and shows how they historically break out."/>
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
+      </div>}
+      {pipeStatus&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
+
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={function(){setSqueezeOnly(true);}} style={{flex:1,padding:'10px',border:'1px solid '+(squeezeOnly?C.gold:C.border),borderRadius:6,background:squeezeOnly?C.gold:'transparent',color:squeezeOnly?C.bg:C.txtDim,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>In Squeeze Only</button>
+        <button onClick={function(){setSqueezeOnly(false);}} style={{flex:1,padding:'10px',border:'1px solid '+(!squeezeOnly?C.blue:C.border),borderRadius:6,background:!squeezeOnly?C.blue:'transparent',color:!squeezeOnly?C.bg:C.txtDim,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>All Stocks</button>
+      </div>
+
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Filter Ticker</label>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+        <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Min Breakout Events</label><input value={minBreakouts} onChange={function(e){setMinBreakouts(e.target.value);}} style={iS} placeholder="e.g. 5" type="number" step="1"/></div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>COMPLETE USER GUIDE</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>What is a volatility squeeze?</span> Bollinger Bands measure how far price moves from its 20-day average. When the bands contract (narrow), it means the stock has been unusually quiet. Like a spring being compressed, this quiet period usually ends with a large move -- a "breakout." The squeeze doesn't tell you which direction, but the backtest history does.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>How to use:</span> Toggle "In Squeeze Only" to see stocks where bands are contracting RIGHT NOW. Sort by Days in Squeeze to find the most compressed. Check Breakout Up% to see if the stock historically breaks upward or downward. Check Avg Magnitude to see how large the breakout typically is.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>Column guide:</span> <span style={{color:C.accent}}>Status:</span> SQUEEZE (gold) or -- (not in squeeze). <span style={{color:C.accent}}>Days:</span> Consecutive days in squeeze. More days = more compressed. <span style={{color:C.accent}}>BB Width:</span> Current Bollinger Band width as % of price. Lower = tighter. <span style={{color:C.accent}}>Pctile:</span> Where current width ranks in last 60 days. 5th percentile = extremely tight. <span style={{color:C.accent}}>Events:</span> Historical squeeze breakouts in past year. <span style={{color:C.accent}}>Up%:</span> Percentage that broke upward. <span style={{color:C.accent}}>Avg Up/Dn:</span> Average 5-day return for upward/downward breakouts. <span style={{color:C.accent}}>Avg Mag:</span> Average absolute breakout size regardless of direction.</p>
+          <p style={{marginBottom:0,color:C.txtDim}}>Combine with Z-Score and Directional Bias: a stock in squeeze + Z {'<'} -1.5 + 60% win rate = high probability long breakout.</p>
+        </div>
+      </div>
+    </Cd>
+
+    {filtered.length>0&&<Cd>
+      <SectionHead title="Results" sub={filtered.length+' stocks'+(squeezeOnly?' in squeeze':'')}/>
+      <div style={{overflowX:'auto',maxHeight:600}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:6}}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:6}}>Status</th>
+            <th onClick={function(){doSort('days_in_squeeze');}} style={thS('days_in_squeeze')}>Days</th>
+            <th onClick={function(){doSort('bb_width_pct');}} style={thS('bb_width_pct')}>BB Width</th>
+            <th onClick={function(){doSort('bb_pctile');}} style={thS('bb_pctile')}>Pctile</th>
+            <th onClick={function(){doSort('squeeze_count');}} style={thS('squeeze_count')}>Events</th>
+            <th onClick={function(){doSort('breakout_up_rate');}} style={thS('breakout_up_rate')}>Up%</th>
+            <th onClick={function(){doSort('avg_breakout_up');}} style={thS('avg_breakout_up')}>Avg Up</th>
+            <th onClick={function(){doSort('avg_breakout_dn');}} style={thS('avg_breakout_dn')}>Avg Dn</th>
+            <th onClick={function(){doSort('avg_breakout_mag');}} style={thS('avg_breakout_mag')}>Avg Mag</th>
+            <th onClick={function(){doSort('avg_r3');}} style={thS('avg_r3')}>3d Ret</th>
+          </tr></thead>
+          <tbody>{filtered.slice(0,300).map(function(r,idx){
+            var sq=r._sq||{};
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:sq.in_squeeze?'rgba(255,176,32,0.05)':'transparent'}}>
+              <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
+              <td style={{padding:'3px',textAlign:'center'}}>{sq.in_squeeze?<span style={{color:C.bg,background:C.gold,borderRadius:3,padding:'1px 4px',fontSize:6,fontWeight:700}}>SQUEEZE</span>:<span style={{color:C.grid,fontSize:6}}>--</span>}</td>
+              <td style={{padding:'3px',color:sq.days_in_squeeze>10?C.accent:sq.days_in_squeeze>5?C.gold:sq.days_in_squeeze>0?C.blue:C.grid,textAlign:'right',fontWeight:700}}>{sq.days_in_squeeze||0}</td>
+              <td style={{padding:'3px',color:sq.bb_width_pct<3?C.gold:C.txtDim,textAlign:'right'}}>{(sq.bb_width_pct||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:sq.bb_pctile<=10?C.gold:sq.bb_pctile<=25?C.blue:C.txtDim,textAlign:'right'}}>{(sq.bb_pctile||0)+'th'}</td>
+              <td style={{padding:'3px',color:sq.squeeze_count>=5?C.txtBright:C.txtDim,textAlign:'right'}}>{sq.squeeze_count||0}</td>
+              <td style={{padding:'3px',color:(sq.breakout_up_rate||0)>=60?C.accent:(sq.breakout_up_rate||0)>=50?C.gold:C.warn,textAlign:'right',fontWeight:700}}>{(sq.breakout_up_rate||0).toFixed(0)+'%'}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right'}}>{'+'+(sq.avg_breakout_up||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{(sq.avg_breakout_dn||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{(sq.avg_breakout_mag||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:(sq.avg_r3||0)>0?C.accent:(sq.avg_r3||0)<0?C.warn:C.txtDim,textAlign:'right'}}>{(sq.avg_r3||0)>0?'+':''}{(sq.avg_r3||0).toFixed(2)+'%'}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {filtered.length>300&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 300 of {filtered.length}</div>}
+    </Cd>}
+
+    {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>{squeezeOnly?'No stocks currently in a squeeze. Toggle to "All Stocks" to see historical squeeze data.':'No stocks match your filters.'}</div></Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to detecting and trading volatility squeezes">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is A Volatility Squeeze?</p>
+          <p style={{marginBottom:4,fontSize:9}}>A volatility squeeze happens when a stock's price range contracts to an unusually narrow band -- like a coiled spring. This is measured using Bollinger Bands: when the bands narrow to their tightest point in 60+ days, the stock is "in a squeeze."</p>
+          <p style={{marginBottom:4,fontSize:9}}>The key insight: low volatility periods are always followed by high volatility periods. When the bands are extremely tight, a large move is imminent. The squeeze doesn't tell you WHICH direction -- just that a breakout is coming.</p>
+          <p style={{fontSize:9}}>This tool scans 2,500 stocks to find which ones are currently in a squeeze, how long they've been compressed, and what historically happens when they break out.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Click "In Squeeze Only" to see stocks currently in a squeeze. These are your watchlist -- they're about to make a big move.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Sort by "Days" to find the longest-running squeezes. The longer the squeeze, the bigger the eventual breakout tends to be.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Check "Up%" -- the historical breakout-up rate. If a stock breaks upward 65% of the time after squeezes, you have a directional bias.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Check "AvgMag" -- the average breakout magnitude. A stock that breaks out 4% on average gives you a target.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Set Min Breakout Events to 5+ to ensure the historical pattern has enough data. Use MCap and Price filters to focus on your tradeable universe.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Squeeze:</span> Shows "YES" (gold) if the stock is currently in a squeeze, or "no" if not. This is the primary signal -- stocks showing YES are your candidates.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Days:</span> How many consecutive days the stock has been in a squeeze. Longer = more compressed = bigger expected breakout.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>BB Width:</span> Current Bollinger Band width as a percentage of the 20-day moving average. Lower = tighter bands = more compressed volatility.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Pctile:</span> Where the current BB width sits relative to the last 60 days (0-100%). A percentile of 5% means the bands are tighter than 95% of the last 60 days -- extreme compression.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Events:</span> How many squeeze-then-breakout episodes occurred in the past year. More events = more reliable pattern.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Up%:</span> Percentage of historical breakouts that went upward. Above 60% = bullish bias after squeezes. Below 40% = bearish bias.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgUp:</span> Average 5-day return when the breakout was upward. This is your expected profit on bullish breakouts.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgDn:</span> Average 5-day return when the breakout was downward. This is your expected loss if you're long and it breaks down.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>AvgMag:</span> Average absolute magnitude of breakouts regardless of direction. Higher = bigger moves after squeezes.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Avg3d:</span> Average 3-day return after squeeze ends. Shorter timeframe view.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>AAPL shows: Squeeze = YES, Days = 8, Pctile = 3%, Events = 12, Up% = 67%, AvgUp = +3.2%, AvgMag = 2.8%. This tells you: AAPL's bands are the tightest in 60 days, it's been compressed for 8 days, and historically after squeezes it breaks upward 67% of the time with an average gain of 3.2%.</p>
+          <p style={{marginBottom:4,fontSize:9}}>You buy AAPL now and set a stop below the lower Bollinger Band (your risk). If it breaks upward, your target is +3.2% (the historical average). If it breaks downward, your stop limits the loss.</p>
+          <p style={{fontSize:9,color:C.warn}}>Risk: Squeezes can last longer than expected. A stock in a squeeze for 8 days might stay compressed for another 20. The signal is that a breakout IS coming -- not that it's coming TODAY. Be patient and use the breakout direction (price closing above/below the bands) as your entry trigger.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -11048,7 +11296,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -11083,6 +11331,7 @@ function App(){
     {page==='recovery'&&<RecoveryPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='pullback'&&<PullbackPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='zscore'&&<ZScorePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='squeeze'&&<SqueezePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
