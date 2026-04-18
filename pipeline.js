@@ -2322,10 +2322,10 @@ async function runScreener() {
     try {
       var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/1/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
       var r5 = await fetch(url5);
-      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; continue; }
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
-      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; continue; }
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; continue; }
 
       // Compute 1-min returns PER DAY (exclude overnight gaps)
       var dayBarsForReturns = {};
@@ -2541,6 +2541,59 @@ async function runScreener() {
       }
       res.hourly_atr_profile = JSON.stringify(hourlyAtr);
 
+      // Hourly Volatility Regime: per-hour ATR% arrays for regime classification
+      var hrDayATRs = {}; // key: hour -> [{date, atr}] sorted by date
+      for (var hri = 0; hri < hdKeys.length; hri++) {
+        var hrd = hrDayData[hdKeys[hri]];
+        if (hrd.high <= 0 || hrd.low <= 0 || hrd.high === -Infinity) continue;
+        var hrAtr2 = (hrd.high - hrd.low) / hrd.low * 100;
+        if (!hrDayATRs[hrd.hr]) hrDayATRs[hrd.hr] = [];
+        hrDayATRs[hrd.hr].push({ date: hrd.date, atr: hrAtr2 });
+      }
+      // Sort each hour's entries by date
+      var hrRegime = {};
+      var hottestHr = -1, hottestRatio = 0, coolestHr = -1, coolestRatio = 999;
+      var expandingCount = 0, contractingCount = 0;
+      for (var h3 = 4; h3 < 20; h3++) {
+        var hArr = hrDayATRs[h3];
+        if (!hArr || hArr.length < 3) { hrRegime[h3] = { avg: 0, last: 0, ratio: 1, trend: 'STABLE', pctile: 50, n: 0 }; continue; }
+        hArr.sort(function(a2, b2) { return a2.date < b2.date ? -1 : a2.date > b2.date ? 1 : 0; });
+        var hSum = 0; for (var hi = 0; hi < hArr.length; hi++) hSum += hArr[hi].atr;
+        var hAvg = hSum / hArr.length;
+        var hLast = hArr[hArr.length - 1].atr;
+        var hRatio = hAvg > 0 ? Math.round(hLast / hAvg * 100) / 100 : 1;
+        // Percentile of last day within this hour's history
+        var hSorted = hArr.map(function(x){return x.atr;}).sort(function(a2,b2){return a2-b2;});
+        var hRank = 0; for (var hi2 = 0; hi2 < hSorted.length; hi2++) { if (hLast > hSorted[hi2]) hRank++; }
+        var hPctile = Math.round(hRank / hSorted.length * 100);
+        // Trend: last 3 vs first portion
+        var hTrend = 'STABLE';
+        if (hArr.length >= 5) {
+          var last3sum = 0, first7sum = 0;
+          var splitPt = Math.max(1, hArr.length - 3);
+          for (var hi3 = splitPt; hi3 < hArr.length; hi3++) last3sum += hArr[hi3].atr;
+          for (var hi3 = 0; hi3 < splitPt; hi3++) first7sum += hArr[hi3].atr;
+          var last3avg = last3sum / (hArr.length - splitPt);
+          var first7avg = first7sum / splitPt;
+          if (first7avg > 0) {
+            var tRatio = last3avg / first7avg;
+            if (tRatio >= 1.2) hTrend = 'EXPANDING';
+            else if (tRatio <= 0.8) hTrend = 'CONTRACTING';
+          }
+        }
+        hrRegime[h3] = { avg: Math.round(hAvg * 1000) / 1000, last: Math.round(hLast * 1000) / 1000, ratio: hRatio, trend: hTrend, pctile: hPctile, n: hArr.length };
+        if (hRatio > hottestRatio) { hottestRatio = hRatio; hottestHr = h3; }
+        if (hRatio < coolestRatio) { coolestRatio = hRatio; coolestHr = h3; }
+        if (hTrend === 'EXPANDING') expandingCount++;
+        if (hTrend === 'CONTRACTING') contractingCount++;
+      }
+      res.hourly_vol_regime = JSON.stringify({
+        hours: hrRegime,
+        hottest_hr: hottestHr, hottest_ratio: Math.round(hottestRatio * 100) / 100,
+        coolest_hr: coolestHr, coolest_ratio: Math.round(coolestRatio * 100) / 100,
+        expanding_hrs: expandingCount, contracting_hrs: contractingCount
+      });
+
       // Low to Next High Swing %: prev hour low → next hour high
       var swingSums = {}; var swingCounts = {};
       // hrDayData keys are "h_date", group by date to get hour pairs
@@ -2628,7 +2681,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; }
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);
