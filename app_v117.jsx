@@ -9693,6 +9693,237 @@ function ConfluencePage(p){
   </div>;
 }
 
+function VolRegimePage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
+  var s5=useState(null),scanTime=s5[0],setScanTime=s5[1];
+  var s6=useState(''),filter=s6[0],setFilter=s6[1];
+  var s7=useState('pctile'),sortBy=s7[0],setSortBy=s7[1];
+  var s8=useState(true),sortAsc=s8[0],setSortAsc=s8[1];
+  var s10=useState(false),scanning=s10[0],setScanning=s10[1];
+  var s11=useState(null),pipeStatus=s11[0],setPipeStatus=s11[1];
+  var s12m=useState('all'),mcapMin=s12m[0],setMcapMin=s12m[1];
+  var s13m=useState('all'),mcapMax=s13m[0],setMcapMax=s13m[1];
+  var s14m=useState(''),priceMin=s14m[0],setPriceMin=s14m[1];
+  var s15m=useState(''),priceMax=s15m[0],setPriceMax=s15m[1];
+  var s16m=useState('all'),regimeFilter=s16m[0],setRegimeFilter=s16m[1];
+  var s17m=useState('all'),dirFilter=s17m[0],setDirFilter=s17m[1];
+  var pollRef=useRef(null);
+
+  var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
+  var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var mcapOptsMax=[{v:'all',l:'No Max'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
+  var regimeColors={SQUEEZE:C.purple,LOW:C.accent,NORMAL:C.blue,ELEVATED:C.gold,HIGH:C.warn};
+  var dirColors={CONTRACTING:C.accent,STABLE:C.txtDim,EXPANDING:C.warn};
+  var dirArrows={CONTRACTING:'\u2193',STABLE:'\u2192',EXPANDING:'\u2191'};
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')load();}}
+      }catch(e){}
+    },3000);
+  };
+  useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setErr(null);setScanning(true);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});
+      var dateRows=rDate.ok?await rDate.json():[];
+      if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}
+      var sd=dateRows[0].scan_date;setScanDate(sd);
+      if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,volatility_regime&scan_date=eq.'+sd+'&volatility_regime=not.is.null&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var row=batch[i];
+          try{row._vr=typeof row.volatility_regime==='string'?JSON.parse(row.volatility_regime):row.volatility_regime||{};}catch(e2){row._vr={};}
+          allRows.push(row);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      setData(allRows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
+
+  var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(col==='pctile');}};
+
+  // Regime counts
+  var regimeCounts={SQUEEZE:0,LOW:0,NORMAL:0,ELEVATED:0,HIGH:0};
+  if(data){for(var rc=0;rc<data.length;rc++){var rr=data[rc]._vr;if(rr&&rr.regime&&regimeCounts[rr.regime]!==undefined)regimeCounts[rr.regime]++;}}
+
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(mcapMin!=='all'&&(r.market_cap||0)<(mcapVals[mcapMin]||0))return false;
+    if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
+    if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
+    if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
+    if(!r._vr||!r._vr.regime)return false;
+    if(regimeFilter!=='all'&&r._vr.regime!==regimeFilter)return false;
+    if(dirFilter!=='all'&&r._vr.direction!==dirFilter)return false;
+    return true;
+  }).sort(function(a,b){
+    if(sortBy==='ticker')return sortAsc?a.ticker.localeCompare(b.ticker):b.ticker.localeCompare(a.ticker);
+    if(sortBy==='regime'){var ro={SQUEEZE:0,LOW:1,NORMAL:2,ELEVATED:3,HIGH:4};var va2=(ro[(a._vr||{}).regime]||2);var vb2=(ro[(b._vr||{}).regime]||2);return sortAsc?(va2-vb2):(vb2-va2);}
+    if(sortBy==='direction'){var dro={CONTRACTING:0,STABLE:1,EXPANDING:2};var va3=(dro[(a._vr||{}).direction]||1);var vb3=(dro[(b._vr||{}).direction]||1);return sortAsc?(va3-vb3):(vb3-va3);}
+    var va=(a._vr||{})[sortBy]||parseFloat(a[sortBy])||0;
+    var vb=(b._vr||{})[sortBy]||parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
+
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+  var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400,fontSize:6};};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Volatility Regime Classification</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Volatility Regime Classification" sub="Classifying each stock's current volatility state vs its own history (~252 days)" info="Each stock's 20-day rolling ATR is ranked against its full-year ATR distribution. This tells you whether the stock is in a period of unusually low or high volatility relative to itself, and whether volatility is expanding or contracting."/>
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
+      </div>}
+      {pipeStatus&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
+
+      {data&&data.length>0&&<div style={{display:'flex',gap:4,marginBottom:8,flexWrap:'wrap'}}>
+        {['all','SQUEEZE','LOW','NORMAL','ELEVATED','HIGH'].map(function(r2){var cnt=r2==='all'?(data?data.length:0):regimeCounts[r2]||0;var col=r2==='all'?C.txtBright:regimeColors[r2]||C.txtDim;var active=regimeFilter===r2;
+          return <button key={r2} onClick={function(){setRegimeFilter(r2);}} style={{padding:'6px 10px',border:'1px solid '+(active?col:C.border),borderRadius:4,background:active?col+'20':'transparent',color:active?col:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer',letterSpacing:1}}>{(r2==='all'?'ALL':r2)+' ('+cnt+')'}</button>;
+        })}
+      </div>}
+
+      <div style={{display:'flex',gap:4,marginBottom:8}}>
+        {['all','CONTRACTING','STABLE','EXPANDING'].map(function(d2){var col=d2==='all'?C.txtBright:dirColors[d2]||C.txtDim;var active=dirFilter===d2;var arrow=dirArrows[d2]||'';
+          return <button key={d2} onClick={function(){setDirFilter(d2);}} style={{flex:1,padding:'8px',border:'1px solid '+(active?col:C.border),borderRadius:4,background:active?col+'20':'transparent',color:active?col:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>{arrow+' '+(d2==='all'?'ALL':d2)}</button>;
+        })}
+      </div>
+
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Filter Ticker</label>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
+        <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+        <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
+      </div>
+    </Cd>
+
+    {filtered.length>0&&<Cd>
+      <SectionHead title="Results" sub={filtered.length+' stocks'+(regimeFilter!=='all'?' in '+regimeFilter:'')+(dirFilter!=='all'?' + '+dirFilter:'')}/>
+      <div style={{overflowX:'auto',maxHeight:600}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:6}}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
+            <th onClick={function(){doSort('regime');}} style={thS('regime')}>Regime</th>
+            <th onClick={function(){doSort('pctile');}} style={thS('pctile')}>Pctile</th>
+            <th onClick={function(){doSort('current_atr');}} style={thS('current_atr')}>ATR%</th>
+            <th onClick={function(){doSort('direction');}} style={thS('direction')}>Dir</th>
+            <th onClick={function(){doSort('dir_ratio');}} style={thS('dir_ratio')}>5d/20d</th>
+            <th onClick={function(){doSort('ret_5d');}} style={thS('ret_5d')}>5d Ret</th>
+            <th onClick={function(){doSort('days_in_regime');}} style={thS('days_in_regime')}>Days</th>
+          </tr></thead>
+          <tbody>{filtered.slice(0,300).map(function(r,idx){
+            var vr=r._vr||{};
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
+              <td style={{padding:'3px',textAlign:'right'}}><span style={{display:'inline-block',padding:'1px 5px',borderRadius:3,fontSize:6,fontWeight:800,letterSpacing:0.5,background:(regimeColors[vr.regime]||C.txtDim)+'20',color:regimeColors[vr.regime]||C.txtDim,border:'1px solid '+(regimeColors[vr.regime]||C.txtDim)+'40'}}>{vr.regime||'--'}</span></td>
+              <td style={{padding:'3px',color:regimeColors[vr.regime]||C.txtDim,textAlign:'right',fontWeight:700}}>{(vr.pctile||0)+'%'}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{(vr.current_atr||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',textAlign:'right'}}><span style={{color:dirColors[vr.direction]||C.txtDim,fontWeight:700,fontSize:8}}>{(dirArrows[vr.direction]||'')}</span><span style={{color:dirColors[vr.direction]||C.txtDim,fontSize:5,fontWeight:700}}>{' '+(vr.direction||'--')}</span></td>
+              <td style={{padding:'3px',color:(vr.dir_ratio||1)>=1.2?C.warn:(vr.dir_ratio||1)<=0.8?C.accent:C.txtDim,textAlign:'right'}}>{(vr.dir_ratio||1).toFixed(2)+'x'}</td>
+              <td style={{padding:'3px',color:(vr.ret_5d||0)>0?C.accent:(vr.ret_5d||0)<0?C.warn:C.txtDim,textAlign:'right',fontWeight:700}}>{(vr.ret_5d||0)>0?'+':''}{(vr.ret_5d||0).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{vr.days_in_regime||0}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {filtered.length>300&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 300 of {filtered.length}</div>}
+    </Cd>}
+
+    {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your filters.</div></Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to understanding and using volatility regime classification">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>Every stock cycles between periods of low and high volatility. This tool classifies each stock's CURRENT volatility state by comparing its recent 20-day ATR (Average True Range) against its own full-year history. A stock in the "LOW" regime is unusually calm for itself — not compared to other stocks. NVDA's "LOW" volatility is still higher than a utility stock's "HIGH."</p>
+          <p style={{fontSize:9}}>This matters because your other Stage 6 tools (Z-Score, Recovery, Pullback) were backtested across ALL regimes blended together. A 70% win rate might be 85% during LOW vol and 45% during HIGH vol. Knowing the current regime tells you whether the backtest is likely to hold right now.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Check the regime distribution buttons at the top. They show how many stocks are in each state. If 300 stocks are in SQUEEZE and only 50 in HIGH, the market is broadly compressed — a large move may be building across many names.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Click a regime button to filter. "SQUEEZE" shows stocks with the most compressed volatility — these are breakout candidates. "HIGH" shows stocks in crisis/expansion mode where mean-reversion is risky.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Filter by vol direction. "CONTRACTING" stocks are calming down (entering a quiet period). "EXPANDING" stocks are seeing volatility increase (breakout or selloff underway).</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Check the 5d Ret column alongside the regime. "HIGH VOL + EXPANDING + negative 5d return" = active selloff, avoid mean-reversion. "LOW VOL + CONTRACTING + flat 5d return" = perfect compression, watch for breakout.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Cross-reference with the Confluence Scanner. A buy signal in LOW/NORMAL vol has much higher probability than the same signal in HIGH vol.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Regime:</span> Current volatility state. SQUEEZE (purple, 0-10th pctile) = extreme compression. LOW (green, 10-30th) = calm. NORMAL (blue, 30-70th) = standard. ELEVATED (gold, 70-90th) = heightened. HIGH (red, 90-100th) = crisis/expansion.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Pctile:</span> The exact percentile of the current 20-day ATR within the stock's full-year ATR distribution. 5% = volatility is lower than 95% of the past year. 95% = higher than 95% of history.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>ATR%:</span> The current 20-day Average True Range as a percentage of price. This is the raw volatility number — how much the stock typically moves per day right now.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Dir (Direction):</span> Whether volatility is expanding or contracting. Shows an arrow (up/right/down) plus the label. Based on the 5d/20d ratio.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>5d/20d:</span> Ratio of 5-day average ATR to 20-day ATR. Above 1.2x = volatility expanding rapidly. Below 0.8x = contracting. This is the speed of regime change.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>5d Ret:</span> 5-day stock return. Green = up, red = down. Provides directional context for the regime — is this high vol from a rally or a selloff?</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Days:</span> How many consecutive days the stock has been in this regime. Longer duration = more established state. Short duration = just entered, regime may not be stable yet.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>You open the Confluence Scanner and see SOFI with 5 buy signals. Before entering the trade, you check this page: SOFI shows Regime = LOW, Pctile = 18%, Direction = CONTRACTING, 5d Ret = -1.2%. This means SOFI's volatility is unusually low and still falling — ideal conditions for mean-reversion. The -1.2% dip is happening in a calm market, not a crisis. You enter the trade with high confidence.</p>
+          <p style={{fontSize:9}}>Contrast: If SOFI showed Regime = HIGH, Pctile = 94%, Direction = EXPANDING, 5d Ret = -8.5%, those same 5 buy signals are much riskier. The stock is in crisis mode — the Z-score might keep getting more negative before reverting. You'd either skip the trade or size it much smaller.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -11790,7 +12021,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -11828,6 +12059,7 @@ function App(){
     {page==='squeeze'&&<SqueezePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='rangepos'&&<RangePositionPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='confluence'&&<ConfluencePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='volregime'&&<VolRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}

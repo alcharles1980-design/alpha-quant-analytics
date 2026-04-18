@@ -2213,6 +2213,77 @@ async function runScreener() {
       hv_z_n: hvZWins.length, lv_z_n: lvZWins.length
     };
 
+    // Volatility Regime Classification
+    var RATR = 20; // rolling ATR window
+    var rollingATRs = [];
+    for (var vri2 = RATR; vri2 < abn; vri2++) {
+      var rAtrSum = 0;
+      for (var vri3 = vri2 - RATR + 1; vri3 <= vri2; vri3++) {
+        rAtrSum += Math.max(ab[vri3].h - ab[vri3].l, vri3 > 0 ? Math.abs(ab[vri3].h - ab[vri3 - 1].c) : 0, vri3 > 0 ? Math.abs(ab[vri3].l - ab[vri3 - 1].c) : 0);
+      }
+      var rAtrVal = ab[vri2].c > 0 ? (rAtrSum / RATR / ab[vri2].c) * 100 : 0;
+      rollingATRs.push(rAtrVal);
+    }
+
+    var vrRegime = 'NORMAL', vrPctile = 50, vrDirection = 'STABLE', vrDirRatio = 1;
+    var vrCurrentATR = 0, vrATR5 = 0, vrATR20 = 0, vr5dReturn = 0, vrDaysInRegime = 0;
+
+    if (rollingATRs.length >= 20) {
+      vrCurrentATR = Math.round(rollingATRs[rollingATRs.length - 1] * 1000) / 1000;
+
+      // Percentile of current ATR vs full history
+      var sortedATRs = rollingATRs.slice().sort(function(a2, b2) { return a2 - b2; });
+      var rank2 = 0;
+      for (var vri4 = 0; vri4 < sortedATRs.length; vri4++) { if (vrCurrentATR > sortedATRs[vri4]) rank2++; }
+      vrPctile = Math.round(rank2 / sortedATRs.length * 100);
+
+      // Regime classification
+      if (vrPctile <= 10) vrRegime = 'SQUEEZE';
+      else if (vrPctile <= 30) vrRegime = 'LOW';
+      else if (vrPctile <= 70) vrRegime = 'NORMAL';
+      else if (vrPctile <= 90) vrRegime = 'ELEVATED';
+      else vrRegime = 'HIGH';
+
+      // 5-day ATR vs 20-day ATR (volatility direction)
+      if (rollingATRs.length >= 5) {
+        var last5ATRs = rollingATRs.slice(-5);
+        vrATR5 = 0; for (var vri5 = 0; vri5 < last5ATRs.length; vri5++) vrATR5 += last5ATRs[vri5]; vrATR5 /= 5;
+        vrATR20 = vrCurrentATR; // already the 20-day rolling ATR
+        vrDirRatio = vrATR20 > 0 ? Math.round(vrATR5 / vrATR20 * 100) / 100 : 1;
+        if (vrDirRatio >= 1.2) vrDirection = 'EXPANDING';
+        else if (vrDirRatio <= 0.8) vrDirection = 'CONTRACTING';
+        else vrDirection = 'STABLE';
+      }
+
+      // 5-day return for directional context
+      if (abn >= 5) {
+        vr5dReturn = Math.round((ab[abn - 1].c - ab[abn - 5].c) / ab[abn - 5].c * 10000) / 100;
+      }
+
+      // Days in current regime
+      for (var vri6 = rollingATRs.length - 2; vri6 >= 0; vri6--) {
+        var histPctile2 = 0;
+        for (var vri7 = 0; vri7 < sortedATRs.length; vri7++) { if (rollingATRs[vri6] > sortedATRs[vri7]) histPctile2++; }
+        histPctile2 = Math.round(histPctile2 / sortedATRs.length * 100);
+        var histRegime = 'NORMAL';
+        if (histPctile2 <= 10) histRegime = 'SQUEEZE';
+        else if (histPctile2 <= 30) histRegime = 'LOW';
+        else if (histPctile2 <= 70) histRegime = 'NORMAL';
+        else if (histPctile2 <= 90) histRegime = 'ELEVATED';
+        else histRegime = 'HIGH';
+        if (histRegime === vrRegime) vrDaysInRegime++;
+        else break;
+      }
+      vrDaysInRegime++; // include today
+    }
+
+    var volRegime = {
+      regime: vrRegime, pctile: vrPctile, direction: vrDirection,
+      dir_ratio: vrDirRatio, current_atr: vrCurrentATR,
+      atr_5d: Math.round(vrATR5 * 1000) / 1000, atr_20d: Math.round(vrATR20 * 1000) / 1000,
+      ret_5d: vr5dReturn, days_in_regime: vrDaysInRegime, days: abn
+    };
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -2229,7 +2300,8 @@ async function runScreener() {
       zscore_profile: JSON.stringify(zProf),
       squeeze_profile: JSON.stringify(sqProf),
       range_position: JSON.stringify(rangePos),
-      volume_profile: JSON.stringify(volProf)
+      volume_profile: JSON.stringify(volProf),
+      volatility_regime: JSON.stringify(volRegime)
     });
 
     if (ci % 200 === 0) {
