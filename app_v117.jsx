@@ -6458,25 +6458,28 @@ function OscillationScreenerPage(p){
       if(bars2.length<20){setErr('Insufficient data for '+ticker);setLoadingHourly(false);return;}
 
       var etFmt3=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false});
-      // Group bars by hour
-      var hourBars={};for(var h=4;h<20;h++)hourBars[h]=[];
+      var etDayFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+      // Group bars by hour AND day to avoid cross-day contamination
+      var hourDayBars={};
       for(var i=0;i<bars2.length;i++){
         var bt=etFmt3.format(new Date(bars2[i].t));
         var bh=parseInt(bt.split(':')[0])||0;
-        if(hourBars[bh])hourBars[bh].push(bars2[i]);
+        var bd=etDayFmt.format(new Date(bars2[i].t));
+        var hdk=bh+'_'+bd;
+        if(!hourDayBars[hdk])hourDayBars[hdk]={h:bh,d:bd,bars:[]};
+        hourDayBars[hdk].bars.push(bars2[i]);
       }
-
-      // Count oscillations per hour
-      var nDays=0;
-      var etDayFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
       var daySet={};for(var i=0;i<bars2.length;i++){var dd=etDayFmt.format(new Date(bars2[i].t));daySet[dd]=true;}
-      nDays=Object.keys(daySet).length||1;
+      var nDays=Object.keys(daySet).length||1;
 
       var hourlyResult=[];
       for(var h=4;h<20;h++){
-        var hb=hourBars[h];
-        var oscCount=0;var excursions=[];
-        if(hb.length>=3){
+        var hdKeys2=Object.keys(hourDayBars).filter(function(k){return hourDayBars[k].h===h;});
+        var totalOsc=0;var allExc=[];var totalBars=0;
+        for(var di2=0;di2<hdKeys2.length;di2++){
+          var hb=hourDayBars[hdKeys2[di2]].bars;
+          totalBars+=hb.length;
+          if(hb.length<3)continue;
           var runStart=hb[0].c;var runDir=0;
           for(var i=1;i<hb.length;i++){
             var mv=hb[i].c-hb[i-1].c;var dr=mv>0?1:mv<0?-1:0;
@@ -6484,20 +6487,20 @@ function OscillationScreenerPage(p){
             if(runDir===0){runDir=dr;runStart=hb[i-1].c;}
             else if(dr!==runDir){
               var ex=Math.abs(hb[i-1].c-runStart);
-              if(ex>0){oscCount++;excursions.push(ex);}
+              if(ex>0){totalOsc++;allExc.push(ex);}
               runStart=hb[i-1].c;runDir=dr;
             }
           }
         }
-        var avgExc=0;if(excursions.length>0){for(var j=0;j<excursions.length;j++)avgExc+=excursions[j];avgExc/=excursions.length;}
-        var price=hb.length>0?hb[hb.length-1].c:(bars2[bars2.length-1]?bars2[bars2.length-1].c:1);
+        var avgExc=0;if(allExc.length>0){for(var j=0;j<allExc.length;j++)avgExc+=allExc[j];avgExc/=allExc.length;}
+        var price=bars2[bars2.length-1]?bars2[bars2.length-1].c:1;
         hourlyResult.push({
           hour:h,
           label:(h<10?'0':'')+h+':00',
-          osc:Math.round(oscCount/nDays*10)/10,
+          osc:Math.round(totalOsc/nDays*10)/10,
           avgExcDollar:Math.round(avgExc*100)/100,
           avgExcPct:Math.round(avgExc/price*10000)/100,
-          bars:hb.length,
+          bars:totalBars,
           session:h<9?'pre':h<16?'rth':'post'
         });
       }
