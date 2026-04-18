@@ -6433,6 +6433,8 @@ function OscillationScreenerPage(p){
   var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
   var s13=useState(false),showColGuide=s13[0],setShowColGuide=s13[1];
   var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
+  var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
+  var s14c=useState(''),priceMax=s14c[0],setPriceMax=s14c[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(false),refreshing=s16[0],setRefreshing=s16[1];
   var s17=useState('all'),sessionFilter=s17[0],setSessionFilter=s17[1];
@@ -6619,6 +6621,8 @@ function OscillationScreenerPage(p){
       if(mcapMax!=='all'&&mc>(maxs[mcapMax]||Infinity))return false;
     }
     if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
+    if(priceMin&&r.price<parseFloat(priceMin))return false;
+    if(priceMax&&r.price>parseFloat(priceMax))return false;
     if(etfFilter==='stocks'&&r.ticker_type==='ETF')return false;
     if(etfFilter==='etfs'&&r.ticker_type!=='ETF')return false;
     return true;
@@ -6701,6 +6705,10 @@ function OscillationScreenerPage(p){
             <option value="100b">$100B</option>
           </select>
         </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
+        <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
       </div>
       <div style={{marginTop:8}}>
         <button onClick={doRefresh} disabled={refreshing} style={Object.assign({},iS,{cursor:'pointer',textAlign:'center',color:refreshing?C.bg:C.accent,border:'1px solid '+C.accent,background:refreshing?C.accent:'transparent',transition:'all 0.2s'})}>{refreshing?'\u21BB Refreshing...':'Refresh Data'}</button>
