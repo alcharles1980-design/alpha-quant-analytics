@@ -7601,11 +7601,23 @@ function CloseHighScreenerPage(p){
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:4,marginTop:4}}>
           {Array.from({length:16},function(_,i){var h=i+4;return <div key={h}>
-            <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginBottom:1,textAlign:'center'}}>{(h<10?'0':'')+h+':00'+(h===19?' *':'')}</div>
+            <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginBottom:1,textAlign:'center'}}>{(h<10?'0':'')+h+'\u2192'+(h<9?'0':'')+(h+1)+(h===19?' *':'')}</div>
             <input value={hourFilters[h]!==undefined?hourFilters[h]:''} onChange={function(e){setHourFilter(h,e.target.value);}} style={Object.assign({},iS,{padding:'6px 4px',fontSize:8,textAlign:'center',borderColor:hourFilters[h]?C.accent:C.border})} placeholder="--" type="number" step="0.1" disabled={h===19}/>
           </div>;})}
         </div>
-        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>* Hour 19 has no next hour.</div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>* Hour 19 has no next hour. Each label shows: close hour {'\u2192'} high hour.</div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+        <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>HOW TO READ THIS DATA</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
+          <p style={{marginBottom:6}}>Each column shows: <span style={{color:C.accent,fontWeight:700}}>that hour's close price {'\u2192'} next hour's high price</span> as a percentage.</p>
+          <p style={{marginBottom:6}}>Example: INTC column <span style={{color:C.gold}}>08{'\u2192'}09 = 3.39%</span> means on average over 10 days, INTC's closing price at the end of the 8 AM hour swings up 3.39% to reach the high of the 9 AM hour.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>For oscillation trading:</span> If you buy near the close of hour 08, there is typically a 3.39% upswing available during hour 09. Your take-profit should be set within this swing range to capture the move.</p>
+          <p style={{marginBottom:0,color:C.txtDim}}>Note: This is an average across 10 trading days. Individual days vary. Use alongside the ATR and Oscillation screeners to find stocks with both high swing potential AND consistent mean-reversion.</p>
+        </div>
       </div>
     </Cd>
 
