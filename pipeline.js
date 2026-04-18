@@ -1772,6 +1772,33 @@ async function runScreener() {
     // Daily-only score penalized by 0.7x since no intraday validation
     var dailyOnlyScore = Math.round((hurstScore * 0.30 + atrScore * 0.25 + oscScore2 * 0.25 + revScore * 0.10 + yzScore * 0.10) * 0.7 * 10) / 10;
 
+    // Daily Close to Next Day High %
+    var dcSwings = []; var dcByDow = {1:[],2:[],3:[],4:[],5:[]};
+    for (var dci = 0; dci < n - 1; dci++) {
+      if (bars[dci].c > 0) {
+        var dcPct = (bars[dci + 1].h - bars[dci].c) / bars[dci].c * 100;
+        dcSwings.push(dcPct);
+        var dcDow = new Date(bars[dci].date + 'T12:00:00Z').getDay(); // 1=Mon..5=Fri
+        if (dcByDow[dcDow]) dcByDow[dcDow].push(dcPct);
+      }
+    }
+    var dcAvg = 0, dcMin = 0, dcMax = 0, dcStd = 0;
+    if (dcSwings.length > 0) {
+      for (var j = 0; j < dcSwings.length; j++) dcAvg += dcSwings[j]; dcAvg /= dcSwings.length;
+      dcMin = dcSwings[0]; dcMax = dcSwings[0];
+      for (var j = 0; j < dcSwings.length; j++) { if (dcSwings[j] < dcMin) dcMin = dcSwings[j]; if (dcSwings[j] > dcMax) dcMax = dcSwings[j]; }
+      var dcVar = 0; for (var j = 0; j < dcSwings.length; j++) dcVar += (dcSwings[j] - dcAvg) * (dcSwings[j] - dcAvg); dcStd = Math.sqrt(dcVar / dcSwings.length);
+    }
+    var dcDowAvg = {};
+    var dowNames = {1:'mon',2:'tue',3:'wed',4:'thu',5:'fri'};
+    for (var dw = 1; dw <= 5; dw++) {
+      var darr = dcByDow[dw];
+      if (darr && darr.length > 0) { var ds = 0; for (var j = 0; j < darr.length; j++) ds += darr[j]; dcDowAvg[dowNames[dw]] = Math.round(ds / darr.length * 1000) / 1000; }
+      else dcDowAvg[dowNames[dw]] = 0;
+    }
+    var dailyCloseHigh = { avg: Math.round(dcAvg * 1000) / 1000, min: Math.round(dcMin * 1000) / 1000, max: Math.round(dcMax * 1000) / 1000, std: Math.round(dcStd * 1000) / 1000, n: dcSwings.length };
+    for (var dk in dcDowAvg) dailyCloseHigh[dk] = dcDowAvg[dk];
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -1780,7 +1807,8 @@ async function runScreener() {
       parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
       reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: dailyOnlyScore,
-      days_sampled: n, scan_date: scanDate
+      days_sampled: n, scan_date: scanDate,
+      daily_close_high_profile: JSON.stringify(dailyCloseHigh)
     });
 
     if (ci % 200 === 0) {
