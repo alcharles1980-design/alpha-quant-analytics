@@ -1999,9 +1999,10 @@ async function runScreener() {
         var bHr = parseInt(etHrFmt.format(bTs)) || 0;
         var bDt = etDateFmt.format(bTs);
         var hdk = bHr + '_' + bDt;
-        if (!hrDayData[hdk]) hrDayData[hdk] = { hr: bHr, date: bDt, high: -Infinity, low: Infinity };
+        if (!hrDayData[hdk]) hrDayData[hdk] = { hr: bHr, date: bDt, high: -Infinity, low: Infinity, close: 0 };
         if (bars5[bi8].h > hrDayData[hdk].high) hrDayData[hdk].high = bars5[bi8].h;
         if (bars5[bi8].l < hrDayData[hdk].low) hrDayData[hdk].low = bars5[bi8].l;
+        hrDayData[hdk].close = bars5[bi8].c; // last bar's close = hour close
       }
       // Average ATR% per hour across days
       var hrAtrSums = {}; var hrAtrCounts = {};
@@ -2046,6 +2047,25 @@ async function runScreener() {
         hourlySwing[h2] = swingCounts[h2] ? Math.round(swingSums[h2] / swingCounts[h2] * 1000) / 1000 : 0;
       }
       res.hourly_swing_profile = JSON.stringify(hourlySwing);
+
+      // Hour Close to Next Hour High %: prev hour close → next hour high
+      var chSums = {}; var chCounts = {};
+      for (var sdi2 = 0; sdi2 < swDayKeys.length; sdi2++) {
+        var dayHrs2 = swingDays[swDayKeys[sdi2]];
+        for (var h3 = 4; h3 < 19; h3++) {
+          if (dayHrs2[h3] && dayHrs2[h3 + 1] && dayHrs2[h3].close > 0) {
+            var chPct = (dayHrs2[h3 + 1].high - dayHrs2[h3].close) / dayHrs2[h3].close * 100;
+            if (!chSums[h3]) { chSums[h3] = 0; chCounts[h3] = 0; }
+            chSums[h3] += chPct;
+            chCounts[h3]++;
+          }
+        }
+      }
+      var hourlyCloseHigh = {};
+      for (var h3 = 4; h3 < 20; h3++) {
+        hourlyCloseHigh[h3] = chCounts[h3] ? Math.round(chSums[h3] / chCounts[h3] * 1000) / 1000 : 0;
+      }
+      res.hourly_close_high_profile = JSON.stringify(hourlyCloseHigh);
 
       // Compute per-hour ATR% averaged across days
       var hourlyAtr = {};
