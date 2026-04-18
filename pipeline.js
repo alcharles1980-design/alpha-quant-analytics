@@ -2091,6 +2091,61 @@ async function runScreener() {
       }
     }
 
+    // 52-Week Range Position
+    var wkHigh = -Infinity, wkLow = Infinity;
+    for (var wi = 0; wi < abn; wi++) {
+      if (ab[wi].h > wkHigh) wkHigh = ab[wi].h;
+      if (ab[wi].l < wkLow) wkLow = ab[wi].l;
+    }
+    var wkRange = wkHigh - wkLow;
+    var wkPctile = wkRange > 0 ? Math.round((cand.price - wkLow) / wkRange * 1000) / 10 : 50;
+    var distToHigh = cand.price > 0 ? Math.round((wkHigh - cand.price) / cand.price * 1000) / 10 : 0;
+    var distToLow = cand.price > 0 ? Math.round((cand.price - wkLow) / cand.price * 1000) / 10 : 0;
+
+    // Backtest: forward returns by decile position
+    var decileReturns = {}; // key: decile (0-9) -> {fwd5:[], fwd10:[], fwd20:[]}
+    for (var di2 = 0; di2 < 10; di2++) decileReturns[di2] = {fwd5:[],fwd10:[],fwd20:[]};
+    // Rolling 52-week high/low at each point
+    if (abn >= 60) {
+      for (var rpi = 20; rpi < abn; rpi++) {
+        var lookback = Math.min(rpi, 252);
+        var rHi = -Infinity, rLo = Infinity;
+        for (var rpj = rpi - lookback; rpj <= rpi; rpj++) {
+          if (ab[rpj].h > rHi) rHi = ab[rpj].h;
+          if (ab[rpj].l < rLo) rLo = ab[rpj].l;
+        }
+        var rRange = rHi - rLo;
+        if (rRange <= 0) continue;
+        var rPct = (ab[rpi].c - rLo) / rRange * 100;
+        var decile = Math.min(9, Math.floor(rPct / 10));
+        if (rpi + 5 < abn) decileReturns[decile].fwd5.push((ab[rpi+5].c - ab[rpi].c) / ab[rpi].c * 100);
+        if (rpi + 10 < abn) decileReturns[decile].fwd10.push((ab[rpi+10].c - ab[rpi].c) / ab[rpi].c * 100);
+        if (rpi + 20 < abn) decileReturns[decile].fwd20.push((ab[rpi+20].c - ab[rpi].c) / ab[rpi].c * 100);
+      }
+    }
+
+    var decileSummary = {};
+    for (var di3 = 0; di3 < 10; di3++) {
+      var dr = decileReturns[di3];
+      var avg5 = dr.fwd5.length > 0 ? avg(dr.fwd5) : 0;
+      var avg10 = dr.fwd10.length > 0 ? avg(dr.fwd10) : 0;
+      var avg20 = dr.fwd20.length > 0 ? avg(dr.fwd20) : 0;
+      var win5 = dr.fwd5.length > 0 ? Math.round(dr.fwd5.filter(function(v){return v>0;}).length / dr.fwd5.length * 1000) / 10 : 0;
+      decileSummary[di3] = {n:dr.fwd5.length, r5:Math.round(avg5*1000)/1000, r10:Math.round(avg10*1000)/1000, r20:Math.round(avg20*1000)/1000, w5:win5};
+    }
+
+    // Current decile's stats for quick reference
+    var curDecile = Math.min(9, Math.floor(wkPctile / 10));
+    var curDS = decileSummary[curDecile] || {};
+
+    var rangePos = {
+      high: Math.round(wkHigh * 100) / 100, low: Math.round(wkLow * 100) / 100,
+      pctile: wkPctile, dist_high: distToHigh, dist_low: distToLow,
+      cur_decile: curDecile, cur_r5: curDS.r5 || 0, cur_r10: curDS.r10 || 0,
+      cur_r20: curDS.r20 || 0, cur_w5: curDS.w5 || 0, cur_n: curDS.n || 0,
+      deciles: decileSummary, days: abn
+    };
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -2105,7 +2160,8 @@ async function runScreener() {
       recovery_profile: JSON.stringify(recovProf),
       pullback_profile: JSON.stringify(pullProf),
       zscore_profile: JSON.stringify(zProf),
-      squeeze_profile: JSON.stringify(sqProf)
+      squeeze_profile: JSON.stringify(sqProf),
+      range_position: JSON.stringify(rangePos)
     });
 
     if (ci % 200 === 0) {
