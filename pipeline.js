@@ -2019,6 +2019,34 @@ async function runScreener() {
       }
       res.hourly_atr_profile = JSON.stringify(hourlyAtr);
 
+      // Low to Next High Swing %: prev hour low → next hour high
+      var swingSums = {}; var swingCounts = {};
+      // hrDayData keys are "h_date", group by date to get hour pairs
+      var swingDays = {};
+      var hdkAll = Object.keys(hrDayData);
+      for (var si2 = 0; si2 < hdkAll.length; si2++) {
+        var hdd = hrDayData[hdkAll[si2]];
+        if (!swingDays[hdd.date]) swingDays[hdd.date] = {};
+        swingDays[hdd.date][hdd.hr] = { high: hdd.high, low: hdd.low };
+      }
+      var swDayKeys = Object.keys(swingDays);
+      for (var sdi = 0; sdi < swDayKeys.length; sdi++) {
+        var dayHrs = swingDays[swDayKeys[sdi]];
+        for (var h2 = 4; h2 < 19; h2++) {
+          if (dayHrs[h2] && dayHrs[h2 + 1] && dayHrs[h2].low > 0) {
+            var swPct = (dayHrs[h2 + 1].high - dayHrs[h2].low) / dayHrs[h2].low * 100;
+            if (!swingSums[h2]) { swingSums[h2] = 0; swingCounts[h2] = 0; }
+            swingSums[h2] += swPct;
+            swingCounts[h2]++;
+          }
+        }
+      }
+      var hourlySwing = {};
+      for (var h2 = 4; h2 < 20; h2++) {
+        hourlySwing[h2] = swingCounts[h2] ? Math.round(swingSums[h2] / swingCounts[h2] * 1000) / 1000 : 0;
+      }
+      res.hourly_swing_profile = JSON.stringify(hourlySwing);
+
       // Compute per-hour ATR% averaged across days
       var hourlyAtr = {};
       for (var hh = 4; hh < 20; hh++) {
