@@ -2146,6 +2146,73 @@ async function runScreener() {
       deciles: decileSummary, days: abn
     };
 
+    // Volume Profile
+    var volArr = [];
+    for (var vi = 0; vi < abn; vi++) volArr.push(ab[vi].v || 0);
+    var avgVol20 = 0, avgVol1y = 0;
+    if (abn > 0) { for (var vi2 = 0; vi2 < abn; vi2++) avgVol1y += volArr[vi2]; avgVol1y /= abn; }
+    var recentVols = volArr.slice(-20);
+    if (recentVols.length > 0) { for (var vi3 = 0; vi3 < recentVols.length; vi3++) avgVol20 += recentVols[vi3]; avgVol20 /= recentVols.length; }
+    var lastVolRatio = avgVol20 > 0 ? Math.round(volArr[volArr.length - 1] / avgVol20 * 100) / 100 : 1;
+    // Volume trend: last 5 days avg / previous 15 days avg
+    var volTrend = 1;
+    if (recentVols.length >= 20) {
+      var last5 = 0, prev15 = 0;
+      for (var vi4 = 15; vi4 < 20; vi4++) last5 += recentVols[vi4];
+      for (var vi4 = 0; vi4 < 15; vi4++) prev15 += recentVols[vi4];
+      last5 /= 5; prev15 /= 15;
+      volTrend = prev15 > 0 ? Math.round(last5 / prev15 * 100) / 100 : 1;
+    }
+    // High volume day percentage
+    var hvDays = 0; var hvThresh = avgVol1y * 1.5;
+    for (var vi5 = 0; vi5 < abn; vi5++) { if (volArr[vi5] > hvThresh) hvDays++; }
+    var hvPct = abn > 0 ? Math.round(hvDays / abn * 1000) / 10 : 0;
+
+    // Volume-confirmed recovery: bounce rate on high-vol drops vs low-vol drops
+    var hvBounces = [], lvBounces = [];
+    for (var vri = 1; vri < abn - 1; vri++) {
+      var vDropPct = (ab[vri].c - ab[vri - 1].c) / ab[vri - 1].c * 100;
+      var vDropAbs = Math.abs(ab[vri].c - ab[vri - 1].c);
+      if (vDropPct >= 0 || vDropAbs < longATR) continue;
+      var vBounce = ab[vri + 1].c > ab[vri + 1].o ? 1 : 0;
+      if (ab[vri].v > hvThresh) hvBounces.push(vBounce);
+      else lvBounces.push(vBounce);
+    }
+    var hvBounceRate = hvBounces.length >= 3 ? Math.round(avg(hvBounces) * 1000) / 10 : null;
+    var lvBounceRate = lvBounces.length >= 3 ? Math.round(avg(lvBounces) * 1000) / 10 : null;
+
+    // Volume-confirmed Z-score: win rate on high-vol Z<-2 vs low-vol
+    var hvZWins = [], lvZWins = [];
+    if (abn >= 25) {
+      for (var vzi = 20; vzi < abn - 3; vzi++) {
+        var vzMean = 0;
+        for (var vzj = vzi - 20; vzj < vzi; vzj++) vzMean += ab[vzj].c;
+        vzMean /= 20;
+        var vzVar2 = 0;
+        for (var vzj = vzi - 20; vzj < vzi; vzj++) vzVar2 += (ab[vzj].c - vzMean) * (ab[vzj].c - vzMean);
+        var vzStd = Math.sqrt(vzVar2 / 20);
+        if (vzStd < 0.0001) continue;
+        var vzScore = (ab[vzi].c - vzMean) / vzStd;
+        if (vzScore > -2) continue;
+        var vzRet = (ab[vzi + 3].c - ab[vzi].c) / ab[vzi].c * 100;
+        var vzWin = vzRet > 0 ? 1 : 0;
+        if (ab[vzi].v > hvThresh) hvZWins.push(vzWin);
+        else lvZWins.push(vzWin);
+      }
+    }
+    var hvZWinRate = hvZWins.length >= 3 ? Math.round(avg(hvZWins) * 1000) / 10 : null;
+    var lvZWinRate = lvZWins.length >= 3 ? Math.round(avg(lvZWins) * 1000) / 10 : null;
+
+    var volProf = {
+      avg_vol_20d: Math.round(avgVol20), avg_vol_1y: Math.round(avgVol1y),
+      last_vol_ratio: lastVolRatio, vol_trend: volTrend,
+      hv_day_pct: hvPct,
+      hv_bounce_rate: hvBounceRate, lv_bounce_rate: lvBounceRate,
+      hv_bounce_n: hvBounces.length, lv_bounce_n: lvBounces.length,
+      hv_z_win: hvZWinRate, lv_z_win: lvZWinRate,
+      hv_z_n: hvZWins.length, lv_z_n: lvZWins.length
+    };
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
@@ -2161,7 +2228,8 @@ async function runScreener() {
       pullback_profile: JSON.stringify(pullProf),
       zscore_profile: JSON.stringify(zProf),
       squeeze_profile: JSON.stringify(sqProf),
-      range_position: JSON.stringify(rangePos)
+      range_position: JSON.stringify(rangePos),
+      volume_profile: JSON.stringify(volProf)
     });
 
     if (ci % 200 === 0) {

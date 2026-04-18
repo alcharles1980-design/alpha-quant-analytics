@@ -8224,6 +8224,7 @@ function RecoveryPage(p){
         for(var i=0;i<batch.length;i++){
           var row=batch[i];
           try{row._rp=typeof row.recovery_profile==='string'?JSON.parse(row.recovery_profile):row.recovery_profile;}catch(e2){row._rp={};}
+          try{row._vp=typeof row.volume_profile==='string'?JSON.parse(row.volume_profile):row.volume_profile||{};}catch(e2){row._vp={};}
           allRows.push(row);
         }
         if(batch.length<1000)break;
@@ -8323,6 +8324,7 @@ function RecoveryPage(p){
             <th style={{padding:'4px 1px',color:C.purple,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.purple}} colSpan="5">{'--- 1x ATR Drop ---'}</th>
             <th style={{padding:'4px 1px',color:C.warn,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.warn}} colSpan="5">{'--- 2x ATR Drop ---'}</th>
             <th onClick={function(){doSort('days_sampled');}} style={thS('days_sampled')}>Days</th>
+            <th style={{padding:'4px 1px',color:C.blue,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.blue}} colSpan="3">{'--- Volume ---'}</th>
           </tr>
           <tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:20,background:C.bgCard}}>
             <th colSpan="5"></th>
@@ -8337,9 +8339,12 @@ function RecoveryPage(p){
             <th onClick={function(){doSort('avg_drop_2x');}} style={thS('avg_drop_2x')}>AvgDrp</th>
             <th onClick={function(){doSort('recovery_ratio_2x');}} style={thS('recovery_ratio_2x')}>Recov</th>
             <th></th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:5}}>RelVol</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:5}}>HV Bnc</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:5}}>LV Bnc</th>
           </tr></thead>
           <tbody>{filtered.slice(0,300).map(function(r,idx){
-            var rp=r._rp||{};
+            var rp=r._rp||{};var vp=r._vp||{};
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
@@ -8357,6 +8362,9 @@ function RecoveryPage(p){
               <td style={{padding:'3px',color:rp.drops_2x>0?C.warn:C.grid,textAlign:'right'}}>{rp.drops_2x>0?(rp.avg_drop_2x||0).toFixed(2)+'%':'--'}</td>
               <td style={{padding:'3px',color:rp.drops_2x>0?C.gold:C.grid,textAlign:'right'}}>{rp.drops_2x>0?((rp.recovery_ratio_2x||0)*100).toFixed(0)+'%':'--'}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{rp.days_sampled||0}</td>
+              <td style={{padding:'3px',color:(vp.last_vol_ratio||1)>=1.5?C.blue:(vp.last_vol_ratio||1)>=1?C.txtDim:C.grid,textAlign:'right',fontSize:6}}>{(vp.last_vol_ratio||1).toFixed(1)+'x'}</td>
+              <td style={{padding:'3px',color:vp.hv_bounce_rate!==null&&vp.hv_bounce_rate!==undefined?brColor(vp.hv_bounce_rate):C.grid,textAlign:'right',fontSize:6}}>{vp.hv_bounce_rate!==null&&vp.hv_bounce_rate!==undefined?vp.hv_bounce_rate.toFixed(0)+'%':'--'}</td>
+              <td style={{padding:'3px',color:vp.lv_bounce_rate!==null&&vp.lv_bounce_rate!==undefined?brColor(vp.lv_bounce_rate):C.grid,textAlign:'right',fontSize:6}}>{vp.lv_bounce_rate!==null&&vp.lv_bounce_rate!==undefined?vp.lv_bounce_rate.toFixed(0)+'%':'--'}</td>
             </tr>;
           })}</tbody>
         </table>
@@ -8469,6 +8477,7 @@ function PullbackPage(p){
         for(var i=0;i<batch.length;i++){
           var row=batch[i];
           try{row._pp=typeof row.pullback_profile==='string'?JSON.parse(row.pullback_profile):row.pullback_profile;}catch(e2){row._pp={};}
+          try{row._vp=typeof row.volume_profile==='string'?JSON.parse(row.volume_profile):row.volume_profile||{};}catch(e2){row._vp={};}
           allRows.push(row);
         }
         if(batch.length<1000)break;
@@ -8568,6 +8577,7 @@ function PullbackPage(p){
             <th style={{padding:'4px 1px',color:C.accent,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.accent}} colSpan="5">{'--- 1x ATR Rally ---'}</th>
             <th style={{padding:'4px 1px',color:C.gold,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.gold}} colSpan="5">{'--- 2x ATR Rally ---'}</th>
             <th onClick={function(){doSort('days_sampled');}} style={thS('days_sampled')}>Days</th>
+            <th style={{padding:'4px 1px',color:C.blue,textAlign:'center',fontSize:5,borderBottom:'2px solid '+C.blue}} colSpan="2">{'--- Vol ---'}</th>
           </tr>
           <tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:20,background:C.bgCard}}>
             <th colSpan="5"></th>
@@ -8582,9 +8592,11 @@ function PullbackPage(p){
             <th onClick={function(){doSort('avg_rally_2x');}} style={thS('avg_rally_2x')}>AvgRally</th>
             <th onClick={function(){doSort('fade_ratio_2x');}} style={thS('fade_ratio_2x')}>FadeR</th>
             <th></th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:5}}>RelVol</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:5}}>Trend</th>
           </tr></thead>
           <tbody>{filtered.slice(0,300).map(function(r,idx){
-            var pp=r._pp||{};
+            var pp=r._pp||{};var vp=r._vp||{};
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
@@ -8602,6 +8614,8 @@ function PullbackPage(p){
               <td style={{padding:'3px',color:pp.rallies_2x>0?C.accent:C.grid,textAlign:'right'}}>{pp.rallies_2x>0?'+'+(pp.avg_rally_2x||0).toFixed(2)+'%':'--'}</td>
               <td style={{padding:'3px',color:pp.rallies_2x>0?C.gold:C.grid,textAlign:'right'}}>{pp.rallies_2x>0?((pp.fade_ratio_2x||0)*100).toFixed(0)+'%':'--'}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{pp.days_sampled||0}</td>
+              <td style={{padding:'3px',color:(vp.last_vol_ratio||1)>=1.5?C.blue:(vp.last_vol_ratio||1)>=1?C.txtDim:C.grid,textAlign:'right',fontSize:6}}>{(vp.last_vol_ratio||1).toFixed(1)+'x'}</td>
+              <td style={{padding:'3px',color:(vp.vol_trend||1)>=1.2?C.accent:(vp.vol_trend||1)<=0.8?C.warn:C.txtDim,textAlign:'right',fontSize:6}}>{(vp.vol_trend||1).toFixed(1)+'x'}</td>
             </tr>;
           })}</tbody>
         </table>
@@ -8715,6 +8729,7 @@ function ZScorePage(p){
         for(var i=0;i<batch.length;i++){
           var row=batch[i];
           try{row._zp=typeof row.zscore_profile==='string'?JSON.parse(row.zscore_profile):row.zscore_profile;}catch(e2){row._zp={};}
+          try{row._vp=typeof row.volume_profile==='string'?JSON.parse(row.volume_profile):row.volume_profile||{};}catch(e2){row._vp={};}
           allRows.push(row);
         }
         if(batch.length<1000)break;
@@ -8856,9 +8871,12 @@ function ZScorePage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:6}}>1d W%</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:6}}>3d W%</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:6}}>5d W%</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right',fontSize:6}}>RelVol</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right',fontSize:6}}>HV W%</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right',fontSize:6}}>LV W%</th>
           </tr></thead>
           <tbody>{filtered.slice(0,300).map(function(r,idx){
-            var zp=r._zp||{};var pk3=getKey();var prof=zp[pk3]||{};
+            var zp=r._zp||{};var pk3=getKey();var prof=zp[pk3]||{};var vp=r._vp||{};
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
@@ -8874,6 +8892,9 @@ function ZScorePage(p){
               <td style={{padding:'3px',color:wrColor(prof.w1||0),textAlign:'right',fontSize:6}}>{prof.w1!==undefined?prof.w1.toFixed(0):'--'}</td>
               <td style={{padding:'3px',color:wrColor(prof.w3||0),textAlign:'right',fontSize:6}}>{prof.w3!==undefined?prof.w3.toFixed(0):'--'}</td>
               <td style={{padding:'3px',color:wrColor(prof.w5||0),textAlign:'right',fontSize:6}}>{prof.w5!==undefined?prof.w5.toFixed(0):'--'}</td>
+              <td style={{padding:'3px',color:(vp.last_vol_ratio||1)>=1.5?C.blue:(vp.last_vol_ratio||1)>=1?C.txtDim:C.grid,textAlign:'right',fontSize:6}}>{(vp.last_vol_ratio||1).toFixed(1)+'x'}</td>
+              <td style={{padding:'3px',color:vp.hv_z_win!==null&&vp.hv_z_win!==undefined?wrColor(vp.hv_z_win):C.grid,textAlign:'right',fontSize:6}}>{vp.hv_z_win!==null&&vp.hv_z_win!==undefined?vp.hv_z_win.toFixed(0)+'%':'--'}</td>
+              <td style={{padding:'3px',color:vp.lv_z_win!==null&&vp.lv_z_win!==undefined?wrColor(vp.lv_z_win):C.grid,textAlign:'right',fontSize:6}}>{vp.lv_z_win!==null&&vp.lv_z_win!==undefined?vp.lv_z_win.toFixed(0)+'%':'--'}</td>
             </tr>;
           })}</tbody>
         </table>
@@ -9458,7 +9479,7 @@ function ConfluencePage(p){
       var allRows=[];var page=0;
       while(true){
         var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,zscore_profile,range_position,recovery_profile,pullback_profile,directional_bias,squeeze_profile&scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,zscore_profile,range_position,recovery_profile,pullback_profile,directional_bias,squeeze_profile,volume_profile&scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
         var batch=pr.ok?await pr.json():[];
         if(!batch.length)break;
         for(var i=0;i<batch.length;i++){
@@ -9469,6 +9490,7 @@ function ConfluencePage(p){
           try{row._pp=typeof row.pullback_profile==='string'?JSON.parse(row.pullback_profile):row.pullback_profile||{};}catch(e2){row._pp={};}
           try{row._db=typeof row.directional_bias==='string'?JSON.parse(row.directional_bias):row.directional_bias||{};}catch(e2){row._db={};}
           try{row._sq=typeof row.squeeze_profile==='string'?JSON.parse(row.squeeze_profile):row.squeeze_profile||{};}catch(e2){row._sq={};}
+          try{row._vp=typeof row.volume_profile==='string'?JSON.parse(row.volume_profile):row.volume_profile||{};}catch(e2){row._vp={};}
           allRows.push(row);
         }
         if(batch.length<1000)break;
@@ -9493,6 +9515,7 @@ function ConfluencePage(p){
       if(r._db.avg_dn_streak&&r._db.avg_dn_streak<=2.5)signals.push({name:'Short Dn Streak',val:r._db.avg_dn_streak.toFixed(1)+'d',color:C.gold});
       if(r._db.win_rate>=55)signals.push({name:'Win Rate '+r._db.win_rate.toFixed(0)+'%',val:'bullish bias',color:C.accent});
       if(r._sq.in_squeeze)signals.push({name:'In Squeeze',val:r._sq.days_in_squeeze+'d',color:C.purple});
+      if(r._vp&&r._vp.last_vol_ratio>=1.5)signals.push({name:'High Volume',val:r._vp.last_vol_ratio.toFixed(1)+'x avg',color:C.blue});
     }else{
       if(r._zp.current_z>=2)signals.push({name:'Z > +2',val:'+'+r._zp.current_z.toFixed(2),color:C.accent});
       else if(r._zp.current_z>=1.5)signals.push({name:'Z > +1.5',val:'+'+r._zp.current_z.toFixed(2),color:'#00cc88'});
@@ -9501,6 +9524,7 @@ function ConfluencePage(p){
       if(r._db.avg_up_streak&&r._db.avg_up_streak<=2.5)signals.push({name:'Short Up Streak',val:r._db.avg_up_streak.toFixed(1)+'d',color:C.gold});
       if(r._db.win_rate<=45)signals.push({name:'Win Rate '+r._db.win_rate.toFixed(0)+'%',val:'bearish bias',color:C.warn});
       if(r._sq.in_squeeze)signals.push({name:'In Squeeze',val:r._sq.days_in_squeeze+'d',color:C.purple});
+      if(r._vp&&r._vp.last_vol_ratio>=1.5)signals.push({name:'High Volume',val:r._vp.last_vol_ratio.toFixed(1)+'x avg',color:C.blue});
     }
     return signals;
   };
@@ -9588,14 +9612,16 @@ function ConfluencePage(p){
             <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>High Bounce Rate:</span> After 1x ATR drops, next day closes green 60%+ of the time (10+ events)</p>
             <p style={{marginBottom:3}}><span style={{color:C.gold,fontWeight:700}}>Short Down Streak:</span> Average consecutive down days {'<'} 2.5 (reverses quickly)</p>
             <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>Bullish Win Rate:</span> Closes above open 55%+ of the time</p>
-            <p style={{marginBottom:0}}><span style={{color:C.purple,fontWeight:700}}>In Squeeze:</span> Bollinger Bands at extreme compression (breakout imminent)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.purple,fontWeight:700}}>In Squeeze:</span> Bollinger Bands at extreme compression (breakout imminent)</p>
+            <p style={{marginBottom:0}}><span style={{color:C.blue,fontWeight:700}}>High Volume:</span> Last trading day volume {'>'}1.5x the 20-day average (institutional participation)</p>
           </div>:<div>
             <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>Z {'>'} +2:</span> Stock is 2+ standard deviations above its 20-day average (overbought)</p>
             <p style={{marginBottom:3}}><span style={{color:C.accent,fontWeight:700}}>Near 52w High:</span> Price is in the top 20% of its yearly range</p>
             <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>High Fade Rate:</span> After 1x ATR rallies, next day closes red 60%+ of the time (10+ events)</p>
             <p style={{marginBottom:3}}><span style={{color:C.gold,fontWeight:700}}>Short Up Streak:</span> Average consecutive up days {'<'} 2.5 (reverses quickly)</p>
             <p style={{marginBottom:3}}><span style={{color:C.warn,fontWeight:700}}>Bearish Win Rate:</span> Closes above open less than 45% of the time</p>
-            <p style={{marginBottom:0}}><span style={{color:C.purple,fontWeight:700}}>In Squeeze:</span> Bollinger Bands at extreme compression (breakout imminent)</p>
+            <p style={{marginBottom:3}}><span style={{color:C.purple,fontWeight:700}}>In Squeeze:</span> Bollinger Bands at extreme compression (breakout imminent)</p>
+            <p style={{marginBottom:0}}><span style={{color:C.blue,fontWeight:700}}>High Volume:</span> Last trading day volume {'>'}1.5x the 20-day average (institutional participation)</p>
           </div>}
         </div>
       </div>
