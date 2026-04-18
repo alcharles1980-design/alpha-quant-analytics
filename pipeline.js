@@ -1800,10 +1800,10 @@ async function runScreener() {
     try {
       var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/1/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
       var r5 = await fetch(url5);
-      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; continue; }
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
-      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; continue; }
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr = null; continue; }
 
       // Compute 1-min returns PER DAY (exclude overnight gaps)
       var etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
@@ -1989,6 +1989,66 @@ async function runScreener() {
       }
       res.session_metrics = JSON.stringify(sesMetrics);
 
+      // Hourly ATR profile: ATR% per hour (4-19) averaged across days
+      var hourlyAtr = {};
+      var etHrFmt = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+      // Group bars by ET date + hour
+      var hrDayData = {}; // key: "h" -> [{date, high, low}]
+      for (var bi8 = 0; bi8 < bars5.length; bi8++) {
+        var bTs = new Date(bars5[bi8].t);
+        var bHr = parseInt(etHrFmt.format(bTs)) || 0;
+        var bDt = etDateFmt.format(bTs);
+        var hdk = bHr + '_' + bDt;
+        if (!hrDayData[hdk]) hrDayData[hdk] = { hr: bHr, date: bDt, high: -Infinity, low: Infinity };
+        if (bars5[bi8].h > hrDayData[hdk].high) hrDayData[hdk].high = bars5[bi8].h;
+        if (bars5[bi8].l < hrDayData[hdk].low) hrDayData[hdk].low = bars5[bi8].l;
+      }
+      // Average ATR% per hour across days
+      var hrAtrSums = {}; var hrAtrCounts = {};
+      var hdKeys = Object.keys(hrDayData);
+      for (var hdi = 0; hdi < hdKeys.length; hdi++) {
+        var hd = hrDayData[hdKeys[hdi]];
+        if (hd.high <= 0 || hd.low <= 0 || hd.high === -Infinity) continue;
+        var hAtr = (hd.high - hd.low) / hd.low * 100;
+        if (!hrAtrSums[hd.hr]) { hrAtrSums[hd.hr] = 0; hrAtrCounts[hd.hr] = 0; }
+        hrAtrSums[hd.hr] += hAtr;
+        hrAtrCounts[hd.hr]++;
+      }
+      for (var h = 4; h < 20; h++) {
+        hourlyAtr[h] = hrAtrCounts[h] ? Math.round(hrAtrSums[h] / hrAtrCounts[h] * 1000) / 1000 : 0;
+      }
+      res.hourly_atr_profile = JSON.stringify(hourlyAtr);
+
+      // Compute per-hour ATR% averaged across days
+      var hourlyAtr = {};
+      for (var hh = 4; hh < 20; hh++) {
+        var hourDayAtrs = [];
+        var dkArr = Object.keys(dayBars);
+        for (var dki2 = 0; dki2 < dkArr.length; dki2++) {
+          var dayB = dayBars[dkArr[dki2]];
+          // Filter bars for this hour using ET
+          var hBars = [];
+          for (var bi8 = 0; bi8 < dayB.length; bi8++) {
+            var bTime2 = etFmt2.format(new Date(dayB[bi8].t));
+            var bH2 = parseInt(bTime2.split(':')[0]) || 0;
+            if (bH2 === hh) hBars.push(dayB[bi8]);
+          }
+          if (hBars.length >= 2) {
+            var hHigh = -Infinity, hLow = Infinity;
+            for (var bi9 = 0; bi9 < hBars.length; bi9++) {
+              if (hBars[bi9].h > hHigh) hHigh = hBars[bi9].h;
+              if (hBars[bi9].l < hLow) hLow = hBars[bi9].l;
+            }
+            var hOpen = hBars[0].o;
+            if (hOpen > 0) hourDayAtrs.push(((hHigh - hLow) / hOpen) * 100);
+          }
+        }
+        var avgHAtr = 0;
+        if (hourDayAtrs.length > 0) { for (var j = 0; j < hourDayAtrs.length; j++) avgHAtr += hourDayAtrs[j]; avgHAtr /= hourDayAtrs.length; }
+        hourlyAtr[hh] = Math.round(avgHAtr * 1000) / 1000;
+      }
+      res.hourly_atr = JSON.stringify(hourlyAtr);
+
       // Recalculate Oscillation Score with intraday metrics weighted heavily
       var iHurstScore = Math.max(0, Math.min(100, (0.5 - iHurst) * 200 + 50));
       var dHurstScore = Math.max(0, Math.min(100, (0.5 - res.hurst) * 200 + 50));
@@ -2000,7 +2060,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr = null; }
 
     if (ri % 50 === 0) {
       var pct3 = 60 + Math.round((ri / results.length) * 30);

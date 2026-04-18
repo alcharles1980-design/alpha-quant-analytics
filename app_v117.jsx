@@ -7009,6 +7009,162 @@ function OscillationScreenerPage(p){
   </div>;
 }
 
+function ATRScreenerPage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
+  var s5=useState(null),scanTime=s5[0],setScanTime=s5[1];
+  var s6=useState(''),filter=s6[0],setFilter=s6[1];
+  var s7=useState('_score'),sortBy=s7[0],setSortBy=s7[1];
+  var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
+  // Per-hour min ATR% filters (hours 4-19)
+  var s9=useState({}),hourFilters=s9[0],setHourFilters=s9[1];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:4};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
+
+  var load=async function(){
+    if(!SB_URL||!SB_KEY)return;
+    setLoading(true);setErr(null);
+    try{
+      var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});
+      var dateRows=rDate.ok?await rDate.json():[];
+      if(!dateRows.length){setErr('No screener data. Run the oscillation screener first.');setLoading(false);return;}
+      var sd=dateRows[0].scan_date;setScanDate(sd);
+      if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&hourly_atr=not.is.null&order=osc_score.desc',{headers:ph});
+        var batch=pr.ok?await pr.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var row=batch[i];
+          try{row._hatr=typeof row.hourly_atr==='string'?JSON.parse(row.hourly_atr):row.hourly_atr;}catch(e2){row._hatr={};}
+          allRows.push(row);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      setData(allRows);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  useEffect(function(){load();},[]);
+
+  var setHourFilter=function(h,val){var nf=Object.assign({},hourFilters);if(val==='')delete nf[h];else nf[h]=parseFloat(val);setHourFilters(nf);};
+
+  var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);}};
+
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.ticker.toLowerCase().indexOf(filter.toLowerCase())<0)return false;
+    if(!r._hatr)return false;
+    var hKeys=Object.keys(hourFilters);
+    for(var i=0;i<hKeys.length;i++){
+      var h=hKeys[i];var minVal=hourFilters[h];
+      if(minVal>0&&(!r._hatr[h]||r._hatr[h]<minVal))return false;
+    }
+    return true;
+  }).map(function(r){
+    // Compute avg ATR across active hours for scoring
+    var sum=0,cnt=0;for(var h=4;h<20;h++){if(r._hatr[h]>0){sum+=r._hatr[h];cnt++;}}
+    return Object.assign({},r,{_avgAtr:cnt>0?Math.round(sum/cnt*1000)/1000:0,_score:cnt>0?Math.round(sum/cnt*1000)/1000:0});
+  }).sort(function(a,b){
+    if(sortBy==='_score')return sortAsc?(a._score-b._score):(b._score-a._score);
+    if(sortBy.charAt(0)==='h'){var sh=parseInt(sortBy.slice(1));var va2=a._hatr?a._hatr[sh]||0:0;var vb2=b._hatr?b._hatr[sh]||0:0;return sortAsc?(va2-vb2):(vb2-va2);}
+    var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
+    return sortAsc?(va-vb):(vb-va);
+  }):[];
+
+  var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+  var atrColor=function(v){return v>=5?'#ff5c3a':v>=3?C.gold:v>=1.5?C.accent:v>=0.5?C.blue:C.txtDim;};
+  var thS=function(col){return{padding:'4px 2px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400,fontSize:6};};
+
+  var activeFilterCount=Object.keys(hourFilters).length;
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>ATR Stock Screener</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Hourly ATR% Screener" sub="Filter stocks by minimum ATR% per hour (10-day average)" info="Shows the average hourly ATR% (high minus low as percentage of open price) for each trading hour across the last 10 days. Set minimum thresholds per hour to find stocks with enough volatility during your target trading windows."/>
+      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with ATR data'}</div>}
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Filter Ticker</label>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
+      </div>
+      <div style={{marginBottom:4}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <label style={lS}>Min ATR% Per Hour {activeFilterCount>0&&<span style={{color:C.accent}}>({activeFilterCount} active)</span>}</label>
+          {activeFilterCount>0&&<button onClick={function(){setHourFilters({});}} style={{background:'transparent',border:'1px solid '+C.warn+'60',borderRadius:4,color:C.warn,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>Clear All</button>}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:4,marginTop:4}}>
+          {Array.from({length:16},function(_,i){var h=i+4;return <div key={h} style={{position:'relative'}}>
+            <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginBottom:1,textAlign:'center'}}>{(h<10?'0':'')+h+':00'}</div>
+            <input value={hourFilters[h]!==undefined?hourFilters[h]:''} onChange={function(e){setHourFilter(h,e.target.value);}} style={Object.assign({},iS,{padding:'6px 4px',fontSize:8,textAlign:'center',borderColor:hourFilters[h]?C.accent:C.border})} placeholder="--" type="number" step="0.1"/>
+          </div>;})}
+        </div>
+      </div>
+    </Cd>
+
+    {filtered.length>0&&<Cd>
+      <SectionHead title="Results" sub={filtered.length+' stocks match'+(activeFilterCount>0?' ('+activeFilterCount+' hour filter'+(activeFilterCount>1?'s':'')+')':'')}/>
+      <div style={{overflowX:'auto',maxHeight:600}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:6,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+            <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
+            <th onClick={function(){doSort('_score');}} style={thS('_score')}>Avg</th>
+            {Array.from({length:16},function(_,i){var h=i+4;return <th key={h} onClick={function(){doSort('h'+h);}} style={Object.assign({},thS('h'+h),{color:hourFilters[h]?C.accent:C.txtDim})}>{h<10?'0'+h:h}</th>;})}
+          </tr></thead>
+          <tbody>{filtered.slice(0,filter?filtered.length:200).map(function(r,idx){
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'2px',color:C.txtDim,fontSize:5}}>{idx+1}</td>
+              <td style={{padding:'2px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'2px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(0)}</td>
+              <td style={{padding:'2px',color:C.txtDim,textAlign:'right',fontSize:5}}>{fmtMcap(r.market_cap)}</td>
+              <td style={{padding:'2px',color:C.accent,textAlign:'right',fontWeight:700}}>{r._avgAtr.toFixed(2)}</td>
+              {Array.from({length:16},function(_,i){var h=i+4;var v=r._hatr?r._hatr[h]:0;return <td key={h} style={{padding:'2px',color:atrColor(v||0),textAlign:'right',fontWeight:hourFilters[h]?700:400,fontSize:5}}>{v?v.toFixed(2):'--'}</td>;})}
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {!filter&&filtered.length>200&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 200 of {filtered.length}. Search a ticker to see all.</div>}
+    </Cd>}
+
+    {data&&filtered.length===0&&<Cd><div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:20}}>No stocks match your ATR% filters. Try lowering the thresholds.</div></Cd>}
+
+    <CollapseStage title="How To Use This Tool" sub="Finding stocks with enough range during your trading hours">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>What is Hourly ATR%?</p>
+          <p style={{fontSize:9}}>ATR% (Average True Range as a percentage) measures how much a stock's price moves during a specific hour. An ATR% of 3% at 10:00 means the stock typically moves 3% of its price between 10:00 and 11:00. For a $100 stock, that's $3 of range. This range is the raw material for oscillation trading — wider range means more price levels get crossed, creating more cycle opportunities.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Setting Filters</p>
+          <p style={{marginBottom:4,fontSize:9}}>Enter a minimum ATR% value for any hour you plan to trade. Leave hours blank if you don't care about that time slot. Only stocks meeting ALL your thresholds will appear in results.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Example 1:</span> Set 09:00 to 3% and 10:00 to 2%. This finds stocks that are volatile at the open AND maintain range into the next hour.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Example 2:</span> Set 16:00 to 1.5% and 17:00 to 1%. This finds stocks with enough post-market range for after-hours oscillation trading.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Example 3:</span> Set every hour from 09:00-15:00 to 1%. This finds stocks that maintain consistent volatility throughout the regular session — no dead zones.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Color Scale</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:'#ff5c3a'}}>Red (5%+):</span> Extremely volatile. High opportunity but also high risk of directional moves.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.gold}}>Gold (3-5%):</span> Very active. Strong oscillation potential for most TP% settings.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>Green (1.5-3%):</span> Good range. Suitable for moderate TP% settings.</p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.blue}}>Blue (0.5-1.5%):</span> Moderate. May work with tight TP% on higher-priced stocks.</p>
+          <p style={{paddingLeft:8,fontSize:9}}><span style={{color:C.txtDim}}>Dim ({'{<'}0.5%):</span> Low range. Unlikely to generate enough movement for profitable cycles.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -9106,7 +9262,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -9133,6 +9289,7 @@ function App(){
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='atrscreener'&&<ATRScreenerPage onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
