@@ -10985,36 +10985,42 @@ function MFEDashPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Price</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d TP</th>
-            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d TP</th>
-            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last TP</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Dir</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cyc/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Cyc</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Net</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d TP</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d%</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d Cyc</th>
             <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d Net</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last TP</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last%</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last Cyc</th>
             <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last Net</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Scan</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Dir</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}></th>
           </tr></thead>
           <tbody>{displayRows.map(function(r){
             if(r.noData)return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
-              <td colSpan="12" style={{padding:'3px',color:C.txtDim,fontSize:7}}>No scan data — run MFE scan</td>
+              <td colSpan="15" style={{padding:'3px',color:C.txtDim,fontSize:7}}>No scan data — run MFE scan</td>
             </tr>;
-            var tpPct10=r.latest.price>0?(r.opt10.tp/r.latest.price*100).toFixed(3)+'%':'--';
+            var pr=r.latest.price||1;
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
-              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.latest.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+pr.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontWeight:700}}>{'$'+r.opt10.tp.toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+r.opt3.tp.toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+r.opt1.tp.toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{tpPct10}</td>
-              <td style={{padding:'3px',color:r.dirCol,textAlign:'right',fontWeight:700,fontSize:6}}>{r.dirArrow+' '+r.dir}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{(r.opt10.tp/pr*100).toFixed(2)+'%'}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.opt10.fillsPerDay.toFixed(0)}</td>
-              <td style={{padding:'3px',color:r.opt10.netPerDay>0?C.accent:C.warn,textAlign:'right'}}>{'$'+r.opt10.netPerDay.toFixed(0)}</td>
-              <td style={{padding:'3px',color:r.opt3.netPerDay>0?C.gold:C.warn,textAlign:'right'}}>{'$'+r.opt3.netPerDay.toFixed(0)}</td>
-              <td style={{padding:'3px',color:r.opt1.netPerDay>0?C.blue:C.warn,textAlign:'right'}}>{'$'+r.opt1.netPerDay.toFixed(0)}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{r.latest.scan_date||'--'}</td>
+              <td style={{padding:'3px',color:r.opt10.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+r.opt10.netPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+r.opt3.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right',fontSize:6}}>{(r.opt3.tp/pr*100).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{r.opt3.fillsPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:r.opt3.netPerDay>0?C.gold:C.warn,textAlign:'right',fontWeight:700}}>{'$'+r.opt3.netPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+r.opt1.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.blue,textAlign:'right',fontSize:6}}>{(r.opt1.tp/pr*100).toFixed(2)+'%'}</td>
+              <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{r.opt1.fillsPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:r.opt1.netPerDay>0?C.blue:C.warn,textAlign:'right',fontWeight:700}}>{'$'+r.opt1.netPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:r.dirCol,textAlign:'right',fontWeight:700,fontSize:6}}>{r.dirArrow+' '+r.dir}</td>
               <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Hours'}</button></td>
             </tr>;
           })}</tbody>
@@ -11029,12 +11035,16 @@ function MFEDashPage(p){
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d TP</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cyc</th>
-            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d TP</th>
-            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last TP</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Cyc</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Net</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d TP</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d%</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d Cyc</th>
             <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d Net</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last TP</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last%</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last Cyc</th>
             <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last Net</th>
           </tr></thead>
           <tbody>{(function(){var hrD10=detailRow._hrDist||[];var hrD3=detailRow._hrDist3d||[];var hrD1=detailRow._hrDist1d||[];var threshs=detailRow._thresholds;var nD=detailRow.days_sampled||1;var pr=detailRow.price||1;
@@ -11052,13 +11062,17 @@ function MFEDashPage(p){
               return <tr key={h} style={{borderBottom:'1px solid '+C.grid}}>
                 <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontWeight:700}}>{'$'+o10.tp.toFixed(2)}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{(o10.tp/pr*100).toFixed(3)+'%'}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{(o10.tp/pr*100).toFixed(2)+'%'}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{o10.fills.toFixed(0)}</td>
+                <td style={{padding:'3px',color:o10.net>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+o10.net.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+o3.tp.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.gold,textAlign:'right',fontSize:6}}>{(o3.tp/pr*100).toFixed(2)+'%'}</td>
+                <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{o3.fills.toFixed(0)}</td>
+                <td style={{padding:'3px',color:o3.net>0?C.gold:C.warn,textAlign:'right',fontWeight:700}}>{'$'+o3.net.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+o1.tp.toFixed(2)}</td>
-                <td style={{padding:'3px',color:o10.net>0?C.accent:C.warn,textAlign:'right'}}>{'$'+o10.net.toFixed(2)}</td>
-                <td style={{padding:'3px',color:o3.net>0?C.gold:C.warn,textAlign:'right'}}>{'$'+o3.net.toFixed(2)}</td>
-                <td style={{padding:'3px',color:o1.net>0?C.blue:C.warn,textAlign:'right'}}>{'$'+o1.net.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.blue,textAlign:'right',fontSize:6}}>{(o1.tp/pr*100).toFixed(2)+'%'}</td>
+                <td style={{padding:'3px',color:C.blue,textAlign:'right'}}>{o1.fills.toFixed(0)}</td>
+                <td style={{padding:'3px',color:o1.net>0?C.blue:C.warn,textAlign:'right',fontWeight:700}}>{'$'+o1.net.toFixed(2)}</td>
               </tr>;
             });
           })()}</tbody>
