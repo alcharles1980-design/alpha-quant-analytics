@@ -10573,8 +10573,23 @@ function MFETrackerPage(p){
       hrResults.push({hour:h2,label:(h2<10?'0':'')+h2+':00',n:hArr.length,avg:Math.round(hAvg*100)/100,p25:Math.round(getP(hArr,25)*100)/100,p50:Math.round(getP(hArr,50)*100)/100,p75:Math.round(getP(hArr,75)*100)/100,p90:Math.round(getP(hArr,90)*100)/100,session:h2<9?'pre':h2<16?'rth':'post'});
     }
 
+    // Per-hour optimal TP
+    var hrOptimal=[];
+    var nDays3=dayKeys.length||1;
+    for(var h3=4;h3<20;h3++){
+      var hArr2=hrMFEs[h3].slice().sort(function(a,b){return a-b;});
+      var bestTP2=0;var bestNet3=-Infinity;var bestFills=0;var bestRate2=0;
+      for(var ti2=0;ti2<thresholds.length;ti2++){
+        var t2=thresholds[ti2];var cnt2=0;
+        for(var mi2=0;mi2<hArr2.length;mi2++){if(hArr2[mi2]>=t2){cnt2=hArr2.length-mi2;break;}}
+        var net3=cnt2*(t2-0.005);
+        if(net3>bestNet3){bestNet3=net3;bestTP2=t2;bestFills=cnt2;bestRate2=hArr2.length>0?Math.round(cnt2/hArr2.length*1000)/10:0;}
+      }
+      hrOptimal.push({hour:h3,label:(h3<10?'0':'')+h3+':00',bestTP:bestTP2,fills:bestFills,rate:bestRate2,netTotal:Math.round(bestNet3*100)/100,netPerDay:Math.round(bestNet3/nDays3*100)/100,session:h3<9?'pre':h3<16?'rth':'post'});
+    }
+
     var totalAvg=0;if(allMFEs.length){for(var j2=0;j2<allMFEs.length;j2++)totalAvg+=allMFEs[j2];totalAvg/=allMFEs.length;}
-    return{total:allMFEs.length,days:dayKeys.length,avg:Math.round(totalAvg*100)/100,p25:Math.round(getP(allMFEs,25)*100)/100,p50:Math.round(getP(allMFEs,50)*100)/100,p75:Math.round(getP(allMFEs,75)*100)/100,p90:Math.round(getP(allMFEs,90)*100)/100,dist:dist,hours:hrResults};
+    return{total:allMFEs.length,days:dayKeys.length,avg:Math.round(totalAvg*100)/100,p25:Math.round(getP(allMFEs,25)*100)/100,p50:Math.round(getP(allMFEs,50)*100)/100,p75:Math.round(getP(allMFEs,75)*100)/100,p90:Math.round(getP(allMFEs,90)*100)/100,dist:dist,hours:hrResults,hrOptimal:hrOptimal};
   };
 
   var runMFE=async function(){
@@ -10712,6 +10727,32 @@ function MFETrackerPage(p){
               <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+h.p50.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+h.p75.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+h.p90.toFixed(2)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {results&&results.mfe&&results.mfe.hrOptimal&&<Cd>
+      <SectionHead title="Optimal TP By Hour" sub="Best take-profit for each hour based on max net profit (after $0.005 fee)"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Best TP$</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+          </tr></thead>
+          <tbody>{results.mfe.hrOptimal.map(function(h){
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim,fontWeight:h.session==='rth'?700:400}}>{h.label}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+h.bestTP.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{results.price>0?(h.bestTP/results.price*100).toFixed(3)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.fills.toLocaleString()}</td>
+              <td style={{padding:'3px',color:h.rate>50?C.accent:h.rate>20?C.gold:C.warn,textAlign:'right'}}>{h.rate.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:h.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+h.netPerDay.toFixed(2)}</td>
             </tr>;
           })}</tbody>
         </table>
