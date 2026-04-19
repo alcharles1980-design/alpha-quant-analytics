@@ -10980,13 +10980,14 @@ function MFEDashPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trend</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Days</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Scan</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}></th>
           </tr></thead>
           <tbody>{displayRows.map(function(r){
             if(r.noData)return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
-              <td colSpan="9" style={{padding:'3px',color:C.txtDim,fontSize:7}}>No scan data — run MFE scan</td>
+              <td colSpan="10" style={{padding:'3px',color:C.txtDim,fontSize:7}}>No scan data — run MFE scan</td>
             </tr>;
             var opt=r.opt;var prev=r.prevOpt;
             var trendArrow='';var trendCol=C.txtDim;
@@ -11004,6 +11005,7 @@ function MFEDashPage(p){
               <td style={{padding:'3px',color:opt.rate>50?C.accent:opt.rate>20?C.gold:C.warn,textAlign:'right'}}>{opt.rate.toFixed(1)+'%'}</td>
               <td style={{padding:'3px',color:opt.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+opt.netPerDay.toFixed(2)}</td>
               <td style={{padding:'3px',color:trendCol,textAlign:'right',fontWeight:700}}>{trendArrow+(prev?' $'+prev.tp.toFixed(2):'--')}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{r.latest.days_sampled||'--'}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{r.latest.scan_date||'--'}</td>
               <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Hours'}</button></td>
             </tr>;
@@ -11062,8 +11064,10 @@ function MFEDashPage(p){
           <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Optimal TP:</span> The take-profit in dollars that maximizes net profit per day at your current fee.</p>
           <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Fills/Day:</span> Average completed cycles per day at the optimal TP.</p>
           <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Rate:</span> Completion rate — what percentage of entries reach the optimal TP before returning.</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Net$/Day:</span> Net profit per day per share at the optimal TP after fees.</p>
-          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Trend:</span> Arrow + previous optimal TP. Gold up arrow = TP widening (more vol). Blue down arrow = TP tightening (less vol). Gray right arrow = stable.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Net$/Day:</span> Net profit per day per share at the optimal TP after fees. Calculated as: total fills × (TP$ − fee) ÷ days sampled.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Trend:</span> Arrow + previous optimal TP. Gold up arrow = TP widening (more vol). Blue down arrow = TP tightening (less vol). Gray right arrow = stable.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Days:</span> Number of trading days used in the analysis. The pipeline fetches 10 trading days of 1-second bars from Polygon. All per-day metrics (Fills/Day, Net$/Day) are averaged over this window. More days = more stable estimates, but less responsive to recent regime changes.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Scan:</span> Date the scan was run. Re-scan regularly — a stock's optimal TP can shift as its volatility regime changes. A scan from 5 days ago may no longer reflect current conditions.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
           <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
