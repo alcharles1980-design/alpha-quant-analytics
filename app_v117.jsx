@@ -10884,7 +10884,7 @@ function MFEDashPage(p){
     }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);setPipeStatus(null);}
   };
 
-  useEffect(function(){loadWatchlist();loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+  useEffect(function(){loadWatchlist();loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
   // Compute optimal TP for a row given fee
   var getOptimal=function(row){
