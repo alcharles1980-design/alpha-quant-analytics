@@ -10585,7 +10585,7 @@ function MFETrackerPage(p){
         var net3=cnt2*(t2-0.005);
         if(net3>bestNet3){bestNet3=net3;bestTP2=t2;bestFills=cnt2;bestRate2=hArr2.length>0?Math.round(cnt2/hArr2.length*1000)/10:0;}
       }
-      hrOptimal.push({hour:h3,label:(h3<10?'0':'')+h3+':00',bestTP:bestTP2,fills:bestFills,rate:bestRate2,netTotal:Math.round(bestNet3*100)/100,netPerDay:Math.round(bestNet3/nDays3*100)/100,session:h3<9?'pre':h3<16?'rth':'post'});
+      hrOptimal.push({hour:h3,label:(h3<10?'0':'')+h3+':00',bestTP:bestTP2,fills:bestFills,fillsPerDay:Math.round(bestFills/nDays3*10)/10,rate:bestRate2,netTotal:Math.round(bestNet3*100)/100,netPerDay:Math.round(bestNet3/nDays3*100)/100,session:h3<9?'pre':h3<16?'rth':'post'});
     }
 
     var totalAvg=0;if(allMFEs.length){for(var j2=0;j2<allMFEs.length;j2++)totalAvg+=allMFEs[j2];totalAvg/=allMFEs.length;}
@@ -10741,7 +10741,7 @@ function MFETrackerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
             <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Best TP$</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills/Day</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
           </tr></thead>
@@ -10750,7 +10750,7 @@ function MFETrackerPage(p){
               <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim,fontWeight:h.session==='rth'?700:400}}>{h.label}</td>
               <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+h.bestTP.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{results.price>0?(h.bestTP/results.price*100).toFixed(3)+'%':'--'}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.fills.toLocaleString()}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.fillsPerDay.toFixed(1)}</td>
               <td style={{padding:'3px',color:h.rate>50?C.accent:h.rate>20?C.gold:C.warn,textAlign:'right'}}>{h.rate.toFixed(1)+'%'}</td>
               <td style={{padding:'3px',color:h.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+h.netPerDay.toFixed(2)}</td>
             </tr>;
