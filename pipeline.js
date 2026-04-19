@@ -2767,7 +2767,7 @@ async function runMFE() {
   await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Loading watchlist...' });
 
   // 1. Read watchlist
-  var wlRes = await fetch(SB_URL + '/rest/v1/mfe_watchlist?order=ticker.asc', { headers: getSbHeaders() });
+  var wlRes = await fetch(SB_URL + '/rest/v1/mfe_watchlist?order=ticker.asc', { headers: sbHeaders() });
   var watchlist = wlRes.ok ? await wlRes.json() : [];
   if (!watchlist.length) {
     await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Watchlist empty — add tickers in the MFE Dashboard' });
@@ -2885,7 +2885,7 @@ async function runMFE() {
       };
       var saveR = await fetch(SB_URL + '/rest/v1/mfe_daily_optimal', {
         method: 'POST',
-        headers: Object.assign({}, getSbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }),
+        headers: Object.assign({}, sbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }),
         body: JSON.stringify(row)
       });
       if (!saveR.ok) { var errBody = await saveR.text(); console.log('Save error for ' + ticker + ': ' + errBody); }
