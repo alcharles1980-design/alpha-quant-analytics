@@ -10492,6 +10492,261 @@ function CycleSimPage(p){
   </div>;
 }
 
+function MFETrackerPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),results=s4[0],setResults=s4[1];
+  var s5m=useState('minute'),resolution=s5m[0],setResolution=s5m[1];
+  var s6m=useState(''),fetchStatus=s6m[0],setFetchStatus=s6m[1];
+
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var computeMFE=function(bars,price){
+    var etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    var etDayFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var dayBars={};
+    for(var i=0;i<bars.length;i++){var bd=etDayFmt.format(new Date(bars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(bars[i]);}
+    var dayKeys=Object.keys(dayBars).sort();
+    var allMFEs=[];
+    var hrMFEs={};for(var h=4;h<20;h++)hrMFEs[h]=[];
+
+    for(var di=0;di<dayKeys.length;di++){
+      var db=dayBars[dayKeys[di]];if(db.length<5)continue;
+      var held={};
+
+      for(var bi=0;bi<db.length;bi++){
+        var bar=db[bi];
+        var lowC=Math.round(bar.l*100);
+        var highC=Math.round(bar.h*100);
+        var openC=Math.round(bar.o*100);
+        var closeC=Math.round(bar.c*100);
+        var isBullish=closeC>=openC;
+        var bHr=parseInt(etFmt.format(new Date(bar.t)))||0;
+
+        if(isBullish){
+          // Low first: returns happen, then new buys, then maxHigh update
+          var keys=Object.keys(held);
+          for(var ki=0;ki<keys.length;ki++){var lvl=parseInt(keys[ki]);if(lvl>=lowC){var mfe=(held[lvl]-lvl)/100;if(mfe>0){allMFEs.push(mfe);if(hrMFEs[bHr])hrMFEs[bHr].push(mfe);}delete held[lvl];}}
+          // New buys from open down to low
+          for(var lv=openC-1;lv>=lowC;lv--){if(held[lv]===undefined)held[lv]=highC;}
+          // Update maxHigh at the high
+          keys=Object.keys(held);
+          for(var ki2=0;ki2<keys.length;ki2++){var lvl2=parseInt(keys[ki2]);if(highC>held[lvl2])held[lvl2]=highC;}
+        }else{
+          // Bearish: high first (update maxHigh), then returns + new buys at low
+          var keys2=Object.keys(held);
+          for(var ki3=0;ki3<keys2.length;ki3++){var lvl3=parseInt(keys2[ki3]);if(highC>held[lvl3])held[lvl3]=highC;}
+          // Returns at the low
+          keys2=Object.keys(held);
+          for(var ki4=0;ki4<keys2.length;ki4++){var lvl4=parseInt(keys2[ki4]);if(lvl4>=lowC){var mfe2=(held[lvl4]-lvl4)/100;if(mfe2>0){allMFEs.push(mfe2);if(hrMFEs[bHr])hrMFEs[bHr].push(mfe2);}delete held[lvl4];}}
+          // New buys: high already passed, so maxHigh starts at close (conservative)
+          for(var lv2=highC-1;lv2>=lowC;lv2--){if(held[lv2]===undefined)held[lv2]=closeC;}
+        }
+      }
+      // End of day: discard stuck (incomplete cycles)
+    }
+
+    // Sort all MFEs
+    allMFEs.sort(function(a,b){return a-b;});
+
+    // Distribution: what % of entries reach each threshold?
+    var thresholds=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00];
+    if(price>200)thresholds=[0.10,0.15,0.20,0.30,0.40,0.50,0.75,1.00,1.50,2.00,3.00,5.00];
+    else if(price>50)thresholds=[0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00,1.50,2.00];
+
+    var dist=[];
+    for(var ti=0;ti<thresholds.length;ti++){
+      var t=thresholds[ti];var cnt=0;
+      for(var mi=allMFEs.length-1;mi>=0;mi--){if(allMFEs[mi]>=t){cnt=allMFEs.length-mi;break;}}
+      dist.push({threshold:t,thresholdPct:price>0?Math.round(t/price*10000)/100:0,rate:allMFEs.length>0?Math.round(cnt/allMFEs.length*1000)/10:0,count:cnt,total:allMFEs.length});
+    }
+
+    // Percentile helper
+    var getP=function(arr,pct){if(!arr.length)return 0;var idx=Math.floor(arr.length*(1-pct/100));return arr[Math.min(Math.max(idx,0),arr.length-1)];};
+
+    // Per-hour MFE
+    var hrResults=[];
+    for(var h2=4;h2<20;h2++){
+      var hArr=hrMFEs[h2].slice().sort(function(a,b){return a-b;});
+      var hAvg=0;if(hArr.length){for(var j=0;j<hArr.length;j++)hAvg+=hArr[j];hAvg/=hArr.length;}
+      hrResults.push({hour:h2,label:(h2<10?'0':'')+h2+':00',n:hArr.length,avg:Math.round(hAvg*100)/100,p25:Math.round(getP(hArr,25)*100)/100,p50:Math.round(getP(hArr,50)*100)/100,p75:Math.round(getP(hArr,75)*100)/100,p90:Math.round(getP(hArr,90)*100)/100,session:h2<9?'pre':h2<16?'rth':'post'});
+    }
+
+    var totalAvg=0;if(allMFEs.length){for(var j2=0;j2<allMFEs.length;j2++)totalAvg+=allMFEs[j2];totalAvg/=allMFEs.length;}
+    return{total:allMFEs.length,days:dayKeys.length,avg:Math.round(totalAvg*100)/100,p25:Math.round(getP(allMFEs,25)*100)/100,p50:Math.round(getP(allMFEs,50)*100)/100,p75:Math.round(getP(allMFEs,75)*100)/100,p90:Math.round(getP(allMFEs,90)*100)/100,dist:dist,hours:hrResults};
+  };
+
+  var runMFE=async function(){
+    if(!ticker){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setFetchStatus('');
+    try{
+      var days2=[];var d2=new Date();d2.setDate(d2.getDate()-1);
+      while(days2.length<15){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
+      var from2=days2[Math.min(days2.length-1,9)];var to2=days2[0];
+      var bars=[];
+      if(resolution==='second'){
+        var nextUrl='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/second/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var pageNum=0;
+        while(nextUrl){
+          pageNum++;setFetchStatus('Fetching page '+pageNum+'... ('+bars.length.toLocaleString()+' bars)');
+          var r=await fetch(nextUrl);
+          if(!r.ok){setErr('Polygon error '+r.status);setLoading(false);return;}
+          var d=await r.json();
+          var batch=d.results||[];
+          for(var bi=0;bi<batch.length;bi++)bars.push(batch[bi]);
+          if(d.next_url){nextUrl=d.next_url+'&apiKey='+p.apiKey;}else break;
+          if(pageNum>25)break;
+        }
+        setFetchStatus(bars.length.toLocaleString()+' 1-sec bars loaded. Computing MFE...');
+      }else{
+        setFetchStatus('Fetching 1-min bars...');
+        var url='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var r2=await fetch(url);
+        if(!r2.ok){setErr('Polygon error '+r2.status);setLoading(false);return;}
+        var d2r=await r2.json();
+        bars=d2r.results||[];
+        setFetchStatus(bars.length.toLocaleString()+' 1-min bars loaded. Computing MFE...');
+      }
+      if(bars.length<100){setErr('Insufficient data: '+bars.length+' bars');setLoading(false);return;}
+      var price=bars[bars.length-1].c;
+
+      // Use setTimeout to let UI update before heavy compute
+      await new Promise(function(resolve){setTimeout(resolve,50);});
+      var mfe=computeMFE(bars,price);
+      setResults({ticker:ticker,price:price,bars:bars.length,resolution:resolution,mfe:mfe});
+      setFetchStatus('');
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>MFE Tracker</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Maximum Favorable Excursion" sub="Measures how far price travels UP from every $0.01 buy level before returning" info="For every $0.01 level that price drops to, this tracks the highest price reached before price returns to that level. The MFE is the difference — your theoretical maximum profit from that entry. The distribution tells you: if I set TP to $X, what percentage of my entries would have completed?"/>
+      <div style={{display:'flex',gap:6,marginTop:4}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. MRVL"/>
+        <button onClick={runMFE} disabled={loading} style={{border:'none',borderRadius:8,padding:'10px 20px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'}}>{loading?'Computing...':'Analyze'}</button>
+      </div>
+      <div style={{display:'flex',gap:4,marginTop:6}}>
+        <button onClick={function(){setResolution('minute');}} style={{flex:1,padding:'8px',border:'1px solid '+(resolution==='minute'?C.blue:C.border),borderRadius:4,background:resolution==='minute'?C.blue+'20':'transparent',color:resolution==='minute'?C.blue:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>1-MIN BARS (fast)</button>
+        <button onClick={function(){setResolution('second');}} style={{flex:1,padding:'8px',border:'1px solid '+(resolution==='second'?C.accent:C.border),borderRadius:4,background:resolution==='second'?C.accent+'20':'transparent',color:resolution==='second'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>1-SEC BARS (precise)</button>
+      </div>
+      {resolution==='second'&&<div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:4}}>1-second mode captures every micro-bounce. Takes 15-30 seconds to fetch and compute.</div>}
+      {fetchStatus&&loading&&<div style={{color:C.purple,fontSize:7,fontFamily:F,marginTop:4,fontWeight:700}}>{fetchStatus}</div>}
+      {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+    </Cd>
+
+    {results&&results.mfe&&<Cd>
+      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.mfe.days+' days | '+results.bars.toLocaleString()+' '+(results.resolution==='second'?'1-sec':'1-min')+' bars | '+results.mfe.total.toLocaleString()+' completed MFE cycles'}</div>
+
+      <SectionHead title="MFE Summary" sub="Percentiles across all completed cycles"/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
+        {[{l:'Average',v:results.mfe.avg},{l:'25th %ile',v:results.mfe.p25},{l:'Median',v:results.mfe.p50},{l:'75th %ile',v:results.mfe.p75},{l:'90th %ile',v:results.mfe.p90}].map(function(s){
+          return <div key={s.l} style={{background:C.bg,borderRadius:6,border:'1px solid '+C.border,padding:'8px 4px',textAlign:'center'}}>
+            <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>{s.l}</div>
+            <div style={{color:C.accent,fontSize:11,fontFamily:F,fontWeight:800}}>{'$'+s.v.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>{results.price>0?(s.v/results.price*100).toFixed(3)+'%':''}</div>
+          </div>;
+        })}
+      </div>
+
+      <SectionHead title="TP Completion Rate" sub="If you set TP to $X, what % of entries would have completed?"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP$</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Completion</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Distribution</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Count</th>
+          </tr></thead>
+          <tbody>{results.mfe.dist.map(function(d,idx){
+            var barW=Math.max(d.rate,1);
+            var barCol=d.rate>80?C.accent:d.rate>60?C.gold:d.rate>40?C.blue:C.warn;
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'4px 3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+d.threshold.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{d.thresholdPct.toFixed(3)+'%'}</td>
+              <td style={{padding:'4px 3px',color:barCol,textAlign:'right',fontWeight:700}}>{d.rate.toFixed(1)+'%'}</td>
+              <td style={{padding:'4px 3px'}}><div style={{height:10,background:C.bg,borderRadius:2,overflow:'hidden',minWidth:80}}><div style={{width:barW+'%',height:'100%',background:barCol,borderRadius:2}}/></div></td>
+              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{d.count.toLocaleString()+'/'+d.total.toLocaleString()}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <div style={{padding:8,background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue+'40',borderRadius:6,marginTop:8}}>
+        <div style={{color:C.blue,fontSize:7,fontWeight:700,fontFamily:F,marginBottom:3}}>HOW TO READ THIS</div>
+        <div style={{color:C.txt,fontSize:7,fontFamily:F}}>{'If completion rate at $'+(results.mfe.dist[3]?results.mfe.dist[3].threshold.toFixed(2):'0.10')+' is '+(results.mfe.dist[3]?results.mfe.dist[3].rate.toFixed(0):'?')+'%, that means '+(results.mfe.dist[3]?results.mfe.dist[3].rate.toFixed(0):'?')+'% of all buy entries saw price rise at least $'+(results.mfe.dist[3]?results.mfe.dist[3].threshold.toFixed(2):'0.10')+' before returning to the entry level. Set your TP at or below a threshold with 70%+ completion for reliable cycling.'}</div>
+      </div>
+    </Cd>}
+
+    {results&&results.mfe&&<Cd>
+      <SectionHead title="MFE By Hour" sub="Per-hour MFE percentiles — which hours give the most upside?"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg MFE</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>p25</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Median</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>p75</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>p90</th>
+          </tr></thead>
+          <tbody>{results.mfe.hours.map(function(h){
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim,fontWeight:h.session==='rth'?700:400}}>{h.label}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.n.toLocaleString()}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+h.avg.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+h.p25.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+h.p50.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+h.p75.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+h.p90.toFixed(2)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to understanding MFE data">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>Maximum Favorable Excursion (MFE) answers a simple question: "If I buy at a given price, how far up does the stock go before it comes back down to where I bought?" This is measured from every $0.01 price level the stock touches across 10 days of data.</p>
+          <p style={{fontSize:9}}>Unlike the Cycle Simulator (which tests fixed TP values), MFE measures the ACTUAL maximum upside from every entry. The distribution tells you the probability of reaching any TP level — the foundation for choosing the right take-profit.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Enter a ticker and select resolution. 1-second bars give precise results. Click Analyze.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Read the Summary percentiles. The Median tells you: half of all entries saw at least this much upside. The 90th percentile tells you: 90% of entries saw at least this much.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Read the Completion Rate table. Find the row where completion drops below 70%. The row ABOVE that is your safe TP. For example: $0.10 = 82% completion, $0.15 = 64% completion → set TP at $0.10.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Check MFE By Hour. The 9 AM hour might have $0.30 median MFE while 2 PM has $0.08. This means the same TP performs differently by hour — you might want a wider TP in the morning and tighter in the afternoon.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Cross-reference with the Cycle Simulator. MFE tells you what's POSSIBLE. The simulator tells you what's PROFITABLE after fees. Use MFE to understand the distribution, then the simulator to find the net-optimal TP.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>TP$ / TP%:</span> The take-profit threshold being tested. "What % of entries had MFE at least this large?"</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Completion:</span> Percentage of entries that reached this MFE. Green (80%+) = very reliable TP. Gold (60-80%) = good. Blue (40-60%) = moderate. Red ({'<'}40%) = too wide, most cycles won't complete.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Count:</span> Raw numbers — completed cycles out of total cycles at each threshold.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Hourly Avg MFE:</span> Average maximum upside from entries during that hour. Higher = bigger swings = more TP room.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Hourly p50 (Median):</span> Half of entries during this hour exceeded this MFE. More robust than average (not skewed by outlier swings).</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>You analyze MRVL. The completion table shows: $0.05 = 91%, $0.10 = 78%, $0.15 = 62%, $0.20 = 48%. This means 78% of the time you buy at any cent level, price goes at least $0.10 higher before returning. A $0.10 TP would complete on 78% of entries.</p>
+          <p style={{marginBottom:4,fontSize:9}}>The hourly breakdown shows 9 AM median MFE = $0.22 but 2 PM median MFE = $0.06. If your TP is $0.10, it completes easily in the morning (well below the median) but barely in the afternoon (above the median). You might run $0.10 TP in the morning and $0.05 in the afternoon.</p>
+          <p style={{fontSize:9,color:C.warn}}>Note: MFE measures maximum upside but doesn't account for TIME. A $0.30 MFE that takes 4 hours to reach is different from one that takes 5 minutes. Use the Cycle Simulator for time-weighted profitability.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -12589,7 +12844,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -12630,6 +12885,7 @@ function App(){
     {page==='volregime'&&<VolRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='hourlyregime'&&<HourlyRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='cyclesim'&&<CycleSimPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='mfetracker'&&<MFETrackerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
