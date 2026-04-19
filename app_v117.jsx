@@ -10208,6 +10208,8 @@ function CycleSimPage(p){
   var s4=useState(null),results=s4[0],setResults=s4[1];
   var s5=useState(null),hourlyDetail=s5[0],setHourlyDetail=s5[1];
   var s6=useState(null),selectedTP=s6[0],setSelectedTP=s6[1];
+  var s7c=useState('minute'),resolution=s7c[0],setResolution=s7c[1];
+  var s8c=useState(''),fetchStatus=s8c[0],setFetchStatus=s8c[1];
 
   var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
   var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
@@ -10284,18 +10286,43 @@ function CycleSimPage(p){
   var runSim=async function(){
     if(!ticker){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);setHourlyDetail(null);setSelectedTP(null);
+    setLoading(true);setErr(null);setResults(null);setHourlyDetail(null);setSelectedTP(null);setFetchStatus('');
     try{
       var days2=[];var d2=new Date();d2.setDate(d2.getDate()-1);
       while(days2.length<15){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
       var from2=days2[Math.min(days2.length-1,9)];var to2=days2[0];
-      var url='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-      var r=await fetch(url);
-      if(!r.ok){setErr('Polygon error '+r.status);setLoading(false);return;}
-      var d=await r.json();
-      var bars=d.results||[];
+      var bars=[];
+      var unit=resolution==='second'?'second':'minute';
+
+      if(resolution==='second'){
+        // Paginate through 1-second bars (up to ~576k bars)
+        var nextUrl='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/second/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var pageNum=0;
+        while(nextUrl){
+          pageNum++;setFetchStatus('Fetching page '+pageNum+'... ('+bars.length.toLocaleString()+' bars)');
+          var r=await fetch(nextUrl);
+          if(!r.ok){setErr('Polygon error '+r.status);setLoading(false);return;}
+          var d=await r.json();
+          var batch=d.results||[];
+          for(var bi=0;bi<batch.length;bi++)bars.push(batch[bi]);
+          if(d.next_url){nextUrl=d.next_url+'&apiKey='+p.apiKey;}
+          else break;
+          if(pageNum>25){setFetchStatus('Stopped at 25 pages ('+bars.length.toLocaleString()+' bars)');break;}
+        }
+        setFetchStatus(bars.length.toLocaleString()+' 1-sec bars loaded');
+      }else{
+        setFetchStatus('Fetching 1-min bars...');
+        var url='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var r2=await fetch(url);
+        if(!r2.ok){setErr('Polygon error '+r2.status);setLoading(false);return;}
+        var d2r=await r2.json();
+        bars=d2r.results||[];
+        setFetchStatus(bars.length.toLocaleString()+' 1-min bars loaded');
+      }
+
       if(bars.length<100){setErr('Insufficient data: '+bars.length+' bars');setLoading(false);return;}
       var price=bars[bars.length-1].c;
+      setFetchStatus('Simulating '+bars.length.toLocaleString()+' '+unit+' bars across 12 TP values...');
 
       var tpValues=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00];
       // Scale TPs for expensive stocks
@@ -10312,7 +10339,7 @@ function CycleSimPage(p){
       for(var i=1;i<simResults.length;i++){if(simResults[i].netPerDay>bestNet){bestNet=simResults[i].netPerDay;bestIdx=i;}}
       simResults[bestIdx].optimal=true;
 
-      setResults({ticker:ticker,price:price,bars:bars.length,days:simResults[0].days,simResults:simResults});
+      setResults({ticker:ticker,price:price,bars:bars.length,days:simResults[0].days,resolution:resolution,simResults:simResults});
       setSelectedTP(bestIdx);
       setHourlyDetail(simResults[bestIdx].hours);
     }catch(e){setErr(e.message);}
@@ -10331,11 +10358,17 @@ function CycleSimPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. MRVL"/>
         <button onClick={runSim} disabled={loading} style={{border:'none',borderRadius:8,padding:'10px 20px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'}}>{loading?'Simulating...':'Simulate'}</button>
       </div>
+      <div style={{display:'flex',gap:4,marginTop:6}}>
+        <button onClick={function(){setResolution('minute');}} style={{flex:1,padding:'8px',border:'1px solid '+(resolution==='minute'?C.blue:C.border),borderRadius:4,background:resolution==='minute'?C.blue+'20':'transparent',color:resolution==='minute'?C.blue:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>1-MIN BARS (fast)</button>
+        <button onClick={function(){setResolution('second');}} style={{flex:1,padding:'8px',border:'1px solid '+(resolution==='second'?C.accent:C.border),borderRadius:4,background:resolution==='second'?C.accent+'20':'transparent',color:resolution==='second'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>1-SEC BARS (precise)</button>
+      </div>
+      {resolution==='second'&&<div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:4}}>1-second mode fetches ~500k+ bars. Takes 15-30 seconds but captures every micro-cycle your bot would execute.</div>}
+      {fetchStatus&&loading&&<div style={{color:C.purple,fontSize:7,fontFamily:F,marginTop:4,fontWeight:700}}>{fetchStatus}</div>}
       {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </Cd>
 
     {results&&<Cd>
-      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.days+' days | '+results.bars.toLocaleString()+' bars | Fee: $0.005 RT'}</div>
+      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.days+' days | '+results.bars.toLocaleString()+' '+(results.resolution==='second'?'1-sec':'1-min')+' bars | Fee: $0.005 RT'}</div>
       <SectionHead title="TP Optimization Curve" sub="Net profit per day at each take-profit level"/>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
