@@ -10540,8 +10540,8 @@ function MFETrackerPage(p){
           // Returns at the low
           keys2=Object.keys(held);
           for(var ki4=0;ki4<keys2.length;ki4++){var lvl4=parseInt(keys2[ki4]);if(lvl4>=lowC){var mfe2=(held[lvl4]-lvl4)/100;if(mfe2>0){allMFEs.push(mfe2);if(hrMFEs[bHr])hrMFEs[bHr].push(mfe2);}delete held[lvl4];}}
-          // New buys: high already passed, so maxHigh starts at close (conservative)
-          for(var lv2=highC-1;lv2>=lowC;lv2--){if(held[lv2]===undefined)held[lv2]=closeC;}
+          // New buys: high already passed, so maxHigh starts at level itself
+          for(var lv2=highC-1;lv2>=lowC;lv2--){if(held[lv2]===undefined)held[lv2]=lv2;}
         }
       }
       // End of day: discard stuck (incomplete cycles)
