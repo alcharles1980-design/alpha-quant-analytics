@@ -10558,12 +10558,12 @@ function MFETrackerPage(p){
     var dist=[];
     for(var ti=0;ti<thresholds.length;ti++){
       var t=thresholds[ti];var cnt=0;
-      for(var mi=allMFEs.length-1;mi>=0;mi--){if(allMFEs[mi]>=t){cnt=allMFEs.length-mi;break;}}
+      for(var mi=0;mi<allMFEs.length;mi++){if(allMFEs[mi]>=t){cnt=allMFEs.length-mi;break;}}
       dist.push({threshold:t,thresholdPct:price>0?Math.round(t/price*10000)/100:0,rate:allMFEs.length>0?Math.round(cnt/allMFEs.length*1000)/10:0,count:cnt,total:allMFEs.length});
     }
 
     // Percentile helper
-    var getP=function(arr,pct){if(!arr.length)return 0;var idx=Math.floor(arr.length*(1-pct/100));return arr[Math.min(Math.max(idx,0),arr.length-1)];};
+    var getP=function(arr,pct){if(!arr.length)return 0;var idx=Math.floor(arr.length*pct/100);return arr[Math.min(idx,arr.length-1)];};
 
     // Per-hour MFE
     var hrResults=[];
