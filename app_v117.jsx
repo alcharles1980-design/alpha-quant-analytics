@@ -10657,31 +10657,36 @@ function MFETrackerPage(p){
       </div>
 
       <SectionHead title="TP Completion Rate" sub="If you set TP to $X, what % of entries would have completed?"/>
-      <div style={{overflowX:'auto'}}>
+      {(function(){var bestIdx2=-1;var bestNet2=-Infinity;for(var bi2=0;bi2<results.mfe.dist.length;bi2++){var d3=results.mfe.dist[bi2];var net2=d3.count*(d3.threshold-0.005);if(net2>bestNet2){bestNet2=net2;bestIdx2=bi2;}}
+      return <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP$</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Completion</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Distribution</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Count</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}></th>
           </tr></thead>
           <tbody>{results.mfe.dist.map(function(d,idx){
-            var barW=Math.max(d.rate,1);
             var barCol=d.rate>80?C.accent:d.rate>60?C.gold:d.rate>40?C.blue:C.warn;
-            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid}}>
+            var netTotal=d.count*(d.threshold-0.005);
+            var netPerDay=results.mfe.days>0?netTotal/results.mfe.days:0;
+            var isOpt=idx===bestIdx2;
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isOpt?'rgba(0,229,160,0.08)':'transparent'}}>
               <td style={{padding:'4px 3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+d.threshold.toFixed(2)}</td>
               <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{d.thresholdPct.toFixed(3)+'%'}</td>
               <td style={{padding:'4px 3px',color:barCol,textAlign:'right',fontWeight:700}}>{d.rate.toFixed(1)+'%'}</td>
-              <td style={{padding:'4px 3px'}}><div style={{height:10,background:C.bg,borderRadius:2,overflow:'hidden',minWidth:80}}><div style={{width:barW+'%',height:'100%',background:barCol,borderRadius:2}}/></div></td>
-              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{d.count.toLocaleString()+'/'+d.total.toLocaleString()}</td>
+              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{d.count.toLocaleString()}</td>
+              <td style={{padding:'4px 3px',color:netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+netPerDay.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',textAlign:'center'}}>{isOpt?<span style={{color:C.accent,fontWeight:800,fontSize:8}}>{'\u2605 OPTIMAL'}</span>:''}</td>
             </tr>;
           })}</tbody>
         </table>
-      </div>
+      </div>;})()}
       <div style={{padding:8,background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue+'40',borderRadius:6,marginTop:8}}>
         <div style={{color:C.blue,fontSize:7,fontWeight:700,fontFamily:F,marginBottom:3}}>HOW TO READ THIS</div>
-        <div style={{color:C.txt,fontSize:7,fontFamily:F}}>{'If completion rate at $'+(results.mfe.dist[3]?results.mfe.dist[3].threshold.toFixed(2):'0.10')+' is '+(results.mfe.dist[3]?results.mfe.dist[3].rate.toFixed(0):'?')+'%, that means '+(results.mfe.dist[3]?results.mfe.dist[3].rate.toFixed(0):'?')+'% of all buy entries saw price rise at least $'+(results.mfe.dist[3]?results.mfe.dist[3].threshold.toFixed(2):'0.10')+' before returning to the entry level. Set your TP at or below a threshold with 70%+ completion for reliable cycling.'}</div>
+        <div style={{color:C.txt,fontSize:7,fontFamily:F}}>{'Net$/Day = completed fills \u00D7 (TP$ \u2212 $0.005 fee) \u00F7 '+results.mfe.days+' days. The OPTIMAL row has the highest net profit per day per share. Wider TPs earn more per cycle but complete less often. The peak is where these balance.'}</div>
       </div>
     </Cd>}
 
