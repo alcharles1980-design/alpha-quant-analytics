@@ -10324,10 +10324,10 @@ function CycleSimPage(p){
       var price=bars[bars.length-1].c;
       setFetchStatus('Simulating '+bars.length.toLocaleString()+' '+unit+' bars across 12 TP values...');
 
-      var tpValues=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00];
+      var tpValues=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00,1.50,2.00];
       // Scale TPs for expensive stocks
-      if(price>200){tpValues=[0.10,0.15,0.20,0.30,0.40,0.50,0.75,1.00,1.50,2.00,3.00,5.00];}
-      else if(price>50){tpValues=[0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00,1.50,2.00];}
+      if(price>200){tpValues=[0.10,0.20,0.30,0.50,0.75,1.00,1.50,2.00,3.00,4.00,5.00,7.50,10.00,15.00];}
+      else if(price>50){tpValues=[0.05,0.10,0.15,0.20,0.30,0.40,0.50,0.75,1.00,1.50,2.00,3.00,4.00,5.00];}
 
       var simResults=[];
       for(var i=0;i<tpValues.length;i++){
@@ -10553,9 +10553,9 @@ function MFETrackerPage(p){
     allMFEs.sort(function(a,b){return a-b;});
 
     // Distribution: what % of entries reach each threshold?
-    var thresholds=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00];
-    if(price>200)thresholds=[0.10,0.15,0.20,0.30,0.40,0.50,0.75,1.00,1.50,2.00,3.00,5.00];
-    else if(price>50)thresholds=[0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00,1.50,2.00];
+    var thresholds=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00,1.50,2.00];
+    if(price>200)thresholds=[0.10,0.20,0.30,0.50,0.75,1.00,1.50,2.00,3.00,4.00,5.00,7.50,10.00,15.00];
+    else if(price>50)thresholds=[0.05,0.10,0.15,0.20,0.30,0.40,0.50,0.75,1.00,1.50,2.00,3.00,4.00,5.00];
 
     var dist=[];
     for(var ti=0;ti<thresholds.length;ti++){

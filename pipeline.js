@@ -2874,9 +2874,9 @@ async function runMFE() {
       var hrMFEs1d = combineHrMFEs(last1);
 
       // 4. Build threshold distributions for all 3 windows
-      var thresholds = [0.03, 0.05, 0.07, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00];
-      if (price > 200) thresholds = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 5.00];
-      else if (price > 50) thresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00];
+      var thresholds = [0.03, 0.05, 0.07, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00];
+      if (price > 200) thresholds = [0.10, 0.20, 0.30, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 4.00, 5.00, 7.50, 10.00, 15.00];
+      else if (price > 50) thresholds = [0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 4.00, 5.00];
 
       var buildDist = function(arr) {
         var counts = [];
