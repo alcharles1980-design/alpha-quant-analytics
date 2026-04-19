@@ -10201,6 +10201,227 @@ function HourlyRegimePage(p){
   </div>;
 }
 
+function CycleSimPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),results=s4[0],setResults=s4[1];
+  var s5=useState(null),hourlyDetail=s5[0],setHourlyDetail=s5[1];
+  var s6=useState(null),selectedTP=s6[0],setSelectedTP=s6[1];
+
+  var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var simulate=function(bars,tpDollars,price){
+    var etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    var etDayFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var tpCents=Math.round(tpDollars*100);
+    // Group bars by day
+    var dayBars={};
+    for(var i=0;i<bars.length;i++){
+      var bd=etDayFmt.format(new Date(bars[i].t));
+      if(!dayBars[bd])dayBars[bd]=[];
+      dayBars[bd].push(bars[i]);
+    }
+    var dayKeys=Object.keys(dayBars).sort();
+    var totalCycles=0,totalStuck=0,totalGross=0;
+    var hrCycles={};for(var h=4;h<20;h++)hrCycles[h]={cycles:0,days:0};
+
+    for(var di=0;di<dayKeys.length;di++){
+      var db=dayBars[dayKeys[di]];if(db.length<5)continue;
+      var held={}; // key: cent level -> true
+      var dayCycles=0;
+
+      for(var bi=0;bi<db.length;bi++){
+        var bar=db[bi];
+        var lowC=Math.round(bar.l*100);
+        var highC=Math.round(bar.h*100);
+        var openC=Math.round(bar.o*100);
+        var closeC=Math.round(bar.c*100);
+        var isBullish=closeC>=openC;
+        var bHr=parseInt(etFmt.format(new Date(bar.t)))||0;
+
+        if(isBullish){
+          // Low first: buys fill from open down to low
+          for(var lv=openC-1;lv>=lowC;lv--){if(!held[lv])held[lv]=true;}
+          // Then high: sells trigger
+          var heldKeys=Object.keys(held);
+          for(var hi=0;hi<heldKeys.length;hi++){
+            var lvl=parseInt(heldKeys[hi]);
+            if(lvl+tpCents<=highC){delete held[lvl];dayCycles++;if(hrCycles[bHr])hrCycles[bHr].cycles++;}
+          }
+        }else{
+          // High first: sells trigger
+          var heldKeys2=Object.keys(held);
+          for(var hi2=0;hi2<heldKeys2.length;hi2++){
+            var lvl2=parseInt(heldKeys2[hi2]);
+            if(lvl2+tpCents<=highC){delete held[lvl2];dayCycles++;if(hrCycles[bHr])hrCycles[bHr].cycles++;}
+          }
+          // Then low: buys fill from high down to low
+          for(var lv2=highC-1;lv2>=lowC;lv2--){if(!held[lv2])held[lv2]=true;}
+        }
+      }
+      totalCycles+=dayCycles;
+      totalStuck+=Object.keys(held).length;
+      for(var h2=4;h2<20;h2++)hrCycles[h2].days++;
+    }
+
+    var nDays=dayKeys.length||1;
+    var cyclesPerDay=Math.round(totalCycles/nDays*10)/10;
+    var grossPerDay=Math.round(totalCycles*tpDollars/nDays*100)/100;
+    var netPerDay=Math.round(totalCycles*(tpDollars-0.005)/nDays*100)/100;
+    var stuckPerDay=Math.round(totalStuck/nDays*10)/10;
+
+    var hrResult=[];
+    for(var h3=4;h3<20;h3++){
+      var hd=hrCycles[h3];
+      hrResult.push({hour:h3,label:(h3<10?'0':'')+h3+':00',cycles:hd.days>0?Math.round(hd.cycles/hd.days*10)/10:0,gross:hd.days>0?Math.round(hd.cycles*tpDollars/hd.days*100)/100:0,net:hd.days>0?Math.round(hd.cycles*(tpDollars-0.005)/hd.days*100)/100:0});
+    }
+
+    return{tp:tpDollars,tpPct:price>0?Math.round(tpDollars/price*10000)/100:0,cyclesPerDay:cyclesPerDay,grossPerDay:grossPerDay,netPerDay:netPerDay,stuckPerDay:stuckPerDay,days:nDays,hours:hrResult};
+  };
+
+  var runSim=async function(){
+    if(!ticker){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setHourlyDetail(null);setSelectedTP(null);
+    try{
+      var days2=[];var d2=new Date();d2.setDate(d2.getDate()-1);
+      while(days2.length<15){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
+      var from2=days2[Math.min(days2.length-1,9)];var to2=days2[0];
+      var url='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var r=await fetch(url);
+      if(!r.ok){setErr('Polygon error '+r.status);setLoading(false);return;}
+      var d=await r.json();
+      var bars=d.results||[];
+      if(bars.length<100){setErr('Insufficient data: '+bars.length+' bars');setLoading(false);return;}
+      var price=bars[bars.length-1].c;
+
+      var tpValues=[0.03,0.05,0.07,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00];
+      // Scale TPs for expensive stocks
+      if(price>200){tpValues=[0.10,0.15,0.20,0.30,0.40,0.50,0.75,1.00,1.50,2.00,3.00,5.00];}
+      else if(price>50){tpValues=[0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.75,1.00,1.50,2.00];}
+
+      var simResults=[];
+      for(var i=0;i<tpValues.length;i++){
+        simResults.push(simulate(bars,tpValues[i],price));
+      }
+
+      // Find optimal TP (max net profit per day)
+      var bestIdx=0;var bestNet=simResults[0].netPerDay;
+      for(var i=1;i<simResults.length;i++){if(simResults[i].netPerDay>bestNet){bestNet=simResults[i].netPerDay;bestIdx=i;}}
+      simResults[bestIdx].optimal=true;
+
+      setResults({ticker:ticker,price:price,bars:bars.length,days:simResults[0].days,simResults:simResults});
+      setSelectedTP(bestIdx);
+      setHourlyDetail(simResults[bestIdx].hours);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Cycle Simulator</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Grid Bot Cycle Simulator" sub="Simulates $0.01 grid levels with different TP values on 10 days of 1-min bars" info="Walks through every 1-minute bar, simulates buy orders filling at each $0.01 level as price drops, and sell orders triggering when price reaches buy_price + TP. Uses bar direction (open vs close) to determine within-bar ordering. Shows the tradeoff between TP size and cycle completion rate."/>
+      <div style={{display:'flex',gap:6,marginTop:4}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. MRVL"/>
+        <button onClick={runSim} disabled={loading} style={{border:'none',borderRadius:8,padding:'10px 20px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'}}>{loading?'Simulating...':'Simulate'}</button>
+      </div>
+      {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd>
+      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.days+' days | '+results.bars.toLocaleString()+' bars | Fee: $0.005 RT'}</div>
+      <SectionHead title="TP Optimization Curve" sub="Net profit per day at each take-profit level"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP$</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Gross$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Stuck/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}></th>
+          </tr></thead>
+          <tbody>{results.simResults.map(function(r,idx){
+            var isOpt=r.optimal;var isSel=selectedTP===idx;
+            return <tr key={idx} onClick={function(){setSelectedTP(idx);setHourlyDetail(r.hours);}} style={{borderBottom:'1px solid '+C.grid,background:isOpt?'rgba(0,229,160,0.08)':isSel?'rgba(61,158,255,0.06)':'transparent',cursor:'pointer'}}>
+              <td style={{padding:'4px 3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+r.tp.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{r.tpPct.toFixed(3)+'%'}</td>
+              <td style={{padding:'4px 3px',color:r.cyclesPerDay>100?C.accent:r.cyclesPerDay>20?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.cyclesPerDay.toFixed(1)}</td>
+              <td style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>{'$'+r.grossPerDay.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:r.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+r.netPerDay.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:r.stuckPerDay>50?C.warn:r.stuckPerDay>20?C.gold:C.txtDim,textAlign:'right'}}>{r.stuckPerDay.toFixed(1)}</td>
+              <td style={{padding:'4px 3px',textAlign:'center'}}>{isOpt?<span style={{color:C.accent,fontWeight:800,fontSize:8}}>{'\u2605 OPTIMAL'}</span>:''}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {hourlyDetail&&<Cd>
+      <SectionHead title="Hourly Breakdown" sub={'TP = $'+(results.simResults[selectedTP]?results.simResults[selectedTP].tp.toFixed(2):'?')+' — tap any TP row above to switch'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Gross$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+          </tr></thead>
+          <tbody>{hourlyDetail.map(function(h){
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{h.label}</td>
+              <td style={{padding:'3px',color:h.cycles>10?C.accent:h.cycles>3?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{h.cycles.toFixed(1)}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+h.gross.toFixed(2)}</td>
+              <td style={{padding:'3px',color:h.net>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+h.net.toFixed(2)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="Step-by-step guide to using the cycle simulator">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>This simulates your exact grid bot on historical 1-minute data. It places buy orders at every $0.01 level, and when price drops to a level, it buys. When price rises to buy_price + TP, it sells. It counts how many complete buy-sell cycles happen per day at different TP values, showing you the optimal take-profit setting for each stock.</p>
+          <p style={{fontSize:9}}>Unlike the excursion measurement (which estimates average swing size), this directly simulates the grid mechanics: levels recycling, stuck positions, within-bar ordering. The results tell you exactly what your bot would have earned per day.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Enter a ticker from the Oscillation Screener (pick one with a high score). Click Simulate. The tool fetches 10 days of 1-minute bars and runs the simulation.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> The TP Optimization Curve shows results for 12 different TP values. The row marked OPTIMAL has the highest net profit per day after the $0.005 round-trip fee.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Look at the tradeoff. Small TP = many cycles but tiny profit each. Large TP = few cycles but big profit each. The optimal is where these balance.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Check Stuck/Day. These are positions bought but never sold within the day. High stuck count means the TP is too wide — price never reaches it. Your capital is tied up in unrealized positions.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Tap any TP row to see the hourly breakdown. This shows which hours generate the most cycles at that TP. You might find that $0.20 TP is optimal for the 9-10 AM hours but too wide for the afternoon.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>TP$ / TP%:</span> The take-profit value in dollars and as percentage of stock price. This is what you'd set in your bot configuration.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Cycles/Day:</span> Average completed buy-sell round trips per day across 10 days. More cycles = more profit events.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Gross$/Day:</span> Cycles × TP$ per day. Total revenue before fees.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Net$/Day:</span> Cycles × (TP$ - $0.005) per day. Profit after the $0.005 round-trip fee. Green = profitable. Red = fees exceed profit.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Stuck/Day:</span> Average positions bought but not sold by end of day. These represent overnight risk — held positions that might gap against you.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>OPTIMAL:</span> The TP value with the highest Net$/Day. This is the bot's sweet spot for this stock over the last 10 trading days.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>You simulate MRVL. The table shows: $0.10 TP = 180 cycles/day, $17.10 net. $0.20 TP = 85 cycles/day, $16.57 net. $0.30 TP = 42 cycles/day, $12.39 net. The optimal is $0.10 with $17.10 net/day — many small cycles outperform fewer large ones.</p>
+          <p style={{marginBottom:4,fontSize:9}}>You tap $0.10 and check the hourly breakdown: 9 AM shows 28 cycles/day ($2.66 net), 2 PM shows 12 cycles/day ($1.14 net). The morning is twice as productive. You configure your bot for $0.10 TP and only run it 9 AM - 12 PM.</p>
+          <p style={{fontSize:9,color:C.warn}}>Important: This simulates on HISTORICAL data. Past cycle counts don't guarantee future results. The market regime, volatility level, and stock behavior can change. Use alongside the Volatility Regime page to ensure current conditions match the backtest period.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -12298,7 +12519,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -12338,6 +12559,7 @@ function App(){
     {page==='confluence'&&<ConfluencePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='volregime'&&<VolRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='hourlyregime'&&<HourlyRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='cyclesim'&&<CycleSimPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
