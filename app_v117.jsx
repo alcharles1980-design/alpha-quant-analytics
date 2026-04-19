@@ -10873,7 +10873,10 @@ function MFEDashPage(p){
   var triggerScan=async function(){
     if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
     setScanning(true);setErr(null);
-    setPipeStatus({status:'running',progress_pct:0,message:'Dispatching to GitHub Actions...'});
+    var pendingStatus={status:'running',progress_pct:0,message:'Dispatching to GitHub Actions...'};
+    setPipeStatus(pendingStatus);
+    // Write a pending status to Supabase so it persists across refresh
+    try{await fetch(SB_URL+'/rest/v1/pipeline_status',{method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify({run_id:'mfe-pending-'+Date.now(),mode:'mfe',status:'running',progress_pct:0,message:'Waiting for pipeline to start...',started_at:new Date().toISOString(),updated_at:new Date().toISOString()})});}catch(e2){}
     try{
       var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'mfe'}})});
       if(r.status===204){
