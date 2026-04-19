@@ -10339,7 +10339,18 @@ function CycleSimPage(p){
       for(var i=1;i<simResults.length;i++){if(simResults[i].netPerDay>bestNet){bestNet=simResults[i].netPerDay;bestIdx=i;}}
       simResults[bestIdx].optimal=true;
 
-      setResults({ticker:ticker,price:price,bars:bars.length,days:simResults[0].days,resolution:resolution,simResults:simResults});
+      // Find optimal TP per hour
+      var hrOptimal=[];
+      for(var h=4;h<20;h++){
+        var bestTP=0;var bestHrNet=-Infinity;var bestHrCycles=0;var bestHrGross=0;
+        for(var ti=0;ti<simResults.length;ti++){
+          var hrData=simResults[ti].hours[h-4];
+          if(hrData&&hrData.net>bestHrNet){bestHrNet=hrData.net;bestTP=simResults[ti].tp;bestHrCycles=hrData.cycles;bestHrGross=hrData.gross;}
+        }
+        hrOptimal.push({hour:h,label:(h<10?'0':'')+h+':00',bestTP:bestTP,cycles:bestHrCycles,gross:bestHrGross,net:bestHrNet,session:h<9?'pre':h<16?'rth':'post'});
+      }
+
+      setResults({ticker:ticker,price:price,bars:bars.length,days:simResults[0].days,resolution:resolution,simResults:simResults,hrOptimal:hrOptimal});
       setSelectedTP(bestIdx);
       setHourlyDetail(simResults[bestIdx].hours);
     }catch(e){setErr(e.message);}
@@ -10411,6 +10422,32 @@ function CycleSimPage(p){
             var session=h.hour<9?'pre':h.hour<16?'rth':'post';
             return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{h.label}</td>
+              <td style={{padding:'3px',color:h.cycles>10?C.accent:h.cycles>3?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{h.cycles.toFixed(1)}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+h.gross.toFixed(2)}</td>
+              <td style={{padding:'3px',color:h.net>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+h.net.toFixed(2)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {results&&results.hrOptimal&&<Cd>
+      <SectionHead title="Optimal TP By Hour" sub="Best take-profit for each hour based on max net profit"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Best TP$</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cycles/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Gross$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+          </tr></thead>
+          <tbody>{results.hrOptimal.map(function(h){
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim,fontWeight:h.session==='rth'?700:400}}>{h.label}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+h.bestTP.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{results.price>0?(h.bestTP/results.price*100).toFixed(3)+'%':'--'}</td>
               <td style={{padding:'3px',color:h.cycles>10?C.accent:h.cycles>3?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{h.cycles.toFixed(1)}</td>
               <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+h.gross.toFixed(2)}</td>
               <td style={{padding:'3px',color:h.net>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+h.net.toFixed(2)}</td>
