@@ -10662,6 +10662,21 @@ function MFETrackerPage(p){
         })}
       </div>
 
+      {(function(){var bestTP9=0;var bestNet9=-Infinity;var bestFills9=0;var bestRate9=0;
+        for(var oi=0;oi<results.mfe.dist.length;oi++){var d9=results.mfe.dist[oi];var net9=d9.count*(d9.threshold-fee);if(net9>bestNet9){bestNet9=net9;bestTP9=d9.threshold;bestFills9=d9.count;bestRate9=results.mfe.total>0?Math.round(d9.count/results.mfe.total*1000)/10:0;}}
+        var nD9=results.mfe.days||1;
+        return <div style={{padding:12,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:8,marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:6}}>Overall Daily Optimal</div>
+          <div style={{display:'flex',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
+            <div><span style={{color:C.accent,fontSize:16,fontWeight:800,fontFamily:F}}>{'$'+bestTP9.toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>{results.price>0?(bestTP9/results.price*100).toFixed(3)+'%':''}{'  TP'}</span></div>
+            <div><span style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{'$'+(Math.round(bestNet9/nD9*100)/100).toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>Net/Day</span></div>
+            <div><span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{Math.round(bestFills9/nD9)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>Cyc/Day</span></div>
+            <div><span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{bestRate9.toFixed(1)+'%'}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>Rate</span></div>
+          </div>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:4}}>{'Fee: $'+fee.toFixed(4)+'/share | '+results.mfe.days+' days | '+results.mfe.total.toLocaleString()+' total MFE cycles'}</div>
+        </div>;
+      })()}
+
       <SectionHead title="TP Completion Rate" sub="If you set TP to $X, what % of entries would have completed?"/>
       {(function(){var bestIdx2=-1;var bestNet2=-Infinity;for(var bi2=0;bi2<results.mfe.dist.length;bi2++){var d3=results.mfe.dist[bi2];var net2=d3.count*(d3.threshold-fee);if(net2>bestNet2){bestNet2=net2;bestIdx2=bi2;}}
       return <div style={{overflowX:'auto'}}>
@@ -10719,7 +10734,15 @@ function MFETrackerPage(p){
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+h.p75.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+h.p90.toFixed(2)}</td>
             </tr>;
-          })}</tbody>
+          })}<tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+              <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>ALL DAY</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{results.mfe.total.toLocaleString()}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+results.mfe.avg.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{'$'+results.mfe.p25.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+results.mfe.p50.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{'$'+results.mfe.p75.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+results.mfe.p90.toFixed(2)}</td>
+            </tr></tbody>
         </table>
       </div>
     </Cd>}
@@ -10748,7 +10771,17 @@ function MFETrackerPage(p){
               <td style={{padding:'3px',color:bestRate3>50?C.accent:bestRate3>20?C.gold:C.warn,textAlign:'right'}}>{bestRate3.toFixed(1)+'%'}</td>
               <td style={{padding:'3px',color:bestNet4/nD>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+(Math.round(bestNet4/nD*100)/100).toFixed(2)}</td>
             </tr>;
-          })}</tbody>
+          })}{(function(){var allBestTP=0;var allBestNet=-Infinity;var allBestFills=0;var allBestRate=0;
+            for(var ti5=0;ti5<threshs.length;ti5++){var d5=results.mfe.dist[ti5];if(!d5)continue;var cnt5=d5.count;var net5=cnt5*(d5.threshold-fee);if(net5>allBestNet){allBestNet=net5;allBestTP=d5.threshold;allBestFills=cnt5;allBestRate=results.mfe.total>0?Math.round(cnt5/results.mfe.total*1000)/10:0;}}
+            return <tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+              <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>ALL DAY</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+allBestTP.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontSize:6}}>{results.price>0?(allBestTP/results.price*100).toFixed(3)+'%':'--'}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{(Math.round(allBestFills/nD*10)/10).toFixed(1)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{allBestRate.toFixed(1)+'%'}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+(Math.round(allBestNet/nD*100)/100).toFixed(2)}</td>
+            </tr>;
+          })()}</tbody>
         </table>
       </div>
     </Cd>}
