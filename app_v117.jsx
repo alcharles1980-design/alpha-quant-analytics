@@ -11033,9 +11033,9 @@ function MFEDashPage(p){
           <tbody>{(function(){var hrD10=detailRow._hrDist||[];var hrD3=detailRow._hrDist3d||[];var hrD1=detailRow._hrDist1d||[];var threshs=detailRow._thresholds;var nD=detailRow.days_sampled||1;
             var getHrOpt=function(hData,nDays){
               if(!hData||!hData.counts)return{tp:0,net:0};
-              var best={tp:0,net:-Infinity};
-              for(var ti=0;ti<threshs.length;ti++){var cnt=hData.counts[ti]||0;var net=cnt*(threshs[ti]-fee);if(net>best.net){best={tp:threshs[ti],net:Math.round(net/nDays*100)/100};}}
-              return best;
+              var bestTP=0;var bestRaw=-Infinity;
+              for(var ti=0;ti<threshs.length;ti++){var cnt=hData.counts[ti]||0;var net=cnt*(threshs[ti]-fee);if(net>bestRaw){bestRaw=net;bestTP=threshs[ti];}}
+              return{tp:bestTP,net:Math.round(bestRaw/nDays*100)/100};
             };
             return Array.from({length:16},function(_,i){var h=i+4;
               var o10=getHrOpt(hrD10[i],nD);
