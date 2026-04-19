@@ -10839,7 +10839,11 @@ function MFEDashPage(p){
         for(var i=0;i<batch.length;i++){
           var row=batch[i];
           try{row._dist=typeof row.dist==='string'?JSON.parse(row.dist):row.dist||[];}catch(e2){row._dist=[];}
+          try{row._dist3d=typeof row.dist_3d==='string'?JSON.parse(row.dist_3d):row.dist_3d||[];}catch(e2){row._dist3d=[];}
+          try{row._dist1d=typeof row.dist_1d==='string'?JSON.parse(row.dist_1d):row.dist_1d||[];}catch(e2){row._dist1d=[];}
           try{row._hrDist=typeof row.hr_dist==='string'?JSON.parse(row.hr_dist):row.hr_dist||[];}catch(e2){row._hrDist=[];}
+          try{row._hrDist3d=typeof row.hr_dist_3d==='string'?JSON.parse(row.hr_dist_3d):row.hr_dist_3d||[];}catch(e2){row._hrDist3d=[];}
+          try{row._hrDist1d=typeof row.hr_dist_1d==='string'?JSON.parse(row.hr_dist_1d):row.hr_dist_1d||[];}catch(e2){row._hrDist1d=[];}
           try{row._thresholds=typeof row.thresholds==='string'?JSON.parse(row.thresholds):row.thresholds||[];}catch(e2){row._thresholds=[];}
           try{row._pctiles=typeof row.percentiles==='string'?JSON.parse(row.percentiles):row.percentiles||{};}catch(e2){row._pctiles={};}
           allRows.push(row);
@@ -10889,16 +10893,17 @@ function MFEDashPage(p){
 
   useEffect(function(){loadWatchlist();loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
-  // Compute optimal TP for a row given fee
-  var getOptimal=function(row){
-    if(!row._dist||!row._thresholds||!row._thresholds.length)return{tp:0,net:0,fills:0,rate:0};
+  // Compute optimal TP for a given dist array and params
+  var getOptimal=function(row,distKey,totalKey,daysDiv){
+    var dist2=row[distKey||'_dist'];var threshs=row._thresholds;var total=row[totalKey||'total_cycles']||0;
+    if(!dist2||!threshs||!threshs.length)return{tp:0,net:0,fills:0,rate:0,netPerDay:0,fillsPerDay:0};
     var bestTP=0;var bestNet=-Infinity;var bestFills=0;var bestRate=0;
-    for(var i=0;i<row._thresholds.length;i++){
-      var t=row._thresholds[i];var cnt=row._dist[i]||0;
+    for(var i=0;i<threshs.length;i++){
+      var t=threshs[i];var cnt=dist2[i]||0;
       var net=cnt*(t-fee);
-      if(net>bestNet){bestNet=net;bestTP=t;bestFills=cnt;bestRate=row.total_cycles>0?Math.round(cnt/row.total_cycles*1000)/10:0;}
+      if(net>bestNet){bestNet=net;bestTP=t;bestFills=cnt;bestRate=total>0?Math.round(cnt/total*1000)/10:0;}
     }
-    var days=row.days_sampled||1;
+    var days=daysDiv||row.days_sampled||1;
     return{tp:bestTP,netPerDay:Math.round(bestNet/days*100)/100,fillsPerDay:Math.round(bestFills/days*10)/10,rate:bestRate};
   };
 
@@ -10910,11 +10915,16 @@ function MFEDashPage(p){
       var history=data[tk]||[];
       if(history.length===0){displayRows.push({ticker:tk,noData:true});continue;}
       var latest=history[0];
-      var opt=getOptimal(latest);
-      // Previous day for trend
-      var prevOpt=null;
-      if(history.length>=2){prevOpt=getOptimal(history[1]);}
-      displayRows.push({ticker:tk,noData:false,latest:latest,opt:opt,prevOpt:prevOpt,history:history});
+      var opt10=getOptimal(latest,'_dist','total_cycles',latest.days_sampled);
+      var opt3=getOptimal(latest,'_dist3d','total_cycles_3d',3);
+      var opt1=getOptimal(latest,'_dist1d','total_cycles_1d',1);
+      // Direction: compare 3d vs 10d
+      var dir='STABLE';var dirCol=C.txtDim;var dirArrow='\u2192';
+      if(opt3.tp&&opt10.tp){
+        if(opt3.tp<opt10.tp*0.8){dir='TIGHTENING';dirCol=C.blue;dirArrow='\u2193';}
+        else if(opt3.tp>opt10.tp*1.2){dir='WIDENING';dirCol=C.gold;dirArrow='\u2191';}
+      }
+      displayRows.push({ticker:tk,noData:false,latest:latest,opt10:opt10,opt3:opt3,opt1:opt1,dir:dir,dirCol:dirCol,dirArrow:dirArrow,history:history});
     }
   }
 
@@ -10974,13 +10984,13 @@ function MFEDashPage(p){
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Price</th>
-            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Optimal TP</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills/Day</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trend</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Days</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d TP</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d TP</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last TP</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Dir</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Net</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d Net</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last Net</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Scan</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}></th>
           </tr></thead>
@@ -10989,23 +10999,16 @@ function MFEDashPage(p){
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td colSpan="10" style={{padding:'3px',color:C.txtDim,fontSize:7}}>No scan data — run MFE scan</td>
             </tr>;
-            var opt=r.opt;var prev=r.prevOpt;
-            var trendArrow='';var trendCol=C.txtDim;
-            if(prev){
-              if(opt.tp>prev.tp){trendArrow='\u2191';trendCol=C.gold;}
-              else if(opt.tp<prev.tp){trendArrow='\u2193';trendCol=C.blue;}
-              else{trendArrow='\u2192';trendCol=C.txtDim;}
-            }
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.latest.price||0).toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+opt.tp.toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.latest.price>0?(opt.tp/r.latest.price*100).toFixed(3)+'%':'--'}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{opt.fillsPerDay.toFixed(1)}</td>
-              <td style={{padding:'3px',color:opt.rate>50?C.accent:opt.rate>20?C.gold:C.warn,textAlign:'right'}}>{opt.rate.toFixed(1)+'%'}</td>
-              <td style={{padding:'3px',color:opt.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+opt.netPerDay.toFixed(2)}</td>
-              <td style={{padding:'3px',color:trendCol,textAlign:'right',fontWeight:700}}>{trendArrow+(prev?' $'+prev.tp.toFixed(2):'--')}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{r.latest.days_sampled||'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontWeight:700}}>{'$'+r.opt10.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+r.opt3.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+r.opt1.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:r.dirCol,textAlign:'right',fontWeight:700,fontSize:6}}>{r.dirArrow+' '+r.dir}</td>
+              <td style={{padding:'3px',color:r.opt10.netPerDay>0?C.accent:C.warn,textAlign:'right'}}>{'$'+r.opt10.netPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:r.opt3.netPerDay>0?C.gold:C.warn,textAlign:'right'}}>{'$'+r.opt3.netPerDay.toFixed(0)}</td>
+              <td style={{padding:'3px',color:r.opt1.netPerDay>0?C.blue:C.warn,textAlign:'right'}}>{'$'+r.opt1.netPerDay.toFixed(0)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{r.latest.scan_date||'--'}</td>
               <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Hours'}</button></td>
             </tr>;
@@ -11015,31 +11018,41 @@ function MFEDashPage(p){
     </Cd>}
 
     {detailRow&&detailRow._hrDist&&detailRow._thresholds&&<Cd>
-      <SectionHead title={detailTicker+' — Optimal TP By Hour'} sub={'Fee: $'+fee.toFixed(4)+'/share'}/>
+      <SectionHead title={detailTicker+' \u2014 Optimal TP By Hour'} sub={'Fee: $'+fee.toFixed(4)+'/share'}/>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
-            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Best TP$</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills/Day</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d TP</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d TP</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last TP</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>10d Net</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>3d Net</th>
+            <th style={{padding:'4px 3px',color:C.blue,textAlign:'right'}}>Last Net</th>
           </tr></thead>
-          <tbody>{detailRow._hrDist.map(function(h){
-            var threshs=detailRow._thresholds;var nD=detailRow.days_sampled||1;
-            var bestTP=0;var bestNet=-Infinity;var bestFills=0;var bestRate=0;
-            for(var ti=0;ti<threshs.length;ti++){var cnt=h.counts[ti]||0;var net=cnt*(threshs[ti]-fee);if(net>bestNet){bestNet=net;bestTP=threshs[ti];bestFills=cnt;bestRate=h.total>0?Math.round(cnt/h.total*1000)/10:0;}}
-            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
-            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
-              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
-              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+bestTP.toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{detailRow.price>0?(bestTP/detailRow.price*100).toFixed(3)+'%':'--'}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{(Math.round(bestFills/nD*10)/10).toFixed(1)}</td>
-              <td style={{padding:'3px',color:bestRate>50?C.accent:bestRate>20?C.gold:C.warn,textAlign:'right'}}>{bestRate.toFixed(1)+'%'}</td>
-              <td style={{padding:'3px',color:bestNet/nD>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+(Math.round(bestNet/nD*100)/100).toFixed(2)}</td>
-            </tr>;
-          })}</tbody>
+          <tbody>{(function(){var hrD10=detailRow._hrDist||[];var hrD3=detailRow._hrDist3d||[];var hrD1=detailRow._hrDist1d||[];var threshs=detailRow._thresholds;var nD=detailRow.days_sampled||1;
+            var getHrOpt=function(hData,nDays){
+              if(!hData||!hData.counts)return{tp:0,net:0};
+              var best={tp:0,net:-Infinity};
+              for(var ti=0;ti<threshs.length;ti++){var cnt=hData.counts[ti]||0;var net=cnt*(threshs[ti]-fee);if(net>best.net){best={tp:threshs[ti],net:Math.round(net/nDays*100)/100};}}
+              return best;
+            };
+            return Array.from({length:16},function(_,i){var h=i+4;
+              var o10=getHrOpt(hrD10[i],nD);
+              var o3=getHrOpt(hrD3[i],3);
+              var o1=getHrOpt(hrD1[i],1);
+              var session=h<9?'pre':h<16?'rth':'post';
+              return <tr key={h} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h)}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontWeight:700}}>{'$'+o10.tp.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{'$'+o3.tp.toFixed(2)}</td>
+                <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+o1.tp.toFixed(2)}</td>
+                <td style={{padding:'3px',color:o10.net>0?C.accent:C.warn,textAlign:'right'}}>{'$'+o10.net.toFixed(2)}</td>
+                <td style={{padding:'3px',color:o3.net>0?C.gold:C.warn,textAlign:'right'}}>{'$'+o3.net.toFixed(2)}</td>
+                <td style={{padding:'3px',color:o1.net>0?C.blue:C.warn,textAlign:'right'}}>{'$'+o1.net.toFixed(2)}</td>
+              </tr>;
+            });
+          })()}</tbody>
         </table>
       </div>
     </Cd>}

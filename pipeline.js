@@ -2807,17 +2807,20 @@ async function runMFE() {
       var price = bars[bars.length - 1].c;
       console.log(ticker + ': ' + bars.length + ' 1-sec bars loaded');
 
-      // 3. Compute MFE
+      // 3. Compute MFE per day
       var etFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
       var etDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
       var dayBars = {};
       for (var i = 0; i < bars.length; i++) { var bd = etDayFmt.format(new Date(bars[i].t)); if (!dayBars[bd]) dayBars[bd] = []; dayBars[bd].push(bars[i]); }
       var dayKeys = Object.keys(dayBars).sort();
-      var allMFEs = [];
-      var hrMFEs = {}; for (var h = 4; h < 20; h++) hrMFEs[h] = [];
 
+      // Per-day MFE arrays
+      var dayMFEs = {}; var dayHrMFEs = {};
       for (var di = 0; di < dayKeys.length; di++) {
-        var db = dayBars[dayKeys[di]]; if (db.length < 5) continue;
+        var dk = dayKeys[di];
+        var db = dayBars[dk]; if (db.length < 5) continue;
+        dayMFEs[dk] = []; dayHrMFEs[dk] = {};
+        for (var hInit = 4; hInit < 20; hInit++) dayHrMFEs[dk][hInit] = [];
         var held = {};
         for (var bi2 = 0; bi2 < db.length; bi2++) {
           var bar = db[bi2];
@@ -2830,7 +2833,7 @@ async function runMFE() {
 
           if (isBullish) {
             var keys = Object.keys(held);
-            for (var ki = 0; ki < keys.length; ki++) { var lvl = parseInt(keys[ki]); if (lvl >= lowC) { var mfe = (held[lvl] - lvl) / 100; if (mfe > 0) { allMFEs.push(mfe); if (hrMFEs[bHr]) hrMFEs[bHr].push(mfe); } delete held[lvl]; } }
+            for (var ki = 0; ki < keys.length; ki++) { var lvl = parseInt(keys[ki]); if (lvl >= lowC) { var mfe = (held[lvl] - lvl) / 100; if (mfe > 0) { dayMFEs[dk].push(mfe); if (dayHrMFEs[dk][bHr]) dayHrMFEs[dk][bHr].push(mfe); } delete held[lvl]; } }
             for (var lv = openC - 1; lv >= lowC; lv--) { if (held[lv] === undefined) held[lv] = highC; }
             keys = Object.keys(held);
             for (var ki2 = 0; ki2 < keys.length; ki2++) { var lvl2 = parseInt(keys[ki2]); if (highC > held[lvl2]) held[lvl2] = highC; }
@@ -2838,38 +2841,73 @@ async function runMFE() {
             var keys2 = Object.keys(held);
             for (var ki3 = 0; ki3 < keys2.length; ki3++) { var lvl3 = parseInt(keys2[ki3]); if (highC > held[lvl3]) held[lvl3] = highC; }
             keys2 = Object.keys(held);
-            for (var ki4 = 0; ki4 < keys2.length; ki4++) { var lvl4 = parseInt(keys2[ki4]); if (lvl4 >= lowC) { var mfe2 = (held[lvl4] - lvl4) / 100; if (mfe2 > 0) { allMFEs.push(mfe2); if (hrMFEs[bHr]) hrMFEs[bHr].push(mfe2); } delete held[lvl4]; } }
+            for (var ki4 = 0; ki4 < keys2.length; ki4++) { var lvl4 = parseInt(keys2[ki4]); if (lvl4 >= lowC) { var mfe2 = (held[lvl4] - lvl4) / 100; if (mfe2 > 0) { dayMFEs[dk].push(mfe2); if (dayHrMFEs[dk][bHr]) dayHrMFEs[dk][bHr].push(mfe2); } delete held[lvl4]; } }
             for (var lv2 = highC - 1; lv2 >= lowC; lv2--) { if (held[lv2] === undefined) held[lv2] = lv2; }
           }
         }
       }
 
-      allMFEs.sort(function(a, b) { return a - b; });
+      // Combine windows: 10d (all), 3d (last 3), 1d (last 1)
+      var validDays = dayKeys.filter(function(dk2) { return dayMFEs[dk2]; });
+      var last3 = validDays.slice(-3);
+      var last1 = validDays.slice(-1);
 
-      // 4. Build threshold distribution
+      var combineMFEs = function(daysArr) {
+        var all = []; for (var ci = 0; ci < daysArr.length; ci++) { var dm = dayMFEs[daysArr[ci]]; for (var j = 0; j < dm.length; j++) all.push(dm[j]); } return all;
+      };
+      var combineHrMFEs = function(daysArr) {
+        var hr = {}; for (var h = 4; h < 20; h++) hr[h] = [];
+        for (var ci = 0; ci < daysArr.length; ci++) { var dhm = dayHrMFEs[daysArr[ci]]; for (var h2 = 4; h2 < 20; h2++) { var a = dhm[h2]; if (a) for (var j = 0; j < a.length; j++) hr[h2].push(a[j]); } }
+        return hr;
+      };
+
+      var allMFEs = combineMFEs(validDays);
+      var mfes3d = combineMFEs(last3);
+      var mfes1d = combineMFEs(last1);
+
+      allMFEs.sort(function(a, b) { return a - b; });
+      mfes3d.sort(function(a, b) { return a - b; });
+      mfes1d.sort(function(a, b) { return a - b; });
+
+      var hrMFEs = combineHrMFEs(validDays);
+      var hrMFEs3d = combineHrMFEs(last3);
+      var hrMFEs1d = combineHrMFEs(last1);
+
+      // 4. Build threshold distributions for all 3 windows
       var thresholds = [0.03, 0.05, 0.07, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00];
       if (price > 200) thresholds = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 5.00];
       else if (price > 50) thresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00];
 
-      var distCounts = [];
-      for (var thi = 0; thi < thresholds.length; thi++) {
-        var t = thresholds[thi]; var cnt = 0;
-        for (var mi = 0; mi < allMFEs.length; mi++) { if (allMFEs[mi] >= t) { cnt = allMFEs.length - mi; break; } }
-        distCounts.push(cnt);
-      }
-
-      // Per-hour dist
-      var hrDist = [];
-      for (var h2 = 4; h2 < 20; h2++) {
-        var hArr = hrMFEs[h2].slice().sort(function(a, b) { return a - b; });
-        var hCounts = [];
-        for (var thi2 = 0; thi2 < thresholds.length; thi2++) {
-          var t2 = thresholds[thi2]; var cnt2 = 0;
-          for (var mi2 = 0; mi2 < hArr.length; mi2++) { if (hArr[mi2] >= t2) { cnt2 = hArr.length - mi2; break; } }
-          hCounts.push(cnt2);
+      var buildDist = function(arr) {
+        var counts = [];
+        for (var thi = 0; thi < thresholds.length; thi++) {
+          var t = thresholds[thi]; var cnt = 0;
+          for (var mi = 0; mi < arr.length; mi++) { if (arr[mi] >= t) { cnt = arr.length - mi; break; } }
+          counts.push(cnt);
         }
-        hrDist.push({ hour: h2, total: hArr.length, counts: hCounts });
-      }
+        return counts;
+      };
+      var buildHrDist = function(hrMap) {
+        var result = [];
+        for (var h2 = 4; h2 < 20; h2++) {
+          var hArr = hrMap[h2].slice().sort(function(a, b) { return a - b; });
+          var hCounts = [];
+          for (var thi2 = 0; thi2 < thresholds.length; thi2++) {
+            var t2 = thresholds[thi2]; var cnt2 = 0;
+            for (var mi2 = 0; mi2 < hArr.length; mi2++) { if (hArr[mi2] >= t2) { cnt2 = hArr.length - mi2; break; } }
+            hCounts.push(cnt2);
+          }
+          result.push({ hour: h2, total: hArr.length, counts: hCounts });
+        }
+        return result;
+      };
+
+      var distCounts = buildDist(allMFEs);
+      var dist3d = buildDist(mfes3d);
+      var dist1d = buildDist(mfes1d);
+      var hrDist = buildHrDist(hrMFEs);
+      var hrDist3d = buildHrDist(hrMFEs3d);
+      var hrDist1d = buildHrDist(hrMFEs1d);
 
       // Percentiles
       var getP = function(arr, pct) { if (!arr.length) return 0; var idx = Math.floor(arr.length * pct / 100); return arr[Math.min(idx, arr.length - 1)]; };
@@ -2880,8 +2918,11 @@ async function runMFE() {
       var row = {
         ticker: ticker, scan_date: scanDate, price: Math.round(price * 100) / 100,
         days_sampled: dayKeys.length, total_cycles: allMFEs.length, bars_count: bars.length,
+        total_cycles_3d: mfes3d.length, total_cycles_1d: mfes1d.length,
         thresholds: JSON.stringify(thresholds), dist: JSON.stringify(distCounts),
-        hr_dist: JSON.stringify(hrDist), percentiles: JSON.stringify(pctiles)
+        dist_3d: JSON.stringify(dist3d), dist_1d: JSON.stringify(dist1d),
+        hr_dist: JSON.stringify(hrDist), hr_dist_3d: JSON.stringify(hrDist3d), hr_dist_1d: JSON.stringify(hrDist1d),
+        percentiles: JSON.stringify(pctiles)
       };
       var saveR = await fetch(SB_URL + '/rest/v1/mfe_daily_optimal', {
         method: 'POST',
