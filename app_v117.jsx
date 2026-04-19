@@ -10497,7 +10497,7 @@ function MFETrackerPage(p){
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),results=s4[0],setResults=s4[1];
-  var s5m=useState('minute'),resolution=s5m[0],setResolution=s5m[1];
+  var s5m=useState('second'),resolution=s5m[0],setResolution=s5m[1];
   var s6m=useState(''),fetchStatus=s6m[0],setFetchStatus=s6m[1];
 
   var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
@@ -10601,29 +10601,19 @@ function MFETrackerPage(p){
       while(days2.length<15){var dow2=d2.getDay();if(dow2!==0&&dow2!==6)days2.push(d2.toISOString().slice(0,10));d2.setDate(d2.getDate()-1);}
       var from2=days2[Math.min(days2.length-1,9)];var to2=days2[0];
       var bars=[];
-      if(resolution==='second'){
-        var nextUrl='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/second/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var pageNum=0;
-        while(nextUrl){
-          pageNum++;setFetchStatus('Fetching page '+pageNum+'... ('+bars.length.toLocaleString()+' bars)');
-          var r=await fetch(nextUrl);
-          if(!r.ok){setErr('Polygon error '+r.status);setLoading(false);return;}
-          var d=await r.json();
-          var batch=d.results||[];
-          for(var bi=0;bi<batch.length;bi++)bars.push(batch[bi]);
-          if(d.next_url){nextUrl=d.next_url+'&apiKey='+p.apiKey;}else break;
-          if(pageNum>25)break;
-        }
-        setFetchStatus(bars.length.toLocaleString()+' 1-sec bars loaded. Computing MFE...');
-      }else{
-        setFetchStatus('Fetching 1-min bars...');
-        var url='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var r2=await fetch(url);
-        if(!r2.ok){setErr('Polygon error '+r2.status);setLoading(false);return;}
-        var d2r=await r2.json();
-        bars=d2r.results||[];
-        setFetchStatus(bars.length.toLocaleString()+' 1-min bars loaded. Computing MFE...');
+      var nextUrl='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/second/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var pageNum=0;
+      while(nextUrl){
+        pageNum++;setFetchStatus('Fetching page '+pageNum+'... ('+bars.length.toLocaleString()+' bars)');
+        var r=await fetch(nextUrl);
+        if(!r.ok){setErr('Polygon error '+r.status);setLoading(false);return;}
+        var d=await r.json();
+        var batch=d.results||[];
+        for(var bi=0;bi<batch.length;bi++)bars.push(batch[bi]);
+        if(d.next_url){nextUrl=d.next_url+'&apiKey='+p.apiKey;}else break;
+        if(pageNum>25)break;
       }
+      setFetchStatus(bars.length.toLocaleString()+' 1-sec bars loaded. Computing MFE...');
       if(bars.length<100){setErr('Insufficient data: '+bars.length+' bars');setLoading(false);return;}
       var price=bars[bars.length-1].c;
 
@@ -10648,17 +10638,12 @@ function MFETrackerPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. MRVL"/>
         <button onClick={runMFE} disabled={loading} style={{border:'none',borderRadius:8,padding:'10px 20px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'}}>{loading?'Computing...':'Analyze'}</button>
       </div>
-      <div style={{display:'flex',gap:4,marginTop:6}}>
-        <button onClick={function(){setResolution('minute');}} style={{flex:1,padding:'8px',border:'1px solid '+(resolution==='minute'?C.blue:C.border),borderRadius:4,background:resolution==='minute'?C.blue+'20':'transparent',color:resolution==='minute'?C.blue:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>1-MIN BARS (fast)</button>
-        <button onClick={function(){setResolution('second');}} style={{flex:1,padding:'8px',border:'1px solid '+(resolution==='second'?C.accent:C.border),borderRadius:4,background:resolution==='second'?C.accent+'20':'transparent',color:resolution==='second'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>1-SEC BARS (precise)</button>
-      </div>
-      {resolution==='second'&&<div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:4}}>1-second mode captures every micro-bounce. Takes 15-30 seconds to fetch and compute.</div>}
       {fetchStatus&&loading&&<div style={{color:C.purple,fontSize:7,fontFamily:F,marginTop:4,fontWeight:700}}>{fetchStatus}</div>}
       {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </Cd>
 
     {results&&results.mfe&&<Cd>
-      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.mfe.days+' days | '+results.bars.toLocaleString()+' '+(results.resolution==='second'?'1-sec':'1-min')+' bars | '+results.mfe.total.toLocaleString()+' completed MFE cycles'}</div>
+      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.mfe.days+' days | '+results.bars.toLocaleString()+' 1-sec bars | '+results.mfe.total.toLocaleString()+' completed MFE cycles'}</div>
 
       <SectionHead title="MFE Summary" sub="Percentiles across all completed cycles"/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
