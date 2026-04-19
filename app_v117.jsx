@@ -10865,7 +10865,7 @@ function MFEDashPage(p){
       try{
         var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});
         var rows=r.ok?await r.json():[];
-        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')loadData();}}
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;setScanning(false);if(rows[0].status==='complete')loadData();}}
       }catch(e){}
     },3000);
   };
@@ -10873,11 +10873,15 @@ function MFEDashPage(p){
   var triggerScan=async function(){
     if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
     setScanning(true);setErr(null);
+    setPipeStatus({status:'running',progress_pct:0,message:'Dispatching to GitHub Actions...'});
     try{
       var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'mfe'}})});
-      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
-      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
-    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+      if(r.status===204){
+        setPipeStatus({status:'running',progress_pct:0,message:'Waiting for pipeline to start... (may take 30-60s)'});
+        pollProgress();
+      }
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);setPipeStatus(null);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);setPipeStatus(null);}
   };
 
   useEffect(function(){loadWatchlist();loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
@@ -10947,15 +10951,15 @@ function MFEDashPage(p){
       </div>
 
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
-        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff'}}>{scanning?'\u2713 Scan Triggered!':'Run MFE Scan'}</button>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff'}}>{scanning?'\u25CF Scanning... See Progress Below':'Run MFE Scan'}</button>
       </div>}
-      {pipeStatus&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
-        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
-          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+      {pipeStatus&&<div style={{marginBottom:8,padding:'12px',background:pipeStatus.status==='complete'?'rgba(0,229,160,0.08)':pipeStatus.status==='error'?'rgba(255,92,58,0.08)':'rgba(157,92,255,0.08)',borderRadius:8,border:'2px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:9,fontWeight:800,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 MFE Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF MFE Scan Running...'}</span>
+          <span style={{color:C.txtBright,fontSize:11,fontWeight:800,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
         </div>
-        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
-        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+        <div style={{height:8,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}><div style={{width:Math.max(pipeStatus.progress_pct||0,2)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:'linear-gradient(90deg,#9d5cff,#6030c0)',borderRadius:4,transition:'width 0.3s'}}/></div>
+        <div style={{color:pipeStatus.status==='running'?C.txtBright:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600}}>{pipeStatus.message||''}</div>
       </div>}
       {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </Cd>
