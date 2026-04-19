@@ -2790,7 +2790,7 @@ async function runMFE() {
       var from2 = days[Math.min(days.length - 1, 9)]; var to2 = days[0];
 
       var bars = [];
-      var nextUrl = 'https://api.polygon.io/v2/aggs/ticker/' + ticker + '/range/1/second/' + from2 + '/' + to2 + '?adjusted=true&sort=asc&limit=50000&apiKey=' + PG_KEY;
+      var nextUrl = 'https://api.polygon.io/v2/aggs/ticker/' + ticker + '/range/1/second/' + from2 + '/' + to2 + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
       var pageNum = 0;
       while (nextUrl) {
         pageNum++;
@@ -2799,7 +2799,7 @@ async function runMFE() {
         var d = await r.json();
         var batch = d.results || [];
         for (var bi = 0; bi < batch.length; bi++) bars.push(batch[bi]);
-        if (d.next_url) { nextUrl = d.next_url + '&apiKey=' + PG_KEY; } else break;
+        if (d.next_url) { nextUrl = d.next_url + '&apiKey=' + POLYGON_KEY; } else break;
         if (pageNum > 25) break;
         if (pageNum % 5 === 0) await sleep(200);
       }
