@@ -2763,6 +2763,140 @@ async function backfillMcap() {
   console.log('Done: ' + updated + '/' + rows.length + ' updated with market cap');
 }
 
+async function runMFE() {
+  await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Loading watchlist...' });
+
+  // 1. Read watchlist
+  var wlRes = await fetch(SB_URL + '/rest/v1/mfe_watchlist?order=ticker.asc', { headers: getSbHeaders() });
+  var watchlist = wlRes.ok ? await wlRes.json() : [];
+  if (!watchlist.length) {
+    await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Watchlist empty — add tickers in the MFE Dashboard' });
+    return;
+  }
+  var tickers = watchlist.map(function(w) { return w.ticker; });
+  console.log('MFE watchlist: ' + tickers.join(', '));
+
+  var scanDate = new Date().toISOString().slice(0, 10);
+
+  for (var ti = 0; ti < tickers.length; ti++) {
+    var ticker = tickers[ti];
+    var pct = Math.round((ti / tickers.length) * 100);
+    await reportProgress({ mode: 'mfe', ticker: ticker, status: 'running', progress_pct: pct, message: 'Fetching 1-sec bars: ' + ticker + ' (' + (ti + 1) + '/' + tickers.length + ')' });
+
+    try {
+      // 2. Fetch 10 days of 1-second bars
+      var days = []; var d2 = new Date(); d2.setDate(d2.getDate() - 1);
+      while (days.length < 15) { var dow = d2.getDay(); if (dow !== 0 && dow !== 6) days.push(d2.toISOString().slice(0, 10)); d2.setDate(d2.getDate() - 1); }
+      var from2 = days[Math.min(days.length - 1, 9)]; var to2 = days[0];
+
+      var bars = [];
+      var nextUrl = 'https://api.polygon.io/v2/aggs/ticker/' + ticker + '/range/1/second/' + from2 + '/' + to2 + '?adjusted=true&sort=asc&limit=50000&apiKey=' + PG_KEY;
+      var pageNum = 0;
+      while (nextUrl) {
+        pageNum++;
+        var r = await fetch(nextUrl);
+        if (!r.ok) { console.log('Polygon error for ' + ticker + ': ' + r.status); break; }
+        var d = await r.json();
+        var batch = d.results || [];
+        for (var bi = 0; bi < batch.length; bi++) bars.push(batch[bi]);
+        if (d.next_url) { nextUrl = d.next_url + '&apiKey=' + PG_KEY; } else break;
+        if (pageNum > 25) break;
+        if (pageNum % 5 === 0) await sleep(200);
+      }
+      if (bars.length < 100) { console.log(ticker + ': insufficient data (' + bars.length + ' bars)'); continue; }
+      var price = bars[bars.length - 1].c;
+      console.log(ticker + ': ' + bars.length + ' 1-sec bars loaded');
+
+      // 3. Compute MFE
+      var etFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+      var etDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+      var dayBars = {};
+      for (var i = 0; i < bars.length; i++) { var bd = etDayFmt.format(new Date(bars[i].t)); if (!dayBars[bd]) dayBars[bd] = []; dayBars[bd].push(bars[i]); }
+      var dayKeys = Object.keys(dayBars).sort();
+      var allMFEs = [];
+      var hrMFEs = {}; for (var h = 4; h < 20; h++) hrMFEs[h] = [];
+
+      for (var di = 0; di < dayKeys.length; di++) {
+        var db = dayBars[dayKeys[di]]; if (db.length < 5) continue;
+        var held = {};
+        for (var bi2 = 0; bi2 < db.length; bi2++) {
+          var bar = db[bi2];
+          var lowC = Math.round(bar.l * 100);
+          var highC = Math.round(bar.h * 100);
+          var openC = Math.round(bar.o * 100);
+          var closeC = Math.round(bar.c * 100);
+          var isBullish = closeC >= openC;
+          var bHr = parseInt(etFmt.format(new Date(bar.t))) || 0;
+
+          if (isBullish) {
+            var keys = Object.keys(held);
+            for (var ki = 0; ki < keys.length; ki++) { var lvl = parseInt(keys[ki]); if (lvl >= lowC) { var mfe = (held[lvl] - lvl) / 100; if (mfe > 0) { allMFEs.push(mfe); if (hrMFEs[bHr]) hrMFEs[bHr].push(mfe); } delete held[lvl]; } }
+            for (var lv = openC - 1; lv >= lowC; lv--) { if (held[lv] === undefined) held[lv] = highC; }
+            keys = Object.keys(held);
+            for (var ki2 = 0; ki2 < keys.length; ki2++) { var lvl2 = parseInt(keys[ki2]); if (highC > held[lvl2]) held[lvl2] = highC; }
+          } else {
+            var keys2 = Object.keys(held);
+            for (var ki3 = 0; ki3 < keys2.length; ki3++) { var lvl3 = parseInt(keys2[ki3]); if (highC > held[lvl3]) held[lvl3] = highC; }
+            keys2 = Object.keys(held);
+            for (var ki4 = 0; ki4 < keys2.length; ki4++) { var lvl4 = parseInt(keys2[ki4]); if (lvl4 >= lowC) { var mfe2 = (held[lvl4] - lvl4) / 100; if (mfe2 > 0) { allMFEs.push(mfe2); if (hrMFEs[bHr]) hrMFEs[bHr].push(mfe2); } delete held[lvl4]; } }
+            for (var lv2 = highC - 1; lv2 >= lowC; lv2--) { if (held[lv2] === undefined) held[lv2] = lv2; }
+          }
+        }
+      }
+
+      allMFEs.sort(function(a, b) { return a - b; });
+
+      // 4. Build threshold distribution
+      var thresholds = [0.03, 0.05, 0.07, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00];
+      if (price > 200) thresholds = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 5.00];
+      else if (price > 50) thresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00, 1.50, 2.00];
+
+      var distCounts = [];
+      for (var thi = 0; thi < thresholds.length; thi++) {
+        var t = thresholds[thi]; var cnt = 0;
+        for (var mi = 0; mi < allMFEs.length; mi++) { if (allMFEs[mi] >= t) { cnt = allMFEs.length - mi; break; } }
+        distCounts.push(cnt);
+      }
+
+      // Per-hour dist
+      var hrDist = [];
+      for (var h2 = 4; h2 < 20; h2++) {
+        var hArr = hrMFEs[h2].slice().sort(function(a, b) { return a - b; });
+        var hCounts = [];
+        for (var thi2 = 0; thi2 < thresholds.length; thi2++) {
+          var t2 = thresholds[thi2]; var cnt2 = 0;
+          for (var mi2 = 0; mi2 < hArr.length; mi2++) { if (hArr[mi2] >= t2) { cnt2 = hArr.length - mi2; break; } }
+          hCounts.push(cnt2);
+        }
+        hrDist.push({ hour: h2, total: hArr.length, counts: hCounts });
+      }
+
+      // Percentiles
+      var getP = function(arr, pct) { if (!arr.length) return 0; var idx = Math.floor(arr.length * pct / 100); return arr[Math.min(idx, arr.length - 1)]; };
+      var pctiles = { avg: 0, p25: Math.round(getP(allMFEs, 25) * 100) / 100, p50: Math.round(getP(allMFEs, 50) * 100) / 100, p75: Math.round(getP(allMFEs, 75) * 100) / 100, p90: Math.round(getP(allMFEs, 90) * 100) / 100 };
+      if (allMFEs.length) { var s = 0; for (var j = 0; j < allMFEs.length; j++) s += allMFEs[j]; pctiles.avg = Math.round(s / allMFEs.length * 100) / 100; }
+
+      // 5. Upsert to Supabase
+      var row = {
+        ticker: ticker, scan_date: scanDate, price: Math.round(price * 100) / 100,
+        days_sampled: dayKeys.length, total_cycles: allMFEs.length, bars_count: bars.length,
+        thresholds: JSON.stringify(thresholds), dist: JSON.stringify(distCounts),
+        hr_dist: JSON.stringify(hrDist), percentiles: JSON.stringify(pctiles)
+      };
+      var saveR = await fetch(SB_URL + '/rest/v1/mfe_daily_optimal', {
+        method: 'POST',
+        headers: Object.assign({}, getSbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }),
+        body: JSON.stringify(row)
+      });
+      if (!saveR.ok) { var errBody = await saveR.text(); console.log('Save error for ' + ticker + ': ' + errBody); }
+      else { console.log(ticker + ': saved (' + allMFEs.length + ' cycles, p50=$' + pctiles.p50 + ')'); }
+
+    } catch (e) { console.log('Error processing ' + ticker + ': ' + e.message); }
+  }
+
+  await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'MFE scan complete: ' + tickers.length + ' stocks processed' });
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
@@ -2794,6 +2928,8 @@ async function main() {
     await runAutotune(tickers);
   } else if (mode === 'screener') {
     await runScreener();
+  } else if (mode === 'mfe') {
+    await runMFE();
   } else if (mode === 'backfill-mcap') {
     await backfillMcap();
   } else {

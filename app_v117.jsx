@@ -10787,6 +10787,287 @@ function MFETrackerPage(p){
   </div>;
 }
 
+function MFEDashPage(p){
+  var s1=useState(null),watchlist=s1[0],setWatchlist=s1[1];
+  var s2=useState(''),newTicker=s2[0],setNewTicker=s2[1];
+  var s3=useState(null),data=s3[0],setData=s3[1];
+  var s4=useState(false),loading=s4[0],setLoading=s4[1];
+  var s5d=useState(null),err=s5d[0],setErr=s5d[1];
+  var s6d=useState('0.005'),feeInput=s6d[0],setFeeInput=s6d[1];
+  var fee=parseFloat(feeInput)||0;
+  var s7d=useState(false),scanning=s7d[0],setScanning=s7d[1];
+  var s8d=useState(null),pipeStatus=s8d[0],setPipeStatus=s8d[1];
+  var s9d=useState(null),detailTicker=s9d[0],setDetailTicker=s9d[1];
+  var pollRef=useRef(null);
+
+  var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
+
+  var loadWatchlist=async function(){
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/mfe_watchlist?order=ticker.asc',{headers:getSbHeaders()});
+      var rows=r.ok?await r.json():[];
+      setWatchlist(rows);
+    }catch(e){setErr(e.message);}
+  };
+
+  var addTicker=async function(){
+    if(!newTicker)return;
+    var tk=newTicker.toUpperCase().trim();
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/mfe_watchlist',{method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify({ticker:tk})});
+      if(r.ok||r.status===201){setNewTicker('');loadWatchlist();}
+      else{var d=await r.json();setErr(d.message||'Failed to add');}
+    }catch(e){setErr(e.message);}
+  };
+
+  var removeTicker=async function(tk){
+    try{
+      await fetch(SB_URL+'/rest/v1/mfe_watchlist?ticker=eq.'+tk,{method:'DELETE',headers:getSbHeaders()});
+      loadWatchlist();
+    }catch(e){setErr(e.message);}
+  };
+
+  var loadData=async function(){
+    setLoading(true);setErr(null);
+    try{
+      var allRows=[];var page=0;
+      while(true){
+        var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);
+        var r=await fetch(SB_URL+'/rest/v1/mfe_daily_optimal?order=ticker.asc,scan_date.desc',{headers:ph});
+        var batch=r.ok?await r.json():[];
+        if(!batch.length)break;
+        for(var i=0;i<batch.length;i++){
+          var row=batch[i];
+          try{row._dist=typeof row.dist==='string'?JSON.parse(row.dist):row.dist||[];}catch(e2){row._dist=[];}
+          try{row._hrDist=typeof row.hr_dist==='string'?JSON.parse(row.hr_dist):row.hr_dist||[];}catch(e2){row._hrDist=[];}
+          try{row._thresholds=typeof row.thresholds==='string'?JSON.parse(row.thresholds):row.thresholds||[];}catch(e2){row._thresholds=[];}
+          try{row._pctiles=typeof row.percentiles==='string'?JSON.parse(row.percentiles):row.percentiles||{};}catch(e2){row._pctiles={};}
+          allRows.push(row);
+        }
+        if(batch.length<1000)break;
+        page++;
+      }
+      // Group by ticker, keep latest per ticker + history
+      var byTicker={};
+      for(var i2=0;i2<allRows.length;i2++){
+        var r2=allRows[i2];
+        if(!byTicker[r2.ticker])byTicker[r2.ticker]=[];
+        byTicker[r2.ticker].push(r2);
+      }
+      setData(byTicker);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')loadData();}}
+      }catch(e){}
+    },3000);
+  };
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setScanning(true);setErr(null);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'mfe'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
+
+  useEffect(function(){loadWatchlist();loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.mfe&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
+
+  // Compute optimal TP for a row given fee
+  var getOptimal=function(row){
+    if(!row._dist||!row._thresholds||!row._thresholds.length)return{tp:0,net:0,fills:0,rate:0};
+    var bestTP=0;var bestNet=-Infinity;var bestFills=0;var bestRate=0;
+    for(var i=0;i<row._thresholds.length;i++){
+      var t=row._thresholds[i];var cnt=row._dist[i]||0;
+      var net=cnt*(t-fee);
+      if(net>bestNet){bestNet=net;bestTP=t;bestFills=cnt;bestRate=row.total_cycles>0?Math.round(cnt/row.total_cycles*1000)/10:0;}
+    }
+    var days=row.days_sampled||1;
+    return{tp:bestTP,netPerDay:Math.round(bestNet/days*100)/100,fillsPerDay:Math.round(bestFills/days*10)/10,rate:bestRate};
+  };
+
+  // Build display rows from latest scan per ticker
+  var displayRows=[];
+  if(data&&watchlist){
+    for(var wi=0;wi<watchlist.length;wi++){
+      var tk=watchlist[wi].ticker;
+      var history=data[tk]||[];
+      if(history.length===0){displayRows.push({ticker:tk,noData:true});continue;}
+      var latest=history[0];
+      var opt=getOptimal(latest);
+      // Previous day for trend
+      var prevOpt=null;
+      if(history.length>=2){prevOpt=getOptimal(history[1]);}
+      displayRows.push({ticker:tk,noData:false,latest:latest,opt:opt,prevOpt:prevOpt,history:history});
+    }
+  }
+
+  // Detail view
+  var detailRow=null;
+  if(detailTicker&&data&&data[detailTicker]&&data[detailTicker].length>0){detailRow=data[detailTicker][0];}
+
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>MFE Dashboard</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Watchlist" sub="Stocks to track daily MFE optimal TP"/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={newTicker} onChange={function(e){setNewTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')addTicker();}} style={Object.assign({},iS,{flex:1})} placeholder="Add ticker e.g. MRVL"/>
+        <button onClick={addTicker} style={{border:'none',borderRadius:8,padding:'10px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:'linear-gradient(135deg,#00e5a0,#00c488)',color:C.bg}}>Add</button>
+      </div>
+      {watchlist&&watchlist.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:8}}>
+        {watchlist.map(function(w){
+          return <div key={w.ticker} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4}}>
+            <span style={{color:C.txtBright,fontSize:8,fontFamily:F,fontWeight:700}}>{w.ticker}</span>
+            <button onClick={function(){removeTicker(w.ticker);}} style={{background:'transparent',border:'none',color:C.warn,fontSize:10,cursor:'pointer',padding:0,lineHeight:1}}>{'\u00D7'}</button>
+          </div>;
+        })}
+      </div>}
+      {watchlist&&watchlist.length===0&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginBottom:8}}>No tickers in watchlist. Add stocks above.</div>}
+
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <label style={{color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1,textTransform:'uppercase',fontFamily:F}}>Fee $/share</label>
+          <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:65,background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'6px 8px',color:C.accent,fontSize:10,fontFamily:F,outline:'none',fontWeight:700,textAlign:'center'}} type="number" step="0.001" min="0"/>
+        </div>
+      </div>
+
+      {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff'}}>{scanning?'\u2713 Scan Triggered!':'Run MFE Scan'}</button>
+      </div>}
+      {pipeStatus&&<div style={{marginBottom:8,padding:'8px',background:C.bg,borderRadius:6,border:'1px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
+        <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
+      {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+    </Cd>
+
+    {displayRows.length>0&&<Cd>
+      <SectionHead title="Optimal TP Overview" sub={'Fee: $'+fee.toFixed(4)+'/share \u2014 updates instantly when fee changes'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Ticker</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Price</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Optimal TP</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Trend</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Scan</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center'}}></th>
+          </tr></thead>
+          <tbody>{displayRows.map(function(r){
+            if(r.noData)return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td colSpan="9" style={{padding:'3px',color:C.txtDim,fontSize:7}}>No scan data — run MFE scan</td>
+            </tr>;
+            var opt=r.opt;var prev=r.prevOpt;
+            var trendArrow='';var trendCol=C.txtDim;
+            if(prev){
+              if(opt.tp>prev.tp){trendArrow='\u2191';trendCol=C.gold;}
+              else if(opt.tp<prev.tp){trendArrow='\u2193';trendCol=C.blue;}
+              else{trendArrow='\u2192';trendCol=C.txtDim;}
+            }
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.latest.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+opt.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.latest.price>0?(opt.tp/r.latest.price*100).toFixed(3)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{opt.fillsPerDay.toFixed(1)}</td>
+              <td style={{padding:'3px',color:opt.rate>50?C.accent:opt.rate>20?C.gold:C.warn,textAlign:'right'}}>{opt.rate.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:opt.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+opt.netPerDay.toFixed(2)}</td>
+              <td style={{padding:'3px',color:trendCol,textAlign:'right',fontWeight:700}}>{trendArrow+(prev?' $'+prev.tp.toFixed(2):'--')}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{r.latest.scan_date||'--'}</td>
+              <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Hours'}</button></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {detailRow&&detailRow._hrDist&&detailRow._thresholds&&<Cd>
+      <SectionHead title={detailTicker+' — Optimal TP By Hour'} sub={'Fee: $'+fee.toFixed(4)+'/share'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Best TP$</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Best TP%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Fills/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
+          </tr></thead>
+          <tbody>{detailRow._hrDist.map(function(h){
+            var threshs=detailRow._thresholds;var nD=detailRow.days_sampled||1;
+            var bestTP=0;var bestNet=-Infinity;var bestFills=0;var bestRate=0;
+            for(var ti=0;ti<threshs.length;ti++){var cnt=h.counts[ti]||0;var net=cnt*(threshs[ti]-fee);if(net>bestNet){bestNet=net;bestTP=threshs[ti];bestFills=cnt;bestRate=h.total>0?Math.round(cnt/h.total*1000)/10:0;}}
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+bestTP.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{detailRow.price>0?(bestTP/detailRow.price*100).toFixed(3)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{(Math.round(bestFills/nD*10)/10).toFixed(1)}</td>
+              <td style={{padding:'3px',color:bestRate>50?C.accent:bestRate>20?C.gold:C.warn,textAlign:'right'}}>{bestRate.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:bestNet/nD>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+(Math.round(bestNet/nD*100)/100).toFixed(2)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How to use the MFE Dashboard for daily TP optimization">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>The MFE Dashboard is your daily command center for optimal take-profit settings. Instead of manually running the MFE Tracker on each stock, you add stocks to a watchlist and the pipeline computes the optimal TP daily using 1-second bars. Results are stored in Supabase and displayed here with fee-reactive calculations.</p>
+          <p style={{fontSize:9}}>Change the fee input and every optimal TP, fill count, and net profit recalculates instantly — the raw MFE distribution data is stored, not the final answer. This means you can compare fee structures without re-running the scan.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Use This Tool</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 1:</span> Add your actively traded tickers to the watchlist. These are the stocks you need daily TP guidance on.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 2:</span> Click "Run MFE Scan" to trigger the pipeline. It fetches 1-second bars for each watchlist ticker and computes the full MFE distribution. This runs on GitHub Actions and takes a few minutes per stock.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 3:</span> Once complete, the overview table shows the optimal TP for each stock at your current fee. The Trend column shows whether the optimal shifted vs the previous scan.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 4:</span> Click "Hours" on any stock to see the per-hour optimal TP breakdown. Use this to set different TPs for morning vs afternoon trading.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Step 5:</span> Adjust the fee input to see how different fee structures change the optimal. Lower fees shift toward tighter TPs (more cycles). Higher fees shift toward wider TPs (each cycle needs more profit).</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Understanding Each Column</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Optimal TP:</span> The take-profit in dollars that maximizes net profit per day at your current fee.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Fills/Day:</span> Average completed cycles per day at the optimal TP.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Rate:</span> Completion rate — what percentage of entries reach the optimal TP before returning.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Net$/Day:</span> Net profit per day per share at the optimal TP after fees.</p>
+          <p style={{fontSize:9}}><span style={{color:C.gold,fontWeight:700}}>Trend:</span> Arrow + previous optimal TP. Gold up arrow = TP widening (more vol). Blue down arrow = TP tightening (less vol). Gray right arrow = stable.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{marginBottom:4,fontSize:9}}>Your watchlist has MRVL, SOFI, and NVDA. After a scan, the dashboard shows: MRVL optimal = $0.30 ($415/day), SOFI optimal = $0.10 ($180/day), NVDA optimal = $0.50 ($620/day). The next day, MRVL's trend shows a down arrow to $0.25 — volatility compressed, so you tighten your TP.</p>
+          <p style={{fontSize:9}}>You change the fee from $0.005 to $0.001 (simulating a rebate). MRVL's optimal shifts from $0.30 to $0.20 — lower fees make tighter TPs viable because each cycle needs less profit to clear costs.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolumeProfilePage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -12884,7 +13165,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'s6div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'s7div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -12926,6 +13207,7 @@ function App(){
     {page==='hourlyregime'&&<HourlyRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='cyclesim'&&<CycleSimPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='mfetracker'&&<MFETrackerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='mfedash'&&<MFEDashPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
