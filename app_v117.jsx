@@ -10499,6 +10499,8 @@ function MFETrackerPage(p){
   var s4=useState(null),results=s4[0],setResults=s4[1];
   var s5m=useState('second'),resolution=s5m[0],setResolution=s5m[1];
   var s6m=useState(''),fetchStatus=s6m[0],setFetchStatus=s6m[1];
+  var s7f=useState('0.005'),feeInput=s7f[0],setFeeInput=s7f[1];
+  var fee=parseFloat(feeInput)||0;
 
   var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
 
@@ -10573,23 +10575,22 @@ function MFETrackerPage(p){
       hrResults.push({hour:h2,label:(h2<10?'0':'')+h2+':00',n:hArr.length,avg:Math.round(hAvg*100)/100,p25:Math.round(getP(hArr,25)*100)/100,p50:Math.round(getP(hArr,50)*100)/100,p75:Math.round(getP(hArr,75)*100)/100,p90:Math.round(getP(hArr,90)*100)/100,session:h2<9?'pre':h2<16?'rth':'post'});
     }
 
-    // Per-hour optimal TP
-    var hrOptimal=[];
+    // Per-hour completion counts at each threshold (fee-independent)
+    var hrDist=[];
     var nDays3=dayKeys.length||1;
     for(var h3=4;h3<20;h3++){
       var hArr2=hrMFEs[h3].slice().sort(function(a,b){return a-b;});
-      var bestTP2=0;var bestNet3=-Infinity;var bestFills=0;var bestRate2=0;
+      var hCounts=[];
       for(var ti2=0;ti2<thresholds.length;ti2++){
         var t2=thresholds[ti2];var cnt2=0;
         for(var mi2=0;mi2<hArr2.length;mi2++){if(hArr2[mi2]>=t2){cnt2=hArr2.length-mi2;break;}}
-        var net3=cnt2*(t2-0.005);
-        if(net3>bestNet3){bestNet3=net3;bestTP2=t2;bestFills=cnt2;bestRate2=hArr2.length>0?Math.round(cnt2/hArr2.length*1000)/10:0;}
+        hCounts.push(cnt2);
       }
-      hrOptimal.push({hour:h3,label:(h3<10?'0':'')+h3+':00',bestTP:bestTP2,fills:bestFills,fillsPerDay:Math.round(bestFills/nDays3*10)/10,rate:bestRate2,netTotal:Math.round(bestNet3*100)/100,netPerDay:Math.round(bestNet3/nDays3*100)/100,session:h3<9?'pre':h3<16?'rth':'post'});
+      hrDist.push({hour:h3,label:(h3<10?'0':'')+h3+':00',total:hArr2.length,counts:hCounts,session:h3<9?'pre':h3<16?'rth':'post'});
     }
 
     var totalAvg=0;if(allMFEs.length){for(var j2=0;j2<allMFEs.length;j2++)totalAvg+=allMFEs[j2];totalAvg/=allMFEs.length;}
-    return{total:allMFEs.length,days:dayKeys.length,avg:Math.round(totalAvg*100)/100,p25:Math.round(getP(allMFEs,25)*100)/100,p50:Math.round(getP(allMFEs,50)*100)/100,p75:Math.round(getP(allMFEs,75)*100)/100,p90:Math.round(getP(allMFEs,90)*100)/100,dist:dist,hours:hrResults,hrOptimal:hrOptimal};
+    return{total:allMFEs.length,days:dayKeys.length,avg:Math.round(totalAvg*100)/100,p25:Math.round(getP(allMFEs,25)*100)/100,p50:Math.round(getP(allMFEs,50)*100)/100,p75:Math.round(getP(allMFEs,75)*100)/100,p90:Math.round(getP(allMFEs,90)*100)/100,dist:dist,hours:hrResults,hrDist:hrDist,thresholds:thresholds};
   };
 
   var runMFE=async function(){
@@ -10646,6 +10647,11 @@ function MFETrackerPage(p){
       <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.mfe.days+' days | '+results.bars.toLocaleString()+' 1-sec bars | '+results.mfe.total.toLocaleString()+' completed MFE cycles'}</div>
 
       <SectionHead title="MFE Summary" sub="Percentiles across all completed cycles"/>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <label style={{color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F}}>Fee per share $</label>
+        <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:70,background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'6px 8px',color:C.accent,fontSize:10,fontFamily:F,outline:'none',fontWeight:700,textAlign:'center'}} type="number" step="0.001" min="0"/>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'(round trip: $'+fee.toFixed(4)+'/share)'}</span>
+      </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
         {[{l:'Average',v:results.mfe.avg},{l:'25th %ile',v:results.mfe.p25},{l:'Median',v:results.mfe.p50},{l:'75th %ile',v:results.mfe.p75},{l:'90th %ile',v:results.mfe.p90}].map(function(s){
           return <div key={s.l} style={{background:C.bg,borderRadius:6,border:'1px solid '+C.border,padding:'8px 4px',textAlign:'center'}}>
@@ -10657,7 +10663,7 @@ function MFETrackerPage(p){
       </div>
 
       <SectionHead title="TP Completion Rate" sub="If you set TP to $X, what % of entries would have completed?"/>
-      {(function(){var bestIdx2=-1;var bestNet2=-Infinity;for(var bi2=0;bi2<results.mfe.dist.length;bi2++){var d3=results.mfe.dist[bi2];var net2=d3.count*(d3.threshold-0.005);if(net2>bestNet2){bestNet2=net2;bestIdx2=bi2;}}
+      {(function(){var bestIdx2=-1;var bestNet2=-Infinity;for(var bi2=0;bi2<results.mfe.dist.length;bi2++){var d3=results.mfe.dist[bi2];var net2=d3.count*(d3.threshold-fee);if(net2>bestNet2){bestNet2=net2;bestIdx2=bi2;}}
       return <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
@@ -10670,7 +10676,7 @@ function MFETrackerPage(p){
           </tr></thead>
           <tbody>{results.mfe.dist.map(function(d,idx){
             var barCol=d.rate>80?C.accent:d.rate>60?C.gold:d.rate>40?C.blue:C.warn;
-            var netTotal=d.count*(d.threshold-0.005);
+            var netTotal=d.count*(d.threshold-fee);
             var netPerDay=results.mfe.days>0?netTotal/results.mfe.days:0;
             var isOpt=idx===bestIdx2;
             return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isOpt?'rgba(0,229,160,0.08)':'transparent'}}>
@@ -10686,7 +10692,7 @@ function MFETrackerPage(p){
       </div>;})()}
       <div style={{padding:8,background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue+'40',borderRadius:6,marginTop:8}}>
         <div style={{color:C.blue,fontSize:7,fontWeight:700,fontFamily:F,marginBottom:3}}>HOW TO READ THIS</div>
-        <div style={{color:C.txt,fontSize:7,fontFamily:F}}>{'Net$/Day = completed fills \u00D7 (TP$ \u2212 $0.005 fee) \u00F7 '+results.mfe.days+' days. The OPTIMAL row has the highest net profit per day per share. Wider TPs earn more per cycle but complete less often. The peak is where these balance.'}</div>
+        <div style={{color:C.txt,fontSize:7,fontFamily:F}}>{'Net$/Day = completed fills \u00D7 (TP$ \u2212 $'+fee.toFixed(4)+' fee) \u00F7 '+results.mfe.days+' days. The OPTIMAL row has the highest net profit per day per share. Wider TPs earn more per cycle but complete less often. The peak is where these balance.'}</div>
       </div>
     </Cd>}
 
@@ -10718,8 +10724,8 @@ function MFETrackerPage(p){
       </div>
     </Cd>}
 
-    {results&&results.mfe&&results.mfe.hrOptimal&&<Cd>
-      <SectionHead title="Optimal TP By Hour" sub="Best take-profit for each hour based on max net profit (after $0.005 fee)"/>
+    {results&&results.mfe&&results.mfe.hrDist&&<Cd>
+      <SectionHead title="Optimal TP By Hour" sub={'Best take-profit for each hour (fee: $'+fee.toFixed(4)+'/share)'}/>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
@@ -10730,14 +10736,17 @@ function MFETrackerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Rate</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net$/Day</th>
           </tr></thead>
-          <tbody>{results.mfe.hrOptimal.map(function(h){
+          <tbody>{results.mfe.hrDist.map(function(h){
+            var threshs=results.mfe.thresholds;var nD=results.mfe.days||1;
+            var bestTP3=0;var bestNet4=-Infinity;var bestFills2=0;var bestRate3=0;
+            for(var ti3=0;ti3<threshs.length;ti3++){var cnt3=h.counts[ti3]||0;var net4=cnt3*(threshs[ti3]-fee);if(net4>bestNet4){bestNet4=net4;bestTP3=threshs[ti3];bestFills2=cnt3;bestRate3=h.total>0?Math.round(cnt3/h.total*1000)/10:0;}}
             return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:h.session==='rth'?C.txtBright:C.txtDim,fontWeight:h.session==='rth'?700:400}}>{h.label}</td>
-              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+h.bestTP.toFixed(2)}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{results.price>0?(h.bestTP/results.price*100).toFixed(3)+'%':'--'}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.fillsPerDay.toFixed(1)}</td>
-              <td style={{padding:'3px',color:h.rate>50?C.accent:h.rate>20?C.gold:C.warn,textAlign:'right'}}>{h.rate.toFixed(1)+'%'}</td>
-              <td style={{padding:'3px',color:h.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+h.netPerDay.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{'$'+bestTP3.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{results.price>0?(bestTP3/results.price*100).toFixed(3)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{(Math.round(bestFills2/nD*10)/10).toFixed(1)}</td>
+              <td style={{padding:'3px',color:bestRate3>50?C.accent:bestRate3>20?C.gold:C.warn,textAlign:'right'}}>{bestRate3.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:bestNet4/nD>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+(Math.round(bestNet4/nD*100)/100).toFixed(2)}</td>
             </tr>;
           })}</tbody>
         </table>
