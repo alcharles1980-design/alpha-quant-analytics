@@ -10885,7 +10885,10 @@ function OverlapScreenerPage(p){
   };
 
   return <div>
-    <PageHeader title="Overlap Ratio Screener" onBack={p.onBack}/>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Overlap Ratio Screener</span>
+    </div>
     <Cd>
       <SectionHead title="Overlap Ratio Screener" sub="Measures how much consecutive 1-min bars share the same price territory. Higher overlap = more price recycling = better for grid trading."/>
       {data&&<div style={{display:'inline-block',background:C.accent+'20',color:C.accent,padding:'3px 8px',borderRadius:4,fontSize:7,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+data.length+' stocks with overlap data'}</div>}
