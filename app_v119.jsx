@@ -10820,6 +10820,182 @@ function MFETrackerPage(p){
   </div>;
 }
 
+function OverlapScreenerPage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(true),loading=s2[0],setLoading=s2[1];
+  var s3=useState(''),tickerFilter=s3[0],setTickerFilter=s3[1];
+  var s4=useState(''),minPrice=s4[0],setMinPrice=s4[1];
+  var s5=useState(''),maxPrice=s5[0],setMaxPrice=s5[1];
+  var s6=useState(null),detailTicker=s6[0],setDetailTicker=s6[1];
+  var s7=useState('avg'),sortKey=s7[0],setSortKey=s7[1];
+  var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
+  var s9=useState(''),minMcap=s9[0],setMinMcap=s9[1];
+  var s10=useState(''),maxMcap=s10[0],setMaxMcap=s10[1];
+  var s11=useState('All'),sessionFilter=s11[0],setSessionFilter=s11[1];
+
+  var loadData=async function(){
+    setLoading(true);
+    try{
+      var all=[];var offset=0;var batch=[];
+      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,intraday_hurst,atr_pct,overlap_ratio&overlap_ratio=not.is.null&order=ticker.asc&limit=1000&offset='+offset,{headers:getSbHeaders()});
+        if(r.ok)batch=await r.json();all=all.concat(batch);offset+=1000;
+      }while(batch.length>=1000);
+      var parsed=[];
+      for(var i=0;i<all.length;i++){
+        var row=all[i];
+        try{var olap=typeof row.overlap_ratio==='string'?JSON.parse(row.overlap_ratio):row.overlap_ratio;
+          if(olap&&olap.avg>0)parsed.push({ticker:row.ticker,price:row.price,mcap:row.market_cap,iHurst:row.intraday_hurst,atrPct:row.atr_pct,avg:olap.avg,gapPct:olap.gapPct,avgStreak:olap.avgStreak,hours:olap.hours||[]});
+        }catch(e2){}
+      }
+      setData(parsed);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+  useEffect(function(){loadData();},[]);
+
+  var mcapOpts=[{l:'No Min',v:''},{l:'$100M',v:1e8},{l:'$500M',v:5e8},{l:'$1B',v:1e9},{l:'$5B',v:5e9},{l:'$10B',v:1e10},{l:'$50B',v:5e10}];
+  var mcapMaxOpts=[{l:'No Max',v:''},{l:'$500M',v:5e8},{l:'$1B',v:1e9},{l:'$5B',v:5e9},{l:'$10B',v:1e10},{l:'$50B',v:5e10},{l:'$100B',v:1e11}];
+
+  var filtered=data?data.filter(function(r){
+    if(tickerFilter&&r.ticker.indexOf(tickerFilter.toUpperCase())===-1)return false;
+    if(minPrice&&r.price<parseFloat(minPrice))return false;
+    if(maxPrice&&r.price>parseFloat(maxPrice))return false;
+    if(minMcap&&r.mcap<parseFloat(minMcap))return false;
+    if(maxMcap&&r.mcap>parseFloat(maxMcap))return false;
+    return true;
+  }):[];
+
+  var sorted=filtered.slice().sort(function(a,b){
+    var va=a[sortKey]||0,vb=b[sortKey]||0;
+    return sortAsc?va-vb:vb-va;
+  });
+
+  var doSort=function(key){if(sortKey===key)setSortAsc(!sortAsc);else{setSortKey(key);setSortAsc(key==='gapPct');}};
+  var sortIcon=function(key){return sortKey===key?(sortAsc?'\u25B2':'\u25BC'):'\u25BD';};
+
+  var detailRow=detailTicker?sorted.find(function(r){return r.ticker===detailTicker;}):null;
+
+  // Session filter for hourly table
+  var sessionHours=function(){
+    if(sessionFilter==='Pre 4-9:30')return [4,5,6,7,8,9];
+    if(sessionFilter==='RTH 9:30-4')return [9,10,11,12,13,14,15];
+    if(sessionFilter==='Post 4-8')return [16,17,18,19];
+    return [4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19];
+  };
+
+  return <div>
+    <PageHeader title="Overlap Ratio Screener" onBack={p.onBack}/>
+    <Cd>
+      <SectionHead title="Overlap Ratio Screener" sub="Measures how much consecutive 1-min bars share the same price territory. Higher overlap = more price recycling = better for grid trading."/>
+      {data&&<div style={{display:'inline-block',background:C.accent+'20',color:C.accent,padding:'3px 8px',borderRadius:4,fontSize:7,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+data.length+' stocks with overlap data'}</div>}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>FILTER TICKER</div>
+          <input value={tickerFilter} onChange={function(e){setTickerFilter(e.target.value);}} placeholder="Search..." style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8,boxSizing:'border-box'}}/></div>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>SESSION</div>
+          <select value={sessionFilter} onChange={function(e){setSessionFilter(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8}}>
+            {['All','Pre 4-9:30','RTH 9:30-4','Post 4-8'].map(function(v){return <option key={v} value={v}>{v}</option>;})}
+          </select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>MIN MARKET CAP</div>
+          <select value={minMcap} onChange={function(e){setMinMcap(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8}}>
+            {mcapOpts.map(function(o){return <option key={o.l} value={o.v}>{o.l}</option>;})}
+          </select></div>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>MAX MARKET CAP</div>
+          <select value={maxMcap} onChange={function(e){setMaxMcap(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8}}>
+            {mcapMaxOpts.map(function(o){return <option key={o.l} value={o.v}>{o.l}</option>;})}
+          </select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>MIN PRICE</div>
+          <input value={minPrice} onChange={function(e){setMinPrice(e.target.value);}} placeholder="No Min" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8,boxSizing:'border-box'}}/></div>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>MAX PRICE</div>
+          <input value={maxPrice} onChange={function(e){setMaxPrice(e.target.value);}} placeholder="No Max" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8,boxSizing:'border-box'}}/></div>
+      </div>
+    </Cd>
+    {loading&&<Cd><div style={{textAlign:'center',padding:20,color:C.txtDim,fontFamily:F}}>Loading overlap data...</div></Cd>}
+    {!loading&&sorted.length>0&&<Cd>
+      <SectionHead title="Results" sub={sorted.length+' stocks | Sorted by '+sortKey+(sortAsc?' (asc)':' (desc)')}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',cursor:'pointer'}} onClick={function(){doSort('ticker');}}>Ticker</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',cursor:'pointer'}} onClick={function(){doSort('price');}}>Price {sortIcon('price')}</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right',cursor:'pointer'}} onClick={function(){doSort('avg');}}>Overlap {sortIcon('avg')}</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',cursor:'pointer'}} onClick={function(){doSort('gapPct');}}>Gap% {sortIcon('gapPct')}</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',cursor:'pointer'}} onClick={function(){doSort('avgStreak');}}>Streak {sortIcon('avgStreak')}</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',cursor:'pointer'}} onClick={function(){doSort('iHurst');}}>iHurst {sortIcon('iHurst')}</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',cursor:'pointer'}} onClick={function(){doSort('atrPct');}}>ATR% {sortIcon('atrPct')}</th>
+            <th style={{padding:'4px 3px'}}></th>
+          </tr></thead>
+          <tbody>{sorted.slice(0,200).map(function(r){
+            var olapCol=r.avg>=0.7?C.accent:r.avg>=0.55?C.gold:C.warn;
+            var gapCol=r.gapPct<=5?C.accent:r.gapPct<=15?C.gold:C.warn;
+            var hurstCol=r.iHurst!==null?(r.iHurst<0.45?C.accent:r.iHurst<0.5?C.gold:C.warn):C.txtDim;
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+              <td style={{padding:'3px',color:olapCol,textAlign:'right',fontWeight:700}}>{(r.avg*100).toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:gapCol,textAlign:'right'}}>{r.gapPct.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.avgStreak.toFixed(1)}</td>
+              <td style={{padding:'3px',color:hurstCol,textAlign:'right'}}>{r.iHurst!==null?r.iHurst.toFixed(3):'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.atrPct!==null?r.atrPct.toFixed(1)+'%':'--'}</td>
+              <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Hours'}</button></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {sorted.length>200&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>{'Showing top 200 of '+sorted.length+' — use filters to narrow'}</div>}
+    </Cd>}
+    {detailRow&&detailRow.hours&&detailRow.hours.length>0&&<Cd>
+      <SectionHead title={detailTicker+' — Overlap By Hour'} sub="Per-hour overlap ratio and gap percentage"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Overlap</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bars</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Gap%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bar</th>
+          </tr></thead>
+          <tbody>{detailRow.hours.filter(function(h){return sessionHours().indexOf(h.hour)!==-1;}).map(function(h){
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            var oCol=h.avg>=0.7?C.accent:h.avg>=0.55?C.gold:C.warn;
+            var barW=Math.round(h.avg*100);
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+              <td style={{padding:'3px',color:oCol,textAlign:'right',fontWeight:700}}>{(h.avg*100).toFixed(1)+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.n.toLocaleString()}</td>
+              <td style={{padding:'3px',color:h.gapPct<=5?C.accent:h.gapPct<=15?C.gold:C.warn,textAlign:'right'}}>{h.gapPct.toFixed(1)+'%'}</td>
+              <td style={{padding:'3px'}}><div style={{width:60,height:6,background:C.border,borderRadius:3,overflow:'hidden',display:'inline-block',verticalAlign:'middle'}}><div style={{width:barW+'%',height:'100%',background:oCol,borderRadius:3}}/></div></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+    <CollapseStage title="Complete User Guide" sub="How to use the Overlap Ratio Screener for grid trading">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>The Overlap Ratio Screener measures how much consecutive 1-minute bars share the same price territory. A high overlap ratio means price keeps recycling through the same levels — ideal for grid trading where you need price to revisit your buy/sell levels repeatedly.</p>
+          <p style={{fontSize:9}}>This is different from oscillation (which measures swing size) and Hurst exponent (which measures autocorrelation). A stock can have large swings but low overlap if it trends in steps. The overlap ratio specifically measures price territory recycling.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Read The Data</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Overlap:</span> The average overlap ratio across all consecutive 1-min bar pairs over 10 days. Computed as: overlap = min(H1,H2) - max(L1,L2), divided by the combined range max(H1,H2) - min(L1,L2). Ranges from 0% (complete gap) to 100% (bar 2 entirely inside bar 1). Higher is better for grid trading. Above 70% is excellent, 55-70% is good, below 55% is poor.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Gap%:</span> Percentage of bar transitions where there is zero overlap (price gapped entirely). Lower is better. Under 5% means the stock almost never gaps between 1-min bars.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Streak:</span> Average length of consecutive bars maintaining positive overlap. Longer streaks mean the stock stays in a price zone longer before breaking out. A streak of 30 means price typically churns through 30 consecutive bars (~30 minutes) before a gap or breakout.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>iHurst:</span> Intraday Hurst exponent from the oscillation screener. Shown alongside for cross-reference — low Hurst + high overlap = strong grid candidate.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{fontSize:9}}>A stock with 72% overlap, 3.5% gap rate, and streak of 28 means: 72% of each bar's range was already traded in the previous bar, only 3.5% of transitions had complete gaps, and on average price stayed in the same zone for 28 consecutive minutes. For a grid bot, this means your limit orders at each price level will get triggered multiple times as price recycles. Compare this to a stock with 45% overlap — price moves through your levels once and keeps going.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function MFEDashPage(p){
   var s1=useState(null),watchlist=s1[0],setWatchlist=s1[1];
   var s2=useState(''),newTicker=s2[0],setNewTicker=s2[1];
@@ -13245,7 +13421,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'s7div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'s7div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -13287,6 +13463,7 @@ function App(){
     {page==='hourlyregime'&&<HourlyRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='cyclesim'&&<CycleSimPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='mfetracker'&&<MFETrackerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='overlapscreener'&&<OverlapScreenerPage onBack={function(){setPage('home');}}/>}
     {page==='mfedash'&&<MFEDashPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
