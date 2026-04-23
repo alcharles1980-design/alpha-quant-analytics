@@ -10842,12 +10842,15 @@ function OverlapScreenerPage(p){
     setLoading(true);
     try{
       var all=[];var offset=0;var batch=[];
-      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,intraday_hurst,atr_pct,overlap_ratio&order=ticker.asc&limit=1000&offset='+offset,{headers:getSbHeaders()});
+      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,intraday_hurst,atr_pct,overlap_ratio,scan_date&order=ticker.asc,scan_date.desc&limit=1000&offset='+offset,{headers:getSbHeaders()});
         if(r.ok)batch=await r.json();all=all.concat(batch);offset+=1000;
       }while(batch.length>=1000);
+      // Deduplicate: keep only latest scan per ticker
+      var seen={};var deduped=[];
+      for(var i=0;i<all.length;i++){if(!seen[all[i].ticker]){seen[all[i].ticker]=true;deduped.push(all[i]);}}
       var parsed=[];
-      for(var i=0;i<all.length;i++){
-        var row=all[i];
+      for(var i=0;i<deduped.length;i++){
+        var row=deduped[i];
         try{var olap=row.overlap_ratio?(typeof row.overlap_ratio==='string'?JSON.parse(row.overlap_ratio):row.overlap_ratio):null;
           parsed.push({ticker:row.ticker,price:row.price,mcap:row.market_cap,iHurst:row.intraday_hurst,atrPct:row.atr_pct,avg:olap?olap.avg:null,gapPct:olap?olap.gapPct:null,avgStreak:olap?olap.avgStreak:null,hours:olap?olap.hours||[]:[]});
         }catch(e2){}
