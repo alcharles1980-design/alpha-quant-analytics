@@ -10821,6 +10821,7 @@ function MFETrackerPage(p){
 }
 
 function OverlapScreenerPage(p){
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
   var s3=useState(''),tickerFilter=s3[0],setTickerFilter=s3[1];
@@ -10837,14 +10838,14 @@ function OverlapScreenerPage(p){
     setLoading(true);
     try{
       var all=[];var offset=0;var batch=[];
-      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,intraday_hurst,atr_pct,overlap_ratio&overlap_ratio=not.is.null&order=ticker.asc&limit=1000&offset='+offset,{headers:getSbHeaders()});
+      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,intraday_hurst,atr_pct,overlap_ratio&order=ticker.asc&limit=1000&offset='+offset,{headers:getSbHeaders()});
         if(r.ok)batch=await r.json();all=all.concat(batch);offset+=1000;
       }while(batch.length>=1000);
       var parsed=[];
       for(var i=0;i<all.length;i++){
         var row=all[i];
-        try{var olap=typeof row.overlap_ratio==='string'?JSON.parse(row.overlap_ratio):row.overlap_ratio;
-          if(olap&&olap.avg>0)parsed.push({ticker:row.ticker,price:row.price,mcap:row.market_cap,iHurst:row.intraday_hurst,atrPct:row.atr_pct,avg:olap.avg,gapPct:olap.gapPct,avgStreak:olap.avgStreak,hours:olap.hours||[]});
+        try{var olap=row.overlap_ratio?(typeof row.overlap_ratio==='string'?JSON.parse(row.overlap_ratio):row.overlap_ratio):null;
+          parsed.push({ticker:row.ticker,price:row.price,mcap:row.market_cap,iHurst:row.intraday_hurst,atrPct:row.atr_pct,avg:olap?olap.avg:null,gapPct:olap?olap.gapPct:null,avgStreak:olap?olap.avgStreak:null,hours:olap?olap.hours||[]:[]});
         }catch(e2){}
       }
       setData(parsed);
@@ -10866,7 +10867,7 @@ function OverlapScreenerPage(p){
   }):[];
 
   var sorted=filtered.slice().sort(function(a,b){
-    var va=a[sortKey]||0,vb=b[sortKey]||0;
+    var va=a[sortKey]!==null?a[sortKey]:-999,vb=b[sortKey]!==null?b[sortKey]:-999;
     return sortAsc?va-vb:vb-va;
   });
 
@@ -10929,15 +10930,15 @@ function OverlapScreenerPage(p){
             <th style={{padding:'4px 3px'}}></th>
           </tr></thead>
           <tbody>{sorted.slice(0,200).map(function(r){
-            var olapCol=r.avg>=0.7?C.accent:r.avg>=0.55?C.gold:C.warn;
-            var gapCol=r.gapPct<=5?C.accent:r.gapPct<=15?C.gold:C.warn;
+            var olapCol=r.avg!==null?(r.avg>=0.7?C.accent:r.avg>=0.55?C.gold:C.warn):C.txtDim;
+            var gapCol=r.gapPct!==null?(r.gapPct<=5?C.accent:r.gapPct<=15?C.gold:C.warn):C.txtDim;
             var hurstCol=r.iHurst!==null?(r.iHurst<0.45?C.accent:r.iHurst<0.5?C.gold:C.warn):C.txtDim;
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
-              <td style={{padding:'3px',color:olapCol,textAlign:'right',fontWeight:700}}>{(r.avg*100).toFixed(1)+'%'}</td>
-              <td style={{padding:'3px',color:gapCol,textAlign:'right'}}>{r.gapPct.toFixed(1)+'%'}</td>
-              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.avgStreak.toFixed(1)}</td>
+              <td style={{padding:'3px',color:olapCol,textAlign:'right',fontWeight:700}}>{r.avg!==null?(r.avg*100).toFixed(1)+'%':'--'}</td>
+              <td style={{padding:'3px',color:gapCol,textAlign:'right'}}>{r.gapPct!==null?r.gapPct.toFixed(1)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.avgStreak!==null?r.avgStreak.toFixed(1):'--'}</td>
               <td style={{padding:'3px',color:hurstCol,textAlign:'right'}}>{r.iHurst!==null?r.iHurst.toFixed(3):'--'}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.atrPct!==null?r.atrPct.toFixed(1)+'%':'--'}</td>
               <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Hours'}</button></td>
