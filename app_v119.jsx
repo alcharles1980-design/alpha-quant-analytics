@@ -10833,6 +10833,10 @@ function OverlapScreenerPage(p){
   var s9=useState(''),minMcap=s9[0],setMinMcap=s9[1];
   var s10=useState(''),maxMcap=s10[0],setMaxMcap=s10[1];
   var s11=useState('All'),sessionFilter=s11[0],setSessionFilter=s11[1];
+  var s12=useState(false),scanning=s12[0],setScanning=s12[1];
+  var s13=useState(null),pipeStatus=s13[0],setPipeStatus=s13[1];
+  var s14=useState(false),refreshing=s14[0],setRefreshing=s14[1];
+  var pollRef=useRef(null);
 
   var loadData=async function(){
     setLoading(true);
@@ -10852,7 +10856,27 @@ function OverlapScreenerPage(p){
     }catch(e){console.error(e);}
     setLoading(false);
   };
-  useEffect(function(){loadData();},[]);
+
+  var pollProgress=function(){
+    if(pollRef.current)clearInterval(pollRef.current);
+    pollRef.current=setInterval(async function(){
+      try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;setScanning(false);if(rows[0].status==='complete')loadData();}}
+      }catch(e){}
+    },5000);
+  };
+
+  var triggerScan=async function(){
+    if(!p.ghToken){alert('Add GitHub PAT in Settings');return;}
+    setScanning(true);setPipeStatus({status:'running',progress_pct:0,message:'Dispatching...'});
+    try{var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener'}})});
+      if(r.status===204){setPipeStatus({status:'running',progress_pct:0,message:'Waiting for pipeline to start...'});pollProgress();}
+      else{setScanning(false);setPipeStatus(null);}
+    }catch(e){setScanning(false);setPipeStatus(null);}
+  };
+
+  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
 
   var mcapOpts=[{l:'No Min',v:''},{l:'$100M',v:1e8},{l:'$500M',v:5e8},{l:'$1B',v:1e9},{l:'$5B',v:5e9},{l:'$10B',v:1e10},{l:'$50B',v:5e10}];
   var mcapMaxOpts=[{l:'No Max',v:''},{l:'$500M',v:5e8},{l:'$1B',v:1e9},{l:'$5B',v:5e9},{l:'$10B',v:1e10},{l:'$50B',v:5e10},{l:'$100B',v:1e11}];
@@ -10890,7 +10914,7 @@ function OverlapScreenerPage(p){
       <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Overlap Ratio Screener</span>
     </div>
     <Cd>
-      <SectionHead title="Overlap Ratio Screener" sub="Measures how much consecutive 1-min bars share the same price territory. Higher overlap = more price recycling = better for grid trading."/>
+      <SectionHead title="Overlap Ratio Screener" sub="Measures how much consecutive 1-min bars share the same price territory. Higher overlap = more price recycling = better for oscillation trading."/>
       {data&&<div style={{display:'inline-block',background:C.accent+'20',color:C.accent,padding:'3px 8px',borderRadius:4,fontSize:7,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+data.length+' stocks with overlap data'}</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>FILTER TICKER</div>
@@ -10916,6 +10940,18 @@ function OverlapScreenerPage(p){
         <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>MAX PRICE</div>
           <input value={maxPrice} onChange={function(e){setMaxPrice(e.target.value);}} placeholder="No Max" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8,boxSizing:'border-box'}}/></div>
       </div>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={function(){setRefreshing(true);loadData().then(function(){setRefreshing(false);});}} disabled={refreshing} style={{flex:1,border:'1px solid '+C.accent,borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:refreshing?C.accent:'transparent',color:refreshing?C.bg:C.accent}}>{refreshing?'\u21BB Refreshing...':'Refresh Data'}</button>
+        <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff'}}>{scanning?'\u25CF Scanning...':'Run New Scan'}</button>
+      </div>
+      {pipeStatus&&<div style={{marginBottom:8,padding:'10px',background:pipeStatus.status==='complete'?'rgba(0,229,160,0.08)':pipeStatus.status==='error'?'rgba(255,92,58,0.08)':'rgba(157,92,255,0.08)',borderRadius:8,border:'2px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+          <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:9,fontWeight:800,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
+          <span style={{color:C.txtBright,fontSize:11,fontWeight:800,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
+        </div>
+        <div style={{height:8,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}><div style={{width:Math.max(pipeStatus.progress_pct||0,2)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:'linear-gradient(90deg,#9d5cff,#6030c0)',borderRadius:4,transition:'width 0.3s'}}/></div>
+        <div style={{color:pipeStatus.status==='running'?C.txtBright:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600}}>{pipeStatus.message||''}</div>
+      </div>}
     </Cd>
     {loading&&<Cd><div style={{textAlign:'center',padding:20,color:C.txtDim,fontFamily:F}}>Loading overlap data...</div></Cd>}
     {!loading&&sorted.length>0&&<Cd>
@@ -10977,23 +11013,23 @@ function OverlapScreenerPage(p){
         </table>
       </div>
     </Cd>}
-    <CollapseStage title="Complete User Guide" sub="How to use the Overlap Ratio Screener for grid trading">
+    <CollapseStage title="Complete User Guide" sub="How to use the Overlap Ratio Screener for oscillation trading">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
-          <p style={{marginBottom:4,fontSize:9}}>The Overlap Ratio Screener measures how much consecutive 1-minute bars share the same price territory. A high overlap ratio means price keeps recycling through the same levels — ideal for grid trading where you need price to revisit your buy/sell levels repeatedly.</p>
+          <p style={{marginBottom:4,fontSize:9}}>The Overlap Ratio Screener measures how much consecutive 1-minute bars share the same price territory. A high overlap ratio means price keeps recycling through the same levels — ideal for oscillation trading where you need price to revisit your buy/sell levels repeatedly.</p>
           <p style={{fontSize:9}}>This is different from oscillation (which measures swing size) and Hurst exponent (which measures autocorrelation). A stock can have large swings but low overlap if it trends in steps. The overlap ratio specifically measures price territory recycling.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step: How To Read The Data</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Overlap:</span> The average overlap ratio across all consecutive 1-min bar pairs over 10 days. Computed as: overlap = min(H1,H2) - max(L1,L2), divided by the combined range max(H1,H2) - min(L1,L2). Ranges from 0% (complete gap) to 100% (bar 2 entirely inside bar 1). Higher is better for grid trading. Above 70% is excellent, 55-70% is good, below 55% is poor.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Overlap:</span> The average overlap ratio across all consecutive 1-min bar pairs over 10 days. Computed as: overlap = min(H1,H2) - max(L1,L2), divided by the combined range max(H1,H2) - min(L1,L2). Ranges from 0% (complete gap) to 100% (bar 2 entirely inside bar 1). Higher is better for oscillation trading. Above 70% is excellent, 55-70% is good, below 55% is poor.</p>
           <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Gap%:</span> Percentage of bar transitions where there is zero overlap (price gapped entirely). Lower is better. Under 5% means the stock almost never gaps between 1-min bars.</p>
           <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Streak:</span> Average length of consecutive bars maintaining positive overlap. Longer streaks mean the stock stays in a price zone longer before breaking out. A streak of 30 means price typically churns through 30 consecutive bars (~30 minutes) before a gap or breakout.</p>
-          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>iHurst:</span> Intraday Hurst exponent from the oscillation screener. Shown alongside for cross-reference — low Hurst + high overlap = strong grid candidate.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>iHurst:</span> Intraday Hurst exponent from the oscillation screener. Shown alongside for cross-reference — low Hurst + high overlap = strong oscillation candidate.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Practical Example</p>
-          <p style={{fontSize:9}}>A stock with 72% overlap, 3.5% gap rate, and streak of 28 means: 72% of each bar's range was already traded in the previous bar, only 3.5% of transitions had complete gaps, and on average price stayed in the same zone for 28 consecutive minutes. For a grid bot, this means your limit orders at each price level will get triggered multiple times as price recycles. Compare this to a stock with 45% overlap — price moves through your levels once and keeps going.</p>
+          <p style={{fontSize:9}}>A stock with 72% overlap, 3.5% gap rate, and streak of 28 means: 72% of each bar's range was already traded in the previous bar, only 3.5% of transitions had complete gaps, and on average price stayed in the same zone for 28 consecutive minutes. This means limit orders at each price level will get triggered multiple times as price recycles through the same territory. Compare this to a stock with 45% overlap — price moves through your levels once and keeps going.</p>
         </div>
       </div>
     </CollapseStage>
@@ -13467,7 +13503,7 @@ function App(){
     {page==='hourlyregime'&&<HourlyRegimePage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='cyclesim'&&<CycleSimPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='mfetracker'&&<MFETrackerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='overlapscreener'&&<OverlapScreenerPage onBack={function(){setPage('home');}}/>}
+    {page==='overlapscreener'&&<OverlapScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='mfedash'&&<MFEDashPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
