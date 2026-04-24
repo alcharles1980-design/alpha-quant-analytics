@@ -1597,7 +1597,10 @@ async function runScreener() {
     await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Fetching daily bars: ' + date + ' (' + (di + 1) + '/' + days.length + ')' });
     try {
       var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
-      var r = await fetch(url);
+      var dCtrl = new AbortController();
+      var dTimer = setTimeout(function() { dCtrl.abort(); }, 30000);
+      var r = await fetch(url, { signal: dCtrl.signal });
+      clearTimeout(dTimer);
       if (!r.ok) { console.log('  Grouped daily ' + date + ': HTTP ' + r.status); continue; }
       var body = await r.json();
       if (!body.results) { console.log('  Grouped daily ' + date + ': no results (holiday?)'); continue; }
@@ -1624,7 +1627,10 @@ async function runScreener() {
   var mcPages = 0;
   while (mcUrl && mcPages < 50) {
     try {
-      var mcR = await fetch(mcUrl);
+      var mcCtrl2 = new AbortController();
+      var mcTimer2 = setTimeout(function() { mcCtrl2.abort(); }, 30000);
+      var mcR = await fetch(mcUrl, { signal: mcCtrl2.signal });
+      clearTimeout(mcTimer2);
       if (!mcR.ok) break;
       var mcD = await mcR.json();
       if (mcD.results) for (var mi = 0; mi < mcD.results.length; mi++) {
@@ -1673,7 +1679,10 @@ async function runScreener() {
     var mcUpdated = 0;
     for (var mi2 = 0; mi2 < missingMcap.length; mi2++) {
       try {
-        var tkR = await fetch('https://api.polygon.io/v3/reference/tickers/' + missingMcap[mi2].ticker + '?apiKey=' + POLYGON_KEY);
+        var mcCtrl = new AbortController();
+        var mcTimer = setTimeout(function() { mcCtrl.abort(); }, 15000);
+        var tkR = await fetch('https://api.polygon.io/v3/reference/tickers/' + missingMcap[mi2].ticker + '?apiKey=' + POLYGON_KEY, { signal: mcCtrl.signal });
+        clearTimeout(mcTimer);
         if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcUpdated++; } if (tkD.results && tkD.results.type && !missingMcap[mi2].ticker_type) missingMcap[mi2].ticker_type = tkD.results.type; }
       } catch (e) {}
       if (mi2 % 5 === 0) await sleep(100);
