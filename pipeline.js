@@ -2319,8 +2319,7 @@ async function runScreener() {
       squeeze_profile: JSON.stringify(sqProf),
       range_position: JSON.stringify(rangePos),
       volume_profile: JSON.stringify(volProf),
-      volatility_regime: JSON.stringify(volRegime),
-      overlap_ratio: JSON.stringify(res.overlap_ratio)
+      volatility_regime: JSON.stringify(volRegime)
     });
 
     if (ci % 200 === 0) {
@@ -2503,7 +2502,7 @@ async function runScreener() {
         var hd = hrOlap[oh2];
         hrOlapArr.push({ hour: oh2, avg: hd.n > 0 ? Math.round(hd.sum / hd.n * 1000) / 1000 : 0, n: hd.n, gapPct: hd.n > 0 ? Math.round(hd.gaps / hd.n * 1000) / 10 : 0 });
       }
-      res.overlap_ratio = { avg: Math.round(avgOlap * 1000) / 1000, gapPct: Math.round(gapPct * 10) / 10, avgStreak: Math.round(avgStreak * 10) / 10, hours: hrOlapArr };
+      res.overlap_ratio = JSON.stringify({ avg: Math.round(avgOlap * 1000) / 1000, gapPct: Math.round(gapPct * 10) / 10, avgStreak: Math.round(avgStreak * 10) / 10, hours: hrOlapArr });
 
       // Per-session metrics
       var sessionDefs = {pre:[4,0,9,30],rth:[9,30,16,0],post:[16,0,20,0],night:[20,0,24,0],morning:[0,0,4,0]};
