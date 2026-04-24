@@ -771,16 +771,21 @@ var RUN_ID = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 async function reportProgress(data) {
   try {
     var row = Object.assign({ run_id: RUN_ID, updated_at: new Date().toISOString() }, data);
-    // Try update first, then insert
-    var r = await fetch(SB_URL + '/rest/v1/pipeline_status?run_id=eq.' + RUN_ID, { method: 'GET', headers: sbHeaders() });
+    var ctrl = new AbortController();
+    var timer = setTimeout(function() { ctrl.abort(); }, 10000);
+    var r = await fetch(SB_URL + '/rest/v1/pipeline_status?run_id=eq.' + RUN_ID, { method: 'GET', headers: sbHeaders(), signal: ctrl.signal });
     var existing = await r.json();
+    clearTimeout(timer);
+    var ctrl2 = new AbortController();
+    var timer2 = setTimeout(function() { ctrl2.abort(); }, 10000);
     if (existing.length > 0) {
-      await fetch(SB_URL + '/rest/v1/pipeline_status?run_id=eq.' + RUN_ID, { method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(row) });
+      await fetch(SB_URL + '/rest/v1/pipeline_status?run_id=eq.' + RUN_ID, { method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(row), signal: ctrl2.signal });
     } else {
       row.started_at = new Date().toISOString();
-      await fetch(SB_URL + '/rest/v1/pipeline_status', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
+      await fetch(SB_URL + '/rest/v1/pipeline_status', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row), signal: ctrl2.signal });
     }
-  } catch (e) { /* don't let progress reporting crash the pipeline */ }
+    clearTimeout(timer2);
+  } catch (e) { console.log('reportProgress error:', e.message); }
 }
 
 // ── Robust Save Helper ───────────────────────────────────
@@ -1683,6 +1688,7 @@ async function runScreener() {
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 35, message: 'Computing metrics for ' + candidates.length + ' stocks...' });
 
   // Step 3: Compute metrics for each candidate
+  console.log('Step 3: Computing daily metrics for ' + candidates.length + ' stocks...');
   var results = [];
   for (var ci = 0; ci < candidates.length; ci++) {
     var cand = candidates[ci];
@@ -2315,7 +2321,8 @@ async function runScreener() {
   }
 
   // Step 3b: Fetch 1-min bars for intraday metrics
-  console.log('\nFetching 1-min intraday bars for ' + results.length + ' stocks...');
+  console.log('Step 3 complete: ' + results.length + ' stocks with daily metrics');
+  console.log('Step 3b: Fetching 1-min intraday bars for ' + results.length + ' stocks...');
   var intradayFrom = days[Math.max(0, days.length - 11)]; // last 10 trading days
   var intradayTo = days[days.length - 1];
   var processed5m = 0;
@@ -2726,6 +2733,7 @@ async function runScreener() {
     } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; }
 
     if (ri % 50 === 0) {
+      console.log('  Intraday: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)');
       var pct3 = 60 + Math.round((ri / results.length) * 30);
       await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: pct3, message: 'Intraday 1-min: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)' });
     }
@@ -3001,9 +3009,15 @@ async function main() {
   } else if (mode === 'autotune') {
     await runAutotune(tickers);
   } else if (mode === 'screener') {
-    await runScreener();
+    try { await runScreener(); } catch (e) {
+      console.error('SCREENER CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
   } else if (mode === 'mfe') {
-    await runMFE();
+    try { await runMFE(); } catch (e) {
+      console.error('MFE CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
   } else if (mode === 'backfill-mcap') {
     await backfillMcap();
   } else {
