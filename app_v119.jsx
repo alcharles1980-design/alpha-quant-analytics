@@ -1797,11 +1797,17 @@ function DbManagePage(p){
     setLoading(true);setErr(null);
     try{
       if(!SB_URL||!SB_KEY){setErr('No Supabase config. Set in Settings.');setLoading(false);return;}
-      var h=getSbHeaders();h['Range']='0-9999';
-      // Get stock summary
-      var r1=await fetch(SB_URL+'/rest/v1/cached_analyses?select=ticker,trade_date,tp_pct,session_type,total_cycles,active_levels,total_levels,total_trades&order=ticker.asc,trade_date.asc',{headers:h});
-      if(!r1.ok)throw new Error('API error '+r1.status);
-      var rows=await r1.json();
+      // Get stock summary (paginated)
+      var rows=[];var aPage=0;
+      while(true){
+        var h=getSbHeaders();h['Range']=(aPage*1000)+'-'+((aPage+1)*1000-1);
+        var r1=await fetch(SB_URL+'/rest/v1/cached_analyses?select=ticker,trade_date,tp_pct,session_type,total_cycles,active_levels,total_levels,total_trades&order=ticker.asc,trade_date.asc',{headers:h});
+        if(!r1.ok)throw new Error('API error '+r1.status);
+        var aBatch=await r1.json();
+        for(var abi=0;abi<aBatch.length;abi++)rows.push(aBatch[abi]);
+        if(aBatch.length<1000)break;
+        aPage++;if(aPage>20)break;
+      }
 
       // Group by ticker
       var stocks={};
@@ -1881,10 +1887,16 @@ function DbManagePage(p){
       var rh3=getSbHeaders();rh3['Prefer']='count=exact';rh3['Range']='0-0';
       var roCount=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=id',{headers:rh3});
       var totalOpt=0;var cr=roCount.headers.get('content-range');if(cr){var m=cr.match(/\/(\d+)/);if(m)totalOpt=parseInt(m[1]);}
-      // Get all dates by fetching only tp_pct=0.01&hour=4 (1 row per day per ticker)
-      var rh3b=getSbHeaders();rh3b['Range']='0-9999';
-      var roTickers=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date&tp_pct=eq.0.01&hour=eq.4&order=ticker.asc,trade_date.asc',{headers:rh3b});
-      var optSample=roTickers.ok?await roTickers.json():[];
+      // Get all dates by fetching only tp_pct=0.01&hour=4 (1 row per day per ticker, paginated)
+      var optSample=[];var optPage=0;
+      while(true){
+        var rh3b=getSbHeaders();rh3b['Range']=(optPage*1000)+'-'+((optPage+1)*1000-1);
+        var roTickers=await fetch(SB_URL+'/rest/v1/optimal_tp_hourly?select=ticker,trade_date&tp_pct=eq.0.01&hour=eq.4&order=ticker.asc,trade_date.asc',{headers:rh3b});
+        var optBatch=roTickers.ok?await roTickers.json():[];
+        for(var obi=0;obi<optBatch.length;obi++)optSample.push(optBatch[obi]);
+        if(optBatch.length<1000)break;
+        optPage++;if(optPage>20)break;
+      }
       var optStocks={};
       for(var oi=0;oi<optSample.length;oi++){
         var ok2=optSample[oi].ticker;var odKey=optSample[oi].trade_date;
@@ -4714,8 +4726,7 @@ function BuildDataSetPage(p){
         setLoading(true);setErr(null);setProg('Loading all feature rows for '+ticker.toUpperCase()+'...');
         try{
           var h=getSbHeaders();
-          var rhAll=getSbHeaders();rhAll['Range']='0-9999';var rAll=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&select=*&order=trade_date.asc,hour.asc',{headers:rhAll});
-          var allRows=rAll.ok?await rAll.json():[];
+          var allRows=[];var _pg=0;while(true){var rhAll=getSbHeaders();rhAll['Range']=(_pg*1000)+'-'+((_pg+1)*1000-1);var rAll=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker.toUpperCase()+'&select=*&order=trade_date.asc,hour.asc',{headers:rhAll});var _b=rAll.ok?await rAll.json():[];for(var _bi=0;_bi<_b.length;_bi++)allRows.push(_b[_bi]);if(_b.length<1000)break;_pg++;if(_pg>20)break;}
           if(!allRows.length){setErr('No feature data for '+ticker.toUpperCase());setLoading(false);return;}
           var byDate={};for(var i=0;i<allRows.length;i++){var dk=allRows[i].trade_date;if(!byDate[dk])byDate[dk]=[];byDate[dk].push(allRows[i]);}
           var needVix=[];for(var dk2 in byDate){for(var j=0;j<byDate[dk2].length;j++){if(byDate[dk2][j].vix_close===null){needVix.push(dk2);break;}}}
@@ -5460,7 +5471,7 @@ function CorrelationFinderPage(p){
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
     var h=getSbHeaders();h['Range']='0-9999';
-    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(rows){
+    fetch(SB_URL+'/rest/v1/rpc/get_distinct_hourly_tickers',{method:'POST',headers:h}).then(function(r){return r.json();}).then(function(rows){
       var tks={};for(var i=0;i<rows.length;i++)tks[rows[i].ticker]=true;
       var arr=Object.keys(tks).sort();setAvailTickers(arr);if(arr.length>0&&!ticker)setTicker(arr[0]);
     });
@@ -5480,8 +5491,7 @@ function CorrelationFinderPage(p){
     setLoading(true);setErr(null);setResults(null);setProg('Loading features (X)...');
     try{
       var h=getSbHeaders();h['Range']='0-49999';
-      var rhCF=getSbHeaders();rhCF['Range']='0-9999';var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhCF});
-      var features=r1.ok?await r1.json():[];
+      var features=[];var _cfPg=0;while(true){var rhCF=getSbHeaders();rhCF['Range']=(_cfPg*1000)+'-'+((_cfPg+1)*1000-1);var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhCF});var _cfB=r1.ok?await r1.json():[];for(var _cfi=0;_cfi<_cfB.length;_cfi++)features.push(_cfB[_cfi]);if(_cfB.length<1000)break;_cfPg++;if(_cfPg>20)break;}
       if(!features.length){setErr('No feature data for '+ticker+'. Run Build Data Set first.');setLoading(false);return;}
       setProg('Loading optimal TP% (Y)... '+features.length+' feature rows');
       // Fetch optimal_tp_hourly with pagination (PostgREST max_rows=1000)
@@ -5733,9 +5743,9 @@ function CorrelationFinderPage(p){
       if(dayKeys.length<3){setErr('Only '+dayKeys.length+' days of daily optimal data. Need at least 3. Run more daily scans.');setLoading(false);return;}
       setProg('Loading hourly features (X) for '+dayKeys.length+' days...');
       // Get hourly features to aggregate into day-level features
-      var rhF2=getSbHeaders();rhF2['Range']='0-9999';
+      var hourlyRows=[];var _cfPg2=0;while(true){var rhF2=getSbHeaders();rhF2['Range']=(_cfPg2*1000)+'-'+((_cfPg2+1)*1000-1);
       var r2=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=trade_date,hour,hour_atr_pct,hour_volume,hour_trades,hour_vwap,hour_open,day_open,day_close,day_high,day_low,day_volume,day_trades,overnight_gap_pct,vix_close,day_of_week,prev_day_close,hour_realized_vol,hour_tick_volatility,hour_return_pct,hour_max_drawdown_pct,hour_avg_trade_size,hour_trade_intensity,hour_reversal_count,hour_reversal_rate,hour_up_down_ratio,first_15min_range_pct,hour_return_autocorr,hour_hurst_exponent,hour_avg_run_length,hour_oscillation_score,hour_ece_pct,hour_cwe_pct,hour_trend_r2,hour_return_entropy,hour_order_flow_imbalance,hour_vwap_deviation,hour_price_level_concentration&order=trade_date.asc,hour.asc',{headers:rhF2});
-      var hourlyRows=r2.ok?await r2.json():[];
+      var _cfB2=r2.ok?await r2.json():[];for(var _cfi2=0;_cfi2<_cfB2.length;_cfi2++)hourlyRows.push(_cfB2[_cfi2]);if(_cfB2.length<1000)break;_cfPg2++;if(_cfPg2>20)break;}
       setProg('Aggregating day-level features...');
       // Aggregate hourly features into day-level
       var dayFeatures={};
@@ -12145,7 +12155,7 @@ function MLModelFinderPage(p){
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
     var h=getSbHeaders();h['Range']='0-9999';
-    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(d){
+    fetch(SB_URL+'/rest/v1/rpc/get_distinct_hourly_tickers',{method:'POST',headers:h}).then(function(r){return r.json();}).then(function(d){
       var u={};for(var i=0;i<d.length;i++)u[d[i].ticker]=true;setAvailTickers(Object.keys(u).sort());
     }).catch(function(){});
   },[]);
@@ -12629,7 +12639,7 @@ function HourlyPredictionPage(p){
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
     var h=getSbHeaders();h['Range']='0-9999';
-    fetch(SB_URL+'/rest/v1/hourly_features?select=ticker&order=ticker.asc',{headers:h}).then(function(r){return r.json();}).then(function(d){
+    fetch(SB_URL+'/rest/v1/rpc/get_distinct_hourly_tickers',{method:'POST',headers:h}).then(function(r){return r.json();}).then(function(d){
       var u={};for(var i=0;i<d.length;i++)u[d[i].ticker]=true;setAvailTickers(Object.keys(u).sort());
     }).catch(function(){});
   },[]);
@@ -12641,9 +12651,7 @@ function HourlyPredictionPage(p){
     if(!ticker){setErr('Select a ticker');return;}
     setLoading(true);setErr(null);setResults(null);setProg('Loading features...');
     try{
-      var rhF=getSbHeaders();rhF['Range']='0-9999';
-      var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhF});
-      var features=r1.ok?await r1.json():[];
+      var features=[];var _hpPg=0;while(true){var rhF=getSbHeaders();rhF['Range']=(_hpPg*1000)+'-'+((_hpPg+1)*1000-1);var r1=await fetch(SB_URL+'/rest/v1/hourly_features?ticker=eq.'+ticker+'&select=*&order=trade_date.asc,hour.asc',{headers:rhF});var _hpB=r1.ok?await r1.json():[];for(var _hpi=0;_hpi<_hpB.length;_hpi++)features.push(_hpB[_hpi]);if(_hpB.length<1000)break;_hpPg++;if(_hpPg>20)break;}
       if(!features.length){setErr('No feature data for '+ticker);setLoading(false);return;}
       setProg('Loading optimal TP% (paginated)...');
       var optRows=[];var optOffset=0;
