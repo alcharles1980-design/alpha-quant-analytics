@@ -2320,12 +2320,17 @@ async function runScreener() {
   var intradayTo = days[days.length - 1];
   var processed5m = 0;
   var etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+  var etHrFmtShared = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+  var etMinFmtShared = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false });
 
   for (var ri = 0; ri < results.length; ri++) {
     var res = results[ri];
     try {
       var url5 = 'https://api.polygon.io/v2/aggs/ticker/' + res.ticker + '/range/1/minute/' + intradayFrom + '/' + intradayTo + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
-      var r5 = await fetch(url5);
+      var fetchCtrl = new AbortController();
+      var fetchTimer = setTimeout(function() { fetchCtrl.abort(); }, 30000);
+      var r5 = await fetch(url5, { signal: fetchCtrl.signal });
+      clearTimeout(fetchTimer);
       if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
@@ -2460,14 +2465,15 @@ async function runScreener() {
       // Overlap Ratio computation
       var olapSum = 0, olapCount = 0, gapCount = 0, olapStreakSum = 0, olapStreakCount = 0, curStreak = 0;
       var hrOlap = {}; for (var oh = 4; oh < 20; oh++) { hrOlap[oh] = { sum: 0, n: 0, gaps: 0 }; }
-      var etFmtOlap = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
       for (var oi = 1; oi < bars5.length; oi++) {
         var b0 = bars5[oi - 1], b1 = bars5[oi];
+        // Skip cross-day pairs (overnight gaps are expected, not relevant)
+        if (b1.t - b0.t > 300000) continue; // >5 min gap = different session/day
         var overlap = Math.min(b0.h, b1.h) - Math.max(b0.l, b1.l);
         var combined = Math.max(b0.h, b1.h) - Math.min(b0.l, b1.l);
         var ratio = combined > 0 ? Math.max(0, overlap / combined) : 0;
         olapSum += ratio; olapCount++;
-        var oHr = parseInt(etFmtOlap.format(new Date(b1.t))) || 0;
+        var oHr = parseInt(etHrFmtShared.format(new Date(b1.t))) || 0;
         if (hrOlap[oHr]) { hrOlap[oHr].sum += ratio; hrOlap[oHr].n++; }
         if (overlap <= 0) { gapCount++; if (hrOlap[oHr]) hrOlap[oHr].gaps++; if (curStreak > 0) { olapStreakSum += curStreak; olapStreakCount++; } curStreak = 0; }
         else { curStreak++; }
@@ -2487,7 +2493,7 @@ async function runScreener() {
       var sessionDefs = {pre:[4,0,9,30],rth:[9,30,16,0],post:[16,0,20,0],night:[20,0,24,0],morning:[0,0,4,0]};
       var sesKeys = Object.keys(sessionDefs);
       var sesMetrics = {};
-      var etFmt2 = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false});
+      var etFmt2 = etMinFmtShared;
       for (var si = 0; si < sesKeys.length; si++) {
         var sk = sesKeys[si]; var sd2 = sessionDefs[sk];
         var startMin = sd2[0] * 60 + sd2[1]; var endMin = sd2[2] * 60 + sd2[3];
@@ -2551,7 +2557,7 @@ async function runScreener() {
 
       // Hourly ATR profile: ATR% per hour (4-19) averaged across days
       var hourlyAtr = {};
-      var etHrFmt = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+      var etHrFmt = etHrFmtShared;
       // Group bars by ET date + hour
       var hrDayData = {}; // key: "h" -> [{date, high, low}]
       for (var bi8 = 0; bi8 < bars5.length; bi8++) {
