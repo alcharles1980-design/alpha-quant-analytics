@@ -11847,21 +11847,21 @@ function RangePredictorPage(p){
       <div style={{padding:14,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div>
-            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5}}>MOST LIKELY RANGE (p50)</div>
-            <div style={{color:C.accent,fontSize:18,fontWeight:800,fontFamily:F,marginTop:2}}>{'$'+results.forecast.low50.toFixed(2)+' \u2014 $'+results.forecast.high50.toFixed(2)}</div>
-            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{'Range: $'+results.forecast.range50.toFixed(2)+' ('+((results.forecast.range50/results.price)*100).toFixed(2)+'%)'}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5}}>PRICE ZONE (p75 — {results.accuracy.hit75}% reliable)</div>
+            <div style={{color:C.accent,fontSize:18,fontWeight:800,fontFamily:F,marginTop:2}}>{'$'+(results.forecast.close-results.forecast.range75/2).toFixed(2)+' \u2014 $'+(results.forecast.close+results.forecast.range75/2).toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{'Width: $'+results.forecast.range75.toFixed(2)+' ('+((results.forecast.range75/results.price)*100).toFixed(2)+'%) centered on $'+results.forecast.close.toFixed(2)}</div>
           </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
           <div style={{padding:8,background:C.bg,borderRadius:6}}>
-            <div style={{color:C.gold,fontSize:7,fontFamily:F,fontWeight:700}}>ACTIVE DAY (p75)</div>
-            <div style={{color:C.gold,fontSize:12,fontWeight:800,fontFamily:F}}>{'$'+results.forecast.low75.toFixed(2)+' \u2014 $'+results.forecast.high75.toFixed(2)}</div>
-            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+results.forecast.range75.toFixed(2)+' range'}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700}}>TIGHT ZONE (p50)</div>
+            <div style={{color:C.txtBright,fontSize:12,fontWeight:800,fontFamily:F}}>{'$'+(results.forecast.close-results.forecast.range50/2).toFixed(2)+' \u2014 $'+(results.forecast.close+results.forecast.range50/2).toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+results.forecast.range50.toFixed(2)+' | '+results.accuracy.hit50+'% hit'}</div>
           </div>
           <div style={{padding:8,background:C.bg,borderRadius:6}}>
-            <div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700}}>VOLATILE DAY (p90)</div>
-            <div style={{color:C.warn,fontSize:12,fontWeight:800,fontFamily:F}}>{'$'+results.forecast.low90.toFixed(2)+' \u2014 $'+results.forecast.high90.toFixed(2)}</div>
-            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+results.forecast.range90.toFixed(2)+' range'}</div>
+            <div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700}}>WIDE ZONE (p90)</div>
+            <div style={{color:C.warn,fontSize:12,fontWeight:800,fontFamily:F}}>{'$'+(results.forecast.close-results.forecast.range90/2).toFixed(2)+' \u2014 $'+(results.forecast.close+results.forecast.range90/2).toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+results.forecast.range90.toFixed(2)+' | '+results.accuracy.hit90+'% hit'}</div>
           </div>
         </div>
         <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap'}}>
@@ -11871,6 +11871,10 @@ function RangePredictorPage(p){
           <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR20: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.atr}</span></div>
             <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR5: </span><span style={{color:results.forecast.atr5>results.forecast.atr?C.warn:C.accent,fontWeight:700}}>{'$'+results.forecast.atr5}</span></div>
             <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Today Range: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.todayRange}</span></div>
+        </div>
+        <div style={{marginTop:10,padding:8,background:'rgba(0,229,160,0.1)',borderRadius:6}}>
+          <div style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:800}}>GRID RECOMMENDATION</div>
+          <div style={{color:C.txtBright,fontSize:8,fontFamily:F,marginTop:3}}>{'Set grid levels $'+(results.forecast.close-results.forecast.range75/2).toFixed(2)+' to $'+(results.forecast.close+results.forecast.range75/2).toFixed(2)+' (p75 price zone, '+results.accuracy.hit75+'% of days the range fits within this width)'}</div>
         </div>
       </div>
     </Cd>}
@@ -11894,14 +11898,14 @@ function RangePredictorPage(p){
           <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>range fit</div>
         </div>
         <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
-          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>CONTAINED</div>
-          <div style={{color:results.accuracy.contained75>=60?C.accent:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{results.accuracy.contained75+'%'}</div>
-          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>in p75 box</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>PRICE ZONE</div>
+          <div style={{color:C.accent,fontSize:16,fontWeight:800,fontFamily:F}}>{'p75'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>{results.accuracy.hit75+'% reliable'}</div>
         </div>
       </div>
       <div style={{padding:8,background:C.bg,borderRadius:6,marginBottom:12}}>
         <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Avg range prediction error: $'+results.accuracy.avgErr.toFixed(2)+' ('+(results.accuracy.avgErr/results.price*100).toFixed(2)+'% of price)'}</div>
-        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'p50 Hit = actual range \u2264 predicted p50 range. Contained = actual H and L both within p75 predicted high/low.'}</div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'p50/p75/p90 Hit = actual range \u2264 predicted range. Price Zone = recommended grid zone width.'}</div>
       </div>
     </Cd>}
 
@@ -11984,7 +11988,7 @@ function RangePredictorPage(p){
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>How To Use For Grid Trading</p>
-          <p style={{fontSize:9}}>The p50 range is your primary grid zone — concentrate 70% of levels there. The p75 range is your safety zone — spread the remaining 30% into this band. The p90 is your extreme — if price reaches here, conditions may have changed. Check the backtest accuracy: if p75 hit rate is above 80%, the predictions are reliable for this stock. If it's below 60%, the stock is too unpredictable for range-based grid placement.</p>
+          <p style={{fontSize:9}}>The p50 Price Zone is your tight grid — most days fit within this width. The p75 Price Zone is your primary grid zone — set your levels across this band centered on the last close. The p90 is your wide safety net. Check the backtest accuracy: if p75 hit rate is above 75%, the range predictions are reliable for this stock.</p>
         </div>
       </div>
     </CollapseStage>
