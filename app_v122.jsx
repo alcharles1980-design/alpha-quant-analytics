@@ -12136,8 +12136,9 @@ function CycleDensityPage(p){
             var gross=lv.total*lv.tp/results.days;
             var net=lv.total*(lv.tp-fee)/results.days;
             var isBest=bestLevel&&bestLevel.lv&&lv.pct===bestLevel.lv.pct;
-            return <tr key={lv.pct} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.06)':'transparent'}}>
-              <td style={{padding:'3px',color:isBest?C.accent:C.txtDim,fontWeight:isBest?800:400}}>{lv.pctLabel}{isBest?' \u2605':''}</td>
+            var isSel=selLevel!==null?lv.pct===selLevel:isBest;
+            return <tr key={lv.pct} onClick={function(){setSelLevel(lv.pct);}} style={{borderBottom:'1px solid '+C.grid,background:isSel?'rgba(157,92,255,0.12)':isBest?'rgba(0,229,160,0.06)':'transparent',cursor:'pointer'}}>
+              <td style={{padding:'3px',color:isBest?C.accent:isSel?C.purple:C.txtDim,fontWeight:isBest||isSel?800:400}}>{lv.pctLabel}{isBest?' \u2605':''}</td>
               <td style={{padding:'3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+lv.tp.toFixed(2)}</td>
               <td style={{padding:'3px',color:lv.effPct>lv.pct*1.3?C.gold:C.txtDim,textAlign:'right',fontSize:6}}>{lv.effLabel}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{lv.perDay}</td>
@@ -12149,8 +12150,8 @@ function CycleDensityPage(p){
       </div>
     </Cd>}
 
-    {results&&<Cd>
-      <SectionHead title="Cycles By Hour \u2014 0.10% TP" sub={'$'+(results.levels.find(function(l){return l.pct===0.001;})||results.levels[1]).tp.toFixed(2)+' TP | Per-hour breakdown'}/>
+    {results&&(function(){var selPct=selLevel!==null?selLevel:(bestLevel&&bestLevel.lv?bestLevel.lv.pct:0.001);var lvSel=results.levels.find(function(l){return l.pct===selPct;})||results.levels[1];return <Cd>
+      <SectionHead title={'Cycles By Hour \u2014 '+lvSel.pctLabel+' TP'} sub={'$'+lvSel.tp.toFixed(2)+' TP ('+lvSel.effLabel+' effective) | Tap a row above to switch'}/>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
@@ -12159,11 +12160,11 @@ function CycleDensityPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net/Day</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bar</th>
           </tr></thead>
-          <tbody>{(function(){var lv10=results.levels.find(function(l){return l.pct===0.001;})||results.levels[1];var nD=results.days||1;
-            return lv10.hr.map(function(h){
+          <tbody>{(function(){var nD=results.days||1;
+            return lvSel.hr.map(function(h){
               var cyc=Math.round(h.cycles/nD*10)/10;
-              var net2=Math.round(h.cycles*(lv10.tp-fee)/nD*100)/100;
-              var maxCyc=Math.max.apply(null,lv10.hr.map(function(x){return x.cycles;}));
+              var net2=Math.round(h.cycles*(lvSel.tp-fee)/nD*100)/100;
+              var maxCyc=Math.max.apply(null,lvSel.hr.map(function(x){return x.cycles;}));
               var barW=maxCyc>0?Math.round(h.cycles/maxCyc*100):0;
               var session=h.hour<9?'pre':h.hour<16?'rth':'post';
               return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
@@ -12176,7 +12177,7 @@ function CycleDensityPage(p){
           })()}</tbody>
         </table>
       </div>
-    </Cd>}
+    </Cd>;})()}
 
     <CollapseStage title="Complete User Guide" sub="How the Cycle Density Scanner works">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
@@ -12206,6 +12207,7 @@ function CycleSpeedPage(p){
   var s6=useState(null),bars=s6[0],setBars=s6[1];
   var s7=useState('0.10'),tpPctInput=s7[0],setTpPctInput=s7[1];
   var s8=useState('0.005'),feeInput=s8[0],setFeeInput=s8[1];
+  var s9=useState(null),selLevel=s9[0],setSelLevel=s9[1];
   var fee=parseFloat(feeInput)||0.005;
 
   var fetchBars=async function(){
