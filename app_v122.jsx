@@ -12017,6 +12017,7 @@ function CycleDensityPage(p){
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState(''),prog=s5[0],setProg=s5[1];
   var s6=useState('0.005'),feeInput=s6[0],setFeeInput=s6[1];
+  var s7=useState(null),selLevel=s7[0],setSelLevel=s7[1];
   var fee=parseFloat(feeInput)||0.005;
 
   var analyze=async function(){
@@ -12207,7 +12208,6 @@ function CycleSpeedPage(p){
   var s6=useState(null),bars=s6[0],setBars=s6[1];
   var s7=useState('0.10'),tpPctInput=s7[0],setTpPctInput=s7[1];
   var s8=useState('0.005'),feeInput=s8[0],setFeeInput=s8[1];
-  var s9=useState(null),selLevel=s9[0],setSelLevel=s9[1];
   var fee=parseFloat(feeInput)||0.005;
 
   var fetchBars=async function(){
