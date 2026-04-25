@@ -11185,10 +11185,15 @@ function TrueSwingPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')fetchBars();}} placeholder="Enter ticker e.g. POET" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
         <button onClick={fetchBars} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Fetching...':'Analyze'}</button>
       </div>
-      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
         <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1}}>NOISE THRESHOLD $</span>
         <input value={threshInput} onChange={function(e){onThreshChange(e.target.value);}} style={{width:70,padding:'6px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,textAlign:'center'}}/>
-        <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Ignore reversals < this amount'}</span>
+      </div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:8}}>
+        {[0.01,0.02,0.03,0.05,0.07,0.10,0.15,0.20,0.30,0.50,0.75,1.00].map(function(v){
+          var active=parseFloat(threshInput)===v;
+          return <button key={v} onClick={function(){onThreshChange(v.toString());}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{'$'+v.toFixed(2)}</button>;
+        })}
       </div>
       {prog&&!results&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,padding:6}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:6}}>{err}</div>}
