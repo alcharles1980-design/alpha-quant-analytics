@@ -12471,6 +12471,313 @@ function CycleSpeedPage(p){
   </div>;
 }
 
+function GridPlannerPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState('10000'),capitalInput=s2[0],setCapitalInput=s2[1];
+  var s3=useState('0.10'),tpPctInput=s3[0],setTpPctInput=s3[1];
+  var s4=useState('0.005'),feeInput=s4[0],setFeeInput=s4[1];
+  var s5=useState(null),results=s5[0],setResults=s5[1];
+  var s6=useState(false),loading=s6[0],setLoading=s6[1];
+  var s7=useState(null),err=s7[0],setErr=s7[1];
+  var s8=useState(''),prog=s8[0],setProg=s8[1];
+  var fee=parseFloat(feeInput)||0.005;
+  var capital=parseFloat(capitalInput)||10000;
+  var tpPctVal=parseFloat(tpPctInput)||0.10;
+
+  var analyze=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);
+    try{
+      var tk=ticker.trim().toUpperCase();
+
+      // 1. Fetch daily bars for range prediction
+      setProg('Fetching daily bars...');
+      var to=new Date();var from=new Date();from.setDate(from.getDate()-400);
+      var fromStr=from.toISOString().slice(0,10);var toStr=to.toISOString().slice(0,10);
+      var rd=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
+      if(!rd.ok){setErr('Daily bars error: '+rd.status);setLoading(false);return;}
+      var dd=await rd.json();var dailyBars=dd.results||[];
+      if(dailyBars.length<60){setErr('Only '+dailyBars.length+' daily bars');setLoading(false);return;}
+      var price=dailyBars[dailyBars.length-1].c;
+
+      // Compute ATR + regime-calibrated range
+      var ATR_P=20;var dayData=[];
+      for(var i=1;i<dailyBars.length;i++){
+        var tr=Math.max(dailyBars[i].h-dailyBars[i].l,Math.abs(dailyBars[i].h-dailyBars[i-1].c),Math.abs(dailyBars[i].l-dailyBars[i-1].c));
+        dayData.push({tr:tr,range:dailyBars[i].h-dailyBars[i].l,c:dailyBars[i].c});
+      }
+      var atr20=0;for(var i=dayData.length-ATR_P;i<dayData.length;i++)atr20+=dayData[i].tr;atr20/=ATR_P;
+      var atr5=0;for(var i=dayData.length-5;i<dayData.length;i++)atr5+=dayData[i].tr;atr5/=5;
+      var baseATR=Math.max(atr5,atr20);
+      var prevRange=dayData[dayData.length-1].range;
+      // Range ratios for calibration
+      var ratios=[];for(var i=ATR_P;i<dayData.length;i++){var a=0;for(var j=i-ATR_P+1;j<=i;j++)a+=dayData[j].tr;a/=ATR_P;if(a>0)ratios.push(dayData[i].range/a);}
+      ratios.sort(function(a,b){return a-b;});
+      var getP=function(arr,pct){return arr[Math.min(Math.floor(arr.length*pct/100),arr.length-1)];};
+      var p50Range=Math.max(baseATR*getP(ratios,50),prevRange*0.7);
+      var p75Range=Math.max(baseATR*getP(ratios,75),prevRange*0.85);
+
+      // 2. Fetch 1-min bars for volume concentration + cycle density
+      setProg('Fetching 1-min bars...');
+      var days=[];var d=new Date();
+      while(days.length<10){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
+      days.reverse();
+      var allMin=[];
+      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+days[0]+'/'+days[days.length-1]+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var pageNum=0;
+      while(url&&pageNum<20){
+        setProg('1-min bars page '+(pageNum+1)+'... ('+allMin.length.toLocaleString()+')');
+        var mr=await fetch(url);if(!mr.ok)break;
+        var md=await mr.json();var mb=md.results||[];
+        for(var bi=0;bi<mb.length;bi++)allMin.push(mb[bi]);
+        if(md.next_url){url=md.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
+      }
+      if(allMin.length<100){setErr('Insufficient 1-min data');setLoading(false);return;}
+
+      setProg('Computing deployment plan...');
+      computePlan(tk,price,capital,tpPctVal,fee,p50Range,p75Range,atr20,atr5,prevRange,allMin,days.length);
+    }catch(e){setErr('Error: '+e.message);}
+    setLoading(false);
+  };
+
+  var computePlan=function(tk,price,cap,tpPct,feeVal,range50,range75,atr20,atr5,prevRange,minBars,nDays){
+    var etDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var tpDollar=Math.ceil(price*(tpPct/100)*100)/100;
+    if(tpDollar<0.01)tpDollar=0.01;
+    var tpCents=Math.round(tpDollar*100);
+
+    // Define zones: use p75 range centered on close
+    var zoneHigh=Math.ceil((price+range75/2)*100)/100;
+    var zoneLow=Math.floor((price-range75/2)*100)/100;
+    var zoneRange=zoneHigh-zoneLow;
+    var numZones=5;
+    var zoneSize=zoneRange/numZones;
+
+    // Compute volume + cycles per zone from 1-min bars
+    var dayBars={};
+    for(var i=0;i<minBars.length;i++){var bd=etDay.format(new Date(minBars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(minBars[i]);}
+    var dayKeys=Object.keys(dayBars).sort();
+
+    var zones=[];
+    for(var zi=0;zi<numZones;zi++){
+      var zLow=zoneLow+zi*zoneSize;var zHigh=zoneLow+(zi+1)*zoneSize;
+      var zMid=(zLow+zHigh)/2;
+      var vol=0;var barCount=0;var cycles=0;var durations=[];
+      // Count volume in this zone
+      for(var bi=0;bi<minBars.length;bi++){
+        var vwap=(minBars[bi].vw!==undefined)?minBars[bi].vw:((minBars[bi].h+minBars[bi].l+minBars[bi].c)/3);
+        if(vwap>=zLow&&vwap<zHigh){vol+=minBars[bi].v||0;barCount++;}
+      }
+      // Simulate cycles in this zone
+      for(var di=0;di<dayKeys.length;di++){
+        var db=dayBars[dayKeys[di]];if(db.length<10)continue;
+        var held={};
+        for(var bi2=0;bi2<db.length;bi2++){
+          var bar=db[bi2];
+          var lowC=Math.round(bar.l*100);var highC=Math.round(bar.h*100);
+          var openC=Math.round(bar.o*100);var closeC=Math.round(bar.c*100);
+          var bullish=closeC>=openC;
+          var zLowC=Math.round(zLow*100);var zHighC=Math.round(zHigh*100);
+          // Completions
+          var keys=Object.keys(held);
+          for(var ki=0;ki<keys.length;ki++){var lv=parseInt(keys[ki]);if(lv+tpCents<=highC){cycles++;var dur=(bar.t-held[lv])/1000;durations.push(dur);delete held[lv];}}
+          // New buys only within this zone
+          var entry=bullish?openC-1:highC-1;
+          for(var lv2=entry;lv2>=lowC;lv2--){if(lv2>=zLowC&&lv2<zHighC&&held[lv2]===undefined)held[lv2]=bar.t;}
+        }
+      }
+      durations.sort(function(a,b){return a-b;});
+      var avgDur=0;if(durations.length){var s=0;for(var j=0;j<durations.length;j++)s+=durations[j];avgDur=s/durations.length;}
+      var levelsInZone=Math.round(zoneSize*100);// $0.01 spacing
+      zones.push({low:Math.round(zLow*100)/100,high:Math.round(zHigh*100)/100,mid:Math.round(zMid*100)/100,
+        vol:vol,barCount:barCount,cycles:cycles,cyclesPerDay:nDays>0?Math.round(cycles/nDays*10)/10:0,
+        avgDur:avgDur,levels:levelsInZone,durations:durations});
+    }
+
+    // Allocate capital proportional to cycles per zone
+    var totalCycles=0;for(var i=0;i<zones.length;i++)totalCycles+=zones[i].cycles;
+    var totalVol=0;for(var i=0;i<zones.length;i++)totalVol+=zones[i].vol;
+    for(var i=0;i<zones.length;i++){
+      var weight=totalCycles>0?zones[i].cycles/totalCycles:1/numZones;
+      // Blend: 70% cycle-weighted, 30% volume-weighted
+      var volWeight=totalVol>0?zones[i].vol/totalVol:1/numZones;
+      var blended=weight*0.7+volWeight*0.3;
+      zones[i].weight=Math.round(blended*1000)/10;
+      zones[i].allocCap=Math.round(cap*blended);
+      zones[i].sharesPerLevel=zones[i].levels>0?Math.floor(zones[i].allocCap/(zones[i].levels*zones[i].mid)):0;
+      zones[i].grossPerDay=zones[i].cyclesPerDay*tpDollar*zones[i].sharesPerLevel;
+      zones[i].netPerDay=zones[i].cyclesPerDay*(tpDollar-feeVal)*zones[i].sharesPerLevel;
+    }
+
+    // Totals
+    var totalLevels=0;var totalAllocCap=0;var totalNetPerDay=0;var totalCycPerDay=0;
+    for(var i=0;i<zones.length;i++){totalLevels+=zones[i].levels;totalAllocCap+=zones[i].allocCap;totalNetPerDay+=zones[i].netPerDay;totalCycPerDay+=zones[i].cyclesPerDay;}
+    var capUtil=cap>0?Math.round(totalAllocCap/cap*100):0;
+    var dailyROC=totalAllocCap>0?Math.round(totalNetPerDay/totalAllocCap*10000)/100:0;
+
+    setResults({ticker:tk,price:price,tpDollar:tpDollar,tpPct:tpPct,effPct:Math.round(tpDollar/price*100000)/1000,
+      range50:Math.round(range50*100)/100,range75:Math.round(range75*100)/100,
+      atr20:Math.round(atr20*100)/100,atr5:Math.round(atr5*100)/100,prevRange:Math.round(prevRange*100)/100,
+      zoneHigh:zoneHigh,zoneLow:zoneLow,zoneRange:Math.round(zoneRange*100)/100,
+      zones:zones,nDays:nDays,bars:minBars.length,capital:cap,fee:feeVal,
+      totalLevels:totalLevels,totalAllocCap:totalAllocCap,totalNetPerDay:Math.round(totalNetPerDay*100)/100,
+      totalCycPerDay:totalCycPerDay,capUtil:capUtil,dailyROC:dailyROC});
+    setProg('');
+  };
+
+  // Recompute when capital/fee/tp change (if bars loaded)
+  var recompute=function(newCap,newTp,newFee){
+    // Can't recompute without re-fetching since we need minBars
+    // So just show message
+  };
+
+  var fmtK=function(v){if(v>=1e6)return '$'+(v/1e6).toFixed(1)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v;};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Grid Deployment Planner</span>
+    </div>
+    <Cd>
+      <SectionHead title="Grid Deployment Planner" sub="Synthesizes range prediction, volume concentration, and cycle density into a capital allocation plan"/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Ticker" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Planning...':'Deploy'}</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:8}}>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>CAPITAL $</div>
+          <input value={capitalInput} onChange={function(e){setCapitalInput(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.accent,fontFamily:F,fontSize:10,fontWeight:700,boxSizing:'border-box',textAlign:'center'}}/></div>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>TP %</div>
+          <input value={tpPctInput} onChange={function(e){setTpPctInput(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:4,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,boxSizing:'border-box',textAlign:'center'}}/></div>
+        <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>FEE $</div>
+          <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,boxSizing:'border-box',textAlign:'center'}}/></div>
+      </div>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+        <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
+        <div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:3}}>{'\u26A0 Do not refresh'}</div>
+      </div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd glow={true}>
+      <SectionHead title={results.ticker+' \u2014 Deployment Summary'} sub={'$'+results.price.toFixed(2)+' | TP: $'+results.tpDollar.toFixed(2)+' ('+results.effPct+'%) | Capital: '+fmtK(results.capital)}/>
+      <div style={{padding:14,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,marginBottom:6}}>GRID ZONE</div>
+        <div style={{color:C.accent,fontSize:16,fontWeight:800,fontFamily:F}}>{'$'+results.zoneLow.toFixed(2)+' \u2014 $'+results.zoneHigh.toFixed(2)}</div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{'Width: $'+results.zoneRange.toFixed(2)+' ('+((results.zoneRange/results.price)*100).toFixed(2)+'%) | '+results.totalLevels+' levels at $0.01 spacing'}</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>NET $/DAY</div>
+          <div style={{color:results.totalNetPerDay>0?C.accent:C.warn,fontSize:14,fontWeight:800,fontFamily:F}}>{'$'+results.totalNetPerDay.toFixed(2)}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>CYCLES/DAY</div>
+          <div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{results.totalCycPerDay.toFixed(0)}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>DAILY ROC</div>
+          <div style={{color:results.dailyROC>0?C.accent:C.warn,fontSize:14,fontWeight:800,fontFamily:F}}>{results.dailyROC+'%'}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>CAP UTIL</div>
+          <div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{results.capUtil+'%'}</div>
+        </div>
+      </div>
+      <div style={{padding:8,background:C.bg,borderRadius:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
+        {'ATR20: $'+results.atr20+' | ATR5: $'+results.atr5+' | Today Range: $'+results.prevRange+' | p50: $'+results.range50+' | p75: $'+results.range75}
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Capital Allocation By Zone" sub="Weighted by 70% cycle density + 30% volume concentration"/>
+      <div style={{marginBottom:12}}>
+        {results.zones.map(function(z,idx){
+          var maxW=Math.max.apply(null,results.zones.map(function(x){return x.weight;}));
+          var barW=maxW>0?Math.round(z.weight/maxW*100):0;
+          var isCenter=z.low<=results.price&&z.high>=results.price;
+          return <div key={idx} style={{marginBottom:6,padding:8,background:isCenter?'rgba(0,229,160,0.06)':C.bg,borderRadius:6,border:isCenter?'1px solid '+C.accent:'1px solid '+C.grid}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+              <span style={{color:isCenter?C.accent:C.txtBright,fontSize:8,fontWeight:700,fontFamily:F}}>{'$'+z.low.toFixed(2)+' \u2014 $'+z.high.toFixed(2)}{isCenter?' \u25C0 price':''}
+              </span>
+              <span style={{color:C.accent,fontSize:8,fontWeight:800,fontFamily:F}}>{z.weight+'%'}</span>
+            </div>
+            <div style={{height:8,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:4}}>
+              <div style={{width:barW+'%',height:'100%',background:isCenter?C.accent:C.purple,borderRadius:4}}/>
+            </div>
+            <div style={{display:'flex',gap:8,fontSize:6,fontFamily:F,color:C.txtDim,flexWrap:'wrap'}}>
+              <span>{'Capital: '+fmtK(z.allocCap)}</span>
+              <span>{z.levels+' levels'}</span>
+              <span>{z.sharesPerLevel+' sh/level'}</span>
+              <span>{z.cyclesPerDay+' cyc/day'}</span>
+              <span style={{color:z.netPerDay>0?C.accent:C.warn}}>{'$'+z.netPerDay.toFixed(2)+'/day'}</span>
+            </div>
+          </div>;
+        })}
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Zone Detail" sub="Per-zone breakdown with cycle density, volume, and speed"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Zone</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Weight</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Capital</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Sh/Lvl</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cyc/Day</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Net/Day</th>
+          </tr></thead>
+          <tbody>{results.zones.map(function(z,idx){
+            var isCenter=z.low<=results.price&&z.high>=results.price;
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isCenter?'rgba(0,229,160,0.04)':'transparent'}}>
+              <td style={{padding:'3px',color:isCenter?C.accent:C.txtDim,fontWeight:isCenter?700:400,fontSize:6}}>{'$'+z.low.toFixed(2)+'-'+z.high.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{z.weight+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{fmtK(z.allocCap)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{z.sharesPerLevel}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{z.cyclesPerDay}</td>
+              <td style={{padding:'3px',color:z.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+z.netPerDay.toFixed(2)}</td>
+            </tr>;
+          })}<tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+            <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>TOTAL</td>
+            <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>100%</td>
+            <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{fmtK(results.totalAllocCap)}</td>
+            <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>--</td>
+            <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:700}}>{results.totalCycPerDay.toFixed(0)}</td>
+            <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+results.totalNetPerDay.toFixed(2)}</td>
+          </tr></tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How the Grid Deployment Planner works">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{fontSize:9}}>The Grid Deployment Planner combines range prediction, volume concentration, and cycle density into a single capital allocation plan. Instead of spreading capital uniformly across a wide range, it tells you exactly how much capital to put in each price zone based on where cycles actually complete and where volume actually trades.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>How It Works</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>1. Range Prediction:</span> Fetches 260+ daily bars, computes regime-calibrated ATR to determine the p75 price zone (82% reliable width).</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>2. Zone Splitting:</span> Divides the price zone into 5 equal sub-zones.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>3. Cycle Density:</span> Simulates grid bot in each sub-zone using 10 days of 1-min bars. Counts completed cycles per zone at your TP%.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>4. Volume Weighting:</span> Measures where 1-min bar volume concentrates across the zones.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>5. Capital Allocation:</span> Blends cycle density (70%) and volume concentration (30%) to weight capital per zone. More cycles + more volume = more capital allocated. Shares per level computed from zone capital ÷ (levels × mid price).</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Reading The Output</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Weight%:</span> Percentage of total capital allocated to this zone. The green-highlighted zone contains the current price.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Sh/Level:</span> How many shares to buy at each $0.01 level within this zone. Higher in active zones, lower in quiet zones.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Daily ROC:</span> Net profit as % of deployed capital. This is your return on the capital actually at work, not on total portfolio.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Net/Day:</span> Expected daily profit per zone after fees. Sum of all zones = total expected daily return from the deployment.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolConcentrationPage(p){
   var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
@@ -15177,7 +15484,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -15227,6 +15534,7 @@ function App(){
     {page==='volconcentration'&&<VolConcentrationPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cycledensity'&&<CycleDensityPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cyclespeed'&&<CycleSpeedPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='gridplanner'&&<GridPlannerPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
