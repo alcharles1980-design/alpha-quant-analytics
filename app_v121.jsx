@@ -12195,6 +12195,282 @@ function CycleDensityPage(p){
   </div>;
 }
 
+function CycleSpeedPage(p){
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+  var fmtDur=function(sec){if(sec<60)return Math.round(sec)+'s';if(sec<3600)return Math.round(sec/60*10)/10+'m';return Math.round(sec/3600*10)/10+'h';};
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),results=s2[0],setResults=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState(null),bars=s6[0],setBars=s6[1];
+  var s7=useState('0.10'),tpPctInput=s7[0],setTpPctInput=s7[1];
+  var s8=useState('0.005'),feeInput=s8[0],setFeeInput=s8[1];
+  var fee=parseFloat(feeInput)||0.005;
+
+  var fetchBars=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setBars(null);setProg('Fetching 1-min bars...');
+    try{
+      var tk=ticker.trim().toUpperCase();
+      var days=[];var d=new Date();
+      while(days.length<10){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
+      days.reverse();
+      var from=days[0];var to=days[days.length-1];
+      var allBars=[];var lastPrice=0;
+      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var pageNum=0;
+      while(url&&pageNum<20){
+        setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
+        var r=await fetch(url);if(!r.ok)break;
+        var d2=await r.json();var b=d2.results||[];
+        for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
+        if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
+      }
+      if(allBars.length<100){setErr('Only '+allBars.length+' bars — insufficient');setLoading(false);return;}
+      setBars({bars:allBars,price:lastPrice,ticker:tk});
+      computeSpeed(allBars,lastPrice,parseFloat(tpPctInput)||0.10,tk);
+    }catch(e){setErr('Error: '+e.message);}
+    setLoading(false);
+  };
+
+  var computeSpeed=function(rawBars,price,tpPctVal,tk){
+    var etDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var etHr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    var dayBars={};
+    for(var i=0;i<rawBars.length;i++){var bd=etDay.format(new Date(rawBars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(rawBars[i]);}
+    var dayKeys=Object.keys(dayBars).sort();
+
+    var tpPct=tpPctVal/100;
+    var tpDollar=Math.ceil(price*tpPct*100)/100;
+    if(tpDollar<0.01)tpDollar=0.01;
+    var tpCents=Math.round(tpDollar*100);
+    var effPct=tpDollar/price;
+
+    var allDurations=[];var stuckCount=0;var totalBought=0;
+    var hrDurations={};var hrCycles={};var hrStuck={};
+    for(var h=4;h<20;h++){hrDurations[h]=[];hrCycles[h]=0;hrStuck[h]=0;}
+
+    for(var di=0;di<dayKeys.length;di++){
+      var db=dayBars[dayKeys[di]];if(db.length<10)continue;
+      var held={};// level_cents -> {t: buy_timestamp, hr: buy_hour}
+      for(var bi=0;bi<db.length;bi++){
+        var bar=db[bi];
+        var lowC=Math.round(bar.l*100);var highC=Math.round(bar.h*100);
+        var openC=Math.round(bar.o*100);var closeC=Math.round(bar.c*100);
+        var bullish=closeC>=openC;
+        var bHr=parseInt(etHr.format(new Date(bar.t)))||0;
+        // Completions
+        var keys=Object.keys(held);
+        for(var ki=0;ki<keys.length;ki++){
+          var lv=parseInt(keys[ki]);
+          if(lv+tpCents<=highC){
+            var dur=(bar.t-held[lv].t)/1000;// seconds
+            allDurations.push(dur);
+            var buyHr=held[lv].hr;
+            if(hrDurations[buyHr])hrDurations[buyHr].push(dur);
+            if(hrCycles[bHr]!==undefined)hrCycles[bHr]++;
+            delete held[lv];
+          }
+        }
+        // New buys
+        var entry=bullish?openC-1:highC-1;
+        for(var lv2=entry;lv2>=lowC;lv2--){
+          if(held[lv2]===undefined)held[lv2]={t:bar.t,hr:bHr};
+          totalBought++;
+        }
+      }
+      // End of day: remaining held positions are "stuck"
+      var stuckKeys=Object.keys(held);
+      stuckCount+=stuckKeys.length;
+      for(var si=0;si<stuckKeys.length;si++){
+        var sHr=held[parseInt(stuckKeys[si])].hr;
+        if(hrStuck[sHr]!==undefined)hrStuck[sHr]++;
+      }
+    }
+
+    allDurations.sort(function(a,b){return a-b;});
+    var getP=function(arr,pct){if(!arr.length)return 0;return arr[Math.min(Math.floor(arr.length*pct/100),arr.length-1)];};
+    var avgDur=0;if(allDurations.length){var s=0;for(var j=0;j<allDurations.length;j++)s+=allDurations[j];avgDur=s/allDurations.length;}
+    var under5m=0,under15m=0,under60m=0;
+    for(var j=0;j<allDurations.length;j++){if(allDurations[j]<=300)under5m++;if(allDurations[j]<=900)under15m++;if(allDurations[j]<=3600)under60m++;}
+
+    // Capital velocity: net$/day / (avg_capital_locked)
+    var netPerDay=allDurations.length*(tpDollar-fee)/dayKeys.length;
+    var avgLockedLevels=avgDur>0?(allDurations.length/dayKeys.length)*(avgDur/23400):0;// fraction of day locked
+    var avgLockedDollars=avgLockedLevels*price;
+
+    // Per-hour stats
+    var hrData=[];
+    for(var h2=4;h2<20;h2++){
+      var hd=hrDurations[h2];
+      hd.sort(function(a,b){return a-b;});
+      var hAvg=0;if(hd.length){var hs=0;for(var j=0;j<hd.length;j++)hs+=hd[j];hAvg=hs/hd.length;}
+      hrData.push({hour:h2,cycles:hrCycles[h2],avgDur:hAvg,medDur:getP(hd,50),p90Dur:getP(hd,90),
+        under5m:hd.filter(function(x){return x<=300;}).length,total:hd.length,stuck:hrStuck[h2]});
+    }
+
+    setResults({ticker:tk,price:price,days:dayKeys.length,bars:rawBars.length,
+      tpDollar:tpDollar,tpPct:tpPctVal,effPct:Math.round(effPct*100000)/100000,
+      totalCycles:allDurations.length,stuckCount:stuckCount,totalBought:totalBought,
+      avgDur:avgDur,medDur:getP(allDurations,50),p90Dur:getP(allDurations,90),p10Dur:getP(allDurations,10),
+      under5m:allDurations.length>0?Math.round(under5m/allDurations.length*100):0,
+      under15m:allDurations.length>0?Math.round(under15m/allDurations.length*100):0,
+      under60m:allDurations.length>0?Math.round(under60m/allDurations.length*100):0,
+      stuckPct:totalBought>0?Math.round(stuckCount/(stuckCount+allDurations.length)*100):0,
+      netPerDay:Math.round(netPerDay*100)/100,
+      avgLockedDollars:Math.round(avgLockedDollars*100)/100,
+      capitalVelocity:avgLockedDollars>0?Math.round(netPerDay/avgLockedDollars*10000)/100:0,
+      hrData:hrData});
+  };
+
+  var onTpChange=function(val){
+    setTpPctInput(val);
+    if(bars&&bars.bars){computeSpeed(bars.bars,bars.price,parseFloat(val)||0.10,bars.ticker);}
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Cycle Speed Analyzer</span>
+    </div>
+    <Cd>
+      <SectionHead title="Cycle Speed Analyzer" sub="How long does each grid cycle take? Measures capital lockup duration per completed cycle."/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')fetchBars();}} placeholder="Enter ticker e.g. MRVL" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={fetchBars} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Analyze'}</button>
+      </div>
+      <div style={{marginBottom:6}}>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:4}}>TP %</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+          {['0.05','0.075','0.10','0.125','0.15','0.20','0.25','0.30','0.50'].map(function(v){
+            var active=tpPctInput===v;
+            return <button key={v} onClick={function(){onTpChange(v);}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{v+'%'}</button>;
+          })}
+        </div>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700}}>FEE $/SHARE</span>
+        <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:60,padding:'5px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,textAlign:'center'}}/>
+      </div>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+        <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
+        <div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:3}}>{'\u26A0 Do not refresh'}</div>
+      </div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd glow={true}>
+      <SectionHead title={results.ticker+' \u2014 Cycle Speed Summary'} sub={'TP: $'+results.tpDollar.toFixed(2)+' ('+results.tpPct+'% target, '+(results.effPct*100).toFixed(3)+'% effective) | '+results.days+' days | '+results.bars.toLocaleString()+' bars'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>AVG SPEED</div>
+          <div style={{color:results.avgDur<=300?C.accent:results.avgDur<=900?C.gold:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{fmtDur(results.avgDur)}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>per cycle</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>MEDIAN</div>
+          <div style={{color:results.medDur<=300?C.accent:results.medDur<=900?C.gold:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{fmtDur(results.medDur)}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>per cycle</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>p90 SLOW</div>
+          <div style={{color:results.p90Dur<=900?C.accent:results.p90Dur<=3600?C.gold:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{fmtDur(results.p90Dur)}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>worst 10%</div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>{'< 5 MIN'}</div>
+          <div style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{results.under5m+'%'}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>{'< 15 MIN'}</div>
+          <div style={{color:C.gold,fontSize:14,fontWeight:800,fontFamily:F}}>{results.under15m+'%'}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>{'< 60 MIN'}</div>
+          <div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{results.under60m+'%'}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:5,fontFamily:F,fontWeight:700}}>STUCK EOD</div>
+          <div style={{color:results.stuckPct<=5?C.accent:results.stuckPct<=15?C.gold:C.warn,fontSize:14,fontWeight:800,fontFamily:F}}>{results.stuckPct+'%'}</div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:10,background:'rgba(0,229,160,0.06)',borderRadius:8,textAlign:'center',border:'1px solid '+C.accent}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>NET $/DAY</div>
+          <div style={{color:results.netPerDay>0?C.accent:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{'$'+results.netPerDay.toFixed(2)}</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>AVG LOCKED</div>
+          <div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{'$'+results.avgLockedDollars.toFixed(0)}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>capital at risk</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>CAP VELOCITY</div>
+          <div style={{color:results.capitalVelocity>=50?C.accent:results.capitalVelocity>=20?C.gold:C.warn,fontSize:14,fontWeight:800,fontFamily:F}}>{results.capitalVelocity+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>daily ROC</div>
+        </div>
+      </div>
+      <div style={{padding:8,background:C.bg,borderRadius:6}}>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{results.totalCycles.toLocaleString()+' completed cycles | '+results.stuckCount.toLocaleString()+' stuck at EOD | Fee: $'+fee.toFixed(4)+'/share'}</div>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Speed By Hour" sub={'TP: $'+results.tpDollar.toFixed(2)+' | Which hours complete cycles fastest?'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cyc</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Avg</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Med</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>p90</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{'<5m'}</th>
+            <th style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>Stuck</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bar</th>
+          </tr></thead>
+          <tbody>{results.hrData.filter(function(h){return h.total>0||h.stuck>0;}).map(function(h){
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            var maxCyc=Math.max.apply(null,results.hrData.map(function(x){return x.total;}));
+            var barW=maxCyc>0?Math.round(h.total/maxCyc*100):0;
+            var fast5=h.total>0?Math.round(h.under5m/h.total*100):0;
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.total}</td>
+              <td style={{padding:'3px',color:h.avgDur<=300?C.accent:h.avgDur<=900?C.gold:C.warn,textAlign:'right',fontWeight:700}}>{fmtDur(h.avgDur)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{fmtDur(h.medDur)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{fmtDur(h.p90Dur)}</td>
+              <td style={{padding:'3px',color:fast5>=80?C.accent:fast5>=50?C.gold:C.warn,textAlign:'right'}}>{fast5+'%'}</td>
+              <td style={{padding:'3px',color:h.stuck>0?C.warn:C.accent,textAlign:'right'}}>{h.stuck}</td>
+              <td style={{padding:'3px'}}><div style={{width:60,height:6,background:C.border,borderRadius:3,overflow:'hidden',display:'inline-block',verticalAlign:'middle'}}><div style={{width:barW+'%',height:'100%',background:h.avgDur<=300?C.accent:h.avgDur<=900?C.gold:C.warn,borderRadius:3}}/></div></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How the Cycle Speed Analyzer works">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{fontSize:9}}>The Cycle Speed Analyzer measures how long each grid cycle takes from buy to sell. Two stocks with identical cycle counts can have completely different capital efficiency — one completes in 30 seconds, the other takes 45 minutes. This tool reveals the time dimension that cycle counting alone misses.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Key Metrics</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Avg/Median Speed:</span> How long a typical cycle takes. Median is more robust — outliers don't skew it. Under 5 minutes is fast, under 15 is good, over 60 means capital sits idle.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Stuck EOD%:</span> Percentage of bought levels that never complete by end of day. These become overnight positions — the main risk in grid trading. Under 5% is excellent, over 15% is dangerous.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Capital Velocity:</span> Net$/Day divided by average capital locked. A 50% daily return on deployed capital means your money works hard. Compare this across stocks to find the most capital-efficient grid candidates.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>TP% buttons:</span> Change the TP and results recompute instantly from cached bars. Wider TP = fewer but faster cycles (price has more room to reach target). Tighter TP = more cycles but more get stuck.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolConcentrationPage(p){
   var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
@@ -14901,7 +15177,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -14950,6 +15226,7 @@ function App(){
     {page==='rangepredictor'&&<RangePredictorPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='volconcentration'&&<VolConcentrationPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cycledensity'&&<CycleDensityPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='cyclespeed'&&<CycleSpeedPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
