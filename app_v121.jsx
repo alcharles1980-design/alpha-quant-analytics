@@ -11669,7 +11669,7 @@ function RangePredictorPage(p){
         else if(pctile<=90)days[i].regime='ELEVATED';
         else days[i].regime='HIGH';
         // Vol direction: 5-day ATR vs 20-day ATR
-        if(i>=4){var atr5=0;for(var j=i-4;j<=i;j++)atr5+=days[j].tr;atr5/=5;days[i].volDir=atr5/days[i].atr;} else days[i].volDir=1;
+        if(i>=4){var atr5=0;for(var j=i-4;j<=i;j++)atr5+=days[j].tr;atr5/=5;days[i].volDir=atr5/days[i].atr;days[i].atr5=atr5;} else {days[i].volDir=1;days[i].atr5=days[i].atr;}
         // Range ratio
         days[i].rangeRatio=days[i].atr>0?days[i].range/days[i].atr:1;
         // 5-day return
@@ -11723,9 +11723,18 @@ function RangePredictorPage(p){
       for(var i=bt_start;i<validDays.length;i++){
         var day=validDays[i];
         var scaler=scalers[day.regime];
-        var predRange50=day.atr*scaler.p50;
-        var predRange75=day.atr*scaler.p75;
-        var predRange90=day.atr*scaler.p90;
+        // Fix 1: Use max(ATR5, ATR20) as base — catches regime transitions
+        var baseATR=Math.max(day.atr5||day.atr, day.atr);
+        // Fix 2: Apply vol direction multiplier when expanding
+        var volMult=day.volDir>1.1?day.volDir:1;
+        // Fix 3: Yesterday's range as floor (regime persistence)
+        var prevRange=i>0?validDays[i-1].range:0;
+        var rawPred50=baseATR*scaler.p50*volMult;
+        var rawPred75=baseATR*scaler.p75*volMult;
+        var rawPred90=baseATR*scaler.p90*volMult;
+        var predRange50=Math.max(rawPred50, prevRange*0.7);
+        var predRange75=Math.max(rawPred75, prevRange*0.85);
+        var predRange90=Math.max(rawPred90, prevRange*0.9);
         var prevClose=i>0?validDays[i-1].c:day.o;
         // Bias: use 5-day return direction
         var bias=day.ret5d>2?0.6:day.ret5d<-2?0.4:0.5; // fraction of range above midpoint
@@ -11773,22 +11782,31 @@ function RangePredictorPage(p){
       var todayScaler=scalers[today.regime];
       var todayDir=today.volDir<0.9?'CONTRACTING':today.volDir>1.1?'EXPANDING':'STABLE';
       var bias2=today.ret5d>2?0.6:today.ret5d<-2?0.4:0.5;
+      // Same 3 fixes as backtest
+      var fBaseATR=Math.max(today.atr5||today.atr, today.atr);
+      var fVolMult=today.volDir>1.1?today.volDir:1;
+      var fPrevRange=today.range;
+      var fR50=Math.max(fBaseATR*todayScaler.p50*fVolMult, fPrevRange*0.7);
+      var fR75=Math.max(fBaseATR*todayScaler.p75*fVolMult, fPrevRange*0.85);
+      var fR90=Math.max(fBaseATR*todayScaler.p90*fVolMult, fPrevRange*0.9);
       var tmrw={
         close:today.c,
         atr:Math.round(today.atr*100)/100,
+        atr5:Math.round((today.atr5||today.atr)*100)/100,
+        todayRange:Math.round(today.range*100)/100,
         regime:today.regime,
         volDir:todayDir,
         dirRatio:Math.round(today.volDir*100)/100,
         ret5d:Math.round(today.ret5d*10)/10,
-        range50:Math.round(today.atr*todayScaler.p50*100)/100,
-        range75:Math.round(today.atr*todayScaler.p75*100)/100,
-        range90:Math.round(today.atr*todayScaler.p90*100)/100,
-        high50:Math.round((today.c+today.atr*todayScaler.p50*bias2)*100)/100,
-        low50:Math.round((today.c-today.atr*todayScaler.p50*(1-bias2))*100)/100,
-        high75:Math.round((today.c+today.atr*todayScaler.p75*bias2)*100)/100,
-        low75:Math.round((today.c-today.atr*todayScaler.p75*(1-bias2))*100)/100,
-        high90:Math.round((today.c+today.atr*todayScaler.p90*bias2)*100)/100,
-        low90:Math.round((today.c-today.atr*todayScaler.p90*(1-bias2))*100)/100
+        range50:Math.round(fR50*100)/100,
+        range75:Math.round(fR75*100)/100,
+        range90:Math.round(fR90*100)/100,
+        high50:Math.round((today.c+fR50*bias2)*100)/100,
+        low50:Math.round((today.c-fR50*(1-bias2))*100)/100,
+        high75:Math.round((today.c+fR75*bias2)*100)/100,
+        low75:Math.round((today.c-fR75*(1-bias2))*100)/100,
+        high90:Math.round((today.c+fR90*bias2)*100)/100,
+        low90:Math.round((today.c-fR90*(1-bias2))*100)/100
       };
 
       setResults({ticker:tk,price:price,bars:bars.length,tradingDays:days.length,scalers:scalers,dirMeans:dirMeans,backtest:backtest,accuracy:accuracy,forecast:tmrw,session:useRTH?'RTH 9:30\u20134 PM':'Full Day 4 AM\u20138 PM',rthDays:useRTH?Object.keys(rthMap).length:0});
@@ -11850,7 +11868,9 @@ function RangePredictorPage(p){
           <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Regime: </span><span style={{color:regimeCol(results.forecast.regime),fontWeight:700}}>{results.forecast.regime}</span></div>
           <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Vol Dir: </span><span style={{color:results.forecast.volDir==='EXPANDING'?C.warn:results.forecast.volDir==='CONTRACTING'?C.blue:C.txtBright,fontWeight:700}}>{results.forecast.volDir+' ('+results.forecast.dirRatio+'x)'}</span></div>
           <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>5d Ret: </span><span style={{color:results.forecast.ret5d>0?C.accent:C.warn,fontWeight:700}}>{(results.forecast.ret5d>0?'+':'')+results.forecast.ret5d+'%'}</span></div>
-          <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.atr}</span></div>
+          <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR20: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.atr}</span></div>
+            <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR5: </span><span style={{color:results.forecast.atr5>results.forecast.atr?C.warn:C.accent,fontWeight:700}}>{'$'+results.forecast.atr5}</span></div>
+            <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Today Range: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.todayRange}</span></div>
         </div>
       </div>
     </Cd>}
