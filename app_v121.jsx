@@ -11810,6 +11810,10 @@ function RangePredictorPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. MRVL" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
         <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Predict'}</button>
       </div>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <button onClick={function(){setSession('full');}} style={{flex:1,padding:'6px',border:session==='full'?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:session==='full'?'rgba(0,229,160,0.15)':C.bg,color:session==='full'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='full'?800:600,cursor:'pointer'}}>{'Full Day (4AM-8PM)'}</button>
+        <button onClick={function(){setSession('rth');}} style={{flex:1,padding:'6px',border:session==='rth'?'2px solid '+C.gold:'1px solid '+C.border,borderRadius:4,background:session==='rth'?'rgba(255,215,0,0.15)':C.bg,color:session==='rth'?C.gold:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='rth'?800:600,cursor:'pointer'}}>{'RTH Only (9:30-4PM)'}</button>
+      </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
         {[{k:'full',l:'Full Day (4AM\u20138PM)'},{k:'rth',l:'RTH Only (9:30\u20134PM)'}].map(function(opt){
           var active=session===opt.k;
