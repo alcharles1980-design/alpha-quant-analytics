@@ -11571,6 +11571,349 @@ function GridScannerPage(p){
   </div>;
 }
 
+function RangePredictorPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),results=s2[0],setResults=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(''),prog=s5[0],setProg=s5[1];
+
+  var analyze=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Fetching daily bars...');
+    try{
+      var tk=ticker.trim().toUpperCase();
+      // Fetch 300 calendar days to get ~200 trading days
+      var to=new Date();var from=new Date();from.setDate(from.getDate()-400);
+      var fromStr=from.toISOString().slice(0,10);var toStr=to.toISOString().slice(0,10);
+      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var r=await fetch(url);
+      if(!r.ok){setErr('Polygon error: '+r.status);setLoading(false);return;}
+      var d=await r.json();
+      var bars=d.results||[];
+      if(bars.length<60){setErr('Only '+bars.length+' daily bars — need at least 60');setLoading(false);return;}
+      setProg('Computing ATR and regimes for '+bars.length+' days...');
+
+      var price=bars[bars.length-1].c;
+      // Compute 20-day rolling ATR and regime for each day
+      var ATR_PERIOD=20;
+      var days=[];
+      for(var i=1;i<bars.length;i++){
+        var tr=Math.max(bars[i].h-bars[i].l,Math.abs(bars[i].h-bars[i-1].c),Math.abs(bars[i].l-bars[i-1].c));
+        days.push({date:new Date(bars[i].t).toISOString().slice(0,10),o:bars[i].o,h:bars[i].h,l:bars[i].l,c:bars[i].c,tr:tr,range:bars[i].h-bars[i].l});
+      }
+      // Rolling ATR
+      for(var i=0;i<days.length;i++){
+        if(i<ATR_PERIOD-1){days[i].atr=null;days[i].regime=null;continue;}
+        var sum=0;for(var j=i-ATR_PERIOD+1;j<=i;j++)sum+=days[j].tr;
+        days[i].atr=sum/ATR_PERIOD;
+      }
+      // ATR percentile and regime classification
+      var allATRs=days.filter(function(d){return d.atr!==null;}).map(function(d){return d.atr;}).sort(function(a,b){return a-b;});
+      for(var i=0;i<days.length;i++){
+        if(days[i].atr===null)continue;
+        var rank=0;for(var j=0;j<allATRs.length;j++){if(allATRs[j]<=days[i].atr)rank=j;}
+        var pctile=Math.round(rank/allATRs.length*100);
+        days[i].atrPctile=pctile;
+        if(pctile<=10)days[i].regime='SQUEEZE';
+        else if(pctile<=30)days[i].regime='LOW';
+        else if(pctile<=70)days[i].regime='NORMAL';
+        else if(pctile<=90)days[i].regime='ELEVATED';
+        else days[i].regime='HIGH';
+        // Vol direction: 5-day ATR vs 20-day ATR
+        if(i>=4){var atr5=0;for(var j=i-4;j<=i;j++)atr5+=days[j].tr;atr5/=5;days[i].volDir=atr5/days[i].atr;} else days[i].volDir=1;
+        // Range ratio
+        days[i].rangeRatio=days[i].atr>0?days[i].range/days[i].atr:1;
+        // 5-day return
+        if(i>=5){days[i].ret5d=(days[i].c-days[i-5].c)/days[i-5].c*100;} else days[i].ret5d=0;
+      }
+
+      // Calibrate regime scalers from ALL data
+      setProg('Calibrating regime scalers...');
+      var regimeData={SQUEEZE:[],LOW:[],NORMAL:[],ELEVATED:[],HIGH:[]};
+      var validDays=days.filter(function(d){return d.atr!==null&&d.regime;});
+      for(var i=0;i<validDays.length;i++){
+        regimeData[validDays[i].regime].push(validDays[i].rangeRatio);
+      }
+      var scalers={};
+      var regimes=['SQUEEZE','LOW','NORMAL','ELEVATED','HIGH'];
+      for(var ri=0;ri<regimes.length;ri++){
+        var arr=regimeData[regimes[ri]];
+        if(arr.length<3){scalers[regimes[ri]]={mean:1,p25:0.7,p50:1,p75:1.3,p90:1.6,n:arr.length};continue;}
+        arr.sort(function(a,b){return a-b;});
+        var sum=0;for(var j=0;j<arr.length;j++)sum+=arr[j];
+        scalers[regimes[ri]]={
+          mean:Math.round(sum/arr.length*1000)/1000,
+          p25:Math.round(arr[Math.floor(arr.length*0.25)]*1000)/1000,
+          p50:Math.round(arr[Math.floor(arr.length*0.5)]*1000)/1000,
+          p75:Math.round(arr[Math.floor(arr.length*0.75)]*1000)/1000,
+          p90:Math.round(arr[Math.floor(arr.length*0.9)]*1000)/1000,
+          n:arr.length
+        };
+      }
+
+      // Also compute vol-direction-adjusted scalers
+      // Split each regime into contracting (<0.9), stable (0.9-1.1), expanding (>1.1)
+      var dirScalers={CONTRACTING:[],STABLE:[],EXPANDING:[]};
+      for(var i=0;i<validDays.length;i++){
+        var vd=validDays[i].volDir;
+        var bucket=vd<0.9?'CONTRACTING':vd>1.1?'EXPANDING':'STABLE';
+        dirScalers[bucket].push(validDays[i].rangeRatio);
+      }
+      var dirMeans={};
+      for(var dk in dirScalers){
+        var a2=dirScalers[dk];
+        if(a2.length<3){dirMeans[dk]=1;continue;}
+        var s=0;for(var j=0;j<a2.length;j++)s+=a2[j];
+        dirMeans[dk]=Math.round(s/a2.length*1000)/1000;
+      }
+
+      // Backtest last 60 days
+      setProg('Backtesting last 60 days...');
+      var backtest=[];
+      var bt_start=Math.max(0,validDays.length-60);
+      for(var i=bt_start;i<validDays.length;i++){
+        var day=validDays[i];
+        var scaler=scalers[day.regime];
+        var predRange50=day.atr*scaler.p50;
+        var predRange75=day.atr*scaler.p75;
+        var predRange90=day.atr*scaler.p90;
+        var prevClose=i>0?validDays[i-1].c:day.o;
+        // Bias: use 5-day return direction
+        var bias=day.ret5d>2?0.6:day.ret5d<-2?0.4:0.5; // fraction of range above midpoint
+        var mid=prevClose;
+        var pred50H=mid+predRange50*bias;
+        var pred50L=mid-predRange50*(1-bias);
+        var pred75H=mid+predRange75*bias;
+        var pred75L=mid-predRange75*(1-bias);
+        backtest.push({
+          date:day.date,actualH:day.h,actualL:day.l,actualRange:day.range,
+          predRange50:Math.round(predRange50*100)/100,
+          predRange75:Math.round(predRange75*100)/100,
+          predRange90:Math.round(predRange90*100)/100,
+          pred50H:Math.round(pred50H*100)/100,pred50L:Math.round(pred50L*100)/100,
+          pred75H:Math.round(pred75H*100)/100,pred75L:Math.round(pred75L*100)/100,
+          regime:day.regime,atr:day.atr,
+          rangeHit50:day.range<=predRange50,
+          rangeHit75:day.range<=predRange75,
+          rangeHit90:day.range<=predRange90,
+          containedIn75:day.h<=pred75H&&day.l>=pred75L
+        });
+      }
+
+      // Accuracy stats
+      var hit50=0,hit75=0,hit90=0,contained75=0;
+      var errSum=0;
+      for(var i=0;i<backtest.length;i++){
+        if(backtest[i].rangeHit50)hit50++;
+        if(backtest[i].rangeHit75)hit75++;
+        if(backtest[i].rangeHit90)hit90++;
+        if(backtest[i].containedIn75)contained75++;
+        errSum+=Math.abs(backtest[i].actualRange-backtest[i].predRange50);
+      }
+      var accuracy={
+        hit50:Math.round(hit50/backtest.length*100),
+        hit75:Math.round(hit75/backtest.length*100),
+        hit90:Math.round(hit90/backtest.length*100),
+        contained75:Math.round(contained75/backtest.length*100),
+        avgErr:Math.round(errSum/backtest.length*100)/100,
+        n:backtest.length
+      };
+
+      // Tomorrow's forecast
+      var today=validDays[validDays.length-1];
+      var todayScaler=scalers[today.regime];
+      var todayDir=today.volDir<0.9?'CONTRACTING':today.volDir>1.1?'EXPANDING':'STABLE';
+      var bias2=today.ret5d>2?0.6:today.ret5d<-2?0.4:0.5;
+      var tmrw={
+        close:today.c,
+        atr:Math.round(today.atr*100)/100,
+        regime:today.regime,
+        volDir:todayDir,
+        dirRatio:Math.round(today.volDir*100)/100,
+        ret5d:Math.round(today.ret5d*10)/10,
+        range50:Math.round(today.atr*todayScaler.p50*100)/100,
+        range75:Math.round(today.atr*todayScaler.p75*100)/100,
+        range90:Math.round(today.atr*todayScaler.p90*100)/100,
+        high50:Math.round((today.c+today.atr*todayScaler.p50*bias2)*100)/100,
+        low50:Math.round((today.c-today.atr*todayScaler.p50*(1-bias2))*100)/100,
+        high75:Math.round((today.c+today.atr*todayScaler.p75*bias2)*100)/100,
+        low75:Math.round((today.c-today.atr*todayScaler.p75*(1-bias2))*100)/100,
+        high90:Math.round((today.c+today.atr*todayScaler.p90*bias2)*100)/100,
+        low90:Math.round((today.c-today.atr*todayScaler.p90*(1-bias2))*100)/100
+      };
+
+      setResults({ticker:tk,price:price,bars:bars.length,tradingDays:days.length,scalers:scalers,dirMeans:dirMeans,backtest:backtest,accuracy:accuracy,forecast:tmrw});
+      setProg('');
+    }catch(e){setErr('Error: '+e.message);}
+    setLoading(false);
+  };
+
+  var regimeCol=function(r){return r==='SQUEEZE'?C.blue:r==='LOW'?C.accent:r==='NORMAL'?C.txtBright:r==='ELEVATED'?C.gold:C.warn;};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Range Predictor</span>
+    </div>
+    <Cd>
+      <SectionHead title="Range Predictor" sub="Predicts next-day price range using regime-calibrated ATR with built-in backtesting"/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. MRVL" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Predict'}</button>
+      </div>
+      {loading&&prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,padding:4}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd glow={true}>
+      <SectionHead title={results.ticker+' \u2014 Next Day Forecast'} sub={'Based on '+results.tradingDays+' trading days | Last close: $'+results.forecast.close.toFixed(2)}/>
+      <div style={{padding:14,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5}}>MOST LIKELY RANGE (p50)</div>
+            <div style={{color:C.accent,fontSize:18,fontWeight:800,fontFamily:F,marginTop:2}}>{'$'+results.forecast.low50.toFixed(2)+' \u2014 $'+results.forecast.high50.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{'Range: $'+results.forecast.range50.toFixed(2)+' ('+((results.forecast.range50/results.price)*100).toFixed(2)+'%)'}</div>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          <div style={{padding:8,background:C.bg,borderRadius:6}}>
+            <div style={{color:C.gold,fontSize:7,fontFamily:F,fontWeight:700}}>ACTIVE DAY (p75)</div>
+            <div style={{color:C.gold,fontSize:12,fontWeight:800,fontFamily:F}}>{'$'+results.forecast.low75.toFixed(2)+' \u2014 $'+results.forecast.high75.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+results.forecast.range75.toFixed(2)+' range'}</div>
+          </div>
+          <div style={{padding:8,background:C.bg,borderRadius:6}}>
+            <div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700}}>VOLATILE DAY (p90)</div>
+            <div style={{color:C.warn,fontSize:12,fontWeight:800,fontFamily:F}}>{'$'+results.forecast.low90.toFixed(2)+' \u2014 $'+results.forecast.high90.toFixed(2)}</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'$'+results.forecast.range90.toFixed(2)+' range'}</div>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap'}}>
+          <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Regime: </span><span style={{color:regimeCol(results.forecast.regime),fontWeight:700}}>{results.forecast.regime}</span></div>
+          <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Vol Dir: </span><span style={{color:results.forecast.volDir==='EXPANDING'?C.warn:results.forecast.volDir==='CONTRACTING'?C.blue:C.txtBright,fontWeight:700}}>{results.forecast.volDir+' ('+results.forecast.dirRatio+'x)'}</span></div>
+          <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>5d Ret: </span><span style={{color:results.forecast.ret5d>0?C.accent:C.warn,fontWeight:700}}>{(results.forecast.ret5d>0?'+':'')+results.forecast.ret5d+'%'}</span></div>
+          <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.atr}</span></div>
+        </div>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Backtest Accuracy" sub={'Predicted vs actual range over last '+results.accuracy.n+' trading days'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>p50 HIT</div>
+          <div style={{color:results.accuracy.hit50>=50?C.accent:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{results.accuracy.hit50+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>range fit</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>p75 HIT</div>
+          <div style={{color:results.accuracy.hit75>=70?C.accent:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{results.accuracy.hit75+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>range fit</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>p90 HIT</div>
+          <div style={{color:results.accuracy.hit90>=85?C.accent:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{results.accuracy.hit90+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>range fit</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>CONTAINED</div>
+          <div style={{color:results.accuracy.contained75>=60?C.accent:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{results.accuracy.contained75+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>in p75 box</div>
+        </div>
+      </div>
+      <div style={{padding:8,background:C.bg,borderRadius:6,marginBottom:12}}>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Avg range prediction error: $'+results.accuracy.avgErr.toFixed(2)+' ('+(results.accuracy.avgErr/results.price*100).toFixed(2)+'% of price)'}</div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'p50 Hit = actual range \u2264 predicted p50 range. Contained = actual H and L both within p75 predicted high/low.'}</div>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Regime Scalers" sub="Empirically calibrated from your data — actual range / ATR by regime"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Regime</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Days</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>p25</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Median</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Mean</th>
+            <th style={{padding:'4px 3px',color:C.gold,textAlign:'right'}}>p75</th>
+            <th style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>p90</th>
+          </tr></thead>
+          <tbody>{['SQUEEZE','LOW','NORMAL','ELEVATED','HIGH'].map(function(reg){
+            var s=results.scalers[reg];
+            return <tr key={reg} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:regimeCol(reg),fontWeight:700}}>{reg}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{s.n}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{s.p25+'x'}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{s.p50+'x'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{s.mean+'x'}</td>
+              <td style={{padding:'3px',color:C.gold,textAlign:'right',fontWeight:700}}>{s.p75+'x'}</td>
+              <td style={{padding:'3px',color:C.warn,textAlign:'right',fontWeight:700}}>{s.p90+'x'}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <div style={{padding:8,background:C.bg,borderRadius:6,marginTop:8}}>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Vol Direction scalers — CONTRACTING: '+results.dirMeans.CONTRACTING+'x | STABLE: '+results.dirMeans.STABLE+'x | EXPANDING: '+results.dirMeans.EXPANDING+'x'}</div>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Backtest Detail" sub="Last 20 days — predicted range vs actual"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:6,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Regime</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>ATR</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Pred$</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Actual$</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>Error</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>p50</th>
+            <th style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>p75</th>
+          </tr></thead>
+          <tbody>{results.backtest.slice(-20).map(function(bt){
+            var errPct=bt.predRange50>0?Math.round((bt.actualRange-bt.predRange50)/bt.predRange50*100):0;
+            return <tr key={bt.date} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'2px 3px',color:C.txtDim}}>{bt.date.slice(5)}</td>
+              <td style={{padding:'2px 3px',color:regimeCol(bt.regime),textAlign:'right',fontWeight:700,fontSize:5}}>{bt.regime}</td>
+              <td style={{padding:'2px 3px',color:C.txtDim,textAlign:'right'}}>{'$'+bt.atr.toFixed(2)}</td>
+              <td style={{padding:'2px 3px',color:C.purple,textAlign:'right'}}>{'$'+bt.predRange50.toFixed(2)}</td>
+              <td style={{padding:'2px 3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+bt.actualRange.toFixed(2)}</td>
+              <td style={{padding:'2px 3px',color:errPct>30?C.warn:errPct>0?C.gold:C.accent,textAlign:'right'}}>{(errPct>0?'+':'')+errPct+'%'}</td>
+              <td style={{padding:'2px 3px',textAlign:'right'}}>{bt.rangeHit50?<span style={{color:C.accent}}>{'\u2713'}</span>:<span style={{color:C.warn}}>{'\u2717'}</span>}</td>
+              <td style={{padding:'2px 3px',textAlign:'right'}}>{bt.rangeHit75?<span style={{color:C.accent}}>{'\u2713'}</span>:<span style={{color:C.warn}}>{'\u2717'}</span>}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How the Range Predictor works">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{fontSize:9}}>The Range Predictor forecasts tomorrow's likely price range using regime-calibrated ATR. Instead of guessing, it computes empirical scalers from the stock's own history — during SQUEEZE regimes, the actual range is typically 0.7x ATR, while during HIGH regimes it's 1.5x ATR. These scalers are specific to each stock and derived from its own data.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>How It Works</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>1. Fetch 260+ trading days</span> of daily OHLC from Polygon.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>2. Compute 20-day rolling ATR</span> and classify each day into a volatility regime (SQUEEZE/LOW/NORMAL/ELEVATED/HIGH) based on where its ATR sits in the historical distribution.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>3. Calibrate regime scalers</span> — for each regime, compute the percentile distribution of actual_range / ATR. These are the empirical multipliers.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>4. Backtest 60 days</span> — for each day, predict the range using that day's ATR × regime scaler, compare to actual. Show hit rates and errors.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>5. Forecast tomorrow</span> — use today's ATR × today's regime scaler to predict tomorrow's range. Add directional bias from 5-day momentum.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>How To Use For Grid Trading</p>
+          <p style={{fontSize:9}}>The p50 range is your primary grid zone — concentrate 70% of levels there. The p75 range is your safety zone — spread the remaining 30% into this band. The p90 is your extreme — if price reaches here, conditions may have changed. Check the backtest accuracy: if p75 hit rate is above 80%, the predictions are reliable for this stock. If it's below 60%, the stock is too unpredictable for range-based grid placement.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function MFEDashPage(p){
   var s1=useState(null),watchlist=s1[0],setWatchlist=s1[1];
   var s2=useState(''),newTicker=s2[0],setNewTicker=s2[1];
@@ -13994,7 +14337,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -14040,6 +14383,7 @@ function App(){
     {page==='mfedash'&&<MFEDashPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='trueswing'&&<TrueSwingPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='gridscanner'&&<GridScannerPage onBack={function(){setPage('home');}}/>}
+    {page==='rangepredictor'&&<RangePredictorPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
