@@ -11049,6 +11049,244 @@ function OverlapScreenerPage(p){
   </div>;
 }
 
+function TrueSwingPage(p){
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),bars=s2[0],setBars=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState('0.03'),threshInput=s5[0],setThreshInput=s5[1];
+  var s6=useState(null),results=s6[0],setResults=s6[1];
+  var s7=useState(''),prog=s7[0],setProg=s7[1];
+  var s8=useState(null),price=s8[0],setPrice=s8[1];
+
+  // Fetch 1-sec bars from Polygon
+  var fetchBars=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setBars(null);setProg('Generating trading days...');
+    try{
+      var tk=ticker.trim().toUpperCase();
+      // Generate last 15 calendar days, filter weekends
+      var days=[];var d=new Date();
+      while(days.length<10){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
+      days.reverse();
+      var allBars=[];var lastPrice=0;
+      for(var di=0;di<days.length;di++){
+        setProg('Fetching 1-sec bars: '+tk+' day '+(di+1)+'/'+days.length+' ('+days[di]+')');
+        var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/second/'+days[di]+'/'+days[di]+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var pageNum=0;
+        while(url&&pageNum<25){
+          var r=await fetch(url);
+          if(!r.ok)break;
+          var d2=await r.json();
+          var b=d2.results||[];
+          for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
+          if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}
+          else break;
+        }
+        if(di<days.length-1)await new Promise(function(w){setTimeout(w,200);});
+      }
+      if(allBars.length<100){setErr('Only '+allBars.length+' bars found — insufficient data');setLoading(false);return;}
+      setProg('Loaded '+allBars.length.toLocaleString()+' bars across '+days.length+' days');
+      setPrice(lastPrice);
+      setBars({bars:allBars,days:days,ticker:tk});
+      // Auto-compute with current threshold
+      computeSwings(allBars,days,parseFloat(threshInput)||0.03,lastPrice);
+    }catch(e){setErr('Fetch error: '+e.message);}
+    setLoading(false);
+  };
+
+  // Compute swings with given threshold
+  var computeSwings=function(rawBars,days,threshold,pr){
+    var etDayFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var etHrFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    // Group bars by day
+    var dayBars={};
+    for(var i=0;i<rawBars.length;i++){var bd=etDayFmt.format(new Date(rawBars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(rawBars[i]);}
+    var dayKeys=Object.keys(dayBars).sort();
+
+    // Compute raw (no threshold) and filtered swings
+    var compute=function(thresh){
+      var upSwings=[],dnSwings=[];
+      var hrUp={},hrDn={},hrTotal={};
+      for(var h=4;h<20;h++){hrUp[h]=[];hrDn[h]=[];hrTotal[h]=0;}
+      for(var di=0;di<dayKeys.length;di++){
+        var db=dayBars[dayKeys[di]];if(db.length<10)continue;
+        var runDir=0;var runStart=db[0].c;var runPeak=db[0].c;var runTrough=db[0].c;
+        for(var bi=1;bi<db.length;bi++){
+          var c=db[bi].c;var bHr=parseInt(etHrFmt.format(new Date(db[bi].t)))||0;
+          if(hrTotal[bHr]!==undefined)hrTotal[bHr]++;
+          if(runDir===0){
+            // No direction yet
+            if(c>runStart+thresh){runDir=1;runPeak=c;}
+            else if(c<runStart-thresh){runDir=-1;runTrough=c;}
+          } else if(runDir===1){
+            // Currently in UP run
+            if(c>runPeak)runPeak=c;
+            if(runPeak-c>=thresh){
+              // Reversed down by threshold — complete the up swing
+              var swing=runPeak-runStart;
+              if(swing>0){upSwings.push(swing);if(hrUp[bHr])hrUp[bHr].push(swing);}
+              runStart=runPeak;runDir=-1;runTrough=c;runPeak=c;
+            }
+          } else {
+            // Currently in DOWN run
+            if(c<runTrough)runTrough=c;
+            if(c-runTrough>=thresh){
+              // Reversed up by threshold — complete the down swing
+              var swing2=runStart-runTrough;
+              if(swing2>0){dnSwings.push(swing2);if(hrDn[bHr])hrDn[bHr].push(swing2);}
+              runStart=runTrough;runDir=1;runPeak=c;runTrough=c;
+            }
+          }
+        }
+      }
+      var all=upSwings.concat(dnSwings);
+      var avgAll=0;if(all.length)for(var j=0;j<all.length;j++)avgAll+=all[j];avgAll=all.length?avgAll/all.length:0;
+      var avgUp=0;if(upSwings.length)for(var j=0;j<upSwings.length;j++)avgUp+=upSwings[j];avgUp=upSwings.length?avgUp/upSwings.length:0;
+      var avgDn=0;if(dnSwings.length)for(var j=0;j<dnSwings.length;j++)avgDn+=dnSwings[j];avgDn=dnSwings.length?avgDn/dnSwings.length:0;
+      // Per hour
+      var hrData=[];
+      for(var h2=4;h2<20;h2++){
+        var hAll=hrUp[h2].concat(hrDn[h2]);
+        var hAvg=0;if(hAll.length)for(var j=0;j<hAll.length;j++)hAvg+=hAll[j];hAvg=hAll.length?hAvg/hAll.length:0;
+        var hAvgUp=0;if(hrUp[h2].length)for(var j=0;j<hrUp[h2].length;j++)hAvgUp+=hrUp[h2][j];hAvgUp=hrUp[h2].length?hAvgUp/hrUp[h2].length:0;
+        var hAvgDn=0;if(hrDn[h2].length)for(var j=0;j<hrDn[h2].length;j++)hAvgDn+=hrDn[h2][j];hAvgDn=hrDn[h2].length?hAvgDn/hrDn[h2].length:0;
+        hrData.push({hour:h2,count:hAll.length,avg:hAvg,avgUp:hAvgUp,avgDn:hAvgDn,upCount:hrUp[h2].length,dnCount:hrDn[h2].length});
+      }
+      return{total:all.length,upCount:upSwings.length,dnCount:dnSwings.length,
+        avgSwing:Math.round(avgAll*100)/100,avgUp:Math.round(avgUp*100)/100,avgDn:Math.round(avgDn*100)/100,
+        swingsPerDay:dayKeys.length>0?Math.round(all.length/dayKeys.length*10)/10:0,
+        hours:hrData,days:dayKeys.length,threshold:thresh};
+    };
+    var raw=compute(0);
+    var filtered=compute(threshold);
+    setResults({raw:raw,filtered:filtered,price:pr,threshold:threshold});
+  };
+
+  // Recompute when threshold changes (no re-fetch)
+  var onThreshChange=function(val){
+    setThreshInput(val);
+    if(bars&&bars.bars){
+      var t=parseFloat(val)||0;
+      computeSwings(bars.bars,bars.days,t,price);
+    }
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>True Swing Analyzer</span>
+    </div>
+    <Cd>
+      <SectionHead title="True Swing Analyzer" sub="1-second bars with configurable noise threshold — measures real swing sizes by ignoring micro-reversals"/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')fetchBars();}} placeholder="Enter ticker e.g. POET" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={fetchBars} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Fetching...':'Analyze'}</button>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1}}>NOISE THRESHOLD $</span>
+        <input value={threshInput} onChange={function(e){onThreshChange(e.target.value);}} style={{width:70,padding:'6px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,textAlign:'center'}}/>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Ignore reversals < this amount'}</span>
+      </div>
+      {prog&&!results&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,padding:6}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:6}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd>
+      <SectionHead title="Raw vs Filtered Comparison" sub={bars.ticker+' | '+results.filtered.days+' trading days | '+bars.bars.length.toLocaleString()+' 1-sec bars'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:10,background:'rgba(255,92,58,0.06)',border:'1px solid '+C.warn,borderRadius:8}}>
+          <div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:6}}>Raw (No Filter)</div>
+          <div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{results.raw.swingsPerDay}<span style={{fontSize:8,color:C.txtDim,marginLeft:4}}>swings/day</span></div>
+          <div style={{marginTop:4,fontSize:8,fontFamily:F,color:C.txtDim}}>{'Avg $'+results.raw.avgSwing.toFixed(2)+' | Up $'+results.raw.avgUp.toFixed(2)+' | Dn $'+results.raw.avgDn.toFixed(2)}</div>
+          <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>{results.raw.total.toLocaleString()+' total ('+results.raw.upCount+' up, '+results.raw.dnCount+' dn)'}</div>
+        </div>
+        <div style={{padding:10,background:'rgba(0,229,160,0.06)',border:'1px solid '+C.accent,borderRadius:8}}>
+          <div style={{color:C.accent,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:6}}>{'Filtered ($'+results.filtered.threshold.toFixed(2)+')'}</div>
+          <div style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{results.filtered.swingsPerDay}<span style={{fontSize:8,color:C.txtDim,marginLeft:4}}>swings/day</span></div>
+          <div style={{marginTop:4,fontSize:8,fontFamily:F,color:C.txtDim}}>{'Avg $'+results.filtered.avgSwing.toFixed(2)+' | Up $'+results.filtered.avgUp.toFixed(2)+' | Dn $'+results.filtered.avgDn.toFixed(2)}</div>
+          <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>{results.filtered.total.toLocaleString()+' total ('+results.filtered.upCount+' up, '+results.filtered.dnCount+' dn)'}</div>
+        </div>
+      </div>
+      {results.raw.swingsPerDay>0&&<div style={{padding:8,background:C.bg,borderRadius:6,marginBottom:12}}>
+        <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:700}}>{'Noise Reduction: '+Math.round((1-results.filtered.swingsPerDay/results.raw.swingsPerDay)*100)+'% of raw swings were noise'}</div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'Avg swing grew from $'+results.raw.avgSwing.toFixed(2)+' → $'+results.filtered.avgSwing.toFixed(2)+' ('+Math.round(results.filtered.avgSwing/Math.max(results.raw.avgSwing,0.001)*100)+'% of filtered)'}</div>
+        {price>0&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>{'True swing as % of price: '+(results.filtered.avgSwing/price*100).toFixed(3)+'% | Threshold: '+(results.filtered.threshold/price*100).toFixed(3)+'%'}</div>}
+      </div>}
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="True Swings By Hour" sub={'Threshold: $'+results.filtered.threshold.toFixed(2)+' | Swings that survive noise filtering'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Swings/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg $</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg%</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Up $</th>
+            <th style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>Dn $</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Raw/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Noise%</th>
+          </tr></thead>
+          <tbody>{results.filtered.hours.map(function(h,i){
+            var rawH=results.raw.hours[i];
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            var nD=results.filtered.days||1;
+            var filtPerDay=Math.round(h.count/nD*10)/10;
+            var rawPerDay=rawH?Math.round(rawH.count/nD*10)/10:0;
+            var noise=rawPerDay>0?Math.round((1-filtPerDay/rawPerDay)*100):0;
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{filtPerDay.toFixed(1)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontWeight:700}}>{'$'+h.avg.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{price>0?(h.avg/price*100).toFixed(2)+'%':'--'}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right'}}>{'$'+h.avgUp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{'$'+h.avgDn.toFixed(2)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{rawPerDay.toFixed(1)}</td>
+              <td style={{padding:'3px',color:noise>80?C.warn:noise>50?C.gold:C.accent,textAlign:'right'}}>{noise+'%'}</td>
+            </tr>;
+          })}{(function(){var nD=results.filtered.days||1;var tFilt=Math.round(results.filtered.total/nD*10)/10;var tRaw=Math.round(results.raw.total/nD*10)/10;var tNoise=tRaw>0?Math.round((1-tFilt/tRaw)*100):0;
+            return <tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+              <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>ALL DAY</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{tFilt.toFixed(1)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+results.filtered.avgSwing.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{price>0?(results.filtered.avgSwing/price*100).toFixed(2)+'%':'--'}</td>
+              <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{'$'+results.filtered.avgUp.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>{'$'+results.filtered.avgDn.toFixed(2)}</td>
+              <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{tRaw.toFixed(1)}</td>
+              <td style={{padding:'4px 3px',color:tNoise>80?C.warn:tNoise>50?C.gold:C.accent,textAlign:'right'}}>{tNoise+'%'}</td>
+            </tr>;
+          })()}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How to use the True Swing Analyzer">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{marginBottom:4,fontSize:9}}>The oscillation screener counts every single close-to-close reversal as a separate swing. A $0.01 dip inside a $0.50 move splits it into two swings, inflating the count and deflating the average size. The True Swing Analyzer fixes this by applying a noise threshold — reversals smaller than the threshold are ignored, and the run continues until a reversal of at least $X occurs.</p>
+          <p style={{fontSize:9}}>Uses 1-second bars for maximum resolution. A real swing that happens and reverses within a single 1-minute bar is invisible to the screener but captured here.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Step-by-Step</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>1. Enter a ticker</span> and click Analyze. The tool fetches 10 trading days of 1-second bars from Polygon (may take 1-2 minutes per stock).</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>2. Set the noise threshold.</span> Start with $0.03 for stocks under $20, $0.05 for $20-100, $0.10 for $100+. The threshold determines the minimum reversal size to break a run. Changing the threshold recomputes instantly — no re-fetch needed.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>3. Read the comparison.</span> Raw shows every micro-reversal. Filtered shows only swings that survived the noise threshold. The "Noise %" tells you what fraction of apparent swings were just noise.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>4. Use the hourly breakdown</span> to find which hours produce the largest and most frequent real swings. Compare Up$ vs Dn$ — asymmetry suggests directional bias during that hour.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Practical Example</p>
+          <p style={{fontSize:9}}>POET at $15 with $0.03 threshold: Raw shows 405 swings/day averaging $0.05. Filtered might show 80 swings/day averaging $0.18. This means 80% of apparent swings were noise — the stock really makes about 80 meaningful moves per day of ~$0.18 each. The Up$ tells you your realistic TP target. If Up$ is $0.15, setting your grid bot TP to $0.20 means only the larger swings complete, but each one earns more. Cross-reference with MFE Tracker to find the optimal balance.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function MFEDashPage(p){
   var s1=useState(null),watchlist=s1[0],setWatchlist=s1[1];
   var s2=useState(''),newTicker=s2[0],setNewTicker=s2[1];
@@ -13472,7 +13710,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'s7div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'s7div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -13516,6 +13754,7 @@ function App(){
     {page==='mfetracker'&&<MFETrackerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='overlapscreener'&&<OverlapScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='mfedash'&&<MFEDashPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='trueswing'&&<TrueSwingPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
