@@ -11073,7 +11073,7 @@ function TrueSwingPage(p){
       days.reverse();
       var allBars=[];var lastPrice=0;
       for(var di=0;di<days.length;di++){
-        setProg('Fetching 1-sec bars: '+tk+' day '+(di+1)+'/'+days.length+' ('+days[di]+')');
+        setProg('day '+(di+1)+'/'+days.length+' | '+allBars.length.toLocaleString()+' bars loaded');
         var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/second/'+days[di]+'/'+days[di]+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
         var pageNum=0;
         while(url&&pageNum<25){
@@ -11088,7 +11088,7 @@ function TrueSwingPage(p){
         if(di<days.length-1)await new Promise(function(w){setTimeout(w,200);});
       }
       if(allBars.length<100){setErr('Only '+allBars.length+' bars found — insufficient data');setLoading(false);return;}
-      setProg('Loaded '+allBars.length.toLocaleString()+' bars across '+days.length+' days');
+      setProg(allBars.length.toLocaleString()+' bars across '+days.length+' days | Analyzing...');
       setPrice(lastPrice);
       setBars({bars:allBars,days:days,ticker:tk});
       // Auto-compute with current threshold
@@ -11195,8 +11195,20 @@ function TrueSwingPage(p){
           return <button key={v} onClick={function(){onThreshChange(v.toString());}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{'$'+v.toFixed(2)}</button>;
         })}
       </div>
-      {prog&&!results&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,padding:6}}>{prog}</div>}
-      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:6}}>{err}</div>}
+      {(loading||prog)&&<div style={{marginTop:8,padding:'10px',background:loading?'rgba(157,92,255,0.08)':'rgba(0,229,160,0.08)',borderRadius:8,border:'2px solid '+(loading?C.purple:C.accent)}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+          <span style={{color:loading?C.purple:C.accent,fontSize:9,fontWeight:800,fontFamily:F}}>{loading?'\u25CF Fetching 1-sec bars...':'\u2713 Complete'}</span>
+          {loading&&<span style={{color:C.txtBright,fontSize:9,fontWeight:800,fontFamily:F}}>{prog}</span>}
+        </div>
+        {loading&&<div style={{height:8,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
+          {(function(){var pct=0;var m=prog.match(/day (\d+)\/(\d+)/);if(m)pct=Math.round(parseInt(m[1])/parseInt(m[2])*100);
+            return <div style={{width:Math.max(pct,2)+'%',height:'100%',background:'linear-gradient(90deg,#9d5cff,#6030c0)',borderRadius:4,transition:'width 0.3s'}}/>;
+          })()}
+        </div>}
+        {loading&&<div style={{color:C.gold,fontSize:7,fontFamily:F,fontWeight:600}}>{'\u26A0 Do not refresh — fetching directly from Polygon. Progress will be lost.'}</div>}
+        {!loading&&prog&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{prog}</div>}
+      </div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:6,marginTop:4}}>{err}</div>}
     </Cd>
 
     {results&&<Cd>
