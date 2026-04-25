@@ -11321,7 +11321,7 @@ function GridScannerPage(p){
     setLoading(true);
     try{
       var all=[];var offset=0;var batch=[];
-      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,adv_dollars,hurst,intraday_hurst,atr_pct,intraday_osc_ratio,avg_vwap_crossings,osc_per_day,avg_up_osc_dollar,avg_dn_osc_dollar,avg_osc_pct,intraday_reversal_rate,overlap_ratio,volatility_regime,range_position,scan_date,ticker_type&order=ticker.asc,scan_date.desc&limit=1000&offset='+offset,{headers:getSbHeaders()});
+      do{batch=[];var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,adv_dollars,hurst,intraday_hurst,atr_pct,intraday_osc_ratio,avg_vwap_crossings,osc_per_day,avg_up_osc_dollar,avg_dn_osc_dollar,avg_osc_pct,intraday_reversal_rate,overlap_ratio,volatility_regime,range_position,volume_profile,scan_date,ticker_type&order=ticker.asc,scan_date.desc&limit=1000&offset='+offset,{headers:getSbHeaders()});
         if(r.ok)batch=await r.json();all=all.concat(batch);offset+=1000;
       }while(batch.length>=1000);
       // Deduplicate: latest scan per ticker
@@ -11337,8 +11337,11 @@ function GridScannerPage(p){
         var vr=deepParse(row.volatility_regime);
         var rp=deepParse(row.range_position);
         var ol=deepParse(row.overlap_ratio);
+        var vp=deepParse(row.volume_profile);
         var upD=parseFloat(row.avg_up_osc_dollar)||0;
         var dnD=parseFloat(row.avg_dn_osc_dollar)||0;
+        var volTrend=vp?vp.vol_trend:null;
+        var lastVolRatio=vp?vp.last_vol_ratio:null;
 
         // === PILLAR 1: RANGE BOUND (0-25) ===
         var p1=0;
@@ -11382,15 +11385,19 @@ function GridScannerPage(p){
         if(vr){
           // Regime: SQUEEZE/LOW/NORMAL=good, ELEVATED/HIGH=bad
           var reg=vr.regime;
-          if(reg==='SQUEEZE'||reg==='LOW')p4+=8;else if(reg==='NORMAL')p4+=6;else if(reg==='ELEVATED')p4+=3;else p4+=1;
-          // Direction: CONTRACTING/STABLE=good, EXPANDING=bad
+          if(reg==='SQUEEZE'||reg==='LOW')p4+=6;else if(reg==='NORMAL')p4+=5;else if(reg==='ELEVATED')p4+=2;else p4+=1;
+          // Vol direction: CONTRACTING/STABLE=good, EXPANDING=bad
           var dir=vr.direction;
-          if(dir==='CONTRACTING')p4+=8;else if(dir==='STABLE')p4+=6;else p4+=1;
+          if(dir==='CONTRACTING')p4+=6;else if(dir==='STABLE')p4+=4;else p4+=1;
           // Days in regime: >10=stable, 5-10=moderate, <5=new regime
           var daysR=vr.days_in_regime||0;
-          if(daysR>=10)p4+=5;else if(daysR>=5)p4+=3;else p4+=1;
-          // Not at 52-week extremes (already partially in P1 but reinforce)
-          if(rp&&rp.pctile>=15&&rp.pctile<=85)p4+=4;else p4+=1;
+          if(daysR>=10)p4+=4;else if(daysR>=5)p4+=2;else p4+=1;
+          // Not at 52-week extremes
+          if(rp&&rp.pctile>=15&&rp.pctile<=85)p4+=3;else p4+=1;
+        }
+        // Volume direction: contracting volume = likely to stay range-bound
+        if(volTrend!==null){
+          if(volTrend<=0.7)p4+=6;else if(volTrend<=0.9)p4+=5;else if(volTrend<=1.2)p4+=4;else if(volTrend<=2.0)p4+=2;else p4+=0;
         }
 
         var total=p1+p2+p3+p4;
@@ -11402,6 +11409,8 @@ function GridScannerPage(p){
         if(vr&&(vr.regime==='HIGH'||vr.regime==='ELEVATED'))risks.push('High vol regime');
         if(ol&&ol.gapPct>20)risks.push('High gaps ('+ol.gapPct.toFixed(0)+'%)');
         if(ih!==null&&ih>0.55)risks.push('Trending intraday');
+        if(volTrend!==null&&volTrend>2.0)risks.push('Vol surging ('+volTrend.toFixed(1)+'x)');
+        if(volTrend!==null&&vr&&vr.direction==='EXPANDING'&&volTrend>1.5)risks.push('ATR + Volume both expanding');
 
         var grade=function(v,max){if(v>=max*0.8)return 'A';if(v>=max*0.6)return 'B';if(v>=max*0.4)return 'C';return 'D';};
         scored.push({
@@ -11414,6 +11423,7 @@ function GridScannerPage(p){
           olap:ol?ol.avg:null,gapPct:ol?ol.gapPct:null,
           regime:vr?vr.regime:null,volDir:vr?vr.direction:null,daysInRegime:vr?vr.days_in_regime:null,
           ret5d:vr?vr.ret_5d:null,rangePctile:rp?rp.pctile:null,
+          volTrend:volTrend,lastVolRatio:lastVolRatio,
           scanDate:row.scan_date
         });
       }
@@ -11483,6 +11493,7 @@ function GridScannerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Osc</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Persist</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Risk</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Vol$</th>
             <th style={{padding:'4px 3px'}}></th>
           </tr></thead>
           <tbody>{filtered.slice(0,100).map(function(r,idx){
@@ -11497,6 +11508,7 @@ function GridScannerPage(p){
               <td style={{padding:'3px',color:gradeCol(r.g3),textAlign:'right',fontWeight:700}}>{r.g3}</td>
               <td style={{padding:'3px',color:gradeCol(r.g4),textAlign:'right',fontWeight:700}}>{r.g4}</td>
               <td style={{padding:'3px',color:riskCol(r.riskLevel),textAlign:'right',fontSize:6,fontWeight:700}}>{r.riskLevel}</td>
+              <td style={{padding:'3px',color:r.volTrend!==null?(r.volTrend<=0.8?C.accent:r.volTrend<=1.2?C.txtDim:r.volTrend<=2?C.gold:C.warn):C.txtDim,textAlign:'right',fontSize:6}}>{r.volTrend!==null?r.volTrend.toFixed(1)+'x':'--'}</td>
               <td style={{padding:'3px',textAlign:'center'}}><button onClick={function(){setDetailTicker(detailTicker===r.ticker?null:r.ticker);}} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:3,color:C.blue,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>{detailTicker===r.ticker?'Hide':'Detail'}</button></td>
             </tr>;
           })}</tbody>
@@ -11538,6 +11550,8 @@ function GridScannerPage(p){
             <div>{'Regime: '+(detailRow.regime||'--')}</div>
             <div>{'Vol Direction: '+(detailRow.volDir||'--')}</div>
             <div>{'Days in Regime: '+(detailRow.daysInRegime!==null?detailRow.daysInRegime:'--')}</div>
+            <div style={{color:detailRow.volTrend!==null?(detailRow.volTrend<=0.8?C.accent:detailRow.volTrend<=1.2?C.txtDim:detailRow.volTrend<=2?C.gold:C.warn):C.txtDim}}>{'Volume Trend: '+(detailRow.volTrend!==null?detailRow.volTrend.toFixed(2)+'x (5d/15d)':'--')}</div>
+            <div>{'Last Day Vol: '+(detailRow.lastVolRatio!==null?detailRow.lastVolRatio.toFixed(2)+'x avg':'--')}</div>
           </div>
         </div>
       </div>
