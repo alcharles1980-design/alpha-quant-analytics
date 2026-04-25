@@ -11064,7 +11064,7 @@ function TrueSwingPage(p){
   var fetchBars=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);setBars(null);setProg('Generating trading days...');
+    setLoading(true);setErr(null);setBars(null);setProg('Generating trading days...');
     try{
       var tk=ticker.trim().toUpperCase();
       // Generate last 15 calendar days, filter weekends
@@ -11596,7 +11596,7 @@ function RangePredictorPage(p){
   var analyze=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);setProg('Fetching daily bars...');
+    setLoading(true);setErr(null);setProg('Fetching daily bars...');
     try{
       var tk=ticker.trim().toUpperCase();
       var useRTH=session==='rth';
@@ -12022,7 +12022,7 @@ function CycleDensityPage(p){
   var analyze=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);setProg('Fetching 1-min bars...');
+    setLoading(true);setErr(null);setProg('Fetching 1-min bars...');
     try{
       var tk=ticker.trim().toUpperCase();
       var days=[];var d=new Date();
@@ -12213,7 +12213,7 @@ function CycleSpeedPage(p){
   var fetchBars=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);setBars(null);setProg('Fetching 1-min bars...');
+    setLoading(true);setErr(null);setBars(null);setProg('Fetching 1-min bars...');
     try{
       var tk=ticker.trim().toUpperCase();
       var days=[];var d=new Date();
@@ -12489,7 +12489,7 @@ function GridPlannerPage(p){
   var analyze=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);
+    setLoading(true);setErr(null);
     try{
       var tk=ticker.trim().toUpperCase();
 
@@ -12792,7 +12792,7 @@ function VolConcentrationPage(p){
   var analyze=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setResults(null);setProg('Fetching 1-min bars...');
+    setLoading(true);setErr(null);setProg('Fetching 1-min bars...');
     try{
       var tk=ticker.trim().toUpperCase();
       var days=[];var d=new Date();
