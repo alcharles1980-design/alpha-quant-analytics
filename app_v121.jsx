@@ -12009,6 +12009,289 @@ function RangePredictorPage(p){
   </div>;
 }
 
+function VolConcentrationPage(p){
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),results=s2[0],setResults=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState(10),numBins=s6[0],setNumBins=s6[1];
+
+  var analyze=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Fetching 1-min bars...');
+    try{
+      var tk=ticker.trim().toUpperCase();
+      var days=[];var d=new Date();
+      while(days.length<10){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
+      days.reverse();
+      var from=days[0];var to=days[days.length-1];
+      var allBars=[];var lastPrice=0;
+      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var pageNum=0;
+      while(url&&pageNum<20){
+        setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
+        var r=await fetch(url);if(!r.ok)break;
+        var d2=await r.json();var b=d2.results||[];
+        for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
+        if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
+      }
+      if(allBars.length<100){setErr('Only '+allBars.length+' bars — insufficient data');setLoading(false);return;}
+      setProg('Computing volume concentration from '+allBars.length.toLocaleString()+' bars...');
+      computeConcentration(allBars,lastPrice,numBins,tk);
+    }catch(e){setErr('Error: '+e.message);}
+    setLoading(false);
+  };
+
+  var computeConcentration=function(rawBars,price,bins,tk){
+    var etDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var etHr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    // Group by day
+    var dayBars={};
+    for(var i=0;i<rawBars.length;i++){var bd=etDay.format(new Date(rawBars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(rawBars[i]);}
+    var dayKeys=Object.keys(dayBars).sort();
+
+    // Per-day concentration
+    var dayResults=[];
+    var hrConc={};for(var h=4;h<20;h++)hrConc[h]={zoneWidths:[],concentrations:[],totalVol:0,barsInZone:0,totalBars:0};
+
+    for(var di=0;di<dayKeys.length;di++){
+      var db=dayBars[dayKeys[di]];if(db.length<20)continue;
+      // Find day range
+      var dayH=-Infinity,dayL=Infinity,dayVol=0;
+      for(var bi2=0;bi2<db.length;bi2++){if(db[bi2].h>dayH)dayH=db[bi2].h;if(db[bi2].l<dayL)dayL=db[bi2].l;dayVol+=db[bi2].v||0;}
+      var dayRange=dayH-dayL;if(dayRange<=0)continue;
+      var binSize=dayRange/bins;
+
+      // Assign volume to bins
+      var binVol=new Array(bins);for(var j=0;j<bins;j++)binVol[j]=0;
+      var binPrices=[];for(var j=0;j<bins;j++)binPrices.push({low:dayL+j*binSize,high:dayL+(j+1)*binSize,mid:dayL+(j+0.5)*binSize});
+      for(var bi3=0;bi3<db.length;bi3++){
+        var vwap=(db[bi3].vw!==undefined)?db[bi3].vw:((db[bi3].h+db[bi3].l+db[bi3].c)/3);
+        var binIdx=Math.min(Math.floor((vwap-dayL)/binSize),bins-1);
+        if(binIdx<0)binIdx=0;
+        binVol[binIdx]+=(db[bi3].v||0);
+      }
+      // Sort bins by volume descending
+      var sortedBins=binVol.map(function(v,idx){return{vol:v,idx:idx};}).sort(function(a,b){return b.vol-a.vol;});
+      // Find how many bins hold 80% of volume
+      var cumVol=0;var binsFor80=0;
+      for(var j=0;j<sortedBins.length;j++){cumVol+=sortedBins[j].vol;binsFor80++;if(cumVol>=dayVol*0.8)break;}
+      var zoneWidth=binsFor80/bins*100;
+      var concentration=dayVol>0?(0.8/(binsFor80/bins)):0;
+      // VWAP of volume-weighted center
+      var volWtPrice=0;for(var j=0;j<bins;j++){volWtPrice+=binPrices[j].mid*binVol[j];}
+      volWtPrice=dayVol>0?volWtPrice/dayVol:0;
+      var dayMid=(dayH+dayL)/2;
+      var offset=dayMid>0?((volWtPrice-dayMid)/dayRange*100):0;
+
+      dayResults.push({date:dayKeys[di],range:dayRange,vol:dayVol,bins:binVol.slice(),binPrices:binPrices,
+        binsFor80:binsFor80,zoneWidth:Math.round(zoneWidth),concentration:Math.round(concentration*100)/100,
+        offset:Math.round(offset*10)/10,dayH:dayH,dayL:dayL,volWtPrice:Math.round(volWtPrice*100)/100});
+
+      // Per-hour concentration
+      var hrBars={};for(var h=4;h<20;h++)hrBars[h]=[];
+      for(var bi4=0;bi4<db.length;bi4++){var bHr=parseInt(etHr.format(new Date(db[bi4].t)))||0;if(hrBars[bHr])hrBars[bHr].push(db[bi4]);}
+      for(var h2=4;h2<20;h2++){
+        var hb=hrBars[h2];if(hb.length<5)continue;
+        var hH=-Infinity,hL=Infinity,hVol=0;
+        for(var j=0;j<hb.length;j++){if(hb[j].h>hH)hH=hb[j].h;if(hb[j].l<hL)hL=hb[j].l;hVol+=hb[j].v||0;}
+        var hRange=hH-hL;if(hRange<=0)continue;
+        var hBinSize=hRange/bins;
+        var hBinVol=new Array(bins);for(var j=0;j<bins;j++)hBinVol[j]=0;
+        for(var j=0;j<hb.length;j++){
+          var hVwap=(hb[j].vw!==undefined)?hb[j].vw:((hb[j].h+hb[j].l+hb[j].c)/3);
+          var hBinIdx=Math.min(Math.floor((hVwap-hL)/hBinSize),bins-1);if(hBinIdx<0)hBinIdx=0;
+          hBinVol[hBinIdx]+=(hb[j].v||0);
+        }
+        var hSorted=hBinVol.slice().sort(function(a,b){return b-a;});
+        var hCum=0;var hBins80=0;
+        for(var j=0;j<hSorted.length;j++){hCum+=hSorted[j];hBins80++;if(hCum>=hVol*0.8)break;}
+        hrConc[h2].zoneWidths.push(hBins80/bins*100);
+        hrConc[h2].concentrations.push(hVol>0?(0.8/(hBins80/bins)):0);
+        hrConc[h2].totalVol+=hVol;
+        hrConc[h2].totalBars+=hb.length;
+      }
+    }
+
+    // Averages
+    var avgConc=0,avgZone=0,avgOffset=0;
+    for(var i=0;i<dayResults.length;i++){avgConc+=dayResults[i].concentration;avgZone+=dayResults[i].zoneWidth;avgOffset+=dayResults[i].offset;}
+    if(dayResults.length){avgConc/=dayResults.length;avgZone/=dayResults.length;avgOffset/=dayResults.length;}
+
+    // Hourly averages
+    var hrData=[];
+    for(var h3=4;h3<20;h3++){
+      var hc=hrConc[h3];
+      var hAvgConc=0,hAvgZone=0;
+      if(hc.zoneWidths.length){
+        for(var j=0;j<hc.zoneWidths.length;j++){hAvgZone+=hc.zoneWidths[j];hAvgConc+=hc.concentrations[j];}
+        hAvgZone/=hc.zoneWidths.length;hAvgConc/=hc.concentrations.length;
+      }
+      hrData.push({hour:h3,avgConc:Math.round(hAvgConc*100)/100,avgZone:Math.round(hAvgZone),vol:hc.totalVol,bars:hc.totalBars,days:hc.zoneWidths.length});
+    }
+
+    // Latest day bin data for heatmap
+    var latestDay=dayResults[dayResults.length-1];
+
+    setResults({ticker:tk,price:price,days:dayResults.length,totalBars:rawBars.length,
+      avgConc:Math.round(avgConc*100)/100,avgZone:Math.round(avgZone),avgOffset:Math.round(avgOffset*10)/10,
+      dayResults:dayResults,hrData:hrData,latestDay:latestDay,bins:bins});
+  };
+
+  var onBinsChange=function(val){
+    setNumBins(val);
+    // No auto-recompute — need to click Analyze again
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Volume Concentration</span>
+    </div>
+    <Cd>
+      <SectionHead title="Volume Concentration" sub="Where does volume cluster within the price range? Find the zones that actually trade."/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. MRVL" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Analyze'}</button>
+      </div>
+      <div style={{display:'flex',gap:6,marginBottom:8,alignItems:'center'}}>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1}}>PRICE BINS</span>
+        {[5,10,15,20].map(function(v){
+          return <button key={v} onClick={function(){onBinsChange(v);}} style={{padding:'4px 8px',border:numBins===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:numBins===v?'rgba(0,229,160,0.15)':C.bg,color:numBins===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:numBins===v?800:600,cursor:'pointer'}}>{v}</button>;
+        })}
+      </div>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+        <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
+      </div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd glow={true}>
+      <SectionHead title={results.ticker+' \u2014 Volume Concentration Summary'} sub={results.days+' trading days | '+results.totalBars.toLocaleString()+' bars | '+results.bins+' price bins'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>CONCENTRATION</div>
+          <div style={{color:results.avgConc>=2.5?C.accent:results.avgConc>=1.5?C.gold:C.warn,fontSize:18,fontWeight:800,fontFamily:F}}>{results.avgConc+'x'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>vs uniform</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>80% ZONE</div>
+          <div style={{color:results.avgZone<=40?C.accent:results.avgZone<=60?C.gold:C.warn,fontSize:18,fontWeight:800,fontFamily:F}}>{results.avgZone+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>of range</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>CENTER OFFSET</div>
+          <div style={{color:Math.abs(results.avgOffset)<=10?C.accent:Math.abs(results.avgOffset)<=25?C.gold:C.warn,fontSize:18,fontWeight:800,fontFamily:F}}>{(results.avgOffset>0?'+':'')+results.avgOffset+'%'}</div>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>from midpoint</div>
+        </div>
+      </div>
+      <div style={{padding:8,background:'rgba(0,229,160,0.06)',borderRadius:6,marginBottom:8}}>
+        <div style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:800}}>GRID INSIGHT</div>
+        <div style={{color:C.txtBright,fontSize:8,fontFamily:F,marginTop:3}}>{results.avgConc>=2?'Volume clusters tightly — '+results.avgZone+'% of the price range holds 80% of volume. Focus grid levels in this zone for maximum fill probability.':'Volume spreads across the range — grid levels will fill more evenly but each level gets less volume.'}</div>
+      </div>
+    </Cd>}
+
+    {results&&results.latestDay&&<Cd>
+      <SectionHead title="Volume Heatmap \u2014 Latest Day" sub={results.latestDay.date+' | Range: $'+results.latestDay.dayL.toFixed(2)+' \u2014 $'+results.latestDay.dayH.toFixed(2)+' ($'+results.latestDay.range.toFixed(2)+')'}/>
+      <div style={{marginBottom:8}}>
+        {results.latestDay.bins.map(function(vol,idx){
+          var bp=results.latestDay.binPrices[idx];
+          var maxVol=Math.max.apply(null,results.latestDay.bins);
+          var pct=maxVol>0?vol/maxVol*100:0;
+          var isHigh=vol>=results.latestDay.vol*0.8/results.latestDay.binsFor80;
+          return <div key={idx} style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+            <span style={{width:55,textAlign:'right',fontSize:6,fontFamily:F,color:C.txtDim}}>{'$'+bp.low.toFixed(2)}</span>
+            <div style={{flex:1,height:12,background:C.border,borderRadius:3,overflow:'hidden',position:'relative'}}>
+              <div style={{width:pct+'%',height:'100%',background:isHigh?C.accent:C.purple,borderRadius:3,opacity:isHigh?1:0.5}}/>
+            </div>
+            <span style={{width:45,textAlign:'right',fontSize:6,fontFamily:F,color:isHigh?C.accent:C.txtDim}}>{vol>=1e6?(vol/1e6).toFixed(1)+'M':vol>=1e3?(vol/1e3).toFixed(0)+'K':vol}</span>
+          </div>;
+        })}
+      </div>
+      <div style={{display:'flex',gap:8,fontSize:7,fontFamily:F,color:C.txtDim}}>
+        <span>{'Vol center: $'+results.latestDay.volWtPrice}</span>
+        <span>{'80% in '+results.latestDay.binsFor80+'/'+results.bins+' bins'}</span>
+        <span>{results.latestDay.concentration+'x conc'}</span>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Per-Day Breakdown" sub="Concentration and zone width across all trading days"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Date</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Conc</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Zone%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Range</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Offset</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Vol Center</th>
+          </tr></thead>
+          <tbody>{results.dayResults.map(function(dr){
+            return <tr key={dr.date} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:C.txtDim}}>{dr.date.slice(5)}</td>
+              <td style={{padding:'3px',color:dr.concentration>=2.5?C.accent:dr.concentration>=1.5?C.gold:C.warn,textAlign:'right',fontWeight:700}}>{dr.concentration+'x'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{dr.zoneWidth+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+dr.range.toFixed(2)}</td>
+              <td style={{padding:'3px',color:Math.abs(dr.offset)<=10?C.accent:C.gold,textAlign:'right'}}>{(dr.offset>0?'+':'')+dr.offset+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+dr.volWtPrice}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Concentration By Hour" sub="Which hours have the tightest volume clustering?"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Conc</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Zone%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bars</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bar</th>
+          </tr></thead>
+          <tbody>{results.hrData.filter(function(h){return h.days>0;}).map(function(h){
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            var barW=Math.min(Math.round(h.avgConc/4*100),100);
+            return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+              <td style={{padding:'3px',color:h.avgConc>=2.5?C.accent:h.avgConc>=1.5?C.gold:C.warn,textAlign:'right',fontWeight:700}}>{h.avgConc+'x'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.avgZone+'%'}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.bars.toLocaleString()}</td>
+              <td style={{padding:'3px'}}><div style={{width:60,height:6,background:C.border,borderRadius:3,overflow:'hidden',display:'inline-block',verticalAlign:'middle'}}><div style={{width:barW+'%',height:'100%',background:h.avgConc>=2.5?C.accent:h.avgConc>=1.5?C.gold:C.warn,borderRadius:3}}/></div></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How to use Volume Concentration for grid trading">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{fontSize:9}}>Volume Concentration measures where within the daily price range trading activity actually clusters. A stock might have a $5 daily range but 80% of volume trades within a $2 band in the middle. Your grid levels outside that $2 band will rarely fill. This tool identifies the high-volume zone so you can concentrate your grid where fills actually happen.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Understanding The Metrics</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Concentration (Nx):</span> How many times more concentrated volume is vs a uniform distribution. 2.5x means volume is 2.5 times more clustered than if it were spread evenly. Higher = tighter cluster = better for focused grid placement.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>80% Zone:</span> What percentage of the daily price range holds 80% of volume. 30% means you only need grid levels across 30% of the range to capture most of the action. Lower = more concentrated.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Center Offset:</span> How far the volume-weighted center is from the price midpoint. 0% = symmetric, +15% = volume skewed toward the high end (buyers dominant), -15% = skewed toward the low end.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Volume Heatmap:</span> Visual bar chart showing volume per price bin for the latest day. Green bars are high-volume bins that form the 80% zone. Your grid should cover these green bars.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Price Bins Setting</p>
+          <p style={{fontSize:9}}>The number of bins controls the granularity. 5 bins = coarse view (good for seeing broad zones). 10 bins = standard (default). 20 bins = fine detail (shows precise price levels). Change the bins and click Analyze again to recompute.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function MFEDashPage(p){
   var s1=useState(null),watchlist=s1[0],setWatchlist=s1[1];
   var s2=useState(''),newTicker=s2[0],setNewTicker=s2[1];
@@ -14432,7 +14715,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -14479,6 +14762,7 @@ function App(){
     {page==='trueswing'&&<TrueSwingPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='gridscanner'&&<GridScannerPage onBack={function(){setPage('home');}}/>}
     {page==='rangepredictor'&&<RangePredictorPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='volconcentration'&&<VolConcentrationPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
