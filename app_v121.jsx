@@ -11577,6 +11577,7 @@ function RangePredictorPage(p){
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState('full'),session=s6[0],setSession=s6[1];
 
   var analyze=async function(){
     if(!ticker.trim()){setErr('Enter a ticker');return;}
@@ -11584,7 +11585,8 @@ function RangePredictorPage(p){
     setLoading(true);setErr(null);setResults(null);setProg('Fetching daily bars...');
     try{
       var tk=ticker.trim().toUpperCase();
-      // Fetch 300 calendar days to get ~200 trading days
+      var useRTH=session==='rth';
+      // Fetch daily bars
       var to=new Date();var from=new Date();from.setDate(from.getDate()-400);
       var fromStr=from.toISOString().slice(0,10);var toStr=to.toISOString().slice(0,10);
       var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
@@ -11593,6 +11595,44 @@ function RangePredictorPage(p){
       var d=await r.json();
       var bars=d.results||[];
       if(bars.length<60){setErr('Only '+bars.length+' daily bars — need at least 60');setLoading(false);return;}
+
+      // If RTH mode, fetch 1-min bars and compute RTH high/low per day
+      var rthMap={};
+      if(useRTH){
+        setProg('Fetching 1-min bars for RTH range ('+bars.length+' days)...');
+        var etHrMin=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'numeric',hour12:false});
+        var etDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+        var allMin=[];var minUrl='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var pageNum=0;
+        while(minUrl&&pageNum<20){
+          setProg('Fetching 1-min bars page '+(pageNum+1)+'... ('+allMin.length.toLocaleString()+' bars)');
+          var mr=await fetch(minUrl);
+          if(!mr.ok)break;
+          var md=await mr.json();
+          var mb=md.results||[];
+          for(var mi=0;mi<mb.length;mi++)allMin.push(mb[mi]);
+          if(md.next_url){minUrl=md.next_url+'&apiKey='+p.apiKey;pageNum++;}
+          else break;
+        }
+        setProg('Computing RTH ranges from '+allMin.length.toLocaleString()+' minute bars...');
+        // Group by day, filter 9:30-16:00 ET
+        for(var mi2=0;mi2<allMin.length;mi2++){
+          var mb2=allMin[mi2];
+          var dt=new Date(mb2.t);
+          var hm=etHrMin.format(dt);
+          var parts=hm.split(':');var hr=parseInt(parts[0])||0;var mn=parseInt(parts[1])||0;
+          var mins=hr*60+mn;
+          // RTH: 9:30 (570) to 15:59 (959)
+          if(mins<570||mins>=960)continue;
+          var dayStr=etDay.format(dt);
+          if(!rthMap[dayStr])rthMap[dayStr]={h:-Infinity,l:Infinity,o:null,c:null};
+          if(rthMap[dayStr].o===null)rthMap[dayStr].o=mb2.o;
+          rthMap[dayStr].c=mb2.c;
+          if(mb2.h>rthMap[dayStr].h)rthMap[dayStr].h=mb2.h;
+          if(mb2.l<rthMap[dayStr].l)rthMap[dayStr].l=mb2.l;
+        }
+      }
+
       setProg('Computing ATR and regimes for '+bars.length+' days...');
 
       var price=bars[bars.length-1].c;
@@ -11600,8 +11640,15 @@ function RangePredictorPage(p){
       var ATR_PERIOD=20;
       var days=[];
       for(var i=1;i<bars.length;i++){
-        var tr=Math.max(bars[i].h-bars[i].l,Math.abs(bars[i].h-bars[i-1].c),Math.abs(bars[i].l-bars[i-1].c));
-        days.push({date:new Date(bars[i].t).toISOString().slice(0,10),o:bars[i].o,h:bars[i].h,l:bars[i].l,c:bars[i].c,tr:tr,range:bars[i].h-bars[i].l});
+        var dateStr=new Date(bars[i].t).toISOString().slice(0,10);
+        var bH=bars[i].h,bL=bars[i].l,bO=bars[i].o,bC=bars[i].c;
+        // Override with RTH data if available
+        if(useRTH&&rthMap[dateStr]&&rthMap[dateStr].h!==-Infinity){
+          bH=rthMap[dateStr].h;bL=rthMap[dateStr].l;
+          bO=rthMap[dateStr].o||bO;bC=rthMap[dateStr].c||bC;
+        }
+        var tr=Math.max(bH-bL,Math.abs(bH-bars[i-1].c),Math.abs(bL-bars[i-1].c));
+        days.push({date:dateStr,o:bO,h:bH,l:bL,c:bC,tr:tr,range:bH-bL,rthUsed:useRTH&&!!rthMap[dateStr]});
       }
       // Rolling ATR
       for(var i=0;i<days.length;i++){
@@ -11744,7 +11791,7 @@ function RangePredictorPage(p){
         low90:Math.round((today.c-today.atr*todayScaler.p90*(1-bias2))*100)/100
       };
 
-      setResults({ticker:tk,price:price,bars:bars.length,tradingDays:days.length,scalers:scalers,dirMeans:dirMeans,backtest:backtest,accuracy:accuracy,forecast:tmrw});
+      setResults({ticker:tk,price:price,bars:bars.length,tradingDays:days.length,scalers:scalers,dirMeans:dirMeans,backtest:backtest,accuracy:accuracy,forecast:tmrw,session:useRTH?'RTH 9:30\u20134 PM':'Full Day 4 AM\u20138 PM',rthDays:useRTH?Object.keys(rthMap).length:0});
       setProg('');
     }catch(e){setErr('Error: '+e.message);}
     setLoading(false);
@@ -11763,12 +11810,18 @@ function RangePredictorPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. MRVL" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
         <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Predict'}</button>
       </div>
+      <div style={{display:'flex',gap:4,marginBottom:8}}>
+        {[{k:'full',l:'Full Day (4AM\u20138PM)'},{k:'rth',l:'RTH Only (9:30\u20134PM)'}].map(function(opt){
+          var active=session===opt.k;
+          return <button key={opt.k} onClick={function(){setSession(opt.k);}} style={{flex:1,padding:'7px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:6,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:active?800:600,cursor:'pointer'}}>{opt.l}</button>;
+        })}
+      </div>
       {loading&&prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,padding:4}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
     </Cd>
 
     {results&&<Cd glow={true}>
-      <SectionHead title={results.ticker+' \u2014 Next Day Forecast'} sub={'Based on '+results.tradingDays+' trading days | Last close: $'+results.forecast.close.toFixed(2)}/>
+      <SectionHead title={results.ticker+' \u2014 Next Day Forecast'} sub={results.session+' | '+results.tradingDays+' trading days | Last close: $'+results.forecast.close.toFixed(2)+(results.rthDays?' | RTH data: '+results.rthDays+' days':'')}/>
       <div style={{padding:14,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div>
