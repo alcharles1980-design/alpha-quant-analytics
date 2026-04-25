@@ -12084,7 +12084,7 @@ function CycleDensityPage(p){
     setResults({ticker:tk,price:price,days:dayKeys.length,bars:rawBars.length,levels:levels});
   };
 
-  var bestLevel=results?results.levels.reduce(function(best,lv){var net=lv.total*(lv.tp-fee);return net>best.net?{lv:lv,net:net}:best;},{lv:null,net:-Infinity}):null;
+  var bestLevel=results&&results.levels&&results.levels.length?results.levels.reduce(function(best,lv){var net=lv.total*(lv.tp-fee);return net>best.net?{lv:lv,net:net}:best;},{lv:null,net:-Infinity}):null;
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -12150,7 +12150,7 @@ function CycleDensityPage(p){
       </div>
     </Cd>}
 
-    {results&&(function(){var selPct=selLevel!==null?selLevel:(bestLevel&&bestLevel.lv?bestLevel.lv.pct:0.001);var lvSel=results.levels.find(function(l){return l.pct===selPct;})||results.levels[1];return <Cd>
+    {results&&results.levels&&results.levels.length>1&&(function(){var selPct=selLevel!==null?selLevel:(bestLevel&&bestLevel.lv?bestLevel.lv.pct:0.001);var lvSel=results.levels.find(function(l){return l.pct===selPct;});if(!lvSel)lvSel=results.levels[0];return <Cd>
       <SectionHead title={'Cycles By Hour \u2014 '+lvSel.pctLabel+' TP'} sub={'$'+lvSel.tp.toFixed(2)+' TP ('+lvSel.effLabel+' effective) | Tap a row above to switch'}/>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
@@ -15234,6 +15234,22 @@ function HourlyPredictionPage(p){
   </div>;
 }
 
+var ErrorBoundary=function(){
+  var _this=this;
+  React.Component.call(this);
+  this.state={hasError:false,error:null};
+};
+ErrorBoundary.prototype=Object.create(React.Component.prototype);
+ErrorBoundary.getDerivedStateFromError=function(error){return{hasError:true,error:error};};
+ErrorBoundary.prototype.render=function(){
+  if(this.state.hasError)return React.createElement('div',{style:{padding:20,color:'#ff5c3a',fontFamily:'monospace',fontSize:12,background:'#0a0e17',minHeight:'100vh'}},
+    React.createElement('h3',null,'Something went wrong'),
+    React.createElement('p',null,this.state.error&&this.state.error.message),
+    React.createElement('button',{onClick:function(){window.location.reload();},style:{marginTop:10,padding:'8px 16px',background:'#9d5cff',color:'#fff',border:'none',borderRadius:6,cursor:'pointer'}},'Reload App'));
+  return this.props.children;
+};
+ErrorBoundary.getDerivedStateFromError=function(error){return{hasError:true,error:error};};
+
 function App(){
   var AreaChart=RC.AreaChart||null,Area=RC.Area||null,XAxis=RC.XAxis||null,YAxis=RC.YAxis||null,CartesianGrid=RC.CartesianGrid||null,RTooltip=RC.Tooltip||null,ResponsiveContainer=RC.ResponsiveContainer||null;
   var hasCharts=!!RC.AreaChart;
@@ -15842,4 +15858,4 @@ function App(){
     <div style={{textAlign:'center',padding:'16px 0',color:C.txtDim,fontSize:7,letterSpacing:1.5}}>ALPHA QUANT ANALYTICS · BETA GROWTH HOLDINGS · EDGE DETECTION</div>
   </div>;
 }
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(ErrorBoundary,null,React.createElement(App)));
