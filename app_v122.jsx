@@ -12053,7 +12053,7 @@ function CycleDensityPage(p){
     for(var i=0;i<rawBars.length;i++){var bd=etDay.format(new Date(rawBars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(rawBars[i]);}
     var dayKeys=Object.keys(dayBars).sort();
 
-    var pcts=[0.0005,0.00075,0.001,0.00125,0.0015,0.002,0.0025,0.003,0.005,0.0075,0.01];
+    var pcts=[0.0005,0.001,0.0015,0.002,0.003,0.005,0.0075,0.01,0.015,0.02,0.025,0.03,0.04,0.05];
     var levels=[];
     for(var pi=0;pi<pcts.length;pi++){
       var pct=pcts[pi];
@@ -12344,7 +12344,7 @@ function CycleSpeedPage(p){
       <div style={{marginBottom:6}}>
         <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:4}}>TP %</div>
         <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-          {['0.05','0.075','0.10','0.125','0.15','0.20','0.25','0.30','0.50','0.75','1.00'].map(function(v){
+          {['0.05','0.10','0.15','0.20','0.30','0.50','0.75','1.00','1.50','2.00','3.00','5.00'].map(function(v){
             var active=tpPctInput===v;
             return <button key={v} onClick={function(){onTpChange(v);}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{v+'%'}</button>;
           })}
