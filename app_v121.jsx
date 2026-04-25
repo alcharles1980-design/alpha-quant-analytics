@@ -11313,6 +11313,7 @@ function GridScannerPage(p){
   var s6=useState('5e8'),minMcap=s6[0],setMinMcap=s6[1];
   var s7=useState(''),maxMcap=s7[0],setMaxMcap=s7[1];
   var s8=useState(null),detailTicker=s8[0],setDetailTicker=s8[1];
+  var s9=useState(null),loadStats=s9[0],setLoadStats=s9[1];
 
   var deepParse=function(v){if(!v)return null;try{var p=typeof v==='string'?JSON.parse(v):v;if(typeof p==='string')p=JSON.parse(p);return p;}catch(e){return null;}};
 
@@ -11328,10 +11329,11 @@ function GridScannerPage(p){
       for(var i=0;i<all.length;i++){if(!seen[all[i].ticker]){seen[all[i].ticker]=true;deduped.push(all[i]);}}
       // Score each stock
       var scored=[];
+      var skippedType=0;var skippedPrice=0;var skippedNoData=0;
       for(var i=0;i<deduped.length;i++){
         var row=deduped[i];
-        if(row.ticker_type&&row.ticker_type!=='CS')continue;
-        if(!row.price||row.price<=0)continue;
+        if(row.ticker_type&&row.ticker_type!=='CS'){skippedType++;continue;}
+        if(!row.price||row.price<=0){skippedPrice++;continue;}
         var vr=deepParse(row.volatility_regime);
         var rp=deepParse(row.range_position);
         var ol=deepParse(row.overlap_ratio);
@@ -11416,6 +11418,7 @@ function GridScannerPage(p){
         });
       }
       scored.sort(function(a,b){return b.total-a.total;});
+      setLoadStats({rows:all.length,unique:deduped.length,scored:scored.length,skippedType:skippedType,skippedPrice:skippedPrice});
       setData(scored);
     }catch(e){console.error(e);}
     setLoading(false);
@@ -11446,7 +11449,10 @@ function GridScannerPage(p){
     </div>
     <Cd>
       <SectionHead title="Grid Candidate Scanner" sub="Ranks stocks by grid trading suitability — range bound, active, oscillating, and likely to stay that way"/>
-      {data&&<div style={{display:'inline-block',background:C.accent+'20',color:C.accent,padding:'3px 8px',borderRadius:4,fontSize:7,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+data[0].scanDate+' | '+data.length+' stocks scored'}</div>}
+      {data&&data.length>0&&loadStats&&<div style={{marginBottom:10}}>
+        <div style={{display:'inline-block',background:C.accent+'20',color:C.accent,padding:'4px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:700,marginBottom:4}}>{'SCAN: '+data[0].scanDate+' | '+loadStats.scored+' stocks scored'}</div>
+        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:3}}>{'Loaded '+loadStats.rows.toLocaleString()+' rows → '+loadStats.unique.toLocaleString()+' unique tickers → '+loadStats.scored+' common stocks scored'+(loadStats.skippedType?' ('+loadStats.skippedType+' non-CS skipped)':'')}</div>
+      </div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>FILTER TICKER</div>
           <input value={tickerFilter} onChange={function(e){setTickerFilter(e.target.value);}} placeholder="Search..." style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:8,boxSizing:'border-box'}}/></div>
