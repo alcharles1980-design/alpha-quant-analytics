@@ -12009,6 +12009,192 @@ function RangePredictorPage(p){
   </div>;
 }
 
+function CycleDensityPage(p){
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),results=s2[0],setResults=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState('0.005'),feeInput=s6[0],setFeeInput=s6[1];
+  var fee=parseFloat(feeInput)||0.005;
+
+  var analyze=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Fetching 1-min bars...');
+    try{
+      var tk=ticker.trim().toUpperCase();
+      var days=[];var d=new Date();
+      while(days.length<10){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
+      days.reverse();
+      var from=days[0];var to=days[days.length-1];
+      var allBars=[];var lastPrice=0;
+      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var pageNum=0;
+      while(url&&pageNum<20){
+        setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
+        var r=await fetch(url);if(!r.ok)break;
+        var d2=await r.json();var b=d2.results||[];
+        for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
+        if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
+      }
+      if(allBars.length<100){setErr('Only '+allBars.length+' bars — insufficient');setLoading(false);return;}
+      setProg('Computing cycle density...');
+      computeCycles(allBars,lastPrice,tk);
+    }catch(e){setErr('Error: '+e.message);}
+    setLoading(false);
+  };
+
+  var computeCycles=function(rawBars,price,tk){
+    var etDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var etHr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    var dayBars={};
+    for(var i=0;i<rawBars.length;i++){var bd=etDay.format(new Date(rawBars[i].t));if(!dayBars[bd])dayBars[bd]=[];dayBars[bd].push(rawBars[i]);}
+    var dayKeys=Object.keys(dayBars).sort();
+
+    var pcts=[0.0005,0.00075,0.001,0.00125,0.0015,0.00175,0.002,0.0025,0.003,0.005];
+    var levels=[];
+    for(var pi=0;pi<pcts.length;pi++){
+      var pct=pcts[pi];
+      var tpDollar=Math.ceil(price*pct*100)/100;
+      if(tpDollar<0.01)tpDollar=0.01;
+      var tpCents=Math.round(tpDollar*100);
+      var effPct=tpDollar/price;
+      var total=0;var hrCounts={};for(var h=4;h<20;h++)hrCounts[h]=0;
+      for(var di=0;di<dayKeys.length;di++){
+        var db=dayBars[dayKeys[di]];if(db.length<10)continue;
+        var held={};
+        for(var bi=0;bi<db.length;bi++){
+          var bar=db[bi];
+          var lowC=Math.round(bar.l*100);var highC=Math.round(bar.h*100);
+          var openC=Math.round(bar.o*100);var closeC=Math.round(bar.c*100);
+          var bullish=closeC>=openC;
+          var bHr=parseInt(etHr.format(new Date(bar.t)))||0;
+          var keys=Object.keys(held);
+          for(var ki=0;ki<keys.length;ki++){var lv=parseInt(keys[ki]);if(lv+tpCents<=highC){total++;if(hrCounts[bHr]!==undefined)hrCounts[bHr]++;delete held[lv];}}
+          var entry=bullish?openC-1:highC-1;
+          for(var lv2=entry;lv2>=lowC;lv2--){if(held[lv2]===undefined)held[lv2]=true;}
+        }
+      }
+      var hrArr=[];for(var h2=4;h2<20;h2++)hrArr.push({hour:h2,cycles:hrCounts[h2]});
+      levels.push({pct:pct,pctLabel:(pct*100).toFixed(pct<0.001?3:2)+'%',tp:tpDollar,effPct:Math.round(effPct*100000)/100000,effLabel:(effPct*100).toFixed(3)+'%',
+        total:total,perDay:dayKeys.length>0?Math.round(total/dayKeys.length*10)/10:0,hr:hrArr});
+    }
+    setResults({ticker:tk,price:price,days:dayKeys.length,bars:rawBars.length,levels:levels});
+  };
+
+  var bestLevel=results?results.levels.reduce(function(best,lv){var net=lv.total*(lv.tp-fee);return net>best.net?{lv:lv,net:net}:best;},{lv:null,net:-Infinity}):null;
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Cycle Density Scanner</span>
+    </div>
+    <Cd>
+      <SectionHead title="Cycle Density Scanner" sub="How many grid cycles complete at each TP% level? Uses 1-min bars with whole-cent rounding."/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. POET" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Scan'}</button>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1}}>FEE $/SHARE</span>
+        <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:60,padding:'5px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,textAlign:'center'}}/>
+      </div>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+        <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
+        <div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:3}}>{'\u26A0 Do not refresh \u2014 fetching from Polygon'}</div>
+      </div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
+    </Cd>
+
+    {results&&bestLevel&&bestLevel.lv&&<Cd glow={true}>
+      <SectionHead title={results.ticker+' \u2014 Optimal TP Level'} sub={results.days+' trading days | '+results.bars.toLocaleString()+' bars | $'+results.price.toFixed(2)}/>
+      <div style={{padding:12,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:8,marginBottom:12}}>
+        <div style={{display:'flex',gap:16,alignItems:'baseline',flexWrap:'wrap'}}>
+          <div><span style={{color:C.accent,fontSize:18,fontWeight:800,fontFamily:F}}>{'$'+bestLevel.lv.tp.toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>{'('+bestLevel.lv.effLabel+') TP'}</span></div>
+          <div><span style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{'$'+(Math.round(bestLevel.net/results.days*100)/100).toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>Net/Day</span></div>
+          <div><span style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F}}>{bestLevel.lv.perDay}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>Cycles/Day</span></div>
+        </div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:4}}>{'Target: '+bestLevel.lv.pctLabel+' | Rounded: $'+bestLevel.lv.tp.toFixed(2)+' | Effective: '+bestLevel.lv.effLabel+' | Fee: $'+fee.toFixed(4)}</div>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="All TP Levels" sub={'Fee: $'+fee.toFixed(4)+'/share \u2014 change fee to recalculate instantly'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Target</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>TP$</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Eff%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Cyc/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Gross/Day</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Net/Day</th>
+          </tr></thead>
+          <tbody>{results.levels.map(function(lv){
+            var gross=lv.total*lv.tp/results.days;
+            var net=lv.total*(lv.tp-fee)/results.days;
+            var isBest=bestLevel&&bestLevel.lv&&lv.pct===bestLevel.lv.pct;
+            return <tr key={lv.pct} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.06)':'transparent'}}>
+              <td style={{padding:'3px',color:isBest?C.accent:C.txtDim,fontWeight:isBest?800:400}}>{lv.pctLabel}{isBest?' \u2605':''}</td>
+              <td style={{padding:'3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+lv.tp.toFixed(2)}</td>
+              <td style={{padding:'3px',color:lv.effPct>lv.pct*1.3?C.gold:C.txtDim,textAlign:'right',fontSize:6}}>{lv.effLabel}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{lv.perDay}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+gross.toFixed(2)}</td>
+              <td style={{padding:'3px',color:net>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+net.toFixed(2)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Cycles By Hour \u2014 0.10% TP" sub={'$'+(results.levels.find(function(l){return l.pct===0.001;})||results.levels[1]).tp.toFixed(2)+' TP | Per-hour breakdown'}/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Cyc/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Net/Day</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bar</th>
+          </tr></thead>
+          <tbody>{(function(){var lv10=results.levels.find(function(l){return l.pct===0.001;})||results.levels[1];var nD=results.days||1;
+            return lv10.hr.map(function(h){
+              var cyc=Math.round(h.cycles/nD*10)/10;
+              var net2=Math.round(h.cycles*(lv10.tp-fee)/nD*100)/100;
+              var maxCyc=Math.max.apply(null,lv10.hr.map(function(x){return x.cycles;}));
+              var barW=maxCyc>0?Math.round(h.cycles/maxCyc*100):0;
+              var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+              return <tr key={h.hour} style={{borderBottom:'1px solid '+C.grid}}>
+                <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+                <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}}>{cyc.toFixed(1)}</td>
+                <td style={{padding:'3px',color:net2>0?C.accent:C.warn,textAlign:'right'}}>{'$'+net2.toFixed(2)}</td>
+                <td style={{padding:'3px'}}><div style={{width:60,height:6,background:C.border,borderRadius:3,overflow:'hidden',display:'inline-block',verticalAlign:'middle'}}><div style={{width:barW+'%',height:'100%',background:C.accent,borderRadius:3}}/></div></td>
+              </tr>;
+            });
+          })()}</tbody>
+        </table>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How the Cycle Density Scanner works">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{fontSize:9}}>The Cycle Density Scanner simulates a grid bot across 10 TP% levels and measures how many complete buy-sell cycles each level produces per day. Unlike the oscillation screener (which counts direction changes) or MFE (which measures max upside per entry), this tells you the actual throughput: how many round trips complete at each take-profit setting.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Key Concepts</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Whole-Cent Rounding:</span> The TP dollar amount is always rounded UP to the nearest cent. A $8.19 stock at 0.10% TP = $0.00819 → rounded to $0.01. This means the effective TP% is 0.122%, not 0.100%. Cheaper stocks get penalized more by rounding — the Eff% column shows the real percentage.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Fee Impact:</span> Each cycle costs $0.005/share (configurable). At $0.01 TP, the fee is 50% of gross. At $0.05 TP, it's 10%. The optimal TP level balances cycle count against fee drag — more cycles at a tight TP doesn't help if fees eat the profit.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Net/Day:</span> The bottom line. Cycles × (TP$ - Fee) / days. This is what your grid bot actually earns. The starred ★ row is the level with the highest Net/Day.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolConcentrationPage(p){
   var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
@@ -14715,7 +14901,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -14763,6 +14949,7 @@ function App(){
     {page==='gridscanner'&&<GridScannerPage onBack={function(){setPage('home');}}/>}
     {page==='rangepredictor'&&<RangePredictorPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='volconcentration'&&<VolConcentrationPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='cycledensity'&&<CycleDensityPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}

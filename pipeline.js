@@ -2346,10 +2346,10 @@ async function runScreener() {
       var fetchTimer = setTimeout(function() { fetchCtrl.abort(); }, 30000);
       var r5 = await fetch(url5, { signal: fetchCtrl.signal });
       clearTimeout(fetchTimer);
-      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; continue; }
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
-      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; continue; }
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; continue; }
 
       // Compute 1-min returns PER DAY (exclude overnight gaps)
       var dayBarsForReturns = {};
@@ -2503,6 +2503,45 @@ async function runScreener() {
         hrOlapArr.push({ hour: oh2, avg: hd.n > 0 ? Math.round(hd.sum / hd.n * 1000) / 1000 : 0, n: hd.n, gapPct: hd.n > 0 ? Math.round(hd.gaps / hd.n * 1000) / 10 : 0 });
       }
       res.overlap_ratio = JSON.stringify({ avg: Math.round(avgOlap * 1000) / 1000, gapPct: Math.round(gapPct * 10) / 10, avgStreak: Math.round(avgStreak * 10) / 10, hours: hrOlapArr });
+
+      // Cycle Density computation — simulate grid at 4 TP% levels
+      var cdLevels = [];
+      var cdPcts = [0.0005, 0.001, 0.0015, 0.002]; // 0.05%, 0.10%, 0.15%, 0.20%
+      for (var cpi = 0; cpi < cdPcts.length; cpi++) {
+        var cdPct = cdPcts[cpi];
+        var tpDollar = Math.ceil(res.price * cdPct * 100) / 100; // round up to whole cent
+        if (tpDollar < 0.01) tpDollar = 0.01;
+        var tpCents = Math.round(tpDollar * 100);
+        var effPct = tpDollar / res.price;
+        var cdTotal = 0;
+        var cdHr = {}; for (var cdh = 4; cdh < 20; cdh++) cdHr[cdh] = 0;
+        for (var cdi = 0; cdi < dbrKeys.length; cdi++) {
+          var cdb = dayBarsForReturns[dbrKeys[cdi]]; if (cdb.length < 10) continue;
+          var cdHeld = {};
+          for (var cdbi = 0; cdbi < cdb.length; cdbi++) {
+            var cdBar = cdb[cdbi];
+            var cdLowC = Math.round(cdBar.l * 100);
+            var cdHighC = Math.round(cdBar.h * 100);
+            var cdOpenC = Math.round(cdBar.o * 100);
+            var cdCloseC = Math.round(cdBar.c * 100);
+            var cdBullish = cdCloseC >= cdOpenC;
+            var cdBHr = parseInt(etHrFmtShared.format(new Date(cdBar.t))) || 0;
+            // Check completions: any held level + tpCents <= highC
+            var cdKeys = Object.keys(cdHeld);
+            for (var cdk = 0; cdk < cdKeys.length; cdk++) {
+              var cdLv = parseInt(cdKeys[cdk]);
+              if (cdLv + tpCents <= cdHighC) { cdTotal++; if (cdHr[cdBHr] !== undefined) cdHr[cdBHr]++; delete cdHeld[cdLv]; }
+            }
+            // New buys: from entry point down to low
+            var cdEntry = cdBullish ? cdOpenC - 1 : cdHighC - 1;
+            for (var cdLv2 = cdEntry; cdLv2 >= cdLowC; cdLv2--) { if (cdHeld[cdLv2] === undefined) cdHeld[cdLv2] = true; }
+          }
+        }
+        var cdHrArr = [];
+        for (var cdh2 = 4; cdh2 < 20; cdh2++) cdHrArr.push(cdHr[cdh2]);
+        cdLevels.push({ pct: cdPct, tp: tpDollar, eff: Math.round(effPct * 100000) / 100000, cycles: cdTotal, hr: cdHrArr });
+      }
+      res.cycle_density = JSON.stringify({ levels: cdLevels, days: dbrKeys.length, bars: bars5.length });
 
       // Per-session metrics
       var sessionDefs = {pre:[4,0,9,30],rth:[9,30,16,0],post:[16,0,20,0],night:[20,0,24,0],morning:[0,0,4,0]};
@@ -2738,7 +2777,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; }
 
     if (ri % 50 === 0) {
       console.log('  Intraday: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)');
