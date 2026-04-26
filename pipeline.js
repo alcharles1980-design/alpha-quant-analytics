@@ -2293,13 +2293,44 @@ async function runScreener() {
         else break;
       }
       vrDaysInRegime++; // include today
+
+      // Vol-of-Vol Stability
+      var vovMean = 0, vovN = rollingATRs.length;
+      for (var vovi = 0; vovi < vovN; vovi++) vovMean += rollingATRs[vovi];
+      vovMean = vovN > 0 ? vovMean / vovN : 0;
+      var vovSqSum = 0;
+      for (var vovi2 = 0; vovi2 < vovN; vovi2++) { var vovD = rollingATRs[vovi2] - vovMean; vovSqSum += vovD * vovD; }
+      var vovStd = vovN > 0 ? Math.sqrt(vovSqSum / vovN) : 0;
+      var vovCV = vovMean > 0 ? Math.round(vovStd / vovMean * 1000) / 1000 : 0;
+      // Recent 60-day stability
+      var vov60 = rollingATRs.slice(-60);
+      var vov60Mean = 0; for (var vovi3 = 0; vovi3 < vov60.length; vovi3++) vov60Mean += vov60[vovi3];
+      vov60Mean = vov60.length > 0 ? vov60Mean / vov60.length : 0;
+      var vov60SqSum = 0;
+      for (var vovi4 = 0; vovi4 < vov60.length; vovi4++) { var vov60D = vov60[vovi4] - vov60Mean; vov60SqSum += vov60D * vov60D; }
+      var vov60Std = vov60.length > 0 ? Math.sqrt(vov60SqSum / vov60.length) : 0;
+      var vov60CV = vov60Mean > 0 ? Math.round(vov60Std / vov60Mean * 1000) / 1000 : 0;
+      // Max/min ATR ratio
+      var vovMax = rollingATRs[0], vovMin = rollingATRs[0];
+      for (var vovi5 = 1; vovi5 < vovN; vovi5++) { if (rollingATRs[vovi5] > vovMax) vovMax = rollingATRs[vovi5]; if (rollingATRs[vovi5] < vovMin) vovMin = rollingATRs[vovi5]; }
+      var vovRange = vovMin > 0 ? Math.round(vovMax / vovMin * 100) / 100 : 0;
+      // Regime change count in last 60 days
+      var regChanges = 0;
+      var rLen = rollingATRs.length;
+      var rc60Start = Math.max(0, rLen - 60);
+      for (var vovi6 = rc60Start + 1; vovi6 < rLen; vovi6++) {
+        var getR = function(v) { var p2 = 0; for (var vi = 0; vi < sortedATRs.length; vi++) { if (v > sortedATRs[vi]) p2++; } p2 = Math.round(p2 / sortedATRs.length * 100); return p2 <= 10 ? 'SQ' : p2 <= 30 ? 'LO' : p2 <= 70 ? 'NO' : p2 <= 90 ? 'EL' : 'HI'; };
+        if (getR(rollingATRs[vovi6]) !== getR(rollingATRs[vovi6 - 1])) regChanges++;
+      }
     }
 
     var volRegime = {
       regime: vrRegime, pctile: vrPctile, direction: vrDirection,
       dir_ratio: vrDirRatio, current_atr: vrCurrentATR,
       atr_5d: Math.round(vrATR5 * 1000) / 1000, atr_20d: Math.round(vrATR20 * 1000) / 1000,
-      ret_5d: vr5dReturn, days_in_regime: vrDaysInRegime, days: abn
+      ret_5d: vr5dReturn, days_in_regime: vrDaysInRegime, days: abn,
+      vol_stability: vovCV, vol_stability_60d: vov60CV,
+      atr_range_ratio: vovRange, regime_changes_60d: regChanges
     };
 
     results.push({
