@@ -6355,10 +6355,181 @@ function DollarVolumeTimeLogicPage(p){
   </div>;
 }
 
+function CalibrateThresholdsPage(p){
+  var s1=useState(''),tickers=s1[0],setTickers=s1[1];
+  var s2=useState('20'),lookback=s2[0],setLookback=s2[1];
+  var s3=useState('50'),target=s3[0],setTarget=s3[1];
+  var s4=useState(false),loading=s4[0],setLoading=s4[1];
+  var s5=useState([]),log=s5[0],setLog=s5[1];
+  var s6=useState(null),err=s6[0],setErr=s6[1];
+  var s7=useState(null),existing=s7[0],setExisting=s7[1];
+
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+
+  var addLog=function(m){setLog(function(l){return l.concat([{ts:Date.now(),msg:m}]);});};
+
+  var loadExisting=async function(){
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?select=*&order=ticker.asc&limit=1000',{headers:getSbHeaders()});
+      if(r.ok){var d=await r.json();setExisting(d);}
+    }catch(e){}
+  };
+  useEffect(function(){loadExisting();},[]);
+
+  var run=async function(){
+    if(!tickers.trim()){setErr('Enter at least one ticker');return;}
+    if(!p.apiKey){setErr('Polygon API key not set in Settings');return;}
+    setLoading(true);setErr(null);setLog([]);
+    try{
+      var tkList=tickers.split(/[\s,]+/).filter(function(t){return t.trim();}).map(function(t){return t.trim().toUpperCase();});
+      var lbDays=parseInt(lookback)||20;
+      var tgtBars=parseInt(target)||50;
+      addLog('Calibrating '+tkList.length+' tickers, '+lbDays+'-day lookback, target '+tgtBars+' bars/RTH-day');
+
+      var endD=new Date();var startD=new Date(endD);startD.setDate(startD.getDate()-(lbDays+15));
+      var sd=startD.toISOString().slice(0,10),ed=endD.toISOString().slice(0,10);
+
+      for(var ti=0;ti<tkList.length;ti++){
+        var tk=tkList[ti];
+        addLog('['+(ti+1)+'/'+tkList.length+'] '+tk+'...');
+        try{
+          // Hourly aggs sum dollar volume per RTH hour
+          var u='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/hour/'+sd+'/'+ed+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+          var r=await fetch(u);
+          if(!r.ok){addLog('  -> ERR '+r.status);continue;}
+          var dd=await r.json();
+          var bars=dd.results||[];
+          if(bars.length<10){addLog('  -> SKIP (only '+bars.length+' hourly bars)');continue;}
+          // Group by trading date, sum RTH dollar volume only (13:00-20:00 UTC ~ 9-4 ET)
+          var byDay={};
+          for(var bi=0;bi<bars.length;bi++){
+            var b=bars[bi];var ms=b.t;var dt=new Date(ms);var hr=dt.getUTCHours();
+            if(hr<13||hr>=20)continue;
+            var day=dt.toISOString().slice(0,10);
+            var dv=(b.vw||b.c||0)*(b.v||0);
+            if(!byDay[day])byDay[day]=0;byDay[day]+=dv;
+          }
+          var dvs=Object.keys(byDay).map(function(k){return byDay[k];}).filter(function(v){return v>0;}).sort(function(a,b){return a-b;});
+          if(dvs.length<5){addLog('  -> SKIP (only '+dvs.length+' valid days)');continue;}
+          // Take last lbDays for recency
+          var recent=dvs.slice(-lbDays);
+          var sum=recent.reduce(function(a,b){return a+b;},0);
+          var mean=sum/recent.length;
+          var median=recent[Math.floor(recent.length/2)];
+          // Use median (more robust to outlier days like earnings)
+          var thr=median/tgtBars;
+          // Round to nice number
+          var nice=function(x){if(x>=1e7)return Math.round(x/1e6)*1e6;if(x>=1e6)return Math.round(x/1e5)*1e5;if(x>=1e5)return Math.round(x/1e4)*1e4;if(x>=1e4)return Math.round(x/1e3)*1e3;return Math.round(x/100)*100;};
+          var thrNice=nice(thr);
+          // Compute adaptive % too (% of mean ADV that yields ~tgt bars)
+          var adaptivePct=mean>0?(thr/mean)*100:2.0;
+          addLog('  -> median RTH $vol: $'+(median/1e6).toFixed(2)+'M | mean: $'+(mean/1e6).toFixed(2)+'M | threshold: $'+(thrNice/1e6).toFixed(2)+'M (~'+(adaptivePct).toFixed(2)+'% of mean ADV)');
+          // Save to dollar_bar_thresholds (DELETE then INSERT)
+          await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?ticker=eq.'+tk,{method:'DELETE',headers:getSbHeaders()});
+          await new Promise(function(rs){setTimeout(rs,150);});
+          var row={ticker:tk,fixed_threshold_dollars:thrNice,adaptive_pct_of_adv:adaptivePct,avg_daily_dollar_volume_20d:mean,target_bars_per_day:tgtBars,notes:'auto-calibrated '+new Date().toISOString().slice(0,10)+' from '+recent.length+'d median'};
+          var ir=await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(row)});
+          if(!ir.ok){var et=await ir.text();addLog('    SAVE ERR: '+et.slice(0,150));}else{addLog('  -> SAVED');}
+        }catch(e){addLog('  -> ERR: '+String(e.message||e));}
+      }
+      addLog('Calibration complete.');
+      await loadExisting();
+    }catch(e){setErr(String(e.message||e));}finally{setLoading(false);}
+  };
+
+  var del=async function(tk){
+    if(!confirm('Delete threshold for '+tk+'?'))return;
+    try{
+      await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?ticker=eq.'+tk,{method:'DELETE',headers:getSbHeaders()});
+      await loadExisting();
+    }catch(e){alert('Delete failed: '+e.message);}
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Calibrate Thresholds</div>
+    </div>
+    <Cd glow={true}>
+      <SectionHead title="Auto-Calibrate Per-Ticker Thresholds" sub="Target ~N bars per RTH session" info="Reads N days of hourly aggregates from Polygon, sums RTH-only dollar volume per day, takes the median (robust to earnings-day outliers), and sets fixed_threshold_dollars = median / target_bars. Stored in dollar_bar_thresholds table for use by Bar Builder and Build Data Set in Auto mode."/>
+      <div style={{marginTop:10,marginBottom:8}}>
+        <label style={lS}>Tickers (comma or space separated)</label>
+        <input value={tickers} onChange={function(e){setTickers(e.target.value);}} placeholder="NVDA TSM SOXL ONON" style={iS}/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+        <div><label style={lS}>Lookback (days)</label><input value={lookback} onChange={function(e){setLookback(e.target.value);}} placeholder="20" style={iS}/></div>
+        <div><label style={lS}>Target Bars / Day</label><input value={target} onChange={function(e){setTarget(e.target.value);}} placeholder="50" style={iS}/></div>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Calibrating...':'Run Calibration'}</button>
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+
+    {log.length>0&&<Cd>
+      <SectionHead title="Calibration Log" sub={log.length+' entries'}/>
+      <div style={{maxHeight:300,overflowY:'auto',background:C.bg,borderRadius:6,padding:8,marginTop:8,fontFamily:F,fontSize:8,lineHeight:1.6}}>
+        {log.map(function(e,i){return <div key={i} style={{color:C.txt,marginBottom:2}}>{e.msg}</div>;})}
+      </div>
+    </Cd>}
+
+    <Cd>
+      <SectionHead title="Calibrated Thresholds" sub={(existing?existing.length:0)+' tickers'}/>
+      {!existing&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:10}}>Loading...</div>}
+      {existing&&existing.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:10}}>No thresholds calibrated yet. Run calibration above.</div>}
+      {existing&&existing.length>0&&<div style={{overflowX:'auto',marginTop:10}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
+          <thead><tr style={{background:C.bgInput,color:C.txtDim,fontSize:8}}>
+            <th style={{padding:'6px 4px',textAlign:'left'}}>Ticker</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>Fixed $</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>%ADV</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>Mean ADV</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>Target</th>
+            <th style={{padding:'6px 4px'}}></th>
+          </tr></thead>
+          <tbody>
+            {existing.map(function(r,i){return <tr key={i} style={{borderBottom:'1px solid '+C.border,color:C.txt}}>
+              <td style={{padding:'4px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.accent}}>${(r.fixed_threshold_dollars/1e6).toFixed(2)}M</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.blue}}>{(r.adaptive_pct_of_adv||0).toFixed(2)}%</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.txtDim}}>${((r.avg_daily_dollar_volume_20d||0)/1e6).toFixed(1)}M</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.gold}}>{r.target_bars_per_day||50}</td>
+              <td style={{padding:'4px',textAlign:'right'}}><button onClick={function(){del(r.ticker);}} style={{background:'transparent',border:'1px solid '+C.warn,color:C.warn,fontFamily:F,fontSize:8,padding:'2px 6px',borderRadius:4,cursor:'pointer'}}>X</button></td>
+            </tr>;})}
+          </tbody>
+        </table>
+      </div>}
+    </Cd>
+
+    <Cd>
+      <SectionHead title="How It Works" sub="The math + the philosophy"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 1: Sample RTH dollar volume</p>
+          <p>Fetch hourly aggregates from Polygon for the last N days. Filter to RTH hours only (13:00-20:00 UTC). Sum dollar volume per day = sum(vw * v).</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>Step 2: Take median, not mean</p>
+          <p>Median is robust to earnings days, halt days, and other outliers that would otherwise blow out the threshold. A single $50B day on a normally-$5B stock would set the threshold 10x too high if we used the mean.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>Step 3: threshold = median_RTH_dollar_volume / target_bars</p>
+          <p>Standard practice from Lopez de Prado. 50 bars/day is the convention because it balances signal density against bar count for typical liquid stocks.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700}}>Step 4: Round to nice numbers</p>
+          <p>$5M, $500K, $50K -- not $4,837,291. Easier to reason about, no real loss of accuracy. The actual bar count will vary day-to-day around the target anyway.</p>
+        </div>
+      </div>
+    </Cd>
+  </div>;
+}
+
 function DollarBarBuilderPage(p){
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),date=s2[0],setDate=s2[1];
-  var s3=useState('fixed'),mode=s3[0],setMode=s3[1];
+  var s3=useState('auto'),mode=s3[0],setMode=s3[1];
+  var sAT=useState(null),autoThr=sAT[0],setAutoThr=sAT[1];
   var s4=useState('5000000'),fixedThr=s4[0],setFixedThr=s4[1];
   var s5=useState('2.0'),adaptivePct=s5[0],setAdaptivePct=s5[1];
   var s6=useState(false),loading=s6[0],setLoading=s6[1];
@@ -6385,10 +6556,36 @@ function DollarBarBuilderPage(p){
       var ticks=await fetchWin(dayStr+tsFrom,dayStr+tsTo);
       setProg('Fetched '+ticks.length+' ticks. Computing threshold...');
       var thr=parseFloat(fixedThr);
-      if(mode==='adaptive'){
+      if(mode==='auto'){
+        // Load from dollar_bar_thresholds; if missing, calibrate inline
+        var thrR=await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?ticker=eq.'+tk+'&select=*',{headers:getSbHeaders()});
+        var thrD=thrR.ok?await thrR.json():[];
+        if(thrD.length>0&&thrD[0].fixed_threshold_dollars){
+          thr=parseFloat(thrD[0].fixed_threshold_dollars);
+          setProg('Using calibrated threshold $'+(thr/1e6).toFixed(2)+'M for '+tk+' (median RTH $vol / 50 bars)...');
+        } else {
+          setProg('No calibration found for '+tk+'. Calibrating inline (20-day RTH median)...');
+          var endD=new Date();var startD=new Date(endD);startD.setDate(startD.getDate()-35);
+          var sd=startD.toISOString().slice(0,10),ed=endD.toISOString().slice(0,10);
+          var hR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/hour/'+sd+'/'+ed+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
+          if(!hR.ok)throw new Error('Hourly aggs '+hR.status);
+          var hD=await hR.json();var hBars=hD.results||[];
+          var dvByDay={};for(var bi=0;bi<hBars.length;bi++){var b=hBars[bi];var dt=new Date(b.t);var hr=dt.getUTCHours();if(hr<13||hr>=20)continue;var dy=dt.toISOString().slice(0,10);var dv=(b.vw||b.c||0)*(b.v||0);if(!dvByDay[dy])dvByDay[dy]=0;dvByDay[dy]+=dv;}
+          var dvs=Object.keys(dvByDay).map(function(k){return dvByDay[k];}).filter(function(v){return v>0;}).sort(function(a,b){return a-b;});
+          if(dvs.length<5)throw new Error('Not enough history to calibrate '+tk);
+          var recent=dvs.slice(-20);var med=recent[Math.floor(recent.length/2)];var meanADV=recent.reduce(function(a,b){return a+b;},0)/recent.length;
+          var rawThr=med/50;var nice=function(x){if(x>=1e7)return Math.round(x/1e6)*1e6;if(x>=1e6)return Math.round(x/1e5)*1e5;if(x>=1e5)return Math.round(x/1e4)*1e4;if(x>=1e4)return Math.round(x/1e3)*1e3;return Math.round(x/100)*100;};
+          thr=nice(rawThr);
+          var pctADV=meanADV>0?(thr/meanADV)*100:2.0;
+          // Save it
+          try{await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?ticker=eq.'+tk,{method:'DELETE',headers:getSbHeaders()});await new Promise(function(rs){setTimeout(rs,150);});await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({ticker:tk,fixed_threshold_dollars:thr,adaptive_pct_of_adv:pctADV,avg_daily_dollar_volume_20d:meanADV,target_bars_per_day:50,notes:'auto-calibrated inline '+new Date().toISOString().slice(0,10)})});}catch(e){}
+        }
+        setAutoThr(thr);
+      }
+      else if(mode==='adaptive'){
         var endDate=new Date(dayStr+'T00:00:00.000Z'),startDate=new Date(endDate);startDate.setDate(startDate.getDate()-30);
-        var sd=startDate.toISOString().slice(0,10),ed=new Date(endDate.getTime()-86400000).toISOString().slice(0,10);
-        var aggsR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+sd+'/'+ed+'?adjusted=true&sort=desc&limit=20&apiKey='+p.apiKey);
+        var sd2=startDate.toISOString().slice(0,10),ed2=new Date(endDate.getTime()-86400000).toISOString().slice(0,10);
+        var aggsR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+sd2+'/'+ed2+'?adjusted=true&sort=desc&limit=20&apiKey='+p.apiKey);
         if(!aggsR.ok)throw new Error('Aggs API '+aggsR.status);
         var aggsD=await aggsR.json();
         if(!aggsD.results||!aggsD.results.length)throw new Error('No 20-day history available');
@@ -6457,9 +6654,11 @@ function DollarBarBuilderPage(p){
         <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
       </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
+        <button onClick={function(){setMode('auto');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='auto'?C.goldDim||'#3d2d10':'transparent',border:'1px solid '+(mode==='auto'?C.gold:C.border),color:mode==='auto'?C.gold:C.txt})}>Auto 50/day</button>
         <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $</button>
-        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>Adaptive % of ADV</button>
+        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>%ADV</button>
       </div>
+      {mode==='auto'&&<div style={{marginBottom:8,padding:'8px 10px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,fontSize:9,fontFamily:F,color:C.txt,lineHeight:1.5}}>Reads from <span style={{color:C.gold}}>dollar_bar_thresholds</span> table. If no calibration exists for this ticker, calibrates inline (20-day RTH median / 50 bars) and saves it.{autoThr&&<div style={{marginTop:6,color:C.accent,fontWeight:700}}>Active threshold: ${(autoThr/1e6).toFixed(2)}M</div>}</div>}
       {mode==='fixed'&&<div style={{marginBottom:8}}><label style={lS}>Fixed Threshold ($)</label><input value={fixedThr} onChange={function(e){setFixedThr(e.target.value);}} placeholder="5000000" style={iS}/></div>}
       {mode==='adaptive'&&<div style={{marginBottom:8}}><label style={lS}>% of 20-day Avg Dollar Volume</label><input value={adaptivePct} onChange={function(e){setAdaptivePct(e.target.value);}} placeholder="2.0" style={iS}/></div>}
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
@@ -6742,7 +6941,7 @@ function BuildDollarDataSetPage(p){
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),fromDate=s2[0],setFromDate=s2[1];
   var s3=useState(''),toDate=s3[0],setToDate=s3[1];
-  var s4=useState('fixed'),mode=s4[0],setMode=s4[1];
+  var s4=useState('auto'),mode=s4[0],setMode=s4[1];
   var s5=useState('5000000'),fixedThr=s5[0],setFixedThr=s5[1];
   var s6=useState('2.0'),adaptivePct=s6[0],setAdaptivePct=s6[1];
   var s7=useState(true),rthOnly=s7[0],setRthOnly=s7[1];
@@ -6767,7 +6966,32 @@ function BuildDollarDataSetPage(p){
       addLog('Processing '+dates.length+' weekdays');
 
       var thr=parseFloat(fixedThr);
-      if(mode==='adaptive'){
+      if(mode==='auto'){
+        addLog('Mode: auto. Looking up calibrated threshold for '+tk+'...');
+        var thrR=await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?ticker=eq.'+tk+'&select=*',{headers:getSbHeaders()});
+        var thrD=thrR.ok?await thrR.json():[];
+        if(thrD.length>0&&thrD[0].fixed_threshold_dollars){
+          thr=parseFloat(thrD[0].fixed_threshold_dollars);
+          addLog('  -> Using calibrated $'+(thr/1e6).toFixed(2)+'M for '+tk+' (target '+(thrD[0].target_bars_per_day||50)+' bars/day)');
+        } else {
+          addLog('  -> No calibration. Computing 20-day RTH median inline...');
+          var endD0=new Date();var startD0=new Date(endD0);startD0.setDate(startD0.getDate()-35);
+          var sd0=startD0.toISOString().slice(0,10),ed0=endD0.toISOString().slice(0,10);
+          var hR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/hour/'+sd0+'/'+ed0+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
+          if(!hR.ok)throw new Error('Hourly aggs '+hR.status);
+          var hD=await hR.json();var hBars=hD.results||[];
+          var dvByDay={};for(var bi=0;bi<hBars.length;bi++){var b=hBars[bi];var dt=new Date(b.t);var hr=dt.getUTCHours();if(hr<13||hr>=20)continue;var dy=dt.toISOString().slice(0,10);var dv=(b.vw||b.c||0)*(b.v||0);if(!dvByDay[dy])dvByDay[dy]=0;dvByDay[dy]+=dv;}
+          var dvs=Object.keys(dvByDay).map(function(k){return dvByDay[k];}).filter(function(v){return v>0;}).sort(function(a,b){return a-b;});
+          if(dvs.length<5)throw new Error('Not enough history to calibrate '+tk);
+          var recent=dvs.slice(-20);var med=recent[Math.floor(recent.length/2)];var meanADV=recent.reduce(function(a,b){return a+b;},0)/recent.length;
+          var rawThr=med/50;var niceFn=function(x){if(x>=1e7)return Math.round(x/1e6)*1e6;if(x>=1e6)return Math.round(x/1e5)*1e5;if(x>=1e5)return Math.round(x/1e4)*1e4;if(x>=1e4)return Math.round(x/1e3)*1e3;return Math.round(x/100)*100;};
+          thr=niceFn(rawThr);
+          var pctADV=meanADV>0?(thr/meanADV)*100:2.0;
+          try{await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds?ticker=eq.'+tk,{method:'DELETE',headers:getSbHeaders()});await new Promise(function(rs){setTimeout(rs,150);});await fetch(SB_URL+'/rest/v1/dollar_bar_thresholds',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({ticker:tk,fixed_threshold_dollars:thr,adaptive_pct_of_adv:pctADV,avg_daily_dollar_volume_20d:meanADV,target_bars_per_day:50,notes:'auto-calibrated inline '+new Date().toISOString().slice(0,10)})});}catch(e){}
+          addLog('  -> Calibrated and saved: $'+(thr/1e6).toFixed(2)+'M (median $vol $'+(med/1e6).toFixed(2)+'M / 50)');
+        }
+      }
+      else if(mode==='adaptive'){
         addLog('Computing 20-day ADV...');
         var endD=new Date(fromDate+'T00:00:00.000Z'),startD=new Date(endD);startD.setDate(startD.getDate()-30);
         var sd=startD.toISOString().slice(0,10),ed=new Date(endD.getTime()-86400000).toISOString().slice(0,10);
@@ -6912,9 +7136,11 @@ function BuildDollarDataSetPage(p){
         <div><label style={lS}>To</label><input type="date" value={toDate} onChange={function(e){setToDate(e.target.value);}} style={iS}/></div>
       </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
+        <button onClick={function(){setMode('auto');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='auto'?'#3d2d10':'transparent',border:'1px solid '+(mode==='auto'?C.gold:C.border),color:mode==='auto'?C.gold:C.txt})}>Auto 50/day</button>
         <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $</button>
-        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>Adaptive %ADV</button>
+        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>%ADV</button>
       </div>
+      {mode==='auto'&&<div style={{marginBottom:8,padding:'8px 10px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,fontSize:9,fontFamily:F,color:C.txt,lineHeight:1.5}}>Reads from <span style={{color:C.gold}}>dollar_bar_thresholds</span>. Falls back to inline calibration (20-day RTH median / 50 bars) and saves it.</div>}
       {mode==='fixed'&&<div style={{marginBottom:8}}><label style={lS}>Fixed Threshold ($)</label><input value={fixedThr} onChange={function(e){setFixedThr(e.target.value);}} placeholder="5000000" style={iS}/></div>}
       {mode==='adaptive'&&<div style={{marginBottom:8}}><label style={lS}>% of 20-day ADV</label><input value={adaptivePct} onChange={function(e){setAdaptivePct(e.target.value);}} placeholder="2.0" style={iS}/></div>}
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
@@ -16746,7 +16972,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -16800,6 +17026,7 @@ function App(){
     {page==='hourlyreturns'&&<HourlyReturnsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='volstability'&&<VolStabilityPage onBack={function(){setPage('home');}}/>}
     {page==='dvtlogic'&&<DollarVolumeTimeLogicPage onBack={function(){setPage('home');}}/>}
+    {page==='dvtcalibrate'&&<CalibrateThresholdsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dvtbuilder'&&<DollarBarBuilderPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dvtcompare'&&<DollarVsClockComparePage onBack={function(){setPage('home');}}/>}
     {page==='dvtfeatures'&&<DollarFeaturesListPage onBack={function(){setPage('home');}}/>}
