@@ -11605,7 +11605,7 @@ function RangePredictorPage(p){
       var to=new Date();var from=new Date();from.setDate(from.getDate()-400);
       var fromStr=from.toISOString().slice(0,10);var toStr=to.toISOString().slice(0,10);
       var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-      var r=await fetch(url);
+      var r=await fetchPoly(url);
       if(!r.ok){setErr('Polygon error: '+r.status);setLoading(false);return;}
       var d=await r.json();
       var bars=d.results||[];
@@ -11621,7 +11621,7 @@ function RangePredictorPage(p){
         var pageNum=0;
         while(minUrl&&pageNum<20){
           setProg('Fetching 1-min bars page '+(pageNum+1)+'... ('+allMin.length.toLocaleString()+' bars)');
-          var mr=await fetch(minUrl);
+          var mr=await fetchPoly(minUrl);
           if(!mr.ok)break;
           var md=await mr.json();
           var mb=md.results||[];
@@ -14131,7 +14131,7 @@ function TradeFinderPage(p){
       var allTrades=[];var pages=0;
       var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
       while(url){
-        var r=await fetch(url);
+        var r=await fetchPoly(url);
         if(!r.ok)throw new Error('Polygon API error: '+r.status);
         var d=await r.json();
         if(d.results)for(var i=0;i<d.results.length;i++)allTrades.push(d.results[i]);
