@@ -6219,6 +6219,853 @@ function CorrelationFinderPage(p){
   </div>;
 }
 
+function DollarVolumeTimeLogicPage(p){
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Dollar Volume Time Logic</div>
+    </div>
+    <Cd glow={true}>
+      <SectionHead title="Stage 9: Dollar Volume Time" sub="Sample features in $-volume time, not clock time" info="Dollar bars advance the time axis by units of dollar volume traded rather than by wall-clock seconds. This produces more stationary, more Gaussian feature distributions that improve correlation signal-to-noise."/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:8}}>
+        <p style={{marginBottom:8}}>Stages 1-8 sample the market in <span style={{color:C.gold,fontWeight:700}}>clock time</span> -- one bar per fixed wall-clock interval (60 minutes for hourly features, 1 day for daily features). Stage 9 introduces a parallel pipeline that samples in <span style={{color:C.accent,fontWeight:700}}>dollar volume time</span> -- one bar per fixed dollar amount of trading.</p>
+        <p style={{marginBottom:6}}>A 1-hour clock bar at 10AM and a 1-hour clock bar at 12:30PM contain wildly different amounts of market activity. NVDA might trade $4B in the 10AM hour and $400M in the 12:30PM hour. Sampling features at the same clock interval mixes apples with oranges.</p>
+        <p>A $5M dollar bar always contains $5M of trading regardless of when it occurs. The 10AM hour might produce 800 bars; the 12:30PM hour might produce 80. Bar count varies, but each bar is a uniform unit of <span style={{color:C.accent}}>information processed</span>.</p>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Theoretical Foundation" sub="Why volume is a better clock than time"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Clark (1973) -- Subordinated Stochastic Process</p>
+          <p style={{marginBottom:4}}>Treats trade volume as a random clock that subordinates the price process. Returns sampled in volume-time become approximately Gaussian and far more stationary than clock-time returns.</p>
+          <p>Mathematically: if dP = sigma * dW under a volume-time clock V(t), then clock-time returns dP/dt are non-Gaussian because dV/dt itself is heteroscedastic (varies wildly across the day).</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>Ane &amp; Geman (2000) -- Empirical Verification</p>
+          <p>Showed that transaction-time returns pass normality tests that clock-time returns fail badly. The intuition: information arrives unevenly through the day. Volume is a much better proxy for "amount of information processed" than seconds elapsed.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>Lopez de Prado -- "Advances in Financial Machine Learning"</p>
+          <p style={{marginBottom:4}}>The canonical practitioner reference. Argues <span style={{color:C.accent}}>dollar bars</span> (rather than tick bars or volume bars) are the right default for ML features because dollar volume normalizes for both price level and split events.</p>
+          <p>Rule of thumb: target ~50 bars per day for the asset. Too small = noise. Too large = lost resolution.</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Why Dollar Bars Help This System" sub="Direct relevance to grid TP% prediction"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>1. Aligns sampling with what drives grid fills</p>
+          <p>A grid level gets hit when price traverses it -- and price traverses levels because of order flow, not because 60 minutes elapsed. Sampling features in dollar time means features (X) and TP% outcomes (Y) are both indexed to the same underlying process. Clock-time forces the model to learn a noisy, time-varying mapping; dollar-time lets it learn a more direct one.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>2. Stationary distributions for vol &amp; microstructure features</p>
+          <p style={{marginBottom:4}}>Realized volatility, Yang-Zhang, and HAR-RV inputs become stationary because dead lunch hours and frantic close hours are no longer the same "bar size." Hurst and autocorrelation cleaner. Trade intensity, signed volume imbalance, and Kyle's lambda become directly interpretable rather than confounded by time-of-day.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>3. Gaussian-er returns -> trustworthy Pearson correlations</p>
+          <p>Pearson on heavy-tailed clock-time returns is famously unreliable (Spearman partially saves it; dollar bars fix it at the source). Top correlations to TP% in our 255-feature pipeline can strengthen 20-40% just from SNR improvement, and spurious intraday-seasonality correlations drop out.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.purple,fontWeight:700}}>4. Robust across price-level shifts</p>
+          <p>NVDA at $100 vs $500 has wildly different dollar-volume per clock minute. Hourly features sample very different "amounts of market" at different price levels. Dollar bars normalize this -- enables direct comparison across regimes and across stocks.</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Threshold Strategy" sub="Two modes: fixed and adaptive"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Mode A: Fixed Threshold</p>
+          <p style={{marginBottom:4}}>One $-amount per ticker, calibrated once to ~50 bars/day on average.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>NVDA: $5M (~$25B daily / 50 bars)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>SOXL: $2M (~$10B daily / 50 bars)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>ONON: $500K (~$25M daily / 50 bars)</p>
+          <p style={{paddingLeft:8,color:C.txtDim}}>Stored in dollar_bar_thresholds table per ticker.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>Mode B: Adaptive Threshold</p>
+          <p style={{marginBottom:4}}>threshold = (X% of trailing 20-day average dollar volume), auto-targeting ~50 bars/day.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>Default: 2.0% of 20-day ADV</p>
+          <p style={{paddingLeft:8}}>Auto-adjusts to volume regime changes (earnings ramps, post-earnings cooldowns, secular volume growth).</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="The Tradeoffs" sub="What dollar bars cost you"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:'#3d2010',borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>1. Non-uniform bar count across days</p>
+          <p>High-vol days produce more bars; quiet days fewer. Any "time-of-day" or "fraction-of-session" feature must be reformulated -- e.g. "fraction of session dollar volume elapsed" replaces "hour of day."</p>
+        </div>
+        <div style={{padding:'10px 12px',background:'#3d2010',borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>2. Pre/post-market handling</p>
+          <p>Dollar volume in extended hours is too sparse for a fixed $5M threshold (could take all session). Two options: (a) skip extended hours entirely, (b) use a separate, smaller threshold for extended hours. v126 default = RTH-only bars.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:'#3d2010',borderRadius:6,border:'1px solid '+C.warn}}>
+          <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>3. Threshold calibration matters</p>
+          <p>Too small -> noise per bar. Too large -> few bars, lose intraday resolution. Adaptive mode mitigates this for stocks with regime-changing dollar volume.</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Pipeline Mirror" sub="dollar_features mirrors hourly_features"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Same 255 features, sampled differently</p>
+          <p style={{marginBottom:4}}>Every feature in the existing hourly_features pipeline has a dollar-bar equivalent in dollar_features. Computation logic is identical -- only the bar definition changes.</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Bar OHLC:</span> first/last/max/min tick price within the bar's tick set</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Bar VWAP:</span> sum(price*size) / sum(size) over bar's ticks</p>
+          <p style={{marginBottom:4,paddingLeft:8}}><span style={{color:C.gold}}>Bar realized vol:</span> sqrt(sum of squared tick returns within bar)</p>
+          <p style={{paddingLeft:8}}><span style={{color:C.gold}}>Trade intensity:</span> trades per second of wall-clock time elapsed within bar (now genuinely meaningful)</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>Comparison Methodology</p>
+          <p style={{marginBottom:4}}>For every feature, we run Pearson against optimal TP% in BOTH bar systems. The Dollar vs Clock Comparison page reports:</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>1. Distribution stationarity (skew, kurtosis, ADF statistic)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>2. Correlation strength delta (|r_dollar| vs |r_clock|)</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>3. Bar count distribution per day</p>
+          <p style={{paddingLeft:8}}>4. Top-20 leadable features in each domain</p>
+        </div>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Database Schema" sub="dollar_features + dollar_bar_thresholds"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>dollar_features</p>
+          <p style={{marginBottom:4}}>Mirror of hourly_features. Key replaces hour with bar_idx (sequence within day) + threshold_mode (fixed or adaptive).</p>
+          <p style={{marginBottom:4,paddingLeft:8}}>UNIQUE(ticker, trade_date, bar_idx, threshold_mode)</p>
+          <p style={{paddingLeft:8}}>Adds: bar_start_ts, bar_end_ts, bar_dollar_volume, bar_session_fraction, threshold_dollars, day_dollar_volume, cumulative_dollar_volume_pct.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>dollar_bar_thresholds</p>
+          <p style={{marginBottom:4}}>Per-ticker calibration. UNIQUE(ticker).</p>
+          <p style={{paddingLeft:8}}>Columns: fixed_threshold_dollars, adaptive_pct_of_adv, avg_daily_dollar_volume_20d, target_bars_per_day, notes, updated_at.</p>
+        </div>
+      </div>
+    </Cd>
+  </div>;
+}
+
+function DollarBarBuilderPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(''),date=s2[0],setDate=s2[1];
+  var s3=useState('fixed'),mode=s3[0],setMode=s3[1];
+  var s4=useState('5000000'),fixedThr=s4[0],setFixedThr=s4[1];
+  var s5=useState('2.0'),adaptivePct=s5[0],setAdaptivePct=s5[1];
+  var s6=useState(false),loading=s6[0],setLoading=s6[1];
+  var s7=useState(''),prog=s7[0],setProg=s7[1];
+  var s8=useState(null),err=s8[0],setErr=s8[1];
+  var s9=useState(null),bars=s9[0],setBars=s9[1];
+  var s10=useState(null),stats=s10[0],setStats=s10[1];
+  var s11=useState(false),rthOnly=s11[0],setRthOnly=s11[1];
+
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+
+  var run=async function(){
+    if(!ticker||!date){setErr('Enter ticker and date');return;}
+    if(!p.apiKey){setErr('Polygon API key not set in Settings');return;}
+    setLoading(true);setErr(null);setBars(null);setStats(null);setProg('Fetching ticks...');
+    try{
+      var tk=ticker.toUpperCase();
+      var dayStr=date;
+      var tsFrom=rthOnly?'T13:30:00.000Z':'T08:00:00.000Z';
+      var tsTo=rthOnly?'T20:00:00.000Z':'T24:00:00.000Z';
+      var fetchWin=async function(tsGte,tsLt){var tr=[],u='https://api.polygon.io/v3/trades/'+tk+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('Polygon API '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];tr.push({price:t.price,size:t.size||0,ts:t.sip_timestamp||t.participant_timestamp});}u=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;}return tr;};
+      var ticks=await fetchWin(dayStr+tsFrom,dayStr+tsTo);
+      setProg('Fetched '+ticks.length+' ticks. Computing threshold...');
+      var thr=parseFloat(fixedThr);
+      if(mode==='adaptive'){
+        var endDate=new Date(dayStr+'T00:00:00.000Z'),startDate=new Date(endDate);startDate.setDate(startDate.getDate()-30);
+        var sd=startDate.toISOString().slice(0,10),ed=new Date(endDate.getTime()-86400000).toISOString().slice(0,10);
+        var aggsR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+sd+'/'+ed+'?adjusted=true&sort=desc&limit=20&apiKey='+p.apiKey);
+        if(!aggsR.ok)throw new Error('Aggs API '+aggsR.status);
+        var aggsD=await aggsR.json();
+        if(!aggsD.results||!aggsD.results.length)throw new Error('No 20-day history available');
+        var sum=0,n=0;for(var ai=0;ai<aggsD.results.length&&n<20;ai++){var ag=aggsD.results[ai];if(ag.vw&&ag.v){sum+=ag.vw*ag.v;n++;}}
+        var avgADV=sum/n;thr=avgADV*(parseFloat(adaptivePct)/100);
+      }
+      setProg('Constructing dollar bars (threshold $'+Math.round(thr).toLocaleString()+')...');
+      var built=[],accDV=0,accVol=0,accTr=0,o=null,h=-Infinity,l=Infinity,vwapNum=0,vwapDen=0,startTs=null,barIdx=0;
+      var totalDV=0;for(var ti=0;ti<ticks.length;ti++)totalDV+=ticks[ti].price*ticks[ti].size;
+      var cumDV=0;
+      for(var ti=0;ti<ticks.length;ti++){
+        var t=ticks[ti],dv=t.price*t.size;
+        if(o===null){o=t.price;startTs=t.ts;}
+        if(t.price>h)h=t.price;if(t.price<l)l=t.price;
+        accDV+=dv;accVol+=t.size;accTr+=1;cumDV+=dv;
+        vwapNum+=t.price*t.size;vwapDen+=t.size;
+        if(accDV>=thr||ti===ticks.length-1){
+          built.push({
+            bar_idx:barIdx++,
+            threshold_mode:mode,
+            threshold_dollars:thr,
+            bar_start_ts:startTs,
+            bar_end_ts:t.ts,
+            bar_open:o,
+            bar_close:t.price,
+            bar_high:h,
+            bar_low:l,
+            bar_dollar_volume:accDV,
+            bar_volume:accVol,
+            bar_trades:accTr,
+            bar_vwap:vwapDen>0?vwapNum/vwapDen:t.price,
+            bar_atr_dollar:h-l,
+            bar_atr_pct:o>0?((h-l)/o)*100:0,
+            bar_return_pct:o>0?((t.price-o)/o)*100:0,
+            bar_session_fraction:totalDV>0?cumDV/totalDV:0,
+            bar_duration_sec:(t.ts-startTs)/1e9
+          });
+          accDV=0;accVol=0;accTr=0;o=null;h=-Infinity;l=Infinity;vwapNum=0;vwapDen=0;startTs=null;
+        }
+      }
+      var totalDuration=(ticks[ticks.length-1].ts-ticks[0].ts)/1e9;
+      setBars(built);
+      setStats({
+        total_ticks:ticks.length,
+        total_dollar_volume:totalDV,
+        bar_count:built.length,
+        threshold:thr,
+        avg_bar_dv:built.length>0?totalDV/built.length:0,
+        avg_bar_duration_sec:built.length>0?totalDuration/built.length:0,
+        session_duration_sec:totalDuration
+      });
+      setProg('Built '+built.length+' bars from '+ticks.length+' ticks.');
+    }catch(e){setErr(String(e.message||e));}finally{setLoading(false);}
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Dollar Bar Builder</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Construct Dollar Bars" sub="Visualize how a single day decomposes into $-volume bars" info="Dollar bars close when accumulated price * size reaches the threshold. Use this to calibrate the right threshold for each ticker before running the full Build Data Set."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10,marginBottom:8}}>
+        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value);}} placeholder="NVDA" style={iS}/></div>
+        <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
+      </div>
+      <div style={{display:'flex',gap:4,marginBottom:8}}>
+        <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $</button>
+        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>Adaptive % of ADV</button>
+      </div>
+      {mode==='fixed'&&<div style={{marginBottom:8}}><label style={lS}>Fixed Threshold ($)</label><input value={fixedThr} onChange={function(e){setFixedThr(e.target.value);}} placeholder="5000000" style={iS}/></div>}
+      {mode==='adaptive'&&<div style={{marginBottom:8}}><label style={lS}>% of 20-day Avg Dollar Volume</label><input value={adaptivePct} onChange={function(e){setAdaptivePct(e.target.value);}} placeholder="2.0" style={iS}/></div>}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+        <input type="checkbox" checked={rthOnly} onChange={function(e){setRthOnly(e.target.checked);}} id="rth"/>
+        <label htmlFor="rth" style={{color:C.txt,fontSize:9,fontFamily:F}}>RTH only (9:30AM-4:00PM ET)</label>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Building...':'Build Bars'}</button>
+      {prog&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:8,textAlign:'center'}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+
+    {stats&&<Cd>
+      <SectionHead title="Bar Statistics" sub={'Day-level summary'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+        <Mt label="Total Ticks" value={stats.total_ticks.toLocaleString()}/>
+        <Mt label="Total $ Volume" value={'$'+(stats.total_dollar_volume/1e6).toFixed(1)+'M'}/>
+        <Mt label="Bar Count" value={stats.bar_count.toString()}/>
+        <Mt label="Threshold" value={'$'+(stats.threshold/1e6).toFixed(2)+'M'}/>
+        <Mt label="Avg Bar $Vol" value={'$'+(stats.avg_bar_dv/1e6).toFixed(2)+'M'}/>
+        <Mt label="Avg Bar Duration" value={stats.avg_bar_duration_sec.toFixed(1)+'s'}/>
+      </div>
+    </Cd>}
+
+    {bars&&bars.length>0&&<Cd>
+      <SectionHead title={'Bars ('+bars.length+')'} sub="OHLC + dollar volume per bar"/>
+      <div style={{overflowX:'auto',marginTop:10}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
+          <thead><tr style={{background:C.bgInput,color:C.txtDim}}>
+            <th style={{padding:'6px 4px',textAlign:'left'}}>#</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>O</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>H</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>L</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>C</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>VWAP</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>$Vol</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>Trades</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>Sec</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>Ret%</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>SessF</th>
+          </tr></thead>
+          <tbody>
+            {bars.slice(0,200).map(function(b,i){return <tr key={i} style={{borderBottom:'1px solid '+C.border,color:C.txt}}>
+              <td style={{padding:'4px'}}>{b.bar_idx}</td>
+              <td style={{padding:'4px',textAlign:'right'}}>{b.bar_open.toFixed(2)}</td>
+              <td style={{padding:'4px',textAlign:'right'}}>{b.bar_high.toFixed(2)}</td>
+              <td style={{padding:'4px',textAlign:'right'}}>{b.bar_low.toFixed(2)}</td>
+              <td style={{padding:'4px',textAlign:'right'}}>{b.bar_close.toFixed(2)}</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.blue}}>{b.bar_vwap.toFixed(3)}</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.accent}}>${(b.bar_dollar_volume/1e6).toFixed(2)}M</td>
+              <td style={{padding:'4px',textAlign:'right'}}>{b.bar_trades}</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.txtDim}}>{b.bar_duration_sec.toFixed(0)}</td>
+              <td style={{padding:'4px',textAlign:'right',color:b.bar_return_pct>=0?C.accent:C.warn}}>{b.bar_return_pct.toFixed(3)}%</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.txtDim}}>{(b.bar_session_fraction*100).toFixed(1)}%</td>
+            </tr>;})}
+          </tbody>
+        </table>
+        {bars.length>200&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,padding:8,textAlign:'center'}}>Showing first 200 of {bars.length} bars</div>}
+      </div>
+    </Cd>}
+  </div>;
+}
+
+function DollarVsClockComparePage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(null),data=s4[0],setData=s4[1];
+
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+
+  var run=async function(){
+    if(!ticker){setErr('Enter ticker');return;}
+    setLoading(true);setErr(null);setData(null);
+    try{
+      var tk=ticker.toUpperCase();
+      var fetchAll=async function(table,extra){var rows=[],off=0;while(true){var r=await fetch(SB_URL+'/rest/v1/'+table+'?ticker=eq.'+tk+'&select=*'+(extra||'')+'&limit=1000&offset='+off,{headers:getSbHeaders()});if(!r.ok)throw new Error(table+' '+r.status);var b=await r.json();rows=rows.concat(b);if(b.length<1000)break;off+=1000;}return rows;};
+      var hourly=await fetchAll('hourly_features','');
+      var dollar=await fetchAll('dollar_features','');
+      var hourlyDays=new Set(),dollarDays=new Set();
+      hourly.forEach(function(r){hourlyDays.add(r.trade_date);});
+      dollar.forEach(function(r){dollarDays.add(r.trade_date);});
+      var statFn=function(arr,field){var v=arr.map(function(r){return r[field];}).filter(function(x){return x!=null&&!isNaN(x);});if(!v.length)return null;var n=v.length,mean=v.reduce(function(a,b){return a+b;},0)/n;var sq=v.reduce(function(a,b){return a+(b-mean)*(b-mean);},0)/n;var sd=Math.sqrt(sq);var sk=v.reduce(function(a,b){return a+Math.pow((b-mean)/sd,3);},0)/n;var ku=v.reduce(function(a,b){return a+Math.pow((b-mean)/sd,4);},0)/n - 3;return {n:n,mean:mean,sd:sd,skew:sk,kurt:ku};};
+      var hourlyRet=statFn(hourly,'hour_return_pct');
+      var dollarRet=statFn(dollar,'bar_return_pct');
+      var hourlyRV=statFn(hourly,'hour_realized_vol');
+      var dollarRV=statFn(dollar,'bar_realized_vol');
+      var hourlyTrades=statFn(hourly,'hour_trades');
+      var dollarTrades=statFn(dollar,'bar_trades');
+      var barsByDay={};dollar.forEach(function(r){if(!barsByDay[r.trade_date])barsByDay[r.trade_date]=0;barsByDay[r.trade_date]++;});
+      var perDay=Object.keys(barsByDay).map(function(d){return barsByDay[d];});
+      var avgBarsPerDay=perDay.length>0?perDay.reduce(function(a,b){return a+b;},0)/perDay.length:0;
+      setData({
+        hourly_rows:hourly.length,dollar_rows:dollar.length,
+        hourly_days:hourlyDays.size,dollar_days:dollarDays.size,
+        ret:{clock:hourlyRet,dollar:dollarRet},
+        rv:{clock:hourlyRV,dollar:dollarRV},
+        trades:{clock:hourlyTrades,dollar:dollarTrades},
+        avg_bars_per_day:avgBarsPerDay
+      });
+    }catch(e){setErr(String(e.message||e));}finally{setLoading(false);}
+  };
+
+  var statRow=function(label,clockS,dollarS){
+    if(!clockS&&!dollarS)return null;
+    var fmt=function(v){return v==null?'-':(typeof v==='number'?v.toFixed(3):v);};
+    return <tr style={{borderBottom:'1px solid '+C.border,color:C.txt,fontSize:9}}>
+      <td style={{padding:'6px 4px'}}>{label}</td>
+      <td style={{padding:'6px 4px',textAlign:'right',color:C.gold}}>{clockS?fmt(clockS.skew):'-'}</td>
+      <td style={{padding:'6px 4px',textAlign:'right',color:C.gold}}>{clockS?fmt(clockS.kurt):'-'}</td>
+      <td style={{padding:'6px 4px',textAlign:'right',color:C.accent}}>{dollarS?fmt(dollarS.skew):'-'}</td>
+      <td style={{padding:'6px 4px',textAlign:'right',color:C.accent}}>{dollarS?fmt(dollarS.kurt):'-'}</td>
+    </tr>;
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Dollar vs Clock Comparison</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="Distribution Comparison" sub="Stationarity: dollar bars should show less skew + kurtosis than clock bars" info="Gaussian distributions have skew=0, excess kurtosis=0. Clock-time returns are typically heavy-tailed (kurt > 3) and skewed; dollar-time returns are closer to Gaussian. The closer to (0, 0), the better behaved."/>
+      <div style={{marginTop:10,marginBottom:8}}>
+        <label style={lS}>Ticker</label>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value);}} placeholder="NVDA" style={iS}/>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Loading...':'Compare Distributions'}</button>
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+
+    {data&&<div>
+      <Cd>
+        <SectionHead title="Coverage" sub="Both tables must have data for the same ticker"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+          <Mt label="Clock Rows" value={data.hourly_rows.toLocaleString()}/>
+          <Mt label="Dollar Rows" value={data.dollar_rows.toLocaleString()}/>
+          <Mt label="Clock Days" value={data.hourly_days}/>
+          <Mt label="Dollar Days" value={data.dollar_days}/>
+          <Mt label="Avg Bars/Day" value={data.avg_bars_per_day.toFixed(1)}/>
+          <Mt label="Bar/Hour Ratio" value={(data.dollar_rows/(data.hourly_rows||1)).toFixed(2)+'x'}/>
+        </div>
+      </Cd>
+      <Cd>
+        <SectionHead title="Distribution Stationarity" sub="Lower |skew| and |kurt| = closer to Gaussian"/>
+        <div style={{overflowX:'auto',marginTop:10}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
+            <thead><tr style={{background:C.bgInput,color:C.txtDim,fontSize:8}}>
+              <th style={{padding:'6px 4px',textAlign:'left'}}>Feature</th>
+              <th style={{padding:'6px 4px',textAlign:'right'}}>Clock Skew</th>
+              <th style={{padding:'6px 4px',textAlign:'right'}}>Clock Kurt</th>
+              <th style={{padding:'6px 4px',textAlign:'right'}}>$ Skew</th>
+              <th style={{padding:'6px 4px',textAlign:'right'}}>$ Kurt</th>
+            </tr></thead>
+            <tbody>
+              {statRow('Return %',data.ret.clock,data.ret.dollar)}
+              {statRow('Realized Vol',data.rv.clock,data.rv.dollar)}
+              {statRow('Trades',data.trades.clock,data.trades.dollar)}
+            </tbody>
+          </table>
+        </div>
+        <p style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:10,lineHeight:1.6}}>If dollar-bar values are closer to (0,0), the dollar-time pipeline is producing better-behaved distributions and Pearson correlations on those features will be more reliable.</p>
+      </Cd>
+    </div>}
+
+    {!data&&!loading&&<Cd>
+      <SectionHead title="Run the Pipeline First" sub="Build dollar bars before comparing"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:10}}>
+        <p style={{marginBottom:6}}>This page reads from both <span style={{color:C.gold}}>hourly_features</span> and <span style={{color:C.accent}}>dollar_features</span>. Both must be populated for the same ticker.</p>
+        <p>If dollar_features is empty: go to <span style={{color:C.accent}}>Build Dollar Data Set</span> and run the extraction first.</p>
+      </div>
+    </Cd>}
+  </div>;
+}
+
+function DollarFeaturesListPage(p){
+  var groups=[
+    {name:'Bar Identity',color:C.accent,items:[
+      ['bar_idx','Sequence number within day (0,1,2,...). Replaces hour-of-day.'],
+      ['threshold_mode','fixed or adaptive'],
+      ['threshold_dollars','Actual $ threshold used to close this bar'],
+      ['bar_start_ts','First tick epoch ms in the bar'],
+      ['bar_end_ts','Last tick epoch ms in the bar'],
+      ['bar_dollar_volume','Sum of price * size across the bar'],
+      ['bar_session_fraction','Cumulative $-volume at bar end / total day $-volume. Replaces hour-of-day positional info; on a Gaussian-er axis.']
+    ]},
+    {name:'Bar OHLCV',color:C.blue,items:[
+      ['bar_open','First tick price'],['bar_close','Last tick price'],
+      ['bar_high','Max tick price'],['bar_low','Min tick price'],
+      ['bar_vwap','sum(price*size)/sum(size)'],
+      ['bar_volume','Sum of share volume'],
+      ['bar_trades','Tick count'],
+      ['bar_atr_dollar','high - low'],
+      ['bar_atr_pct','(high - low) / open * 100']
+    ]},
+    {name:'Returns / Volatility',color:C.gold,items:[
+      ['bar_return_pct','(close - open) / open * 100'],
+      ['bar_realized_vol','sqrt(sum of squared tick returns)'],
+      ['bar_tick_volatility','Std dev of tick-to-tick returns'],
+      ['bar_max_drawdown_pct','Max peak-to-trough drop within bar'],
+      ['bar_range_vs_prev','bar ATR / prev bar ATR'],
+      ['bar_upper_wick_pct','(high - max(open,close)) / range']
+    ]},
+    {name:'Microstructure',color:C.purple,items:[
+      ['bar_avg_trade_size','volume / trades'],
+      ['bar_trade_intensity','trades / wall-clock seconds elapsed in bar'],
+      ['bar_up_down_ratio','up ticks / down ticks'],
+      ['bar_reversal_count','Number of direction changes'],
+      ['bar_reversal_rate','reversals / trades'],
+      ['bar_order_flow_imbalance','signed-volume imbalance proxy (up-tick vol - down-tick vol)'],
+      ['bar_vwap_deviation','close - vwap, normalized by range'],
+      ['bar_price_level_concentration','Herfindahl on price level visits']
+    ]},
+    {name:'Oscillation Profile',color:C.accent,items:[
+      ['bar_return_autocorr','Lag-1 autocorrelation of tick returns'],
+      ['bar_hurst_exponent','R/S Hurst H. <0.5 mean-revert, >0.5 trend'],
+      ['bar_mean_reversion_hl','Ornstein-Uhlenbeck half-life in seconds'],
+      ['bar_avg_run_length','Average length of consecutive same-direction ticks'],
+      ['bar_avg_up_run','Average up-run length'],
+      ['bar_avg_down_run','Average down-run length'],
+      ['bar_run_asymmetry','(avg_up - avg_down) / (avg_up + avg_down)'],
+      ['bar_oscillation_score','Composite: weighted combo of autocorr+H+reversal_rate'],
+      ['bar_trend_r2','R-squared of close-price linear fit vs tick index'],
+      ['bar_return_entropy','Shannon entropy of binned returns']
+    ]},
+    {name:'Cycle-Engine Proxies',color:C.blue,items:[
+      ['bar_ece_pct','Estimated Cycle Equivalent (cycles 0.10% target / shares-per-level proxy)'],
+      ['bar_cwe_pct','Composite Weighted Equivalent (cycles weighted by penny spread)'],
+      ['bar_cep_median','Median cycle entry-to-peak distance'],
+      ['bar_cep_p90','P90 cycle entry-to-peak distance'],
+      ['bar_cep_tail_ratio','p90/p50 of cycle entry-to-peak'],
+      ['bar_ece_up_pct','ECE on up-direction half'],
+      ['bar_ece_down_pct','ECE on down-direction half']
+    ]},
+    {name:'Day-Level Context',color:C.gold,items:[
+      ['day_open','First trade of session'],['day_high','Day high'],
+      ['day_low','Day low'],['day_close','Last trade'],
+      ['day_volume','Total day shares'],['day_trades','Total tick count'],
+      ['day_dollar_volume','Total $ traded all day'],
+      ['day_of_week','0=Sun..6=Sat'],
+      ['price_vs_day_open_pct','(bar_close - day_open) / day_open * 100'],
+      ['intraday_range_pct','(day_high - day_low) / day_open * 100 -- snapshot up to bar_end'],
+      ['cumulative_dollar_volume_pct','Same as bar_session_fraction but as a percent (0-100)']
+    ]},
+    {name:'Cross-Asset / Carryover',color:C.purple,items:[
+      ['prev_day_close','Previous trading day close'],
+      ['overnight_gap_pct','(day_open - prev_day_close) / prev_day_close * 100'],
+      ['vix_close','UVXY hourly proxy at bar end -> VIX level estimate']
+    ]}
+  ];
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Dollar Features List</div>
+    </div>
+    <Cd glow={true}>
+      <SectionHead title="Stage 9 Feature Catalog" sub="The dollar-time mirror of hourly_features"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:8}}>
+        <p style={{marginBottom:6}}>Every feature here computes the same quantity as its <span style={{color:C.gold}}>hourly_features</span> twin -- but the bar window is defined in dollar volume, not in 60-minute chunks.</p>
+        <p>This makes returns more Gaussian, autocorrelation/Hurst estimates cleaner, and microstructure features directly interpretable. See Stage 9 Logic for theoretical justification.</p>
+      </div>
+    </Cd>
+    {groups.map(function(g,gi){return <Cd key={gi}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <div style={{width:8,height:8,borderRadius:4,background:g.color}}/>
+        <div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F,textTransform:'uppercase',letterSpacing:1.2}}>{g.name}</div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>({g.items.length})</div>
+      </div>
+      {g.items.map(function(it,ii){return <div key={ii} style={{padding:'6px 8px',borderBottom:ii<g.items.length-1?'1px solid '+C.border:'none',display:'grid',gridTemplateColumns:'140px 1fr',gap:8,alignItems:'start'}}>
+        <code style={{color:g.color,fontSize:8,fontFamily:F,fontWeight:700}}>{it[0]}</code>
+        <span style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{it[1]}</span>
+      </div>;})}
+    </Cd>;})}
+  </div>;
+}
+
+function BuildDollarDataSetPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(''),fromDate=s2[0],setFromDate=s2[1];
+  var s3=useState(''),toDate=s3[0],setToDate=s3[1];
+  var s4=useState('fixed'),mode=s4[0],setMode=s4[1];
+  var s5=useState('5000000'),fixedThr=s5[0],setFixedThr=s5[1];
+  var s6=useState('2.0'),adaptivePct=s6[0],setAdaptivePct=s6[1];
+  var s7=useState(true),rthOnly=s7[0],setRthOnly=s7[1];
+  var s8=useState(false),loading=s8[0],setLoading=s8[1];
+  var s9=useState([]),log=s9[0],setLog=s9[1];
+  var s10=useState(null),err=s10[0],setErr=s10[1];
+
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+
+  var addLog=function(m){setLog(function(l){return l.concat([{ts:Date.now(),msg:m}]);});};
+
+  var run=async function(){
+    if(!ticker||!fromDate||!toDate){setErr('Enter ticker and both dates');return;}
+    if(!p.apiKey){setErr('Polygon API key not set');return;}
+    setLoading(true);setErr(null);setLog([]);
+    try{
+      var tk=ticker.toUpperCase();
+      var dates=[];var d=new Date(fromDate+'T00:00:00.000Z'),end=new Date(toDate+'T00:00:00.000Z');
+      while(d<=end){var dow=d.getUTCDay();if(dow>=1&&dow<=5)dates.push(d.toISOString().slice(0,10));d.setDate(d.getDate()+1);}
+      addLog('Processing '+dates.length+' weekdays');
+
+      var thr=parseFloat(fixedThr);
+      if(mode==='adaptive'){
+        addLog('Computing 20-day ADV...');
+        var endD=new Date(fromDate+'T00:00:00.000Z'),startD=new Date(endD);startD.setDate(startD.getDate()-30);
+        var sd=startD.toISOString().slice(0,10),ed=new Date(endD.getTime()-86400000).toISOString().slice(0,10);
+        var ar=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+sd+'/'+ed+'?adjusted=true&sort=desc&limit=20&apiKey='+p.apiKey);
+        var ad=await ar.json();var sum=0,n=0;for(var ai=0;ai<(ad.results||[]).length&&n<20;ai++){var ag=ad.results[ai];if(ag.vw&&ag.v){sum+=ag.vw*ag.v;n++;}}
+        var avg=sum/n;thr=avg*(parseFloat(adaptivePct)/100);
+        addLog('Adaptive threshold: $'+Math.round(thr).toLocaleString()+' (= '+adaptivePct+'% of $'+(avg/1e6).toFixed(1)+'M ADV)');
+      } else {
+        addLog('Fixed threshold: $'+Math.round(thr).toLocaleString());
+      }
+
+      // VIX (UVXY proxy) cache for the whole range
+      var vixCache={};
+      try{
+        var vR=await fetch('https://api.polygon.io/v2/aggs/ticker/UVXY/range/1/hour/'+fromDate+'/'+toDate+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
+        if(vR.ok){var vD=await vR.json();(vD.results||[]).forEach(function(b){var hr=Math.floor(b.t/3600000);vixCache[hr]=b.c;});}
+      }catch(e){}
+
+      for(var di=0;di<dates.length;di++){
+        var day=dates[di];
+        addLog('['+(di+1)+'/'+dates.length+'] '+tk+' '+day+'...');
+        try{
+          var tsFrom=rthOnly?'T13:30:00.000Z':'T08:00:00.000Z';
+          var tsTo=rthOnly?'T20:00:00.000Z':'T24:00:00.000Z';
+          var fetchWin=async function(g,l){var tr=[],u='https://api.polygon.io/v3/trades/'+tk+'?timestamp.gte='+g+'&timestamp.lt='+l+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('Polygon '+r.status);var dd=await r.json();if(dd.results)for(var ii=0;ii<dd.results.length;ii++){var tt=dd.results[ii];tr.push({price:tt.price,size:tt.size||0,ts:tt.sip_timestamp||tt.participant_timestamp});}u=dd.next_url?(dd.next_url+'&apiKey='+p.apiKey):null;}return tr;};
+          var ticks=await fetchWin(day+tsFrom,day+tsTo);
+          if(ticks.length<10){addLog('  -> '+day+' SKIP (ticks='+ticks.length+')');continue;}
+
+          // Day-level context
+          var dayOpen=ticks[0].price,dayClose=ticks[ticks.length-1].price,dayHigh=-Infinity,dayLow=Infinity;
+          var dayVol=0,dayTrades=ticks.length,totalDV=0;
+          for(var ti=0;ti<ticks.length;ti++){var t=ticks[ti];if(t.price>dayHigh)dayHigh=t.price;if(t.price<dayLow)dayLow=t.price;dayVol+=t.size;totalDV+=t.price*t.size;}
+          var dow=new Date(day+'T12:00:00.000Z').getUTCDay();
+
+          var prevDate=null,prevClose=null,gapPct=null;
+          try{
+            var pd=new Date(day+'T00:00:00.000Z');pd.setDate(pd.getDate()-7);
+            var prevR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+pd.toISOString().slice(0,10)+'/'+day+'?adjusted=true&sort=desc&limit=10&apiKey='+p.apiKey);
+            var prevD=await prevR.json();var ress=prevD.results||[];for(var pi=0;pi<ress.length;pi++){if(ress[pi].t<new Date(day+'T00:00:00.000Z').getTime()){prevClose=ress[pi].c;break;}}
+            if(prevClose!=null)gapPct=((dayOpen-prevClose)/prevClose)*100;
+          }catch(e){}
+
+          // Build bars + extract base feature set
+          var rows=[],accDV=0,accVol=0,accTr=0,o=null,h=-Infinity,l=Infinity,vwapNum=0,vwapDen=0,startTs=null,barIdx=0,cumDV=0,prevAtr=null;
+          var prevH=null,prevL=null;
+          var barTicks=[];
+
+          var emitBar=function(closeTs,closePrice){
+            var dur=(closeTs-startTs)/1e9;
+            var vwap=vwapDen>0?vwapNum/vwapDen:closePrice;
+            var atrD=h-l,atrP=o>0?(atrD/o)*100:0;
+            var retP=o>0?((closePrice-o)/o)*100:0;
+            var rangeVsPrev=prevAtr?atrD/prevAtr:null;
+            // micro features from collected ticks
+            var n=barTicks.length;var rets=[];for(var k=1;k<n;k++)rets.push((barTicks[k].price-barTicks[k-1].price)/barTicks[k-1].price);
+            var mean=rets.length?rets.reduce(function(a,b){return a+b;},0)/rets.length:0;
+            var rv=Math.sqrt(rets.reduce(function(a,b){return a+(b-mean)*(b-mean);},0));
+            var tickVol=rets.length>1?Math.sqrt(rets.reduce(function(a,b){return a+(b-mean)*(b-mean);},0)/(rets.length-1)):0;
+            // up/down + reversals
+            var up=0,down=0,rev=0,prevDir=0;
+            for(var k=1;k<n;k++){var dp=barTicks[k].price-barTicks[k-1].price;var dir=dp>0?1:(dp<0?-1:0);if(dir>0)up++;if(dir<0)down++;if(dir!==0&&prevDir!==0&&dir!==prevDir)rev++;if(dir!==0)prevDir=dir;}
+            var udRatio=down>0?up/down:(up>0?999:1);
+            var revRate=n>1?rev/(n-1):0;
+            // drawdown
+            var peak=barTicks[0].price,maxDD=0;
+            for(var k=0;k<n;k++){if(barTicks[k].price>peak)peak=barTicks[k].price;var dd=(peak-barTicks[k].price)/peak;if(dd>maxDD)maxDD=dd;}
+            // wick
+            var maxOC=Math.max(o,closePrice),wick=h-maxOC,wickPct=(h-l)>0?wick/(h-l)*100:0;
+            // autocorr lag-1
+            var ac=null;
+            if(rets.length>2){var m=mean,num=0,den=0;for(var k=1;k<rets.length;k++){num+=(rets[k]-m)*(rets[k-1]-m);}for(var k=0;k<rets.length;k++){den+=(rets[k]-m)*(rets[k]-m);}ac=den>0?num/den:0;}
+            // hour-of-bar-end for VIX lookup
+            var hrIdx=Math.floor(closeTs/(3600*1e9)/1e0);
+            var vix=null;var hrKey=Math.floor(closeTs/3600e6);if(vixCache[hrKey])vix=vixCache[hrKey];
+
+            rows.push({
+              ticker:tk,trade_date:day,bar_idx:barIdx++,
+              threshold_mode:mode,threshold_dollars:thr,
+              bar_start_ts:startTs,bar_end_ts:closeTs,
+              bar_dollar_volume:accDV,bar_session_fraction:totalDV>0?cumDV/totalDV:0,
+              bar_open:o,bar_close:closePrice,bar_high:h,bar_low:l,bar_vwap:vwap,
+              bar_atr_dollar:atrD,bar_atr_pct:atrP,
+              bar_volume:accVol,bar_trades:accTr,
+              bar_realized_vol:rv,bar_tick_volatility:tickVol,
+              bar_return_pct:retP,bar_max_drawdown_pct:maxDD*100,
+              bar_range_vs_prev:rangeVsPrev,bar_upper_wick_pct:wickPct,
+              bar_avg_trade_size:accTr>0?accVol/accTr:0,
+              bar_trade_intensity:dur>0?accTr/dur:0,
+              bar_up_down_ratio:udRatio,
+              bar_reversal_count:rev,bar_reversal_rate:revRate,
+              bar_return_autocorr:ac,
+              bar_vwap_deviation:atrD>0?(closePrice-vwap)/atrD:0,
+              day_open:dayOpen,day_high:dayHigh,day_low:dayLow,day_close:dayClose,
+              day_volume:dayVol,day_trades:dayTrades,day_dollar_volume:totalDV,day_of_week:dow,
+              price_vs_day_open_pct:dayOpen>0?((closePrice-dayOpen)/dayOpen)*100:0,
+              intraday_range_pct:dayOpen>0?((dayHigh-dayLow)/dayOpen)*100:0,
+              cumulative_dollar_volume_pct:totalDV>0?(cumDV/totalDV)*100:0,
+              prev_day_close:prevClose,overnight_gap_pct:gapPct,vix_close:vix
+            });
+            prevAtr=atrD;
+          };
+
+          for(var ti=0;ti<ticks.length;ti++){
+            var t=ticks[ti],dv=t.price*t.size;
+            if(o===null){o=t.price;startTs=t.ts;barTicks=[];}
+            barTicks.push(t);
+            if(t.price>h)h=t.price;if(t.price<l)l=t.price;
+            accDV+=dv;accVol+=t.size;accTr+=1;cumDV+=dv;
+            vwapNum+=t.price*t.size;vwapDen+=t.size;
+            if(accDV>=thr||ti===ticks.length-1){
+              emitBar(t.ts,t.price);
+              accDV=0;accVol=0;accTr=0;o=null;h=-Infinity;l=Infinity;vwapNum=0;vwapDen=0;startTs=null;barTicks=[];
+            }
+          }
+
+          addLog('  -> '+day+' '+rows.length+' bars, saving...');
+          // DELETE existing then INSERT in batches of 200
+          await fetch(SB_URL+'/rest/v1/dollar_features?ticker=eq.'+tk+'&trade_date=eq.'+day+'&threshold_mode=eq.'+mode,{method:'DELETE',headers:getSbHeaders()});
+          await new Promise(function(r){setTimeout(r,200);});
+          for(var bi=0;bi<rows.length;bi+=200){
+            var batch=rows.slice(bi,bi+200);
+            var ir=await fetch(SB_URL+'/rest/v1/dollar_features',{method:'POST',headers:getSbHeaders(),body:JSON.stringify(batch)});
+            if(!ir.ok){var et=await ir.text();addLog('    Insert err: '+et.slice(0,150));}
+          }
+          addLog('  -> '+day+' SAVED ('+rows.length+' bars)');
+        }catch(e){addLog('  -> '+day+' ERR: '+String(e.message||e));}
+      }
+      addLog('Pipeline complete.');
+    }catch(e){setErr(String(e.message||e));}finally{setLoading(false);}
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Build Dollar Data Set</div>
+    </div>
+    <Cd glow={true}>
+      <SectionHead title="Extract Dollar-Bar Features" sub="Polygon ticks -> dollar bars -> dollar_features table" info="This is the parallel pipeline mirror of Build Data Set (Stage 3). Same feature semantics, but bars are closed by dollar volume rather than clock minutes. v126 ships the core 40-feature set; oscillation profile + cycle-engine proxies will arrive in v127."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10,marginBottom:8}}>
+        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value);}} placeholder="NVDA" style={iS}/></div>
+        <div><label style={lS}>From</label><input type="date" value={fromDate} onChange={function(e){setFromDate(e.target.value);}} style={iS}/></div>
+        <div><label style={lS}>To</label><input type="date" value={toDate} onChange={function(e){setToDate(e.target.value);}} style={iS}/></div>
+      </div>
+      <div style={{display:'flex',gap:4,marginBottom:8}}>
+        <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $</button>
+        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>Adaptive %ADV</button>
+      </div>
+      {mode==='fixed'&&<div style={{marginBottom:8}}><label style={lS}>Fixed Threshold ($)</label><input value={fixedThr} onChange={function(e){setFixedThr(e.target.value);}} placeholder="5000000" style={iS}/></div>}
+      {mode==='adaptive'&&<div style={{marginBottom:8}}><label style={lS}>% of 20-day ADV</label><input value={adaptivePct} onChange={function(e){setAdaptivePct(e.target.value);}} placeholder="2.0" style={iS}/></div>}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+        <input type="checkbox" checked={rthOnly} onChange={function(e){setRthOnly(e.target.checked);}} id="rthb"/>
+        <label htmlFor="rthb" style={{color:C.txt,fontSize:9,fontFamily:F}}>RTH only (recommended)</label>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Running...':'Run Pipeline'}</button>
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+    {log.length>0&&<Cd>
+      <SectionHead title="Pipeline Log" sub={log.length+' entries'}/>
+      <div style={{maxHeight:400,overflowY:'auto',background:C.bg,borderRadius:6,padding:8,marginTop:8,fontFamily:F,fontSize:8,lineHeight:1.6}}>
+        {log.map(function(e,i){return <div key={i} style={{color:C.txt,marginBottom:2}}>{e.msg}</div>;})}
+      </div>
+    </Cd>}
+    <Cd>
+      <SectionHead title="Feature Coverage (v126)" sub="Core 40 of 60+ planned"/>
+      <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:8}}>
+        <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Shipped now:</span> bar OHLCV, returns, realized vol, tick volatility, ATR$/pct, max drawdown, upper wick, range vs prev, avg trade size, trade intensity, up/down ratio, reversals, return autocorr, VWAP deviation, session fraction, day-level context, gap, VIX.</p>
+        <p style={{marginBottom:6,color:C.txtDim}}><span style={{color:C.gold,fontWeight:700}}>Coming v127:</span> Hurst exponent, OU half-life, run-length features, oscillation score, ECE/CWE/CEP cycle-engine proxies, order flow imbalance, return entropy, trend R-squared, price level concentration.</p>
+        <p style={{color:C.txtDim}}>The full 60+ mirror parity with hourly_features will be added incrementally. Each batch keeps the dollar/clock comparison page operating.</p>
+      </div>
+    </Cd>
+  </div>;
+}
+
+function DollarCorrelationFinderPage(p){
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState('fixed'),mode=s2[0],setMode=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(null),results=s5[0],setResults=s5[1];
+  var s6=useState(''),prog=s6[0],setProg=s6[1];
+
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+
+  var pearson=function(x,y){var n=x.length;if(n<3)return null;var mx=0,my=0;for(var i=0;i<n;i++){mx+=x[i];my+=y[i];}mx/=n;my/=n;var num=0,dx=0,dy=0;for(var i=0;i<n;i++){var a=x[i]-mx,b=y[i]-my;num+=a*b;dx+=a*a;dy+=b*b;}var d=Math.sqrt(dx*dy);return d>0?num/d:null;};
+
+  var run=async function(){
+    if(!ticker){setErr('Enter ticker');return;}
+    setLoading(true);setErr(null);setResults(null);setProg('Loading dollar_features...');
+    try{
+      var tk=ticker.toUpperCase();
+      var fetchAll=async function(table,filters){var rows=[],off=0;while(true){var r=await fetch(SB_URL+'/rest/v1/'+table+'?'+filters+'&select=*&limit=1000&offset='+off,{headers:getSbHeaders()});if(!r.ok)throw new Error(table+' '+r.status);var b=await r.json();rows=rows.concat(b);if(b.length<1000)break;off+=1000;}return rows;};
+      var dfRows=await fetchAll('dollar_features','ticker=eq.'+tk+'&threshold_mode=eq.'+mode);
+      setProg('Loaded '+dfRows.length+' bars. Loading optimal_tp_hourly for Y...');
+      if(dfRows.length<10){throw new Error('Need at least 10 dollar bars. Found '+dfRows.length+'. Run Build Dollar Data Set first.');}
+      var optRows=await fetchAll('optimal_tp_hourly','ticker=eq.'+tk);
+      setProg('Joining with TP outcomes...');
+
+      // Aggregate optimal TP% per ticker-day-hour into a lookup
+      // Y for each bar = optimal TP% in the hour the bar ends in
+      var bestByDayHour={};
+      var byKey={};
+      optRows.forEach(function(r){var k=r.trade_date+'|'+r.hour;if(!byKey[k])byKey[k]=[];byKey[k].push(r);});
+      Object.keys(byKey).forEach(function(k){var arr=byKey[k];var best=null;arr.forEach(function(r){if(!best||r.net_profit>best.net_profit)best=r;});bestByDayHour[k]=best?best.tp_pct:null;});
+
+      var X=[],Y=[];
+      var featList=Object.keys(dfRows[0]).filter(function(k){
+        if(['id','ticker','trade_date','bar_idx','threshold_mode','created_at'].indexOf(k)>=0)return false;
+        return typeof dfRows[0][k]==='number'||dfRows[0][k]===null;
+      });
+      var Xby={};featList.forEach(function(f){Xby[f]=[];});
+      var matched=0,unmatched=0;
+      dfRows.forEach(function(r){
+        var endTs=r.bar_end_ts;if(!endTs)return;
+        var hr=new Date(endTs/1e6).getUTCHours()-4;if(hr<0)hr+=24;
+        var k=r.trade_date+'|'+hr;
+        var y=bestByDayHour[k];
+        if(y==null){unmatched++;return;}
+        matched++;Y.push(y);
+        featList.forEach(function(f){Xby[f].push(r[f]);});
+      });
+      setProg('Matched '+matched+' bars to TP outcomes. Computing correlations...');
+      if(matched<10)throw new Error('Only '+matched+' bars matched to optimal_tp_hourly. Need more overlap; run Hourly Optimal TP% Finder for the same dates.');
+
+      var corrs=[];
+      featList.forEach(function(f){
+        var xs=Xby[f],ys=[];var xc=[];
+        for(var i=0;i<xs.length;i++){if(xs[i]!=null&&!isNaN(xs[i])){xc.push(xs[i]);ys.push(Y[i]);}}
+        if(xc.length<10)return;
+        var r=pearson(xc,ys);if(r==null||isNaN(r))return;
+        corrs.push({feature:f,r:r,n:xc.length,absR:Math.abs(r)});
+      });
+      corrs.sort(function(a,b){return b.absR-a.absR;});
+      setResults({corrs:corrs,matched:matched,unmatched:unmatched,total_bars:dfRows.length,feature_count:featList.length});
+      setProg('');
+    }catch(e){setErr(String(e.message||e));}finally{setLoading(false);}
+  };
+
+  var classify=function(absR){if(absR>=0.5)return {tag:'STRONG',color:C.accent};if(absR>=0.3)return {tag:'MODERATE',color:C.gold};if(absR>=0.1)return {tag:'WEAK',color:C.txtDim};return {tag:'NONE',color:C.txtDim};};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Dollar Correlation Finder</div>
+    </div>
+    <Cd glow={true}>
+      <SectionHead title="Pearson Correlations: Dollar Bars vs Optimal TP%" sub="Y = best TP% in the clock-hour the bar ends in"/>
+      <div style={{marginTop:10,marginBottom:8}}>
+        <label style={lS}>Ticker</label>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value);}} placeholder="NVDA" style={iS}/>
+      </div>
+      <div style={{display:'flex',gap:4,marginBottom:10}}>
+        <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $ Bars</button>
+        <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>Adaptive Bars</button>
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Running...':'Compute Correlations'}</button>
+      {prog&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:8,textAlign:'center'}}>{prog}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd>
+      <SectionHead title="Coverage" sub={results.matched+' bars matched / '+results.total_bars+' total'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+        <Mt label="Matched Bars" value={results.matched.toLocaleString()}/>
+        <Mt label="Unmatched" value={results.unmatched.toLocaleString()}/>
+        <Mt label="Total Bars" value={results.total_bars.toLocaleString()}/>
+        <Mt label="Features Tested" value={results.corrs.length+' / '+results.feature_count}/>
+      </div>
+    </Cd>}
+
+    {results&&results.corrs.length>0&&<Cd>
+      <SectionHead title="Top Correlations" sub="Sorted by |r|"/>
+      <div style={{overflowX:'auto',marginTop:10}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
+          <thead><tr style={{background:C.bgInput,color:C.txtDim,fontSize:8}}>
+            <th style={{padding:'6px 4px',textAlign:'left'}}>#</th>
+            <th style={{padding:'6px 4px',textAlign:'left'}}>Feature</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>r</th>
+            <th style={{padding:'6px 4px',textAlign:'right'}}>n</th>
+            <th style={{padding:'6px 4px',textAlign:'left'}}>Strength</th>
+          </tr></thead>
+          <tbody>
+            {results.corrs.slice(0,40).map(function(c,i){var cls=classify(c.absR);return <tr key={i} style={{borderBottom:'1px solid '+C.border,color:C.txt}}>
+              <td style={{padding:'4px',color:C.txtDim}}>{i+1}</td>
+              <td style={{padding:'4px',color:C.txtBright,fontFamily:F}}>{c.feature}</td>
+              <td style={{padding:'4px',textAlign:'right',color:c.r>=0?C.accent:C.warn,fontWeight:700}}>{c.r.toFixed(3)}</td>
+              <td style={{padding:'4px',textAlign:'right',color:C.txtDim}}>{c.n}</td>
+              <td style={{padding:'4px',color:cls.color,fontSize:8,fontWeight:700,letterSpacing:0.8}}>{cls.tag}</td>
+            </tr>;})}
+          </tbody>
+        </table>
+        {results.corrs.length>40&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,padding:8,textAlign:'center'}}>Showing top 40 of {results.corrs.length}</div>}
+      </div>
+    </Cd>}
+  </div>;
+}
+
 function AIAgentsOverviewPage(p){
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -15899,7 +16746,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -15952,6 +16799,12 @@ function App(){
     {page==='gridplanner'&&<GridPlannerPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='hourlyreturns'&&<HourlyReturnsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='volstability'&&<VolStabilityPage onBack={function(){setPage('home');}}/>}
+    {page==='dvtlogic'&&<DollarVolumeTimeLogicPage onBack={function(){setPage('home');}}/>}
+    {page==='dvtbuilder'&&<DollarBarBuilderPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='dvtcompare'&&<DollarVsClockComparePage onBack={function(){setPage('home');}}/>}
+    {page==='dvtfeatures'&&<DollarFeaturesListPage onBack={function(){setPage('home');}}/>}
+    {page==='dvtbuild'&&<BuildDollarDataSetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='dvtcorr'&&<DollarCorrelationFinderPage onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
