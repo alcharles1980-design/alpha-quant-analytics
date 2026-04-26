@@ -13182,6 +13182,8 @@ function CycleDensityPage(p){
         {[5,10,20,30,60].map(function(v){
           return <button key={v} onClick={function(){setLookback(v);}} style={{padding:'5px 8px',border:lookback===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:lookback===v?'rgba(0,229,160,0.15)':C.bg,color:lookback===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:lookback===v?800:600,cursor:'pointer'}}>{v+'d'}</button>;
         })}
+        <input value={lookback} onChange={function(e){var v=parseInt(e.target.value);if(v>0&&v<=260)setLookback(v);else if(e.target.value==='')setLookback(10);}} style={{width:40,padding:'5px 4px',background:C.bg,border:'1px solid '+C.purple,borderRadius:4,color:C.purple,fontFamily:F,fontSize:8,fontWeight:700,textAlign:'center'}}/>
+        <span style={{color:C.txtDim,fontSize:6,fontFamily:F}}>days</span>
       </div>
       {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
