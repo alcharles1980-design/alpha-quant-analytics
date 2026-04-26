@@ -60,6 +60,7 @@ function verifySaveIntegrity(ticker,date,tpPct,session){
 
 
 var SB_URL='https://haeqzegdlwryvaecanrn.supabase.co';
+var fetchPoly=async function(url,ms){var ctrl=new AbortController();var timer=setTimeout(function(){ctrl.abort();},ms||30000);try{var r=await fetch(url,{signal:ctrl.signal});clearTimeout(timer);return r;}catch(e){clearTimeout(timer);return{ok:false,status:0,json:function(){return Promise.resolve({results:[]});}};}};
 var SB_URL_DEFAULT=SB_URL;
 var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhZXF6ZWdkbHdyeXZhZWNhbnJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3MTYxODAsImV4cCI6MjA5MDI5MjE4MH0.j3E_EZsiS4VmNjmXA90kKxL_DgPOV0Ku_DKwMDqGjgw';
 var SB_KEY_DEFAULT=SB_KEY;
@@ -10323,7 +10324,7 @@ function CycleSimPage(p){
       }else{
         setFetchStatus('Fetching 1-min bars...');
         var url='https://api.polygon.io/v2/aggs/ticker/'+ticker+'/range/1/minute/'+from2+'/'+to2+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var r2=await fetch(url);
+        var r2=await fetchPoly(url);
         if(!r2.ok){setErr('Polygon error '+r2.status);setLoading(false);return;}
         var d2r=await r2.json();
         bars=d2r.results||[];
@@ -11077,7 +11078,7 @@ function TrueSwingPage(p){
         var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/second/'+days[di]+'/'+days[di]+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
         var pageNum=0;
         while(url&&pageNum<25){
-          var r=await fetch(url);
+          var r=await fetchPoly(url);
           if(!r.ok)break;
           var d2=await r.json();
           var b=d2.results||[];
@@ -12035,7 +12036,7 @@ function CycleDensityPage(p){
       var pageNum=0;
       while(url&&pageNum<20){
         setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
-        var r=await fetch(url);if(!r.ok)break;
+        var r=await fetchPoly(url);if(!r.ok)break;
         var d2=await r.json();var b=d2.results||[];
         for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
         if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
@@ -12225,7 +12226,7 @@ function CycleSpeedPage(p){
       var pageNum=0;
       while(url&&pageNum<20){
         setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
-        var r=await fetch(url);if(!r.ok)break;
+        var r=await fetchPoly(url);if(!r.ok)break;
         var d2=await r.json();var b=d2.results||[];
         for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
         if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
@@ -12497,7 +12498,7 @@ function GridPlannerPage(p){
       setProg('Fetching daily bars...');
       var to=new Date();var from=new Date();from.setDate(from.getDate()-400);
       var fromStr=from.toISOString().slice(0,10);var toStr=to.toISOString().slice(0,10);
-      var rd=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
+      var rd=await fetchPoly('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
       if(!rd.ok){setErr('Daily bars error: '+rd.status);setLoading(false);return;}
       var dd=await rd.json();var dailyBars=dd.results||[];
       if(dailyBars.length<60){setErr('Only '+dailyBars.length+' daily bars');setLoading(false);return;}
@@ -12530,7 +12531,7 @@ function GridPlannerPage(p){
       var pageNum=0;
       while(url&&pageNum<20){
         setProg('1-min bars page '+(pageNum+1)+'... ('+allMin.length.toLocaleString()+')');
-        var mr=await fetch(url);if(!mr.ok)break;
+        var mr=await fetchPoly(url);if(!mr.ok)break;
         var md=await mr.json();var mb=md.results||[];
         for(var bi=0;bi<mb.length;bi++)allMin.push(mb[bi]);
         if(md.next_url){url=md.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
@@ -12802,7 +12803,7 @@ function HourlyReturnsPage(p){
       var pageNum=0;
       while(url&&pageNum<10){
         setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
-        var r=await fetch(url);if(!r.ok){setErr('Polygon error: '+r.status);setLoading(false);return;}
+        var r=await fetchPoly(url);if(!r.ok){setErr('Polygon error: '+r.status);setLoading(false);return;}
         var d=await r.json();var b=d.results||[];
         for(var bi=0;bi<b.length;bi++)allBars.push(b[bi]);
         if(d.next_url){url=d.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
@@ -13200,7 +13201,7 @@ function VolConcentrationPage(p){
       var pageNum=0;
       while(url&&pageNum<20){
         setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
-        var r=await fetch(url);if(!r.ok)break;
+        var r=await fetchPoly(url);if(!r.ok)break;
         var d2=await r.json();var b=d2.results||[];
         for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
         if(d2.next_url){url=d2.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
@@ -13827,7 +13828,7 @@ function VolumeProfilePage(p){
         var url='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
         var dayTrades=[];var pages=0;
         while(url){
-          var r=await fetch(url);if(!r.ok)break;
+          var r=await fetchPoly(url);if(!r.ok)break;
           var dd=await r.json();
           if(dd.results)for(var i=0;i<dd.results.length;i++){
             var t=dd.results[i];
