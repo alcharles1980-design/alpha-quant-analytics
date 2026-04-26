@@ -13092,6 +13092,7 @@ function CycleDensityPage(p){
   var s5=useState(''),prog=s5[0],setProg=s5[1];
   var s6=useState('0.005'),feeInput=s6[0],setFeeInput=s6[1];
   var s7=useState(null),selLevel=s7[0],setSelLevel=s7[1];
+  var s8x=useState(10),lookback=s8x[0],setLookback=s8x[1];
   var fee=parseFloat(feeInput)||0.005;
 
   var analyze=async function(){
@@ -13101,14 +13102,14 @@ function CycleDensityPage(p){
     try{
       var tk=ticker.trim().toUpperCase();
       var days=[];var d=new Date();
-      while(days.length<10){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
+      while(days.length<lookback){d.setDate(d.getDate()-1);var dow=d.getDay();if(dow!==0&&dow!==6)days.push(d.toISOString().slice(0,10));}
       days.reverse();
       var from=days[0];var to=days[days.length-1];
       var allBars=[];var lastPrice=0;
       var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
       var pageNum=0;
       while(url&&pageNum<20){
-        setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
+        setProg('Fetching '+lookback+'d: page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
         var r=await fetchPoly(url);if(!r.ok)break;
         var d2=await r.json();var b=d2.results||[];
         for(var bi=0;bi<b.length;bi++){allBars.push(b[bi]);if(b[bi].c)lastPrice=b[bi].c;}
@@ -13175,6 +13176,12 @@ function CycleDensityPage(p){
       <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
         <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1}}>FEE $/SHARE</span>
         <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:60,padding:'5px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,textAlign:'center'}}/>
+      </div>
+      <div style={{display:'flex',gap:4,alignItems:'center',marginBottom:8}}>
+        <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1,marginRight:4}}>LOOKBACK</span>
+        {[5,10,20,30,60].map(function(v){
+          return <button key={v} onClick={function(){setLookback(v);}} style={{padding:'5px 8px',border:lookback===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:lookback===v?'rgba(0,229,160,0.15)':C.bg,color:lookback===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:lookback===v?800:600,cursor:'pointer'}}>{v+'d'}</button>;
+        })}
       </div>
       {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
