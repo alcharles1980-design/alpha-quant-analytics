@@ -12780,6 +12780,252 @@ function GridPlannerPage(p){
   </div>;
 }
 
+function HourlyReturnsPage(p){
+  var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(null),results=s2[0],setResults=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState(null),selHour=s6[0],setSelHour=s6[1];
+
+  var analyze=async function(){
+    if(!ticker.trim()){setErr('Enter a ticker');return;}
+    if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);setProg('Fetching hourly bars...');
+    try{
+      var tk=ticker.trim().toUpperCase();
+      var to=new Date();var from=new Date();from.setDate(from.getDate()-400);
+      var fromStr=from.toISOString().slice(0,10);var toStr=to.toISOString().slice(0,10);
+      var allBars=[];
+      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/hour/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var pageNum=0;
+      while(url&&pageNum<10){
+        setProg('Fetching page '+(pageNum+1)+'... ('+allBars.length.toLocaleString()+' bars)');
+        var r=await fetch(url);if(!r.ok){setErr('Polygon error: '+r.status);setLoading(false);return;}
+        var d=await r.json();var b=d.results||[];
+        for(var bi=0;bi<b.length;bi++)allBars.push(b[bi]);
+        if(d.next_url){url=d.next_url+'&apiKey='+p.apiKey;pageNum++;}else break;
+      }
+      if(allBars.length<100){setErr('Only '+allBars.length+' hourly bars — insufficient');setLoading(false);return;}
+      setProg('Analyzing '+allBars.length.toLocaleString()+' hourly bars...');
+      computeReturns(allBars,tk);
+    }catch(e){setErr('Error: '+e.message);}
+    setLoading(false);
+  };
+
+  var computeReturns=function(rawBars,tk){
+    var etDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+    var etHr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
+    var etDow=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short'});
+    var price=rawBars[rawBars.length-1].c;
+
+    // Group by hour
+    var hrData={};for(var h=4;h<20;h++)hrData[h]={returns:[],greenVol:0,redVol:0,dowReturns:{Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]}};
+
+    for(var i=0;i<rawBars.length;i++){
+      var bar=rawBars[i];
+      var bDate=new Date(bar.t);
+      var hr=parseInt(etHr.format(bDate))||0;
+      if(hr<4||hr>=20)continue;
+      if(!hrData[hr])continue;
+      var ret=(bar.c-bar.o)/bar.o*100;
+      hrData[hr].returns.push(ret);
+      if(ret>=0)hrData[hr].greenVol+=(bar.v||0);
+      else hrData[hr].redVol+=(bar.v||0);
+      var dow=etDow.format(bDate);
+      if(hrData[hr].dowReturns[dow])hrData[hr].dowReturns[dow].push(ret);
+    }
+
+    // Compute stats per hour
+    var hours=[];
+    for(var h2=4;h2<20;h2++){
+      var d=hrData[h2];
+      var n=d.returns.length;if(n<5){hours.push({hour:h2,n:0});continue;}
+      var greenCount=0;var greenSum=0;var redSum=0;var redCount=0;var totalSum=0;
+      for(var j=0;j<n;j++){
+        totalSum+=d.returns[j];
+        if(d.returns[j]>=0){greenCount++;greenSum+=d.returns[j];}
+        else{redCount++;redSum+=d.returns[j];}
+      }
+      var greenPct=Math.round(greenCount/n*100);
+      var avgNet=totalSum/n;
+      var avgGreen=greenCount>0?greenSum/greenCount:0;
+      var avgRed=redCount>0?redSum/redCount:0;
+      // Std dev
+      var sqSum=0;for(var j=0;j<n;j++){var diff=d.returns[j]-avgNet;sqSum+=diff*diff;}
+      var stdDev=Math.sqrt(sqSum/n);
+      // Consistency: green% * (1 / (1+stdDev)) — high win rate + low variance
+      var consistency=greenPct/100*(1/(1+stdDev));
+      // Z-test against 50%
+      var zScore=(greenCount/n-0.5)/Math.sqrt(0.25/n);
+      var significant=Math.abs(zScore)>=1.96;
+      // Current streak (from most recent)
+      var sorted=d.returns.slice();// already in chronological order
+      var streak=0;var streakDir=sorted[sorted.length-1]>=0?1:-1;
+      for(var j=sorted.length-1;j>=0;j--){
+        if((sorted[j]>=0?1:-1)===streakDir)streak++;else break;
+      }
+      // DOW breakdown
+      var dowStats=[];
+      var dowNames=['Mon','Tue','Wed','Thu','Fri'];
+      for(var di=0;di<dowNames.length;di++){
+        var dr=d.dowReturns[dowNames[di]];
+        var dGreen=0;var dSum=0;
+        for(var j=0;j<dr.length;j++){dSum+=dr[j];if(dr[j]>=0)dGreen++;}
+        dowStats.push({dow:dowNames[di],n:dr.length,greenPct:dr.length>0?Math.round(dGreen/dr.length*100):0,
+          avgRet:dr.length>0?dSum/dr.length:0});
+      }
+      hours.push({hour:h2,n:n,greenPct:greenPct,avgNet:Math.round(avgNet*1000)/1000,
+        avgGreen:Math.round(avgGreen*1000)/1000,avgRed:Math.round(avgRed*1000)/1000,
+        stdDev:Math.round(stdDev*1000)/1000,consistency:Math.round(consistency*100)/100,
+        zScore:Math.round(zScore*100)/100,significant:significant,
+        streak:streak,streakDir:streakDir,
+        greenVol:d.greenVol,redVol:d.redVol,
+        dowStats:dowStats});
+    }
+    // Overall
+    var allReturns=[];for(var h3=4;h3<20;h3++){var hr3=hrData[h3];for(var j=0;j<hr3.returns.length;j++)allReturns.push(hr3.returns[j]);}
+    var allGreen=0;for(var j=0;j<allReturns.length;j++){if(allReturns[j]>=0)allGreen++;}
+    var bestHour=hours.filter(function(h){return h.n>0;}).sort(function(a,b){return b.greenPct-a.greenPct;})[0];
+    var worstHour=hours.filter(function(h){return h.n>0;}).sort(function(a,b){return a.greenPct-b.greenPct;})[0];
+    var mostConsistent=hours.filter(function(h){return h.n>0;}).sort(function(a,b){return b.consistency-a.consistency;})[0];
+
+    setResults({ticker:tk,price:price,bars:rawBars.length,
+      totalDays:Math.round(allReturns.length/16),
+      overallGreen:allReturns.length>0?Math.round(allGreen/allReturns.length*100):0,
+      hours:hours,bestHour:bestHour,worstHour:worstHour,mostConsistent:mostConsistent});
+    setProg('');
+  };
+
+  var detailHr=selHour!==null&&results?results.hours.find(function(h){return h.hour===selHour&&h.n>0;}):null;
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <span style={{fontFamily:F,fontSize:11,fontWeight:800,color:C.txtBright,letterSpacing:2,textTransform:'uppercase'}}>Hourly Returns Heatmap</span>
+    </div>
+    <Cd>
+      <SectionHead title="Hourly Returns Heatmap" sub="Which hours are consistently green? 260 days of hourly bars from Polygon."/>
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. WULF" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+        <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Analyze'}</button>
+      </div>
+      {loading&&prog&&<div style={{padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+        <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
+      </div>}
+      {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
+    </Cd>
+
+    {results&&<Cd glow={true}>
+      <SectionHead title={results.ticker+' \u2014 Hourly Bias Summary'} sub={results.totalDays+' trading days | '+results.bars.toLocaleString()+' hourly bars | Overall green: '+results.overallGreen+'%'}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>BEST HOUR</div>
+          <div style={{color:C.accent,fontSize:16,fontWeight:800,fontFamily:F}}>{results.bestHour?fmtHr(results.bestHour.hour):'--'}</div>
+          <div style={{color:C.accent,fontSize:9,fontFamily:F}}>{results.bestHour?results.bestHour.greenPct+'% green':'--'}</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>WORST HOUR</div>
+          <div style={{color:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{results.worstHour?fmtHr(results.worstHour.hour):'--'}</div>
+          <div style={{color:C.warn,fontSize:9,fontFamily:F}}>{results.worstHour?results.worstHour.greenPct+'% green':'--'}</div>
+        </div>
+        <div style={{padding:10,background:C.bg,borderRadius:8,textAlign:'center'}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>MOST RELIABLE</div>
+          <div style={{color:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{results.mostConsistent?fmtHr(results.mostConsistent.hour):'--'}</div>
+          <div style={{color:C.gold,fontSize:9,fontFamily:F}}>{results.mostConsistent?results.mostConsistent.consistency.toFixed(2)+' score':'--'}</div>
+        </div>
+      </div>
+    </Cd>}
+
+    {results&&<Cd>
+      <SectionHead title="Heatmap \u2014 All Hours" sub="Tap any hour for day-of-week breakdown"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Hour</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Days</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Green%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Avg Net</th>
+            <th style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>Avg +</th>
+            <th style={{padding:'4px 3px',color:C.warn,textAlign:'right'}}>Avg -</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Streak</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Sig</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Bar</th>
+          </tr></thead>
+          <tbody>{results.hours.filter(function(h){return h.n>0;}).map(function(h){
+            var session=h.hour<9?'pre':h.hour<16?'rth':'post';
+            var gCol=h.greenPct>=60?C.accent:h.greenPct>=50?C.gold:C.warn;
+            var isSel=selHour===h.hour;
+            var barW=Math.round(h.greenPct);
+            return <tr key={h.hour} onClick={function(){setSelHour(selHour===h.hour?null:h.hour);}} style={{borderBottom:'1px solid '+C.grid,background:isSel?'rgba(157,92,255,0.12)':'transparent',cursor:'pointer'}}>
+              <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
+              <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.n}</td>
+              <td style={{padding:'3px',color:gCol,textAlign:'right',fontWeight:800,fontSize:9}}>{h.greenPct+'%'}</td>
+              <td style={{padding:'3px',color:h.avgNet>=0?C.accent:C.warn,textAlign:'right'}}>{(h.avgNet>=0?'+':'')+h.avgNet.toFixed(3)+'%'}</td>
+              <td style={{padding:'3px',color:C.accent,textAlign:'right'}}>{'+'+(h.avgGreen).toFixed(3)+'%'}</td>
+              <td style={{padding:'3px',color:C.warn,textAlign:'right'}}>{h.avgRed.toFixed(3)+'%'}</td>
+              <td style={{padding:'3px',color:h.streakDir>0?C.accent:C.warn,textAlign:'right'}}>{h.streak+(h.streakDir>0?'\u25B2':'\u25BC')}</td>
+              <td style={{padding:'3px',color:h.significant?C.accent:C.txtDim,textAlign:'right',fontSize:6}}>{h.significant?'\u2713':'--'}</td>
+              <td style={{padding:'3px'}}><div style={{width:60,height:8,background:C.border,borderRadius:4,overflow:'hidden',display:'inline-block',verticalAlign:'middle',position:'relative'}}>
+                <div style={{width:barW+'%',height:'100%',background:gCol,borderRadius:4,opacity:0.7}}/>
+                <div style={{position:'absolute',left:'50%',top:0,bottom:0,width:1,background:C.txtDim,opacity:0.4}}/>
+              </div></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <div style={{padding:6,fontSize:6,fontFamily:F,color:C.txtDim,marginTop:4}}>{'Sig = statistically significant (p < 0.05, z-test vs 50%). Bar midline = 50%. Streak = consecutive green/red days for that hour.'}</div>
+    </Cd>}
+
+    {detailHr&&<Cd>
+      <SectionHead title={fmtHr(detailHr.hour)+' \u2014 Day-of-Week Breakdown'} sub={'Green: '+detailHr.greenPct+'% | Net: '+(detailHr.avgNet>=0?'+':'')+detailHr.avgNet.toFixed(3)+'% | Consistency: '+detailHr.consistency.toFixed(2)+' | z='+detailHr.zScore.toFixed(2)}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:6,marginBottom:12}}>
+        {detailHr.dowStats.map(function(d){
+          var gCol2=d.greenPct>=60?C.accent:d.greenPct>=50?C.gold:C.warn;
+          return <div key={d.dow} style={{padding:8,background:C.bg,borderRadius:6,textAlign:'center'}}>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700}}>{d.dow}</div>
+            <div style={{color:gCol2,fontSize:14,fontWeight:800,fontFamily:F}}>{d.greenPct+'%'}</div>
+            <div style={{color:d.avgRet>=0?C.accent:C.warn,fontSize:7,fontFamily:F}}>{(d.avgRet>=0?'+':'')+d.avgRet.toFixed(3)+'%'}</div>
+            <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>{d.n+' days'}</div>
+          </div>;
+        })}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        <div style={{padding:8,background:C.bg,borderRadius:6}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>VOLUME ON GREEN BARS</div>
+          <div style={{color:C.accent,fontSize:12,fontWeight:800,fontFamily:F}}>{detailHr.greenVol>=1e9?(detailHr.greenVol/1e9).toFixed(1)+'B':detailHr.greenVol>=1e6?(detailHr.greenVol/1e6).toFixed(1)+'M':(detailHr.greenVol/1e3).toFixed(0)+'K'}</div>
+        </div>
+        <div style={{padding:8,background:C.bg,borderRadius:6}}>
+          <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>VOLUME ON RED BARS</div>
+          <div style={{color:C.warn,fontSize:12,fontWeight:800,fontFamily:F}}>{detailHr.redVol>=1e9?(detailHr.redVol/1e9).toFixed(1)+'B':detailHr.redVol>=1e6?(detailHr.redVol/1e6).toFixed(1)+'M':(detailHr.redVol/1e3).toFixed(0)+'K'}</div>
+        </div>
+      </div>
+    </Cd>}
+
+    <CollapseStage title="Complete User Guide" sub="How the Hourly Returns Heatmap works">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>What Is This Tool?</p>
+          <p style={{fontSize:9}}>The Hourly Returns Heatmap answers a simple question: which hours are consistently green? It fetches ~260 trading days of hourly bars from Polygon and computes the win rate, average return, and statistical significance for each hour of the trading day.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>Key Metrics</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Green%:</span> Percentage of days where the hour closed above its open. 60%+ is bullish, below 45% is bearish, 45-55% is neutral.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Avg Net:</span> Average return across all days. Small numbers like +0.02% add up across 260 days.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Consistency:</span> Green% × (1 / (1 + StdDev)). Rewards high win rates with low variance. A 65% green hour with tight returns scores higher than a 70% green hour with wild swings.</p>
+          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Sig (✓):</span> Statistically significant at p &lt; 0.05. A z-test against 50% — the checkmark means this hour's green rate is unlikely to be random chance. With 260 samples, a green rate above 56% or below 44% is typically significant.</p>
+          <p style={{fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Streak:</span> How many consecutive recent days this hour has been green (▲) or red (▼). A long green streak during a statistically significant green hour is the strongest signal.</p>
+        </div>
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Day-of-Week Drill Down</p>
+          <p style={{fontSize:9}}>Tap any hour to see its green rate broken down by day of the week. Some patterns are day-specific — for example, Monday 09:00 might be 75% green (gap-up recovery) while Friday 15:00 might be 40% green (end-of-week selling). The volume split (green vs red bars) shows whether green hours have conviction (high volume) or are just low-activity drift.</p>
+        </div>
+      </div>
+    </CollapseStage>
+  </div>;
+}
+
 function VolConcentrationPage(p){
   var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
@@ -15502,7 +15748,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Grid Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Grid Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'s8div',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -15553,6 +15799,7 @@ function App(){
     {page==='cycledensity'&&<CycleDensityPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cyclespeed'&&<CycleSpeedPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='gridplanner'&&<GridPlannerPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='hourlyreturns'&&<HourlyReturnsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='home'&&<HomePage onNav={function(k){setPage(k);}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
