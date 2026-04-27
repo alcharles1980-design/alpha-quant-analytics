@@ -3102,6 +3102,7 @@ async function runExtendedVolume() {
   for (var ti = 0; ti < universe.length; ti++) {
     var u = universe[ti];
     var tk = u.ticker;
+    var verbose = ti < 10;
     if (ti % 50 === 0) {
       var pct = Math.round((ti / universe.length) * 100);
       await reportProgress({ mode: 'extended-volume', ticker: tk, status: 'running', progress_pct: pct, message: 'Processing ' + tk + ' (' + (ti + 1) + '/' + universe.length + ')' });
@@ -3118,15 +3119,17 @@ async function runExtendedVolume() {
       var timer = setTimeout(function () { ctrl.abort(); }, 30000);
       var r = await fetch(url, { signal: ctrl.signal });
       clearTimeout(timer);
+      if (verbose) console.log('[DBG] ' + tk + ' HTTP ' + r.status);
       if (!r.ok) {
         errored++;
-        if (errored <= 5) console.log('HTTP ' + r.status + ' for ' + tk + (r.status === 401 || r.status === 403 ? ' [AUTH]' : (r.status === 429 ? ' [RATE]' : '')));
+        if (errored <= 10) console.log('HTTP ' + r.status + ' for ' + tk + (r.status === 401 || r.status === 403 ? ' [AUTH]' : (r.status === 429 ? ' [RATE]' : '')));
         continue;
       }
       var body = await r.json();
+      if (verbose) console.log('[DBG] ' + tk + ' results count: ' + (body.results ? body.results.length : 'null') + ' status:' + body.status);
       if (!body.results || !body.results.length) {
         skipped++;
-        if (skipped <= 3) console.log('No results for ' + tk);
+        if (skipped <= 5) console.log('No results for ' + tk + ' (status=' + body.status + ')');
         continue;
       }
 
@@ -3179,7 +3182,12 @@ async function runExtendedVolume() {
       }
 
       var dayKeys = Object.keys(byDay).sort();
-      if (!dayKeys.length) { skipped++; continue; }
+      if (verbose) console.log('[DBG] ' + tk + ' dayKeys.length=' + dayKeys.length + ' bars=' + body.results.length);
+      if (!dayKeys.length) {
+        skipped++;
+        if (skipped <= 5) console.log('All bars OVN for ' + tk + ' (bars=' + body.results.length + ')');
+        continue;
+      }
 
       // Filter out half-days (less than 4 hours of RTH activity) for averages only
       var validDays = [];
@@ -3261,8 +3269,9 @@ async function runExtendedVolume() {
       // DELETE existing row for this (ticker, scan_date) then INSERT (PostgREST PATCH unreliable)
       await fetch(SB_URL + '/rest/v1/extended_hours_volume?ticker=eq.' + tk + '&scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
       var ir = await fetch(SB_URL + '/rest/v1/extended_hours_volume', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
+      if (verbose) console.log('[DBG] ' + tk + ' INSERT status=' + ir.status + ' pm=' + Math.round(pm.dv) + ' rth=' + Math.round(rth.dv) + ' ah=' + Math.round(ah.dv));
       if (ir.ok) inserted++;
-      else { errored++; var et = await ir.text(); if (errored < 5) console.log('Insert error ' + tk + ': ' + et.slice(0, 200)); }
+      else { errored++; var et = await ir.text(); if (errored <= 10) console.log('Insert error ' + tk + ': HTTP ' + ir.status + ' ' + et.slice(0, 300)); }
 
       // Rate limit
       if (ti % 100 === 99) await sleep(500);
