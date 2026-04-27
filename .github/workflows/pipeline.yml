@@ -22,6 +22,7 @@ on:
           - backfill-mcap
           - mfe
           - extended-volume
+          - build-universe
       tickers:
         description: 'Comma-separated tickers'
         required: true

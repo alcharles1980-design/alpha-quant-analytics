@@ -3293,13 +3293,152 @@ async function runExtendedVolume() {
   await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. Inserted ' + inserted + ', errored ' + errored });
 }
 
+
+async function runBuildUniverse() {
+  var snapshotDate = new Date().toISOString().slice(0, 10);
+  await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Fetching iShares holdings...' });
+
+  // iShares holdings CSV URLs (publicly available, refreshed daily)
+  var ivvUrl = 'https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund';
+  var iwmUrl = 'https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund';
+
+  var fetchHoldings = async function (url, indexName) {
+    console.log('Fetching ' + indexName + ' holdings...');
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 60000);
+    var r;
+    try {
+      r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error('Network error fetching ' + indexName + ': ' + e.message);
+    }
+    clearTimeout(timer);
+    if (!r.ok) throw new Error(indexName + ' HTTP ' + r.status);
+    var csv = await r.text();
+    console.log(indexName + ' CSV size: ' + csv.length + ' bytes');
+    return parseHoldingsCsv(csv, indexName);
+  };
+
+  var parseHoldingsCsv = function (csv, indexName) {
+    // iShares CSV format: header has metadata at top, then a blank line, then table header, then rows
+    // Find the header row containing "Ticker"
+    var lines = csv.split(/\r?\n/);
+    var headerIdx = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].indexOf('Ticker') >= 0 && lines[i].indexOf('Name') >= 0) { headerIdx = i; break; }
+    }
+    if (headerIdx === -1) throw new Error(indexName + ': could not find header row in CSV');
+    var headerCols = parseCsvRow(lines[headerIdx]);
+    var idxMap = {};
+    for (var ci = 0; ci < headerCols.length; ci++) {
+      var h = headerCols[ci].toLowerCase().trim();
+      if (h === 'ticker') idxMap.ticker = ci;
+      if (h === 'name') idxMap.name = ci;
+      if (h === 'sector') idxMap.sector = ci;
+      if (h === 'asset class') idxMap.asset_class = ci;
+      if (h === 'weight (%)' || h === 'weight') idxMap.weight = ci;
+      if (h === 'market value' || h === 'market value ($)') idxMap.mv = ci;
+      if (h === 'shares' || h === 'shares held') idxMap.shares = ci;
+    }
+    if (idxMap.ticker === undefined) throw new Error(indexName + ': no Ticker column found. Headers: ' + headerCols.join(','));
+
+    var holdings = [];
+    for (var li = headerIdx + 1; li < lines.length; li++) {
+      var line = lines[li];
+      if (!line.trim()) continue;
+      var cols = parseCsvRow(line);
+      var tk = (cols[idxMap.ticker] || '').trim();
+      if (!tk) continue;
+      // Filter out cash and non-equity rows
+      var assetClass = idxMap.asset_class !== undefined ? (cols[idxMap.asset_class] || '').trim() : '';
+      if (assetClass && assetClass.toLowerCase() !== 'equity') continue;
+      // Filter out tickers that are obviously not equity symbols (cash positions, futures, etc.)
+      if (tk.length > 5) continue;
+      if (tk.indexOf('-') >= 0) continue; // skip preferreds and similar
+      var weight = idxMap.weight !== undefined ? parseFloat((cols[idxMap.weight] || '').replace(/[",]/g, '')) : null;
+      var mv = idxMap.mv !== undefined ? parseFloat((cols[idxMap.mv] || '').replace(/[",]/g, '')) : null;
+      var sh = idxMap.shares !== undefined ? parseFloat((cols[idxMap.shares] || '').replace(/[",]/g, '')) : null;
+      var sector = idxMap.sector !== undefined ? (cols[idxMap.sector] || '').trim() : null;
+      holdings.push({
+        ticker: tk,
+        index_name: indexName,
+        snapshot_date: snapshotDate,
+        weight_pct: isNaN(weight) ? null : weight,
+        market_value: isNaN(mv) ? null : mv,
+        shares: isNaN(sh) ? null : sh,
+        sector: sector,
+        asset_class: assetClass || 'Equity'
+      });
+    }
+    return holdings;
+  };
+
+  var parseCsvRow = function (row) {
+    var cols = [], cur = '', inQuotes = false;
+    for (var i = 0; i < row.length; i++) {
+      var ch = row[i];
+      if (ch === '"') {
+        if (inQuotes && row[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) { cols.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    cols.push(cur);
+    return cols;
+  };
+
+  var sp500, r2000;
+  try {
+    await reportProgress({ mode: 'build-universe', ticker: 'IVV', status: 'running', progress_pct: 10, message: 'Fetching IVV (S&P 500) holdings...' });
+    sp500 = await fetchHoldings(ivvUrl, 'SP500');
+    console.log('SP500 holdings parsed: ' + sp500.length);
+    await reportProgress({ mode: 'build-universe', ticker: 'IVV', status: 'running', progress_pct: 30, message: 'Got ' + sp500.length + ' SP500 names. Fetching IWM...' });
+    r2000 = await fetchHoldings(iwmUrl, 'R2000');
+    console.log('R2000 holdings parsed: ' + r2000.length);
+    await reportProgress({ mode: 'build-universe', ticker: 'IWM', status: 'running', progress_pct: 60, message: 'Got ' + r2000.length + ' R2000 names. Saving to DB...' });
+  } catch (e) {
+    console.error('Holdings fetch failed:', e.message);
+    await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Fetch failed: ' + e.message });
+    return;
+  }
+
+  var allRows = sp500.concat(r2000);
+  if (allRows.length < 100) {
+    console.error('Suspiciously few holdings: ' + allRows.length + '. Aborting save.');
+    await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Only ' + allRows.length + ' holdings parsed - aborting' });
+    return;
+  }
+
+  // DELETE existing rows for this snapshot_date so the run is idempotent
+  await fetch(SB_URL + '/rest/v1/index_membership?snapshot_date=eq.' + snapshotDate, { method: 'DELETE', headers: sbHeaders() });
+  await sleep(300);
+
+  // INSERT in batches of 200
+  var inserted = 0, errored = 0;
+  for (var bi = 0; bi < allRows.length; bi += 200) {
+    var batch = allRows.slice(bi, bi + 200);
+    var ir = await fetch(SB_URL + '/rest/v1/index_membership', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(batch) });
+    if (ir.ok) inserted += batch.length;
+    else {
+      errored += batch.length;
+      var et = await ir.text();
+      console.log('Insert batch err: ' + et.slice(0, 300));
+    }
+    await reportProgress({ mode: 'build-universe', ticker: 'BATCH', status: 'running', progress_pct: 60 + Math.round((bi / allRows.length) * 35), message: 'Saved ' + inserted + '/' + allRows.length });
+  }
+
+  console.log('Build universe complete. SP500=' + sp500.length + ', R2000=' + r2000.length + ', inserted=' + inserted + ', errored=' + errored);
+  await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. SP500=' + sp500.length + ', R2000=' + r2000.length + ', inserted=' + inserted });
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--extended-volume') ? 'extended-volume' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -3331,6 +3470,11 @@ async function main() {
     try { await runMFE(); } catch (e) {
       console.error('MFE CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'build-universe') {
+    try { await runBuildUniverse(); } catch (e) {
+      console.error('BUILD-UNIVERSE CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'extended-volume') {
     try { await runExtendedVolume(); } catch (e) {
