@@ -3062,14 +3062,24 @@ async function runExtendedVolume() {
   var scanDate = new Date().toISOString().slice(0, 10);
   await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Loading universe from screener...' });
 
-  // Load most recent screener tickers
-  var screenerR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type&order=ticker.asc,scan_date.desc&limit=10000', { headers: sbHeaders() });
-  if (!screenerR.ok) {
+  // Load most recent screener tickers (paginate - PostgREST caps at 1000 rows)
+  var allRows = [];
+  var off = 0;
+  var pageBatch = [];
+  do {
+    pageBatch = [];
+    var screenerR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type,scan_date&order=ticker.asc,scan_date.desc&limit=1000&offset=' + off, { headers: sbHeaders() });
+    if (screenerR.ok) pageBatch = await screenerR.json();
+    allRows = allRows.concat(pageBatch);
+    off += 1000;
+    if (off > 50000) break; // safety
+  } while (pageBatch.length >= 1000);
+  console.log('Screener rows loaded: ' + allRows.length);
+  if (!allRows.length) {
     console.error('Could not load screener tickers');
     await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Could not load screener universe' });
     return;
   }
-  var allRows = await screenerR.json();
   var seen = {}, universe = [];
   for (var i = 0; i < allRows.length; i++) {
     var r = allRows[i];
@@ -3077,7 +3087,7 @@ async function runExtendedVolume() {
     seen[r.ticker] = true;
     universe.push(r);
   }
-  console.log('Universe size: ' + universe.length);
+  console.log('Universe size (deduped): ' + universe.length);
 
   // 25-day window covers 20-day rolling avg with weekend buffer
   var endDate = new Date();
@@ -3108,9 +3118,17 @@ async function runExtendedVolume() {
       var timer = setTimeout(function () { ctrl.abort(); }, 30000);
       var r = await fetch(url, { signal: ctrl.signal });
       clearTimeout(timer);
-      if (!r.ok) { errored++; continue; }
+      if (!r.ok) {
+        errored++;
+        if (errored <= 5) console.log('HTTP ' + r.status + ' for ' + tk + (r.status === 401 || r.status === 403 ? ' [AUTH]' : (r.status === 429 ? ' [RATE]' : '')));
+        continue;
+      }
       var body = await r.json();
-      if (!body.results || !body.results.length) { skipped++; continue; }
+      if (!body.results || !body.results.length) {
+        skipped++;
+        if (skipped <= 3) console.log('No results for ' + tk);
+        continue;
+      }
 
       // Bucket by date and session
       var byDay = {}; // date -> { pm:{dv,tr,sh}, rth:{...}, ah:{...}, hours:[{label,session,dv,tr}] }
