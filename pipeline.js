@@ -3099,6 +3099,13 @@ async function runExtendedVolume() {
   var inserted = 0, skipped = 0, errored = 0;
   var pageSize = 100;
 
+  // Debug: write to extvol_debug_log so we can read without GH Action logs
+  var debugLog = async function (tk, step, detail) {
+    try { await fetch(SB_URL + '/rest/v1/extvol_debug_log', { method: 'POST', headers: sbHeaders(), body: JSON.stringify({ ticker: tk, step: step, detail: detail }) }); } catch (e) { }
+  };
+  // Clear old debug rows
+  try { await fetch(SB_URL + '/rest/v1/extvol_debug_log?id=gt.0', { method: 'DELETE', headers: sbHeaders() }); } catch (e) { }
+
   for (var ti = 0; ti < universe.length; ti++) {
     var u = universe[ti];
     var tk = u.ticker;
@@ -3119,14 +3126,14 @@ async function runExtendedVolume() {
       var timer = setTimeout(function () { ctrl.abort(); }, 30000);
       var r = await fetch(url, { signal: ctrl.signal });
       clearTimeout(timer);
-      if (verbose) console.log('[DBG] ' + tk + ' HTTP ' + r.status);
+      if (verbose) { console.log('[DBG] ' + tk + ' HTTP ' + r.status); await debugLog(tk, 'http', String(r.status)); }
       if (!r.ok) {
         errored++;
         if (errored <= 10) console.log('HTTP ' + r.status + ' for ' + tk + (r.status === 401 || r.status === 403 ? ' [AUTH]' : (r.status === 429 ? ' [RATE]' : '')));
         continue;
       }
       var body = await r.json();
-      if (verbose) console.log('[DBG] ' + tk + ' results count: ' + (body.results ? body.results.length : 'null') + ' status:' + body.status);
+      if (verbose) { console.log('[DBG] ' + tk + ' results count: ' + (body.results ? body.results.length : 'null') + ' status:' + body.status); await debugLog(tk, 'results', 'count=' + (body.results ? body.results.length : 'null') + ' status=' + body.status); }
       if (!body.results || !body.results.length) {
         skipped++;
         if (skipped <= 5) console.log('No results for ' + tk + ' (status=' + body.status + ')');
@@ -3182,7 +3189,7 @@ async function runExtendedVolume() {
       }
 
       var dayKeys = Object.keys(byDay).sort();
-      if (verbose) console.log('[DBG] ' + tk + ' dayKeys.length=' + dayKeys.length + ' bars=' + body.results.length);
+      if (verbose) { console.log('[DBG] ' + tk + ' dayKeys.length=' + dayKeys.length + ' bars=' + body.results.length); await debugLog(tk, 'bucket', 'dayKeys=' + dayKeys.length + ' bars=' + body.results.length); }
       if (!dayKeys.length) {
         skipped++;
         if (skipped <= 5) console.log('All bars OVN for ' + tk + ' (bars=' + body.results.length + ')');
@@ -3269,9 +3276,9 @@ async function runExtendedVolume() {
       // DELETE existing row for this (ticker, scan_date) then INSERT (PostgREST PATCH unreliable)
       await fetch(SB_URL + '/rest/v1/extended_hours_volume?ticker=eq.' + tk + '&scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
       var ir = await fetch(SB_URL + '/rest/v1/extended_hours_volume', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
-      if (verbose) console.log('[DBG] ' + tk + ' INSERT status=' + ir.status + ' pm=' + Math.round(pm.dv) + ' rth=' + Math.round(rth.dv) + ' ah=' + Math.round(ah.dv));
+      if (verbose) { console.log('[DBG] ' + tk + ' INSERT status=' + ir.status + ' pm=' + Math.round(pm.dv) + ' rth=' + Math.round(rth.dv) + ' ah=' + Math.round(ah.dv)); var et2 = ir.ok ? 'ok' : (await ir.text()).slice(0, 400); await debugLog(tk, 'insert', 'http=' + ir.status + ' pm=' + Math.round(pm.dv) + ' rth=' + Math.round(rth.dv) + ' ah=' + Math.round(ah.dv) + ' body=' + et2); }
       if (ir.ok) inserted++;
-      else { errored++; var et = await ir.text(); if (errored <= 10) console.log('Insert error ' + tk + ': HTTP ' + ir.status + ' ' + et.slice(0, 300)); }
+      else { errored++; var et = await ir.text(); if (errored <= 10) console.log('Insert error ' + tk + ': HTTP ' + ir.status + ' ' + et.slice(0, 300)); if (errored <= 10) await debugLog(tk, 'insert_err', 'http=' + ir.status + ' body=' + et.slice(0, 400)); }
 
       // Rate limit
       if (ti % 100 === 99) await sleep(500);
