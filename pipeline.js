@@ -3252,10 +3252,10 @@ async function runExtendedVolume() {
 
       var row = {
         ticker: tk, scan_date: scanDate,
-        pm_dollar_volume: Math.round(pm.dv), pm_trades: pm.tr, pm_volume_shares: pm.sh,
-        rth_dollar_volume: Math.round(rth.dv), rth_trades: rth.tr, rth_volume_shares: rth.sh,
-        ah_dollar_volume: Math.round(ah.dv), ah_trades: ah.tr, ah_volume_shares: ah.sh,
-        total_dollar_volume: Math.round(totalDv), total_trades: totalTr,
+        pm_dollar_volume: Math.round(pm.dv), pm_trades: Math.round(pm.tr), pm_volume_shares: Math.round(pm.sh),
+        rth_dollar_volume: Math.round(rth.dv), rth_trades: Math.round(rth.tr), rth_volume_shares: Math.round(rth.sh),
+        ah_dollar_volume: Math.round(ah.dv), ah_trades: Math.round(ah.tr), ah_volume_shares: Math.round(ah.sh),
+        total_dollar_volume: Math.round(totalDv), total_trades: Math.round(totalTr),
         pm_pct_of_day: totalDv > 0 ? Math.round((pm.dv / totalDv) * 1000) / 10 : 0,
         ah_pct_of_day: totalDv > 0 ? Math.round((ah.dv / totalDv) * 1000) / 10 : 0,
         ext_pct_of_day: totalDv > 0 ? Math.round(((pm.dv + ah.dv) / totalDv) * 1000) / 10 : 0,
