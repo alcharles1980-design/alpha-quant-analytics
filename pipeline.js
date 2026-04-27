@@ -3057,13 +3057,215 @@ async function runMFE() {
   await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'MFE scan complete: ' + tickers.length + ' stocks processed' });
 }
 
+
+async function runExtendedVolume() {
+  var scanDate = new Date().toISOString().slice(0, 10);
+  await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Loading universe from screener...' });
+
+  // Load most recent screener tickers
+  var screenerR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type&order=ticker.asc,scan_date.desc&limit=10000', { headers: sbHeaders() });
+  if (!screenerR.ok) {
+    console.error('Could not load screener tickers');
+    await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Could not load screener universe' });
+    return;
+  }
+  var allRows = await screenerR.json();
+  var seen = {}, universe = [];
+  for (var i = 0; i < allRows.length; i++) {
+    var r = allRows[i];
+    if (seen[r.ticker]) continue;
+    seen[r.ticker] = true;
+    universe.push(r);
+  }
+  console.log('Universe size: ' + universe.length);
+
+  // 25-day window covers 20-day rolling avg with weekend buffer
+  var endDate = new Date();
+  var startDate = new Date(endDate); startDate.setDate(startDate.getDate() - 30);
+  var startStr = startDate.toISOString().slice(0, 10);
+  var endStr = endDate.toISOString().slice(0, 10);
+  console.log('Date range: ' + startStr + ' to ' + endStr);
+
+  var inserted = 0, skipped = 0, errored = 0;
+  var pageSize = 100;
+
+  for (var ti = 0; ti < universe.length; ti++) {
+    var u = universe[ti];
+    var tk = u.ticker;
+    if (ti % 50 === 0) {
+      var pct = Math.round((ti / universe.length) * 100);
+      await reportProgress({ mode: 'extended-volume', ticker: tk, status: 'running', progress_pct: pct, message: 'Processing ' + tk + ' (' + (ti + 1) + '/' + universe.length + ')' });
+    }
+    try {
+      // ET offset for the scan date
+      var testDate = new Date(scanDate + 'T12:00:00Z');
+      var utcH = testDate.getUTCHours();
+      var etStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(testDate);
+      var etOff = utcH - parseInt(etStr); // 4 in EDT, 5 in EST
+
+      var url = 'https://api.polygon.io/v2/aggs/ticker/' + tk + '/range/1/hour/' + startStr + '/' + endStr + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 30000);
+      var r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) { errored++; continue; }
+      var body = await r.json();
+      if (!body.results || !body.results.length) { skipped++; continue; }
+
+      // Bucket by date and session
+      var byDay = {}; // date -> { pm:{dv,tr,sh}, rth:{...}, ah:{...}, hours:[{label,session,dv,tr}] }
+      for (var bi = 0; bi < body.results.length; bi++) {
+        var bar = body.results[bi];
+        var ms = bar.t;
+        var dt = new Date(ms);
+        var utcHr = dt.getUTCHours();
+        var etHour = utcHr - etOff;
+        if (etHour < 0) etHour += 24;
+        // Date in ET
+        var dtET = new Date(ms - etOff * 3600 * 1000);
+        var dayKey = dtET.toISOString().slice(0, 10);
+
+        // Bucket: 4-9 PM, 9-16 RTH, 16-20 AH, else skip overnight
+        var session = null;
+        if (etHour >= 4 && etHour < 9) session = 'PM';
+        else if (etHour === 9) {
+          // 9 AM ET hour bar contains both pre (9:00-9:30) and RTH (9:30-10:00) - assign to PM (close to 9:30 cutoff)
+          session = 'PM';
+        }
+        else if (etHour >= 10 && etHour < 16) session = 'RTH';
+        else if (etHour === 16) {
+          // 4 PM ET hour bar contains close. Assign to RTH (closing minutes are RTH-meaningful).
+          session = 'RTH';
+        }
+        else if (etHour >= 17 && etHour < 20) session = 'AH';
+        else session = 'OVN'; // skip overnight 20-04
+
+        if (session === 'OVN') continue;
+
+        if (!byDay[dayKey]) byDay[dayKey] = { pm: { dv: 0, tr: 0, sh: 0 }, rth: { dv: 0, tr: 0, sh: 0 }, ah: { dv: 0, tr: 0, sh: 0 }, hours: [] };
+        var dv = (bar.vw || bar.c || 0) * (bar.v || 0);
+        var trades = bar.n || 0;
+        var shares = bar.v || 0;
+        var bucket = byDay[dayKey][session.toLowerCase()];
+        bucket.dv += dv;
+        bucket.tr += trades;
+        bucket.sh += shares;
+
+        byDay[dayKey].hours.push({
+          label: (etHour < 10 ? '0' + etHour : etHour) + ':00',
+          session: session,
+          dv: dv,
+          tr: trades,
+          h: etHour
+        });
+      }
+
+      var dayKeys = Object.keys(byDay).sort();
+      if (!dayKeys.length) { skipped++; continue; }
+
+      // Filter out half-days (less than 4 hours of RTH activity) for averages only
+      var validDays = [];
+      for (var dk = 0; dk < dayKeys.length; dk++) {
+        var day = byDay[dayKeys[dk]];
+        var rthHrs = day.hours.filter(function (h) { return h.session === 'RTH'; }).length;
+        if (rthHrs >= 4) validDays.push(dayKeys[dk]);
+      }
+
+      // Latest day = scan_date
+      var latest = dayKeys[dayKeys.length - 1];
+      var latestDay = byDay[latest];
+      var pm = latestDay.pm, rth = latestDay.rth, ah = latestDay.ah;
+      var totalDv = pm.dv + rth.dv + ah.dv;
+      var totalTr = pm.tr + rth.tr + ah.tr;
+
+      // Rolling averages: last N valid days excluding current scan date
+      var hist = validDays.filter(function (d) { return d !== latest; });
+      var calcAvg = function (days, sess, field) {
+        if (!days.length) return null;
+        var sum = 0;
+        for (var i = 0; i < days.length; i++) sum += byDay[days[i]][sess][field];
+        return sum / days.length;
+      };
+
+      var last5 = hist.slice(-5);
+      var last20 = hist.slice(-20);
+
+      var pm5dv = last5.length >= 3 ? calcAvg(last5, 'pm', 'dv') : null;
+      var pm5tr = last5.length >= 3 ? calcAvg(last5, 'pm', 'tr') : null;
+      var ah5dv = last5.length >= 3 ? calcAvg(last5, 'ah', 'dv') : null;
+      var ah5tr = last5.length >= 3 ? calcAvg(last5, 'ah', 'tr') : null;
+      var pm20dv = last20.length >= 10 ? calcAvg(last20, 'pm', 'dv') : null;
+      var pm20tr = last20.length >= 10 ? calcAvg(last20, 'pm', 'tr') : null;
+      var ah20dv = last20.length >= 10 ? calcAvg(last20, 'ah', 'dv') : null;
+      var ah20tr = last20.length >= 10 ? calcAvg(last20, 'ah', 'tr') : null;
+
+      // Hourly breakdown for detail modal: 5d avg per hour-of-day
+      var hourMap = {};
+      for (var hi = 0; hi < last5.length; hi++) {
+        var hd = byDay[last5[hi]].hours;
+        for (var hh = 0; hh < hd.length; hh++) {
+          var hr = hd[hh];
+          if (!hourMap[hr.h]) hourMap[hr.h] = { count: 0, dvSum: 0, trSum: 0, session: hr.session, label: hr.label };
+          hourMap[hr.h].count++;
+          hourMap[hr.h].dvSum += hr.dv;
+          hourMap[hr.h].trSum += hr.tr;
+        }
+      }
+      var hourlyArr = [];
+      Object.keys(hourMap).sort(function (a, b) { return parseInt(a) - parseInt(b); }).forEach(function (k) {
+        var hm = hourMap[k];
+        hourlyArr.push({ label: hm.label, session: hm.session, dv: hm.dvSum / hm.count, tr: hm.trSum / hm.count });
+      });
+
+      var row = {
+        ticker: tk, scan_date: scanDate,
+        pm_dollar_volume: Math.round(pm.dv), pm_trades: pm.tr, pm_volume_shares: pm.sh,
+        rth_dollar_volume: Math.round(rth.dv), rth_trades: rth.tr, rth_volume_shares: rth.sh,
+        ah_dollar_volume: Math.round(ah.dv), ah_trades: ah.tr, ah_volume_shares: ah.sh,
+        total_dollar_volume: Math.round(totalDv), total_trades: totalTr,
+        pm_pct_of_day: totalDv > 0 ? Math.round((pm.dv / totalDv) * 1000) / 10 : 0,
+        ah_pct_of_day: totalDv > 0 ? Math.round((ah.dv / totalDv) * 1000) / 10 : 0,
+        ext_pct_of_day: totalDv > 0 ? Math.round(((pm.dv + ah.dv) / totalDv) * 1000) / 10 : 0,
+        pm_5d_avg_dv: pm5dv != null ? Math.round(pm5dv) : null,
+        pm_5d_avg_trades: pm5tr != null ? Math.round(pm5tr) : null,
+        ah_5d_avg_dv: ah5dv != null ? Math.round(ah5dv) : null,
+        ah_5d_avg_trades: ah5tr != null ? Math.round(ah5tr) : null,
+        pm_20d_avg_dv: pm20dv != null ? Math.round(pm20dv) : null,
+        pm_20d_avg_trades: pm20tr != null ? Math.round(pm20tr) : null,
+        ah_20d_avg_dv: ah20dv != null ? Math.round(ah20dv) : null,
+        ah_20d_avg_trades: ah20tr != null ? Math.round(ah20tr) : null,
+        hourly_breakdown: { hours: hourlyArr },
+        price: u.price || null,
+        market_cap: u.market_cap || null,
+        ticker_type: u.ticker_type || null
+      };
+
+      // DELETE existing row for this (ticker, scan_date) then INSERT (PostgREST PATCH unreliable)
+      await fetch(SB_URL + '/rest/v1/extended_hours_volume?ticker=eq.' + tk + '&scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+      var ir = await fetch(SB_URL + '/rest/v1/extended_hours_volume', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
+      if (ir.ok) inserted++;
+      else { errored++; var et = await ir.text(); if (errored < 5) console.log('Insert error ' + tk + ': ' + et.slice(0, 200)); }
+
+      // Rate limit
+      if (ti % 100 === 99) await sleep(500);
+      else if (ti % 10 === 9) await sleep(50);
+    } catch (e) {
+      errored++;
+      if (errored < 5) console.log('Error ' + tk + ': ' + e.message);
+    }
+  }
+
+  console.log('Extended Volume scan complete. Inserted: ' + inserted + ', Skipped: ' + skipped + ', Errored: ' + errored);
+  await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. Inserted ' + inserted + ', errored ' + errored });
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--extended-volume') ? 'extended-volume' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -3095,6 +3297,11 @@ async function main() {
     try { await runMFE(); } catch (e) {
       console.error('MFE CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'extended-volume') {
+    try { await runExtendedVolume(); } catch (e) {
+      console.error('EXTENDED-VOLUME CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'backfill-mcap') {
     await backfillMcap();

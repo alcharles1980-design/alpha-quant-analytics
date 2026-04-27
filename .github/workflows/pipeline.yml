@@ -21,6 +21,7 @@ on:
           - screener
           - backfill-mcap
           - mfe
+          - extended-volume
       tickers:
         description: 'Comma-separated tickers'
         required: true
