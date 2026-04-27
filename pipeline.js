@@ -1571,6 +1571,275 @@ async function runAutotune(tickers) {
 }
 
 // ── SCREENER: Stock Oscillation Scanner ──────────────────
+
+// ============================================================================
+// Stage A: Regime Classification helpers (used in runScreener)
+// ============================================================================
+function _yzAnnVol(bars) {
+  // Yang-Zhang annualized vol (% units) on the given bar array
+  var n = bars.length;
+  if (n < 5) return null;
+  var logOC = [], logCO = [], logHL = [];
+  for (var i = 0; i < n; i++) {
+    if (bars[i].o <= 0 || bars[i].c <= 0 || bars[i].h <= 0 || bars[i].l <= 0) return null;
+    logOC.push(Math.log(bars[i].c / bars[i].o));
+    if (i > 0 && bars[i - 1].c > 0) logCO.push(Math.log(bars[i].o / bars[i - 1].c));
+    logHL.push(Math.log(bars[i].h / bars[i].l));
+  }
+  if (logCO.length < 1) return null;
+  var meanOC = 0; for (var i = 0; i < logOC.length; i++) meanOC += logOC[i]; meanOC /= logOC.length;
+  var varOC = 0; for (var i = 0; i < logOC.length; i++) varOC += (logOC[i] - meanOC) * (logOC[i] - meanOC); varOC /= Math.max(1, logOC.length - 1);
+  var meanCO = 0; for (var i = 0; i < logCO.length; i++) meanCO += logCO[i]; meanCO /= logCO.length;
+  var varCO = 0; for (var i = 0; i < logCO.length; i++) varCO += (logCO[i] - meanCO) * (logCO[i] - meanCO); varCO /= Math.max(1, logCO.length - 1);
+  var k = 0.34 / (1.34 + (n + 1) / Math.max(1, n - 1));
+  var varRS = 0;
+  for (var i = 0; i < n; i++) {
+    var u = Math.log(bars[i].h / bars[i].o);
+    var d2 = Math.log(bars[i].l / bars[i].o);
+    var c2 = Math.log(bars[i].c / bars[i].o);
+    varRS += u * (u - c2) + d2 * (d2 - c2);
+  }
+  varRS /= n;
+  var yzVar = varCO + k * varOC + (1 - k) * varRS;
+  return Math.sqrt(Math.max(0, yzVar) * 252) * 100;
+}
+
+function _rollingYzWindow(bars, windowSize) {
+  // Return array of rolling YZ vol values, one per day starting from windowSize-th bar
+  var out = [];
+  for (var i = windowSize; i <= bars.length; i++) {
+    var seg = bars.slice(i - windowSize, i);
+    var v = _yzAnnVol(seg);
+    if (v != null) out.push(v);
+  }
+  return out;
+}
+
+function _percentileRank(arr, value) {
+  if (!arr.length) return null;
+  var below = 0, equal = 0;
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i] < value) below++;
+    else if (arr[i] === value) equal++;
+  }
+  return (below + 0.5 * equal) / arr.length;
+}
+
+function _hurstRS(returns) {
+  // R/S Hurst exponent on a returns array
+  if (returns.length < 20) return null;
+  var winSizes = [10, 14, 20, 28, 40, 56];
+  var logN = [], logRS = [];
+  for (var wi = 0; wi < winSizes.length; wi++) {
+    var ws = winSizes[wi];
+    if (ws > returns.length) continue;
+    var rsVals = [];
+    for (var start = 0; start + ws <= returns.length; start += ws) {
+      var seg = returns.slice(start, start + ws);
+      var mean = 0; for (var j = 0; j < seg.length; j++) mean += seg[j]; mean /= seg.length;
+      var cumDev = 0, maxD = -Infinity, minD = Infinity, ss = 0;
+      for (var j = 0; j < seg.length; j++) {
+        cumDev += seg[j] - mean;
+        if (cumDev > maxD) maxD = cumDev;
+        if (cumDev < minD) minD = cumDev;
+        ss += (seg[j] - mean) * (seg[j] - mean);
+      }
+      var stdDev = Math.sqrt(ss / Math.max(1, seg.length));
+      if (stdDev > 0) rsVals.push((maxD - minD) / stdDev);
+    }
+    if (rsVals.length > 0) {
+      var avgRS = 0; for (var j = 0; j < rsVals.length; j++) avgRS += rsVals[j]; avgRS /= rsVals.length;
+      if (avgRS > 0) { logN.push(Math.log(ws)); logRS.push(Math.log(avgRS)); }
+    }
+  }
+  if (logN.length < 2) return null;
+  var sX = 0, sY = 0, sXY = 0, sX2 = 0, nP = logN.length;
+  for (var j = 0; j < nP; j++) { sX += logN[j]; sY += logRS[j]; sXY += logN[j] * logRS[j]; sX2 += logN[j] * logN[j]; }
+  var denom = nP * sX2 - sX * sX;
+  if (Math.abs(denom) < 1e-12) return null;
+  var h = (nP * sXY - sX * sY) / denom;
+  return Math.max(0, Math.min(1, h));
+}
+
+function _autocorr1(returns) {
+  if (returns.length < 5) return null;
+  var n = returns.length;
+  var mean = 0; for (var i = 0; i < n; i++) mean += returns[i]; mean /= n;
+  var num = 0, den = 0;
+  for (var i = 0; i < n; i++) {
+    den += (returns[i] - mean) * (returns[i] - mean);
+    if (i > 0) num += (returns[i] - mean) * (returns[i - 1] - mean);
+  }
+  if (den === 0) return null;
+  return num / den;
+}
+
+function _adx(bars, period) {
+  // Wilder's ADX. Returns the ADX value computed on the last `period` bars after warmup.
+  var n = bars.length;
+  if (n < period * 2 + 1) return null;
+  var tr = [], plusDM = [], minusDM = [];
+  for (var i = 1; i < n; i++) {
+    var high = bars[i].h, low = bars[i].l, prevClose = bars[i - 1].c, prevHigh = bars[i - 1].h, prevLow = bars[i - 1].l;
+    var t1 = high - low;
+    var t2 = Math.abs(high - prevClose);
+    var t3 = Math.abs(low - prevClose);
+    tr.push(Math.max(t1, t2, t3));
+    var upMove = high - prevHigh;
+    var downMove = prevLow - low;
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+  }
+  // Wilder smoothing
+  function wilderSmooth(arr, p) {
+    if (arr.length < p) return [];
+    var out = [];
+    var sum = 0;
+    for (var i = 0; i < p; i++) sum += arr[i];
+    out.push(sum);
+    for (var i = p; i < arr.length; i++) {
+      sum = sum - sum / p + arr[i];
+      out.push(sum);
+    }
+    return out;
+  }
+  var atr = wilderSmooth(tr, period);
+  var pDM = wilderSmooth(plusDM, period);
+  var mDM = wilderSmooth(minusDM, period);
+  if (!atr.length) return null;
+  var dx = [];
+  for (var i = 0; i < atr.length; i++) {
+    if (atr[i] === 0) { dx.push(0); continue; }
+    var pDI = 100 * pDM[i] / atr[i];
+    var mDI = 100 * mDM[i] / atr[i];
+    var sum = pDI + mDI;
+    dx.push(sum === 0 ? 0 : 100 * Math.abs(pDI - mDI) / sum);
+  }
+  if (dx.length < period) return null;
+  var adxStart = 0;
+  for (var i = 0; i < period; i++) adxStart += dx[i];
+  adxStart /= period;
+  var adxVal = adxStart;
+  for (var i = period; i < dx.length; i++) {
+    adxVal = (adxVal * (period - 1) + dx[i]) / period;
+  }
+  return adxVal;
+}
+
+function _classifyRegime(allBars) {
+  // Compute the full regime classification block from a daily bar array.
+  // Returns an object with all 11 regime fields. Bars assumed sorted oldest-first.
+  var n = allBars.length;
+  if (n < 25) {
+    return {
+      yz_vol_252d: null, yz_vol_63d: null, yz_pct_252d: null, yz_pct_63d: null,
+      hurst_60d: null, autocorr_60d: null, adx_14d: null,
+      regime_vol: null, regime_trend: null, regime_label: null,
+      regime_confidence: null, regime_source: 'insufficient'
+    };
+  }
+
+  // 252d and 63d windows (truncate if not enough history)
+  var w252 = Math.min(252, n);
+  var w63 = Math.min(63, n);
+  var bars252 = allBars.slice(-w252);
+  var bars63 = allBars.slice(-w63);
+
+  var yz252 = _yzAnnVol(bars252);
+  var yz63 = _yzAnnVol(bars63);
+
+  // For percentile: build rolling history of 21-day YZ vol values,
+  // then compute today's 21-day YZ percentile vs trailing windows.
+  var WIN = 21; // 1-month rolling window for the per-day vol baseline
+  var todayVol = null;
+  if (n >= WIN) todayVol = _yzAnnVol(allBars.slice(-WIN));
+  var rolling = _rollingYzWindow(allBars, WIN); // includes today as last value
+  var pct252 = null, pct63 = null;
+  if (rolling.length >= 30 && todayVol != null) {
+    // exclude today from baseline (compare against last N excluding today)
+    var hist252 = rolling.slice(0, rolling.length - 1).slice(-(252 - WIN));
+    var hist63 = rolling.slice(0, rolling.length - 1).slice(-(63 - WIN));
+    if (hist252.length >= 30) pct252 = _percentileRank(hist252, todayVol);
+    if (hist63.length >= 15) pct63 = _percentileRank(hist63, todayVol);
+  }
+
+  var source = pct252 != null ? '252d' : (pct63 != null ? '63d_short_history' : 'insufficient');
+
+  // Trend ensemble (last 60 daily returns)
+  var w60 = Math.min(60, n);
+  var bars60 = allBars.slice(-w60);
+  var rets60 = [];
+  for (var i = 1; i < bars60.length; i++) {
+    if (bars60[i - 1].c > 0) rets60.push(Math.log(bars60[i].c / bars60[i - 1].c));
+  }
+  var hurst60 = _hurstRS(rets60);
+  var ac60 = _autocorr1(rets60);
+  // ADX 14-day on last ~30 bars (need 2*period+1 = 29 minimum)
+  var adxBars = allBars.slice(-Math.min(40, n));
+  var adx14 = _adx(adxBars, 14);
+
+  // Vol regime classification
+  var regimeVol = null;
+  var pctForVol = pct252 != null ? pct252 : pct63;
+  if (pctForVol != null) {
+    if (pctForVol < 0.333) regimeVol = 'Low';
+    else if (pctForVol < 0.667) regimeVol = 'Normal';
+    else regimeVol = 'High';
+  }
+
+  // Trend ensemble vote
+  var votes = [];
+  if (hurst60 != null) {
+    if (hurst60 < 0.45) votes.push('MeanRevert');
+    else if (hurst60 > 0.55) votes.push('Trend');
+    else votes.push('Random');
+  }
+  if (ac60 != null) {
+    if (ac60 < -0.05) votes.push('MeanRevert');
+    else if (ac60 > 0.05) votes.push('Trend');
+    else votes.push('Random');
+  }
+  if (adx14 != null) {
+    if (adx14 > 25) votes.push('Trend');
+    else if (adx14 < 20) votes.push('Random'); // ADX low = no trend; doesn't distinguish MR from random
+    else votes.push('Random');
+  }
+  var regimeTrend = null, regimeConf = null;
+  if (votes.length > 0) {
+    var counts = { MeanRevert: 0, Random: 0, Trend: 0 };
+    for (var i = 0; i < votes.length; i++) counts[votes[i]]++;
+    var topKey = null, topCount = 0;
+    for (var k in counts) {
+      if (counts[k] > topCount) { topCount = counts[k]; topKey = k; }
+    }
+    if (topCount === votes.length) regimeConf = 'High';
+    else if (topCount === votes.length - 1 || (votes.length === 3 && topCount === 2)) regimeConf = 'Med';
+    else regimeConf = 'Low';
+    if (regimeConf === 'Low' && votes.length >= 2) {
+      regimeTrend = 'Mixed';
+    } else {
+      regimeTrend = topKey;
+    }
+  }
+
+  var regimeLabel = (regimeVol && regimeTrend) ? (regimeVol + '_' + regimeTrend) : null;
+
+  return {
+    yz_vol_252d: yz252 != null ? Math.round(yz252 * 10) / 10 : null,
+    yz_vol_63d: yz63 != null ? Math.round(yz63 * 10) / 10 : null,
+    yz_pct_252d: pct252 != null ? Math.round(pct252 * 1000) / 1000 : null,
+    yz_pct_63d: pct63 != null ? Math.round(pct63 * 1000) / 1000 : null,
+    hurst_60d: hurst60 != null ? Math.round(hurst60 * 1000) / 1000 : null,
+    autocorr_60d: ac60 != null ? Math.round(ac60 * 1000) / 1000 : null,
+    adx_14d: adx14 != null ? Math.round(adx14 * 100) / 100 : null,
+    regime_vol: regimeVol,
+    regime_trend: regimeTrend,
+    regime_label: regimeLabel,
+    regime_confidence: regimeConf,
+    regime_source: source
+  };
+}
+
 async function runScreener() {
   var scanDate = new Date().toISOString().slice(0, 10);
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting oscillation screener...' });
@@ -2333,11 +2602,26 @@ async function runScreener() {
       atr_range_ratio: vovRange, regime_changes_60d: regChanges
     };
 
+    // Stage A: Regime classification (uses cand.bars, no extra API calls)
+    var regimeBlock = _classifyRegime(allBars);
+
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
       ticker_type: cand.ticker_type || null,
       yz_vol: Math.round(yzVol * 10) / 10,
+      yz_vol_252d: regimeBlock.yz_vol_252d,
+      yz_vol_63d: regimeBlock.yz_vol_63d,
+      yz_pct_252d: regimeBlock.yz_pct_252d,
+      yz_pct_63d: regimeBlock.yz_pct_63d,
+      hurst_60d: regimeBlock.hurst_60d,
+      autocorr_60d: regimeBlock.autocorr_60d,
+      adx_14d: regimeBlock.adx_14d,
+      regime_vol: regimeBlock.regime_vol,
+      regime_trend: regimeBlock.regime_trend,
+      regime_label: regimeBlock.regime_label,
+      regime_confidence: regimeBlock.regime_confidence,
+      regime_source: regimeBlock.regime_source,
       parkinson_vol: Math.round(parkVol * 10) / 10, hurst: Math.round(hurst * 1000) / 1000,
       atr_pct: Math.round(atrPct * 100) / 100, osc_drift_ratio: Math.round(oscDrift * 10) / 10,
       reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: dailyOnlyScore,
