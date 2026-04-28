@@ -3210,13 +3210,36 @@ async function runScreener() {
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 90, message: 'Saving ' + results.length + ' results...' });
   await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
   await sleep(300);
+  var savedCount = 0, failedCount = 0, failLog = [];
   for (var bi = 0; bi < results.length; bi += 200) {
     var batch = results.slice(bi, bi + 200);
     var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
-    if (!saveR.ok) { var errTxt = await saveR.text(); console.log('  Save batch ' + bi + '-' + (bi + batch.length) + ' FAILED: ' + saveR.status + ' ' + errTxt.slice(0, 200)); }
+    if (!saveR.ok) {
+      failedCount += batch.length;
+      var errTxt = await saveR.text();
+      console.log('  Save batch ' + bi + '-' + (bi + batch.length) + ' FAILED: ' + saveR.status + ' ' + errTxt.slice(0, 400));
+      // On batch failure, retry one row at a time to identify the poison row
+      if (failLog.length < 5) {
+        for (var ri = 0; ri < batch.length; ri++) {
+          var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify([batch[ri]]) });
+          if (oneR.ok) { savedCount++; failedCount--; }
+          else if (failLog.length < 5) {
+            var oneErr = await oneR.text();
+            failLog.push({ ticker: batch[ri].ticker, status: oneR.status, error: oneErr.slice(0, 300) });
+            console.log('  POISON ROW: ' + batch[ri].ticker + ' (' + oneR.status + ') ' + oneErr.slice(0, 200));
+          }
+        }
+      }
+    } else {
+      savedCount += batch.length;
+    }
   }
-  console.log('Saved ' + results.length + ' stocks to cached_oscillation_screener');
-  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + results.length + ' stocks scored. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });
+  console.log('Save complete: ' + savedCount + ' saved, ' + failedCount + ' failed of ' + results.length);
+  if (failLog.length > 0) {
+    console.log('First failed rows:');
+    for (var fi = 0; fi < failLog.length; fi++) console.log('  ' + JSON.stringify(failLog[fi]));
+  }
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + savedCount + '/' + results.length + ' saved. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });
 }
 
 // ── BACKFILL MARKET CAP for existing screener data ──────
