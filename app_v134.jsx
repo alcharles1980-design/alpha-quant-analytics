@@ -7796,7 +7796,7 @@ function StockClassificationPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="3 \u00D7 3 Regime Grid" sub={scanDate?('Stocks classified by their own historical vol percentile and trend ensemble vote, scan '+scanDate):'Loading...'} info="Volatility axis: today's 21-day Yang-Zhang vol vs the same ticker's trailing 252-day window. Tertile cutoffs (Low/Normal/High). Trend axis: ensemble vote of Hurst-60d (R/S), lag-1 autocorrelation-60d, and ADX-14d. When all 3 agree, label is Confidence=High. When 2 of 3 agree, Confidence=Med. When split, the stock is labeled 'Mixed'. Click any cell to see members."/>
+      <SectionHead title="3 × 3 Regime Grid" sub={scanDate?('Stocks classified by their own historical vol percentile and trend ensemble vote, scan '+scanDate):'Loading...'} info="Volatility axis: today's 21-day Yang-Zhang vol vs the same ticker's trailing 252-day window. Tertile cutoffs (Low/Normal/High). Trend axis: ensemble vote of Hurst-60d (R/S), lag-1 autocorrelation-60d, and ADX-14d. When all 3 agree, label is Confidence=High. When 2 of 3 agree, Confidence=Med. When split, the stock is labeled 'Mixed'. Click any cell to see members."/>
 
       {data&&uniData&&<div style={{marginTop:10,marginBottom:8}}>
         <label style={lS}>Universe</label>
@@ -7846,13 +7846,18 @@ function StockClassificationPage(p){
       </div>}
 
       {classified.length>0&&<div style={{marginTop:12}}>
+        <div style={{textAlign:'center',color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:2,fontFamily:F,marginBottom:4,paddingLeft:80}}>← TREND →</div>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:4,fontFamily:F}}>
-          <thead><tr><th style={{padding:6,fontSize:8,color:C.txtDim,textAlign:'left'}}></th>
-            {TRENDS.map(function(t){return <th key={t} style={{padding:6,fontSize:9,color:C.txtBright,textAlign:'center',fontWeight:700}}>{TREND_LABELS[t]}</th>;})}
+          <thead><tr>
+            <th style={{padding:6,fontSize:8,color:C.txtDim,textAlign:'left',width:80}}></th>
+            {TRENDS.map(function(t){return <th key={t} style={{padding:6,fontSize:10,color:C.txtBright,textAlign:'center',fontWeight:700,letterSpacing:0.5}}>{TREND_LABELS[t]}</th>;})}
           </tr></thead>
           <tbody>
-            {VOLS.map(function(v){return <tr key={v}>
-              <td style={{padding:6,fontSize:9,color:C.txtBright,fontWeight:700}}>{v}</td>
+            {VOLS.map(function(v,vi){return <tr key={v}>
+              <td style={{padding:6,fontSize:10,color:C.txtBright,fontWeight:700,letterSpacing:0.5,verticalAlign:'middle',position:'relative'}}>
+                {vi===0&&<div style={{position:'absolute',left:-2,top:'50%',transform:'translateY(-50%) rotate(-90deg)',transformOrigin:'left center',color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:2,fontFamily:F,whiteSpace:'nowrap',marginTop:60}}>← VOLATILITY →</div>}
+                <span style={{paddingLeft:14}}>{v}</span>
+              </td>
               {TRENDS.map(function(t){var k=v+'_'+t;var n=gridCounts[k];var pct=totalClassified>0?(n/totalClassified)*100:0;var sem=cellSemantics[k];var sel=selectedCell===k;return <td key={t} onClick={function(){setSelectedCell(sel?null:k);setTickerSearch('');}} style={{padding:'14px 6px',background:sem.c,border:'2px solid '+(sel?C.accent:'transparent'),borderRadius:8,cursor:'pointer',textAlign:'center',transition:'all 0.15s'}}>
                 <div style={{fontSize:18,fontWeight:700,color:C.txtBright,fontFamily:F}}>{n}</div>
                 <div style={{fontSize:7,color:C.txt,fontFamily:F,marginTop:2,letterSpacing:0.5}}>{pct.toFixed(1)}% &middot; {sem.label}</div>
