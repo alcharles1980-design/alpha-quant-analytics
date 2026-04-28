@@ -2660,15 +2660,79 @@ function SettingsPage(p){
   var ss2=useState(false),savedSb=ss2[0],setSavedSb=ss2[1];
   var gs=useState(p.ghToken||''),ghTok=gs[0],setGhTok=gs[1];
   var gs2=useState(false),savedGh=gs2[0],setSavedGh=gs2[1];
+  var pSt=useState([]),runs=pSt[0],setRuns=pSt[1];
+  var cMs=useState(''),cancelMsg=cMs[0],setCancelMsg=cMs[1];
+  var cBs=useState(false),cancelling=cBs[0],setCancelling=cBs[1];
   var savePg=function(){p.onSave(key);setSaved(true);setTimeout(function(){setSaved(false);},2000);};
   var saveSb=function(){p.onSaveSb(sUrl,sKey);setSavedSb(true);setTimeout(function(){setSavedSb(false);},2000);};
   var saveGh=function(){p.onSaveGh(ghTok);setSavedGh(true);setTimeout(function(){setSavedGh(false);},2000);};
   var clearSb=function(){setSUrl('');setSKey('');p.onSaveSb('','');};
+
+  var loadRuns=async function(){
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/pipeline_status?status=eq.running&select=*&order=started_at.desc&limit=20',{headers:getSbHeaders()});
+      var d=r.ok?await r.json():[];
+      setRuns(d);
+    }catch(e){}
+  };
+  useEffect(function(){
+    loadRuns();
+    var id=setInterval(loadRuns,5000);
+    return function(){clearInterval(id);};
+  },[]);
+
+  var doCancel=async function(){
+    if(!ghTok){setCancelMsg('Save GitHub PAT first');return;}
+    if(!confirm('Cancel ALL running workflow runs on GitHub Actions? This will stop the screener mid-flight.'))return;
+    setCancelling(true);setCancelMsg('Cancelling...');
+    try{
+      await cancelPipeline(ghTok,function(t,m){setCancelMsg(m);});
+      // Mark stale running rows as 'error' so the UI elsewhere doesn't think they're still alive
+      await fetch(SB_URL+'/rest/v1/pipeline_status?status=eq.running',{method:'PATCH',headers:Object.assign({},getSbHeaders(),{'Prefer':'return=minimal'}),body:JSON.stringify({status:'error',message:'Cancelled by user'})});
+      await loadRuns();
+    }catch(e){setCancelMsg('Cancel error: '+e.message);}
+    setCancelling(false);
+    setTimeout(function(){setCancelMsg('');},6000);
+  };
+
+  var clearStale=async function(){
+    if(!confirm('Mark all stale running pipeline_status rows as error? Use this when GitHub already cancelled them but the DB still says running.'))return;
+    setCancelMsg('Clearing stale runs...');
+    try{
+      await fetch(SB_URL+'/rest/v1/pipeline_status?status=eq.running',{method:'PATCH',headers:Object.assign({},getSbHeaders(),{'Prefer':'return=minimal'}),body:JSON.stringify({status:'error',message:'Marked stale by user'})});
+      await loadRuns();
+      setCancelMsg('Stale rows cleared.');
+    }catch(e){setCancelMsg('Error: '+e.message);}
+    setTimeout(function(){setCancelMsg('');},5000);
+  };
+
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Settings</div>
     </div>
+
+    <Cd glow={runs.length>0}>
+      <SectionHead title="Pipeline Status" sub={runs.length>0?(runs.length+' running'):'Idle'} info="Live status of GitHub Actions pipeline runs. Cancel button stops any running workflow on GitHub and marks the pipeline_status row as error. Use Clear Stale when a run was cancelled externally but the DB still shows running."/>
+      {runs.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:10,padding:8}}>No pipelines running. Polls every 5s.</div>}
+      {runs.length>0&&<div style={{marginTop:10}}>
+        {runs.map(function(r,i){var sec=Math.round((Date.now()-new Date(r.started_at).getTime())/1000);return <div key={i} style={{padding:10,background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:8,fontFamily:F,fontSize:9}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+            <span style={{color:C.accent,fontWeight:700,letterSpacing:1}}>{r.mode.toUpperCase()}</span>
+            <span style={{color:C.txtDim}}>{Math.floor(sec/60)+'m '+(sec%60)+'s'}</span>
+          </div>
+          <div style={{color:C.txt,marginBottom:6}}>{r.message||'Running...'}</div>
+          {r.progress_pct!=null&&<div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:r.progress_pct+'%',height:'100%',background:C.accent}}/></div>}
+        </div>;})}
+      </div>}
+      <div style={{display:'flex',gap:8,marginTop:10}}>
+        <button onClick={doCancel} disabled={cancelling||runs.length===0||!ghTok} style={Object.assign({},bB,{flex:1,background:cancelling?C.bgInput:'transparent',border:'1px solid '+C.warn,color:cancelling?C.txtDim:C.warn})}>{cancelling?'Cancelling...':'Cancel All Running'}</button>
+        <button onClick={clearStale} style={Object.assign({},bB,{width:'auto',padding:'10px 14px',background:'transparent',border:'1px solid '+C.border,color:C.txt})}>Clear Stale</button>
+      </div>
+      {cancelMsg&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F,padding:8,background:C.bg,borderRadius:6}}>{cancelMsg}</div>}
+      {!ghTok&&<div style={{marginTop:8,color:C.txtDim,fontSize:8,fontFamily:F}}>Cancel requires GitHub PAT (set below).</div>}
+    </Cd>
+
     <Cd>
       <SectionHead title="Polygon.io API" sub="Market data source for trade ticks and OHLC" info="Your Polygon.io API key is used to fetch historical trade data directly from US stock exchanges. The key is stored in this app only and sent directly to Polygon from your browser."/>
       <div style={{marginBottom:12,marginTop:10}}>
