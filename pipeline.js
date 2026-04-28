@@ -1798,6 +1798,10 @@ function _classifyRegime(allBars) {
     return {
       yz_vol_252d: null, yz_vol_63d: null, yz_pct_252d: null, yz_pct_63d: null,
       hurst_60d: null, autocorr_60d: null, adx_14d: null,
+      atr_14d_dollar: null, atr_14d_pct: null,
+      return_10d_pct: null, return_60d_pct: null,
+      direction_10d: null, direction_60d: null,
+      trend_r2_60d: null, trend_pattern: null,
       regime_vol: null, regime_trend: null, regime_label: null,
       regime_confidence: null, regime_source: 'insufficient'
     };
@@ -1929,6 +1933,28 @@ function _classifyRegime(allBars) {
 
 async function runScreener() {
   var scanDate = new Date().toISOString().slice(0, 10);
+
+  // Concurrent-run guard: abort if another screener is already running
+  try {
+    var lockR = await fetch(SB_URL + "/rest/v1/pipeline_status?mode=eq.screener&status=eq.running&select=ticker,started_at,message&order=started_at.desc&limit=5", { headers: sbHeaders() });
+    if (lockR.ok) {
+      var lockRows = await lockR.json();
+      var nowMs = Date.now();
+      for (var li = 0; li < lockRows.length; li++) {
+        var startedMs = new Date(lockRows[li].started_at).getTime();
+        var ageSec = (nowMs - startedMs) / 1000;
+        if (ageSec < 3600) { // active within last hour
+          var msg = "Another screener is already running (started " + Math.round(ageSec) + "s ago). Aborting to prevent race condition. Cancel the other run from Settings if needed.";
+          console.log(msg);
+          await reportProgress({ mode: "screener", ticker: "ALL", status: "error", progress_pct: 0, message: msg });
+          return;
+        }
+      }
+    }
+  } catch (e) {
+    console.log("Concurrent-run check failed (continuing): " + e.message);
+  }
+
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting oscillation screener...' });
 
   // Step 1: Get last 260 trading days (~1 year) of grouped daily bars
@@ -3217,8 +3243,10 @@ async function runScreener() {
   };
 
   var savedCount = 0, failedCount = 0, batchFailures = 0, poisonLogged = 0;
-  for (var bi = 0; bi < results.length; bi += 200) {
-    var batch = results.slice(bi, bi + 200);
+  var BATCH_SIZE = 50; // Reduced from 200 to fit within PostgREST request body limits
+  for (var bi = 0; bi < results.length; bi += BATCH_SIZE) {
+    var batch = results.slice(bi, bi + BATCH_SIZE);
+    if (bi > 0) await sleep(100); // breathing room for Supabase between batches
     var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
     if (saveR.ok) {
       savedCount += batch.length;
