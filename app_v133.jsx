@@ -7678,6 +7678,8 @@ function StockClassificationPage(p){
   var sP2=useState(''),maxPrice=sP2[0],setMaxPrice=sP2[1];
   var sM1=useState(''),minMcap=sM1[0],setMinMcap=sM1[1];
   var sM2=useState(''),maxMcap=sM2[0],setMaxMcap=sM2[1];
+  var sSK=useState('osc_score'),sortKey=sSK[0],setSortKey=sSK[1];
+  var sSA=useState(false),sortAsc=sSA[0],setSortAsc=sSA[1];
 
   var VOLS=['Low','Normal','High'];
   var TRENDS=['MeanRevert','Random','Trend'];
@@ -7757,7 +7759,15 @@ function StockClassificationPage(p){
     if(tickerSearch&&r.ticker.indexOf(tickerSearch.toUpperCase())===-1)return false;
     return true;
   }):[];
-  cellMembers.sort(function(a,b){return (b.osc_score||0)-(a.osc_score||0);});
+  cellMembers.sort(function(a,b){
+    var va=a[sortKey],vb=b[sortKey];
+    if(va==null||isNaN(va))va=sortAsc?Infinity:-Infinity;
+    if(vb==null||isNaN(vb))vb=sortAsc?Infinity:-Infinity;
+    if(typeof va==='string'&&typeof vb==='string')return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return sortAsc?va-vb:vb-va;
+  });
+  var doSort=function(k){if(sortKey===k)setSortAsc(!sortAsc);else{setSortKey(k);setSortAsc(false);}};
+  var sortIcon=function(k){return sortKey===k?(sortAsc?' \u25B2':' \u25BC'):'';};
 
   // Single ticker history loader
   var loadHist=async function(){
@@ -7880,21 +7890,25 @@ function StockClassificationPage(p){
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
           <thead><tr style={{background:C.bgInput,color:C.txtDim,fontSize:8}}>
             <th style={{padding:'6px 4px',textAlign:'left'}}>#</th>
-            <th style={{padding:'6px 4px',textAlign:'left'}}>Ticker</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>Px</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>OSC</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>Vol%252d</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>YZ Vol</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>Hurst</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>AC1</th>
-            <th style={{padding:'6px 4px',textAlign:'right'}}>ADX</th>
-            <th style={{padding:'6px 4px',textAlign:'left'}}>Conf</th>
+            <th onClick={function(){doSort('ticker');}} style={{padding:'6px 4px',textAlign:'left',cursor:'pointer',userSelect:'none'}}>Ticker{sortIcon('ticker')}</th>
+            <th onClick={function(){doSort('price');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Px{sortIcon('price')}</th>
+            <th onClick={function(){doSort('market_cap');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>MCap{sortIcon('market_cap')}</th>
+            <th onClick={function(){doSort('adv_dollars');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ADV $ {sortIcon('adv_dollars')}</th>
+            <th onClick={function(){doSort('osc_score');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>OSC{sortIcon('osc_score')}</th>
+            <th onClick={function(){doSort('yz_pct_252d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Vol%252d{sortIcon('yz_pct_252d')}</th>
+            <th onClick={function(){doSort('yz_vol_252d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>YZ Vol{sortIcon('yz_vol_252d')}</th>
+            <th onClick={function(){doSort('hurst_60d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Hurst{sortIcon('hurst_60d')}</th>
+            <th onClick={function(){doSort('autocorr_60d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>AC1{sortIcon('autocorr_60d')}</th>
+            <th onClick={function(){doSort('adx_14d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ADX{sortIcon('adx_14d')}</th>
+            <th onClick={function(){doSort('regime_confidence');}} style={{padding:'6px 4px',textAlign:'left',cursor:'pointer',userSelect:'none'}}>Conf{sortIcon('regime_confidence')}</th>
           </tr></thead>
           <tbody>
             {cellMembers.slice(0,300).map(function(r,i){return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.border,color:C.txt}}>
               <td style={{padding:'5px 4px',color:C.txtDim}}>{i+1}</td>
               <td style={{padding:'5px 4px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{r.price?'$'+r.price.toFixed(2):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.blue}}>{fmt$(r.market_cap)}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{fmt$(r.adv_dollars)}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.accent}}>{r.osc_score?r.osc_score.toFixed(1):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.yz_pct_252d!=null?(r.yz_pct_252d*100).toFixed(0)+'%':'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{fmt(r.yz_vol_252d,1)}</td>
