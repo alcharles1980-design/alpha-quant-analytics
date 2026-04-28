@@ -3210,36 +3210,55 @@ async function runScreener() {
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 90, message: 'Saving ' + results.length + ' results...' });
   await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
   await sleep(300);
-  var savedCount = 0, failedCount = 0, failLog = [];
+  // Clear previous run's debug log
+  try { await fetch(SB_URL + '/rest/v1/extvol_debug_log?id=gt.0', { method: 'DELETE', headers: sbHeaders() }); } catch (e) {}
+  var debugLog = async function (tk, step, detail) {
+    try { await fetch(SB_URL + '/rest/v1/extvol_debug_log', { method: 'POST', headers: sbHeaders(), body: JSON.stringify({ ticker: tk, step: step, detail: detail.slice(0, 1500) }) }); } catch (e) {}
+  };
+
+  var savedCount = 0, failedCount = 0, batchFailures = 0, poisonLogged = 0;
   for (var bi = 0; bi < results.length; bi += 200) {
     var batch = results.slice(bi, bi + 200);
     var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
-    if (!saveR.ok) {
-      failedCount += batch.length;
-      var errTxt = await saveR.text();
-      console.log('  Save batch ' + bi + '-' + (bi + batch.length) + ' FAILED: ' + saveR.status + ' ' + errTxt.slice(0, 400));
-      // On batch failure, retry one row at a time to identify the poison row
-      if (failLog.length < 5) {
-        for (var ri = 0; ri < batch.length; ri++) {
-          var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify([batch[ri]]) });
-          if (oneR.ok) { savedCount++; failedCount--; }
-          else if (failLog.length < 5) {
-            var oneErr = await oneR.text();
-            failLog.push({ ticker: batch[ri].ticker, status: oneR.status, error: oneErr.slice(0, 300) });
-            console.log('  POISON ROW: ' + batch[ri].ticker + ' (' + oneR.status + ') ' + oneErr.slice(0, 200));
-          }
+    if (saveR.ok) {
+      savedCount += batch.length;
+      continue;
+    }
+
+    // Batch failed - capture context
+    var errTxt = await saveR.text();
+    batchFailures++;
+    var msg = 'Batch ' + bi + '-' + (bi + batch.length) + ' status=' + saveR.status + ' err=' + errTxt.slice(0, 800);
+    console.log('  ' + msg);
+    if (batchFailures <= 3) {
+      await debugLog('BATCH', 'batch_fail', msg);
+      // Log the first row's column names + value types to spot schema mismatches
+      if (batch[0]) {
+        var sampleKeys = Object.keys(batch[0]).map(function (k) { var v = batch[0][k]; var t = v === null ? 'null' : typeof v; var s = (t === 'string' && v.length > 40) ? (v.slice(0, 40) + '...') : v; return k + '=' + JSON.stringify(s) + '(' + t + ')'; }).join(', ');
+        await debugLog('BATCH', 'batch_sample', 'firstTicker=' + batch[0].ticker + ' | ' + sampleKeys.slice(0, 1500));
+      }
+    }
+
+    // ALWAYS retry one row at a time so failures don't block the rest of the batch
+    for (var ri = 0; ri < batch.length; ri++) {
+      var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify([batch[ri]]) });
+      if (oneR.ok) {
+        savedCount++;
+      } else {
+        failedCount++;
+        if (poisonLogged < 20) {
+          var oneErr = await oneR.text();
+          var poisonMsg = 'http=' + oneR.status + ' err=' + oneErr.slice(0, 600);
+          console.log('  POISON: ' + batch[ri].ticker + ' ' + poisonMsg);
+          await debugLog(batch[ri].ticker, 'poison', poisonMsg);
+          poisonLogged++;
         }
       }
-    } else {
-      savedCount += batch.length;
     }
   }
-  console.log('Save complete: ' + savedCount + ' saved, ' + failedCount + ' failed of ' + results.length);
-  if (failLog.length > 0) {
-    console.log('First failed rows:');
-    for (var fi = 0; fi < failLog.length; fi++) console.log('  ' + JSON.stringify(failLog[fi]));
-  }
-  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + savedCount + '/' + results.length + ' saved. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });
+  console.log('Save complete: ' + savedCount + ' saved, ' + failedCount + ' failed of ' + results.length + ' (' + batchFailures + ' batch failures, ' + poisonLogged + ' poison rows logged)');
+  await debugLog('SUMMARY', 'final', 'saved=' + savedCount + ' failed=' + failedCount + ' total=' + results.length + ' batchFailures=' + batchFailures + ' poisonLogged=' + poisonLogged);
+  await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Screener complete: ' + savedCount + '/' + results.length + ' saved' + (failedCount > 0 ? ' (' + failedCount + ' failed - see extvol_debug_log)' : '') + '. Top: ' + (results[0] ? results[0].ticker + ' (' + results[0].osc_score + ')' : 'none') });
 }
 
 // ── BACKFILL MARKET CAP for existing screener data ──────
