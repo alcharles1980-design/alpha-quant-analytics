@@ -1750,6 +1750,46 @@ function _atr14(bars, period) {
   return atrVal;
 }
 
+function _netReturn(bars, lookback) {
+  // Net return over the last `lookback` bars (current close vs lookback-ago close)
+  var n = bars.length;
+  if (n < lookback + 1) return null;
+  var startClose = bars[n - 1 - lookback].c;
+  var endClose = bars[n - 1].c;
+  if (startClose <= 0) return null;
+  return ((endClose / startClose) - 1) * 100;
+}
+
+function _trendR2(bars, lookback) {
+  // Linear regression of close ~ time index, return R^2 (0..1)
+  var n = bars.length;
+  if (n < lookback + 1) return null;
+  var seg = bars.slice(n - lookback);
+  var k = seg.length;
+  var sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+  for (var i = 0; i < k; i++) {
+    var x = i, y = seg[i].c;
+    sx += x; sy += y; sxy += x * y; sx2 += x * x; sy2 += y * y;
+  }
+  var denom = (k * sx2 - sx * sx) * (k * sy2 - sy * sy);
+  if (denom <= 0) return null;
+  var num = k * sxy - sx * sy;
+  var r = num / Math.sqrt(denom);
+  return r * r;
+}
+
+function _classifyDirection(retPct, atr14Pct, lookback) {
+  // ATR-relative deadband: sideways if |return| < 0.5 * ATR% * sqrt(lookback/14)
+  if (retPct == null) return null;
+  var deadband = 2.0; // fallback flat threshold (%)
+  if (atr14Pct != null && atr14Pct > 0) {
+    deadband = 0.5 * atr14Pct * Math.sqrt(lookback / 14);
+  }
+  if (retPct > deadband) return 'Up';
+  if (retPct < -deadband) return 'Down';
+  return 'Sideways';
+}
+
 function _classifyRegime(allBars) {
   // Compute the full regime classification block from a daily bar array.
   // Returns an object with all 11 regime fields. Bars assumed sorted oldest-first.
@@ -1805,6 +1845,17 @@ function _classifyRegime(allBars) {
   var atr14d = _atr14(adxBars, 14);
   var lastClose = allBars[allBars.length - 1].c;
   var atr14dPct = (atr14d != null && lastClose > 0) ? (atr14d / lastClose) * 100 : null;
+
+  // Trend direction: net return over 10d + 60d windows, ATR-relative deadband
+  var ret10 = _netReturn(allBars, 10);
+  var ret60 = _netReturn(allBars, 60);
+  var dir10 = _classifyDirection(ret10, atr14dPct, 10);
+  var dir60 = _classifyDirection(ret60, atr14dPct, 60);
+  var r2_60 = _trendR2(allBars, 60);
+
+  // Combined trend pattern (4-char string for compact display + sorting)
+  var dirToken = function (d) { return d === 'Up' ? 'U' : (d === 'Down' ? 'D' : (d === 'Sideways' ? 'S' : '?')); };
+  var trendPattern = (dir10 && dir60) ? (dirToken(dir10) + dirToken(dir60)) : null;
 
   // Vol regime classification
   var regimeVol = null;
@@ -1862,6 +1913,12 @@ function _classifyRegime(allBars) {
     adx_14d: adx14 != null ? Math.round(adx14 * 100) / 100 : null,
     atr_14d_dollar: atr14d != null ? Math.round(atr14d * 1000) / 1000 : null,
     atr_14d_pct: atr14dPct != null ? Math.round(atr14dPct * 100) / 100 : null,
+    return_10d_pct: ret10 != null ? Math.round(ret10 * 100) / 100 : null,
+    return_60d_pct: ret60 != null ? Math.round(ret60 * 100) / 100 : null,
+    direction_10d: dir10,
+    direction_60d: dir60,
+    trend_r2_60d: r2_60 != null ? Math.round(r2_60 * 1000) / 1000 : null,
+    trend_pattern: trendPattern,
     regime_vol: regimeVol,
     regime_trend: regimeTrend,
     regime_label: regimeLabel,
@@ -2649,6 +2706,12 @@ async function runScreener() {
       adx_14d: regimeBlock.adx_14d,
       atr_14d_dollar: regimeBlock.atr_14d_dollar,
       atr_14d_pct: regimeBlock.atr_14d_pct,
+      return_10d_pct: regimeBlock.return_10d_pct,
+      return_60d_pct: regimeBlock.return_60d_pct,
+      direction_10d: regimeBlock.direction_10d,
+      direction_60d: regimeBlock.direction_60d,
+      trend_r2_60d: regimeBlock.trend_r2_60d,
+      trend_pattern: regimeBlock.trend_pattern,
       regime_vol: regimeBlock.regime_vol,
       regime_trend: regimeBlock.regime_trend,
       regime_label: regimeBlock.regime_label,

@@ -7710,7 +7710,7 @@ function StockClassificationPage(p){
       var all=[],off=0,batch=[];
       do{
         var ph=getSbHeaders();ph['Range']=''+off+'-'+(off+999);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,osc_score,yz_vol,yz_vol_252d,yz_vol_63d,yz_pct_252d,yz_pct_63d,hurst_60d,autocorr_60d,adx_14d,atr_14d_dollar,atr_14d_pct,regime_vol,regime_trend,regime_label,regime_confidence,regime_source&order=osc_score.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,osc_score,yz_vol,yz_vol_252d,yz_vol_63d,yz_pct_252d,yz_pct_63d,hurst_60d,autocorr_60d,adx_14d,atr_14d_dollar,atr_14d_pct,return_10d_pct,return_60d_pct,direction_10d,direction_60d,trend_r2_60d,trend_pattern,regime_vol,regime_trend,regime_label,regime_confidence,regime_source&order=osc_score.desc',{headers:ph});
         batch=pr.ok?await pr.json():[];
         for(var bi=0;bi<batch.length;bi++)all.push(batch[bi]);
         if(batch.length<1000)break;off+=1000;
@@ -7901,6 +7901,10 @@ function StockClassificationPage(p){
             <th onClick={function(){doSort('adv_dollars');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ADV $ {sortIcon('adv_dollars')}</th>
             <th onClick={function(){doSort('atr_14d_dollar');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ATR ${sortIcon('atr_14d_dollar')}</th>
             <th onClick={function(){doSort('atr_14d_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ATR %{sortIcon('atr_14d_pct')}</th>
+            <th onClick={function(){doSort('return_10d_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>10d %{sortIcon('return_10d_pct')}</th>
+            <th onClick={function(){doSort('return_60d_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>60d %{sortIcon('return_60d_pct')}</th>
+            <th onClick={function(){doSort('trend_pattern');}} style={{padding:'6px 4px',textAlign:'center',cursor:'pointer',userSelect:'none'}}>Trend{sortIcon('trend_pattern')}</th>
+            <th onClick={function(){doSort('trend_r2_60d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>R²{sortIcon('trend_r2_60d')}</th>
             <th onClick={function(){doSort('osc_score');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>OSC{sortIcon('osc_score')}</th>
             <th onClick={function(){doSort('yz_pct_252d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Vol%252d{sortIcon('yz_pct_252d')}</th>
             <th onClick={function(){doSort('yz_vol_252d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>YZ Vol{sortIcon('yz_vol_252d')}</th>
@@ -7918,6 +7922,10 @@ function StockClassificationPage(p){
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{fmt$(r.adv_dollars)}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{r.atr_14d_dollar!=null?'$'+r.atr_14d_dollar.toFixed(r.atr_14d_dollar<1?3:2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.atr_14d_pct!=null?r.atr_14d_pct.toFixed(2)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:r.return_10d_pct>0?C.accent:(r.return_10d_pct<0?C.warn:C.txtDim),fontWeight:600}}>{r.return_10d_pct!=null?(r.return_10d_pct>0?'+':'')+r.return_10d_pct.toFixed(2)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:r.return_60d_pct>0?C.accent:(r.return_60d_pct<0?C.warn:C.txtDim),fontWeight:600}}>{r.return_60d_pct!=null?(r.return_60d_pct>0?'+':'')+r.return_60d_pct.toFixed(2)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'center',fontFamily:F,fontSize:11,letterSpacing:1}}>{(function(){if(!r.trend_pattern)return '-';var arr={U:'\u2191',D:'\u2193',S:'\u2192','?':'?'};var c10=r.direction_10d==='Up'?C.accent:(r.direction_10d==='Down'?C.warn:C.txtDim);var c60=r.direction_60d==='Up'?C.accent:(r.direction_60d==='Down'?C.warn:C.txtDim);return <span><span style={{color:c10,fontWeight:700}}>{arr[r.trend_pattern[0]]||'-'}</span><span style={{color:c60,fontWeight:700,marginLeft:2}}>{arr[r.trend_pattern[1]]||'-'}</span></span>;})()}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:r.trend_r2_60d>=0.5?C.gold:(r.trend_r2_60d>=0.2?C.txt:C.txtDim)}}>{r.trend_r2_60d!=null?r.trend_r2_60d.toFixed(2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.accent}}>{r.osc_score?r.osc_score.toFixed(1):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.yz_pct_252d!=null?(r.yz_pct_252d*100).toFixed(0)+'%':'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{fmt(r.yz_vol_252d,1)}</td>
