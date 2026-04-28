@@ -7674,6 +7674,10 @@ function StockClassificationPage(p){
   var s9=useState(null),tickerHist=s9[0],setTickerHist=s9[1];
   var s10=useState(''),histTicker=s10[0],setHistTicker=s10[1];
   var s11=useState(false),loadingHist=s11[0],setLoadingHist=s11[1];
+  var sP1=useState(''),minPrice=sP1[0],setMinPrice=sP1[1];
+  var sP2=useState(''),maxPrice=sP2[0],setMaxPrice=sP2[1];
+  var sM1=useState(''),minMcap=sM1[0],setMinMcap=sM1[1];
+  var sM2=useState(''),maxMcap=sM2[0],setMaxMcap=sM2[1];
 
   var VOLS=['Low','Normal','High'];
   var TRENDS=['MeanRevert','Random','Trend'];
@@ -7723,6 +7727,10 @@ function StockClassificationPage(p){
   var classified=data?data.filter(function(r){
     if(!r.regime_label)return false;
     if(uniFilter!=='all'&&uniData){var u=uniData[r.ticker];if(!u)return false;if(uniFilter==='sp500'&&!u.sp)return false;if(uniFilter==='r2000'&&!u.r2)return false;}
+    if(minPrice!==''&&(r.price==null||r.price<parseFloat(minPrice)))return false;
+    if(maxPrice!==''&&(r.price==null||r.price>parseFloat(maxPrice)))return false;
+    if(minMcap!==''&&(r.market_cap==null||r.market_cap<parseFloat(minMcap)))return false;
+    if(maxMcap!==''&&(r.market_cap==null||r.market_cap>parseFloat(maxMcap)))return false;
     return true;
   }):[];
 
@@ -7787,6 +7795,44 @@ function StockClassificationPage(p){
           <button onClick={function(){setUniFilter('sp500');setSelectedCell(null);}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='sp500'?C.gold:C.border),background:uniFilter==='sp500'?'#3d2d10':'transparent',color:uniFilter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
           <button onClick={function(){setUniFilter('r2000');setSelectedCell(null);}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='r2000'?C.blue:C.border),background:uniFilter==='r2000'?C.blueDim:'transparent',color:uniFilter==='r2000'?C.blue:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>R2K</button>
         </div>
+      </div>}
+
+      {data&&<div style={{marginTop:8,marginBottom:4}}>
+        <label style={lS}>Price Range ($)</label>
+        <div style={{display:'flex',gap:4}}>
+          <input value={minPrice} onChange={function(e){setMinPrice(e.target.value);setSelectedCell(null);}} placeholder="Min" type="number" step="any" style={{flex:1,background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:600,padding:'7px 9px',outline:'none'}}/>
+          <input value={maxPrice} onChange={function(e){setMaxPrice(e.target.value);setSelectedCell(null);}} placeholder="Max" type="number" step="any" style={{flex:1,background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:600,padding:'7px 9px',outline:'none'}}/>
+        </div>
+      </div>}
+
+      {data&&<div style={{marginTop:8,marginBottom:8}}>
+        <label style={lS}>Market Cap (USD)</label>
+        <div style={{display:'flex',gap:4}}>
+          <select value={minMcap} onChange={function(e){setMinMcap(e.target.value);setSelectedCell(null);}} style={{flex:1,background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:10,fontWeight:600,padding:'7px 9px',outline:'none'}}>
+            <option value="">No Min</option>
+            <option value="100000000">$100M</option>
+            <option value="500000000">$500M</option>
+            <option value="1000000000">$1B</option>
+            <option value="2000000000">$2B</option>
+            <option value="10000000000">$10B</option>
+            <option value="50000000000">$50B</option>
+            <option value="200000000000">$200B</option>
+          </select>
+          <select value={maxMcap} onChange={function(e){setMaxMcap(e.target.value);setSelectedCell(null);}} style={{flex:1,background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:10,fontWeight:600,padding:'7px 9px',outline:'none'}}>
+            <option value="">No Max</option>
+            <option value="500000000">$500M</option>
+            <option value="2000000000">$2B</option>
+            <option value="10000000000">$10B</option>
+            <option value="50000000000">$50B</option>
+            <option value="200000000000">$200B</option>
+            <option value="1000000000000">$1T</option>
+          </select>
+        </div>
+      </div>}
+
+      {data&&(minPrice!==''||maxPrice!==''||minMcap!==''||maxMcap!=='')&&<div style={{marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{classified.length+(classified.length===1?' stock':' stocks')+' match filters'}</div>
+        <button onClick={function(){setMinPrice('');setMaxPrice('');setMinMcap('');setMaxMcap('');setSelectedCell(null);}} style={{padding:'4px 10px',fontSize:8,border:'1px solid '+C.border,background:'transparent',color:C.txt,fontFamily:F,borderRadius:6,cursor:'pointer'}}>Clear</button>
       </div>}
 
       {classified.length>0&&<div style={{marginTop:12}}>
