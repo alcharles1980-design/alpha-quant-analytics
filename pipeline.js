@@ -1726,6 +1726,30 @@ function _adx(bars, period) {
   return adxVal;
 }
 
+function _atr14(bars, period) {
+  // Wilder ATR. Returns latest ATR value (in price units) after warmup.
+  var n = bars.length;
+  if (n < period + 2) return null;
+  var tr = [];
+  for (var i = 1; i < n; i++) {
+    var high = bars[i].h, low = bars[i].l, prevClose = bars[i - 1].c;
+    var t1 = high - low;
+    var t2 = Math.abs(high - prevClose);
+    var t3 = Math.abs(low - prevClose);
+    tr.push(Math.max(t1, t2, t3));
+  }
+  if (tr.length < period) return null;
+  // Initial ATR = simple avg of first `period` TR values
+  var atrVal = 0;
+  for (var i = 0; i < period; i++) atrVal += tr[i];
+  atrVal /= period;
+  // Wilder smoothing for remaining
+  for (var i = period; i < tr.length; i++) {
+    atrVal = (atrVal * (period - 1) + tr[i]) / period;
+  }
+  return atrVal;
+}
+
 function _classifyRegime(allBars) {
   // Compute the full regime classification block from a daily bar array.
   // Returns an object with all 11 regime fields. Bars assumed sorted oldest-first.
@@ -1777,6 +1801,10 @@ function _classifyRegime(allBars) {
   // ADX 14-day on last ~30 bars (need 2*period+1 = 29 minimum)
   var adxBars = allBars.slice(-Math.min(40, n));
   var adx14 = _adx(adxBars, 14);
+  // ATR 14d (Wilder) on the same recent bars
+  var atr14d = _atr14(adxBars, 14);
+  var lastClose = allBars[allBars.length - 1].c;
+  var atr14dPct = (atr14d != null && lastClose > 0) ? (atr14d / lastClose) * 100 : null;
 
   // Vol regime classification
   var regimeVol = null;
@@ -1832,6 +1860,8 @@ function _classifyRegime(allBars) {
     hurst_60d: hurst60 != null ? Math.round(hurst60 * 1000) / 1000 : null,
     autocorr_60d: ac60 != null ? Math.round(ac60 * 1000) / 1000 : null,
     adx_14d: adx14 != null ? Math.round(adx14 * 100) / 100 : null,
+    atr_14d_dollar: atr14d != null ? Math.round(atr14d * 1000) / 1000 : null,
+    atr_14d_pct: atr14dPct != null ? Math.round(atr14dPct * 100) / 100 : null,
     regime_vol: regimeVol,
     regime_trend: regimeTrend,
     regime_label: regimeLabel,
@@ -2617,6 +2647,8 @@ async function runScreener() {
       hurst_60d: regimeBlock.hurst_60d,
       autocorr_60d: regimeBlock.autocorr_60d,
       adx_14d: regimeBlock.adx_14d,
+      atr_14d_dollar: regimeBlock.atr_14d_dollar,
+      atr_14d_pct: regimeBlock.atr_14d_pct,
       regime_vol: regimeBlock.regime_vol,
       regime_trend: regimeBlock.regime_trend,
       regime_label: regimeBlock.regime_label,

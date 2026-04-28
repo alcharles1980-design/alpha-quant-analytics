@@ -7710,7 +7710,7 @@ function StockClassificationPage(p){
       var all=[],off=0,batch=[];
       do{
         var ph=getSbHeaders();ph['Range']=''+off+'-'+(off+999);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,osc_score,yz_vol,yz_vol_252d,yz_vol_63d,yz_pct_252d,yz_pct_63d,hurst_60d,autocorr_60d,adx_14d,regime_vol,regime_trend,regime_label,regime_confidence,regime_source&order=osc_score.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,osc_score,yz_vol,yz_vol_252d,yz_vol_63d,yz_pct_252d,yz_pct_63d,hurst_60d,autocorr_60d,adx_14d,atr_14d_dollar,atr_14d_pct,regime_vol,regime_trend,regime_label,regime_confidence,regime_source&order=osc_score.desc',{headers:ph});
         batch=pr.ok?await pr.json():[];
         for(var bi=0;bi<batch.length;bi++)all.push(batch[bi]);
         if(batch.length<1000)break;off+=1000;
@@ -7899,6 +7899,8 @@ function StockClassificationPage(p){
             <th onClick={function(){doSort('price');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Px{sortIcon('price')}</th>
             <th onClick={function(){doSort('market_cap');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>MCap{sortIcon('market_cap')}</th>
             <th onClick={function(){doSort('adv_dollars');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ADV $ {sortIcon('adv_dollars')}</th>
+            <th onClick={function(){doSort('atr_14d_dollar');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ATR ${sortIcon('atr_14d_dollar')}</th>
+            <th onClick={function(){doSort('atr_14d_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ATR %{sortIcon('atr_14d_pct')}</th>
             <th onClick={function(){doSort('osc_score');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>OSC{sortIcon('osc_score')}</th>
             <th onClick={function(){doSort('yz_pct_252d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Vol%252d{sortIcon('yz_pct_252d')}</th>
             <th onClick={function(){doSort('yz_vol_252d');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>YZ Vol{sortIcon('yz_vol_252d')}</th>
@@ -7914,6 +7916,8 @@ function StockClassificationPage(p){
               <td style={{padding:'5px 4px',textAlign:'right'}}>{r.price?'$'+r.price.toFixed(2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.blue}}>{fmt$(r.market_cap)}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{fmt$(r.adv_dollars)}</td>
+              <td style={{padding:'5px 4px',textAlign:'right'}}>{r.atr_14d_dollar!=null?'$'+r.atr_14d_dollar.toFixed(r.atr_14d_dollar<1?3:2):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.atr_14d_pct!=null?r.atr_14d_pct.toFixed(2)+'%':'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.accent}}>{r.osc_score?r.osc_score.toFixed(1):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.yz_pct_252d!=null?(r.yz_pct_252d*100).toFixed(0)+'%':'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{fmt(r.yz_vol_252d,1)}</td>
