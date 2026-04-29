@@ -4152,7 +4152,8 @@ async function processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff) {
     period_min_p75: _percentile(allPeriods, 0.75),
     pct_time_in_range: totalBars > 0 ? (totalInRange / totalBars) * 100 : null,
     pct_time_trending: totalBars > 0 ? (totalTrending / totalBars) * 100 : null,
-    hourly_breakdown: { hours: hourlyArr }
+    hourly_breakdown: { hours: hourlyArr },
+    adv_dollars: u.adv_dollars != null ? Math.round(u.adv_dollars) : null
   };
   // Round all numerics to clean precision
   ['cycles_per_day_mean','cycles_per_day_p25','cycles_per_day_p50','cycles_per_day_p75','cycles_per_day_p90','period_min_mean','period_min_p25','period_min_p50','period_min_p75','pct_time_in_range','pct_time_trending'].forEach(function(k){if(oscRow[k]!=null)oscRow[k]=Math.round(oscRow[k]*100)/100;});
@@ -4165,7 +4166,9 @@ async function processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff) {
   var scoreCurve = [];
   var bestTp = null, bestProfit = -Infinity;
   var bestFills = 0, bestProfitPct = 0;
-  for (var tpStep = 1; tpStep <= 50; tpStep++) {
+  // TP% search range: 0.1% to 10.0% in 0.1% steps (100 candidates)
+  // Wider than typical grid range to surface high-amp opportunities on micro-caps
+  for (var tpStep = 1; tpStep <= 100; tpStep++) {
     var tpPct = tpStep / 10;
     var totalFills = 0, totalDollarProfit = 0, totalProfitPct = 0;
     for (var di = 0; di < dayKeys.length; di++) {
@@ -4208,7 +4211,9 @@ async function processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff) {
     cost_dollars_per_fill: Math.round((2 * commission + (spreadUsed / 100) * refPrice) * 10000) / 10000,
     top_3_tps: top3Tps,
     score_curve: scoreCurve,
-    ref_price: refPrice
+    ref_price: refPrice,
+    adv_dollars: u.adv_dollars != null ? Math.round(u.adv_dollars) : null,
+    market_cap: u.market_cap != null ? Math.round(u.market_cap) : null
   };
 
   return { ticker: tk, status: 'ok', oscRow: oscRow, tpRow: tpRow };
@@ -4242,7 +4247,7 @@ async function runMinuteOsc() {
   var batch = [];
   do {
     batch = [];
-    var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + (await getLatestScreenerDate()) + '&select=ticker,price,market_cap&order=ticker.asc&limit=1000&offset=' + off, { headers: sbHeaders() });
+    var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + (await getLatestScreenerDate()) + '&select=ticker,price,market_cap,adv_dollars&order=ticker.asc&limit=1000&offset=' + off, { headers: sbHeaders() });
     if (r.ok) batch = await r.json();
     for (var i = 0; i < batch.length; i++) {
       if (!seen[batch[i].ticker]) { seen[batch[i].ticker] = true; universe.push(batch[i]); }

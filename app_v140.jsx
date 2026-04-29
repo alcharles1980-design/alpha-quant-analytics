@@ -7745,6 +7745,8 @@ function OptimalTpMinutePage(p){
   var s16=useState(''),maxPrice=s16[0],setMaxPrice=s16[1];
   var s17=useState(''),minMcap=s17[0],setMinMcap=s17[1];
   var s18=useState(''),minProfit=s18[0],setMinProfit=s18[1];
+  var s19=useState('10000000'),minAdv=s19[0],setMinAdv=s19[1];
+  var s20=useState('1.0'),maxSpread=s20[0],setMaxSpread=s20[1];
   var pollRef=useRef(null);
 
   var REGIMES=['Low_MeanRevert','Normal_MeanRevert','High_MeanRevert','Low_Random','Normal_Random','High_Random','Low_Trend','Normal_Trend','High_Trend','Low_Mixed','Normal_Mixed','High_Mixed'];
@@ -7760,7 +7762,7 @@ function OptimalTpMinutePage(p){
       var all=[],off=0,batch=[];
       do{
         var ph=getSbHeaders();ph['Range']=''+off+'-'+(off+999);
-        var pr=await fetch(SB_URL+'/rest/v1/optimal_tp_minute?scan_date=eq.'+sd+'&select=ticker,tp_pct,tp_dollar,expected_fills_per_day,expected_profit_pct_per_day,expected_profit_dollar_per_day,total_fills_in_window,spread_pct_used,cost_dollars_per_fill,top_3_tps,ref_price,trading_days&order=expected_profit_pct_per_day.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/optimal_tp_minute?scan_date=eq.'+sd+'&select=ticker,tp_pct,tp_dollar,expected_fills_per_day,expected_profit_pct_per_day,expected_profit_dollar_per_day,total_fills_in_window,spread_pct_used,cost_dollars_per_fill,top_3_tps,ref_price,trading_days,adv_dollars,market_cap&order=expected_profit_pct_per_day.desc',{headers:ph});
         batch=pr.ok?await pr.json():[];
         for(var bi=0;bi<batch.length;bi++)all.push(batch[bi]);
         if(batch.length<1000)break;off+=1000;
@@ -7817,8 +7819,10 @@ function OptimalTpMinutePage(p){
     if(regimeFilter!=='all'&&regimeMap){var rg=regimeMap[r.ticker];if(!rg||rg.regime!==regimeFilter)return false;}
     if(minPrice!==''&&(r.ref_price==null||r.ref_price<parseFloat(minPrice)))return false;
     if(maxPrice!==''&&(r.ref_price==null||r.ref_price>parseFloat(maxPrice)))return false;
-    if(minMcap!==''&&regimeMap){var rg2=regimeMap[r.ticker];if(!rg2||rg2.mcap==null||rg2.mcap<parseFloat(minMcap))return false;}
+    if(minMcap!==''){var mcVal=r.market_cap!=null?r.market_cap:(regimeMap&&regimeMap[r.ticker]?regimeMap[r.ticker].mcap:null);if(mcVal==null||mcVal<parseFloat(minMcap))return false;}
     if(minProfit!==''&&(r.expected_profit_dollar_per_day==null||r.expected_profit_dollar_per_day<parseFloat(minProfit)))return false;
+    if(minAdv!==''&&(r.adv_dollars==null||r.adv_dollars<parseFloat(minAdv)))return false;
+    if(maxSpread!==''&&(r.spread_pct_used==null||r.spread_pct_used>parseFloat(maxSpread)))return false;
     return true;
   }):[];
   filtered.sort(function(a,b){var va=a[sortKey],vb=b[sortKey];if(va==null||isNaN(va))va=sortAsc?Infinity:-Infinity;if(vb==null||isNaN(vb))vb=sortAsc?Infinity:-Infinity;if(typeof va==='string'&&typeof vb==='string')return sortAsc?va.localeCompare(vb):vb.localeCompare(va);return sortAsc?va-vb:vb-va;});
@@ -7875,6 +7879,27 @@ function OptimalTpMinutePage(p){
           </select>
         </div>
         <div><label style={lS}>Min $ Profit/Day</label><input value={minProfit} onChange={function(e){setMinProfit(e.target.value);}} placeholder="0.10" style={iS}/></div>
+        <div><label style={lS}>Min ADV $</label>
+          <select value={minAdv} onChange={function(e){setMinAdv(e.target.value);}} style={iS}>
+            <option value="">No Min</option>
+            <option value="1000000">$1M</option>
+            <option value="5000000">$5M</option>
+            <option value="10000000">$10M</option>
+            <option value="50000000">$50M</option>
+            <option value="100000000">$100M</option>
+            <option value="500000000">$500M</option>
+          </select>
+        </div>
+        <div><label style={lS}>Max Spread %</label>
+          <select value={maxSpread} onChange={function(e){setMaxSpread(e.target.value);}} style={iS}>
+            <option value="">No Cap</option>
+            <option value="0.10">0.10% (tight)</option>
+            <option value="0.25">0.25%</option>
+            <option value="0.50">0.50%</option>
+            <option value="1.00">1.00%</option>
+            <option value="2.00">2.00% (loose)</option>
+          </select>
+        </div>
       </div>
       <div><label style={lS}>Ticker Search</label><input value={tickerFilter} onChange={function(e){setTickerFilter(e.target.value);}} placeholder="NVDA" style={iS}/></div>
     </Cd>}
@@ -7891,6 +7916,8 @@ function OptimalTpMinutePage(p){
             <th style={{padding:'6px 4px',textAlign:'left'}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={{padding:'6px 4px',textAlign:'left',cursor:'pointer',userSelect:'none'}}>Ticker{sortIcon('ticker')}</th>
             <th onClick={function(){doSort('ref_price');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Px{sortIcon('ref_price')}</th>
+            <th onClick={function(){doSort('market_cap');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>MCap{sortIcon('market_cap')}</th>
+            <th onClick={function(){doSort('adv_dollars');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ADV ${sortIcon('adv_dollars')}</th>
             <th onClick={function(){doSort('tp_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Best TP%{sortIcon('tp_pct')}</th>
             <th onClick={function(){doSort('tp_dollar');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Best TP${sortIcon('tp_dollar')}</th>
             <th onClick={function(){doSort('expected_fills_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Fills/d{sortIcon('expected_fills_per_day')}</th>
@@ -7904,6 +7931,8 @@ function OptimalTpMinutePage(p){
               <td style={{padding:'5px 4px',color:C.txtDim}}>{i+1}</td>
               <td style={{padding:'5px 4px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{r.ref_price?'$'+r.ref_price.toFixed(2):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.blue}}>{fmt$(r.market_cap)}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{fmt$(r.adv_dollars)}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold,fontWeight:700}}>{fmt(r.tp_pct,1)}%</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.tp_dollar?'$'+r.tp_dollar.toFixed(2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{fmt(r.expected_fills_per_day,1)}</td>
