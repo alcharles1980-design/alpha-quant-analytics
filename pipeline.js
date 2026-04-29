@@ -3881,13 +3881,478 @@ async function runBuildUniverse() {
   await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. SP500=' + sp500.length + ', R2000=' + r2000.length + ', inserted=' + inserted });
 }
 
+
+// ============================================================================
+// Stage B: Minute oscillation + Optimal TP% per stock
+// ============================================================================
+
+function _percentile(arr, p) {
+  if (!arr.length) return null;
+  var sorted = arr.slice().sort(function(a,b){return a-b;});
+  var idx = (sorted.length - 1) * p;
+  var lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] * (hi - idx) + sorted[hi] * (idx - lo);
+}
+
+function _rollSpreadPct(closes) {
+  // Roll's implied spread: 2 * sqrt(|cov(Δp_t, Δp_t-1)|), expressed as % of mean price
+  var n = closes.length;
+  if (n < 30) return null;
+  var dp = [];
+  for (var i = 1; i < n; i++) dp.push(closes[i] - closes[i-1]);
+  if (dp.length < 2) return null;
+  var meanDp = 0;
+  for (var i = 0; i < dp.length; i++) meanDp += dp[i];
+  meanDp /= dp.length;
+  var cov = 0;
+  for (var i = 1; i < dp.length; i++) cov += (dp[i] - meanDp) * (dp[i-1] - meanDp);
+  cov /= Math.max(1, dp.length - 1);
+  if (cov >= 0) return null; // Roll only valid when autocovariance is negative
+  var spread = 2 * Math.sqrt(-cov);
+  var meanPx = 0;
+  for (var i = 0; i < closes.length; i++) meanPx += closes[i];
+  meanPx /= closes.length;
+  if (meanPx <= 0) return null;
+  return (spread / meanPx) * 100;
+}
+
+function _bucketBarsByDay(bars, etOff) {
+  // Group bars by ET trading day. Bars timestamped in UTC milliseconds.
+  // Extended-hours scope: 4 AM ET to 8 PM ET. Bars outside this window are dropped.
+  var byDay = {};
+  for (var i = 0; i < bars.length; i++) {
+    var b = bars[i];
+    var ms = b.t;
+    var dt = new Date(ms);
+    var utcHr = dt.getUTCHours();
+    var etHr = utcHr - etOff;
+    if (etHr < 0) etHr += 24;
+    if (etHr < 4 || etHr >= 20) continue; // outside extended hours
+    var dtET = new Date(ms - etOff * 3600 * 1000);
+    var dayKey = dtET.toISOString().slice(0, 10);
+    if (!byDay[dayKey]) byDay[dayKey] = [];
+    byDay[dayKey].push(b);
+  }
+  return byDay;
+}
+
+function _computeOscillationMetrics(bars, dayKey) {
+  // Within a single day's bars: compute VWAP, count crossings, measure cycle amplitudes + periods
+  if (bars.length < 10) return null;
+  // VWAP for the day
+  var sumPV = 0, sumV = 0;
+  for (var i = 0; i < bars.length; i++) {
+    var px = bars[i].vw || bars[i].c;
+    sumPV += px * (bars[i].v || 0);
+    sumV += (bars[i].v || 0);
+  }
+  if (sumV <= 0) return null;
+  var vwap = sumPV / sumV;
+
+  // Sign series: +1 above VWAP, -1 below. Crossings = transitions.
+  // For each cycle (one full sign-segment), record max excursion and length.
+  var cycles = [];
+  var curSign = 0, cycleStartIdx = 0, cycleMaxExc = 0;
+  for (var i = 0; i < bars.length; i++) {
+    var px = bars[i].c;
+    var sign = px > vwap ? 1 : (px < vwap ? -1 : 0);
+    if (sign === 0) continue;
+    if (curSign === 0) { curSign = sign; cycleStartIdx = i; cycleMaxExc = Math.abs(px - vwap); continue; }
+    if (sign === curSign) {
+      var exc = Math.abs(px - vwap);
+      if (exc > cycleMaxExc) cycleMaxExc = exc;
+    } else {
+      // Sign flipped - close out the cycle
+      cycles.push({ amp_dollar: cycleMaxExc, amp_pct: vwap > 0 ? (cycleMaxExc / vwap) * 100 : 0, period_min: i - cycleStartIdx, sign: curSign });
+      curSign = sign; cycleStartIdx = i; cycleMaxExc = Math.abs(px - vwap);
+    }
+  }
+  // Don't include the last in-flight cycle - it didn't close
+  // (this is a deliberate choice: only completed cycles are oscillations)
+
+  // Time-in-range: % of minutes within +/- 0.5 sigma of VWAP
+  var sumDevSq = 0;
+  for (var i = 0; i < bars.length; i++) {
+    var d = bars[i].c - vwap;
+    sumDevSq += d * d;
+  }
+  var sigma = Math.sqrt(sumDevSq / bars.length);
+  var inRange = 0, trending = 0;
+  for (var i = 0; i < bars.length; i++) {
+    var d = Math.abs(bars[i].c - vwap);
+    if (d <= 0.5 * sigma) inRange++;
+    if (d > 1.0 * sigma) trending++;
+  }
+
+  return {
+    dayKey: dayKey,
+    vwap: vwap,
+    sigma: sigma,
+    cycles: cycles,
+    pct_time_in_range: (inRange / bars.length) * 100,
+    pct_time_trending: (trending / bars.length) * 100,
+    bar_count: bars.length
+  };
+}
+
+function _walkForwardOptimalTP(bars, tpPct, refPrice, spreadPct, commissionPerSide) {
+  // Single-level walk-forward: buy at first bar's open, TP = buy * (1 + tpPct/100).
+  // When TP fills, restart from the bar's low. End-of-extended-hours: cancel any open buy.
+  // Returns { fills, total_profit_pct, total_profit_dollar }
+  var fills = 0;
+  var totalProfitPct = 0;
+  var buyPx = null;
+  var tpPx = null;
+  for (var i = 0; i < bars.length; i++) {
+    var b = bars[i];
+    if (buyPx === null) {
+      buyPx = b.o;
+      tpPx = buyPx * (1 + tpPct / 100);
+      // Check if TP also hits within this bar (immediate fill scenario)
+      if (b.h >= tpPx) {
+        fills++;
+        totalProfitPct += tpPct;
+        // Restart from this bar's low (next "buy")
+        buyPx = b.l;
+        tpPx = buyPx * (1 + tpPct / 100);
+      }
+      continue;
+    }
+    // Buy is open, check if TP fills this bar
+    if (b.h >= tpPx) {
+      fills++;
+      totalProfitPct += tpPct;
+      // Restart from this bar's low
+      buyPx = b.l;
+      tpPx = buyPx * (1 + tpPct / 100);
+    }
+  }
+  // Net out costs: each fill pays spread + 2*commission
+  // commissionPerSide is in $/share, so $-cost per fill = 2 * commissionPerSide
+  // We're computing per-share profit, so $-profit per fill = (tpPct/100) * buyPx - 2*commission - (spreadPct/100)*buyPx
+  // For aggregate profit: sum over fills, but since buyPx changes, approximate using refPrice
+  var dollarProfitPerFill = (tpPct / 100) * refPrice - 2 * commissionPerSide - (spreadPct / 100) * refPrice;
+  var totalDollarProfit = fills * dollarProfitPerFill;
+  return {
+    fills: fills,
+    total_profit_pct: totalProfitPct,
+    total_profit_dollar: totalDollarProfit,
+    dollar_profit_per_fill: dollarProfitPerFill
+  };
+}
+
+async function fetchMinuteBars(ticker, fromStr, toStr) {
+  var url = "https://api.polygon.io/v2/aggs/ticker/" + ticker + "/range/1/minute/" + fromStr + "/" + toStr + "?adjusted=true&sort=asc&limit=50000&apiKey=" + POLYGON_KEY;
+  var ctrl = new AbortController();
+  var timer = setTimeout(function () { ctrl.abort(); }, 60000);
+  try {
+    var r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return { ok: false, status: r.status };
+    var body = await r.json();
+    return { ok: true, results: body.results || [] };
+  } catch (e) {
+    clearTimeout(timer);
+    return { ok: false, error: e.message };
+  }
+}
+
+async function processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff) {
+  var tk = u.ticker;
+  var refPrice = u.price;
+  var fr = await fetchMinuteBars(tk, fromStr, toStr);
+  if (!fr.ok) return { ticker: tk, status: 'fetch_error', detail: fr.status || fr.error };
+  if (!fr.results.length) return { ticker: tk, status: 'no_data' };
+
+  var byDay = _bucketBarsByDay(fr.results, etOff);
+  var dayKeys = Object.keys(byDay).sort();
+  if (dayKeys.length < 5) return { ticker: tk, status: 'too_few_days', detail: dayKeys.length };
+
+  // Per-day metrics
+  var allCyclesPerDay = [];
+  var allAmpDollar = [];
+  var allAmpPct = [];
+  var allPeriods = [];
+  var totalInRange = 0, totalTrending = 0, totalBars = 0;
+  var hourlyBuckets = {}; // hour-of-day -> { cycles: count, days: count }
+
+  for (var di = 0; di < dayKeys.length; di++) {
+    var dk = dayKeys[di];
+    var dayBars = byDay[dk];
+    var m = _computeOscillationMetrics(dayBars, dk);
+    if (!m) continue;
+    allCyclesPerDay.push(m.cycles.length);
+    for (var ci = 0; ci < m.cycles.length; ci++) {
+      allAmpDollar.push(m.cycles[ci].amp_dollar);
+      allAmpPct.push(m.cycles[ci].amp_pct);
+      allPeriods.push(m.cycles[ci].period_min);
+    }
+    totalInRange += m.pct_time_in_range * m.bar_count / 100;
+    totalTrending += m.pct_time_trending * m.bar_count / 100;
+    totalBars += m.bar_count;
+
+    // Hourly breakdown - bucket cycles by their start-bar's ET hour
+    for (var ci = 0; ci < m.cycles.length; ci++) {
+      // Approximate cycle hour as start of cycle
+      // (m.cycles[ci] doesn't currently track timestamp - skip detailed hourly)
+    }
+  }
+  // Rough hourly density: count bars per hour-of-day across all days
+  for (var di = 0; di < dayKeys.length; di++) {
+    var dayBars = byDay[dayKeys[di]];
+    for (var bi = 0; bi < dayBars.length; bi++) {
+      var b = dayBars[bi];
+      var dt = new Date(b.t);
+      var etHr = dt.getUTCHours() - etOff;
+      if (etHr < 0) etHr += 24;
+      if (!hourlyBuckets[etHr]) hourlyBuckets[etHr] = { bar_count: 0, day_set: {} };
+      hourlyBuckets[etHr].bar_count++;
+      hourlyBuckets[etHr].day_set[dayKeys[di]] = true;
+    }
+  }
+  var hourlyArr = [];
+  Object.keys(hourlyBuckets).sort(function(a,b){return parseInt(a)-parseInt(b);}).forEach(function(h){
+    var hb = hourlyBuckets[h];
+    var nDays = Object.keys(hb.day_set).length;
+    hourlyArr.push({ hour: parseInt(h), bars_per_day: nDays > 0 ? hb.bar_count / nDays : 0 });
+  });
+
+  // Spread: Roll's implied on minute closes (across all bars)
+  var allCloses = [];
+  for (var i = 0; i < fr.results.length; i++) allCloses.push(fr.results[i].c);
+  var rollSpread = _rollSpreadPct(allCloses);
+  var spreadUsed = (rollSpread != null && rollSpread > 0 && rollSpread < 5) ? rollSpread : 0.05; // fallback 5 bps
+
+  var oscRow = {
+    ticker: tk, scan_date: scanDate, lookback_days: 30,
+    bars_count: fr.results.length,
+    trading_days: dayKeys.length,
+    spread_pct: Math.round(spreadUsed * 1000) / 1000,
+    cycles_per_day_mean: allCyclesPerDay.length ? (allCyclesPerDay.reduce(function(a,b){return a+b;},0) / allCyclesPerDay.length) : null,
+    cycles_per_day_p25: _percentile(allCyclesPerDay, 0.25),
+    cycles_per_day_p50: _percentile(allCyclesPerDay, 0.50),
+    cycles_per_day_p75: _percentile(allCyclesPerDay, 0.75),
+    cycles_per_day_p90: _percentile(allCyclesPerDay, 0.90),
+    amp_dollar_mean: allAmpDollar.length ? (allAmpDollar.reduce(function(a,b){return a+b;},0) / allAmpDollar.length) : null,
+    amp_dollar_p25: _percentile(allAmpDollar, 0.25),
+    amp_dollar_p50: _percentile(allAmpDollar, 0.50),
+    amp_dollar_p75: _percentile(allAmpDollar, 0.75),
+    amp_dollar_p90: _percentile(allAmpDollar, 0.90),
+    amp_dollar_p95: _percentile(allAmpDollar, 0.95),
+    amp_pct_mean: allAmpPct.length ? (allAmpPct.reduce(function(a,b){return a+b;},0) / allAmpPct.length) : null,
+    amp_pct_p25: _percentile(allAmpPct, 0.25),
+    amp_pct_p50: _percentile(allAmpPct, 0.50),
+    amp_pct_p75: _percentile(allAmpPct, 0.75),
+    amp_pct_p90: _percentile(allAmpPct, 0.90),
+    amp_pct_p95: _percentile(allAmpPct, 0.95),
+    period_min_mean: allPeriods.length ? (allPeriods.reduce(function(a,b){return a+b;},0) / allPeriods.length) : null,
+    period_min_p25: _percentile(allPeriods, 0.25),
+    period_min_p50: _percentile(allPeriods, 0.50),
+    period_min_p75: _percentile(allPeriods, 0.75),
+    pct_time_in_range: totalBars > 0 ? (totalInRange / totalBars) * 100 : null,
+    pct_time_trending: totalBars > 0 ? (totalTrending / totalBars) * 100 : null,
+    hourly_breakdown: { hours: hourlyArr }
+  };
+  // Round all numerics to clean precision
+  ['cycles_per_day_mean','cycles_per_day_p25','cycles_per_day_p50','cycles_per_day_p75','cycles_per_day_p90','period_min_mean','period_min_p25','period_min_p50','period_min_p75','pct_time_in_range','pct_time_trending'].forEach(function(k){if(oscRow[k]!=null)oscRow[k]=Math.round(oscRow[k]*100)/100;});
+  ['amp_dollar_mean','amp_dollar_p25','amp_dollar_p50','amp_dollar_p75','amp_dollar_p90','amp_dollar_p95'].forEach(function(k){if(oscRow[k]!=null)oscRow[k]=Math.round(oscRow[k]*10000)/10000;});
+  ['amp_pct_mean','amp_pct_p25','amp_pct_p50','amp_pct_p75','amp_pct_p90','amp_pct_p95'].forEach(function(k){if(oscRow[k]!=null)oscRow[k]=Math.round(oscRow[k]*1000)/1000;});
+
+  // Optimal TP%: scan 0.1% to 5.0% in 0.1% steps
+  // Walk-forward each day independently (TIF=day+ext_hours), sum across days
+  var commission = 0.0025; // per side per share
+  var scoreCurve = [];
+  var bestTp = null, bestProfit = -Infinity;
+  var bestFills = 0, bestProfitPct = 0;
+  for (var tpStep = 1; tpStep <= 50; tpStep++) {
+    var tpPct = tpStep / 10;
+    var totalFills = 0, totalDollarProfit = 0, totalProfitPct = 0;
+    for (var di = 0; di < dayKeys.length; di++) {
+      var sim = _walkForwardOptimalTP(byDay[dayKeys[di]], tpPct, refPrice, spreadUsed, commission);
+      totalFills += sim.fills;
+      totalDollarProfit += sim.total_profit_dollar;
+      totalProfitPct += sim.total_profit_pct;
+    }
+    var profitPerDay = totalDollarProfit / dayKeys.length;
+    scoreCurve.push({ tp: tpPct, fills: totalFills, profit_dollar: Math.round(totalDollarProfit * 100) / 100, profit_per_day: Math.round(profitPerDay * 100) / 100 });
+    if (profitPerDay > bestProfit) {
+      bestProfit = profitPerDay;
+      bestTp = tpPct;
+      bestFills = totalFills;
+      bestProfitPct = totalProfitPct;
+    }
+  }
+
+  // Find local maxima in score curve (top 3)
+  var localPeaks = [];
+  for (var i = 1; i < scoreCurve.length - 1; i++) {
+    if (scoreCurve[i].profit_per_day >= scoreCurve[i-1].profit_per_day && scoreCurve[i].profit_per_day >= scoreCurve[i+1].profit_per_day && scoreCurve[i].profit_per_day > 0) {
+      localPeaks.push({ tp: scoreCurve[i].tp, profit: scoreCurve[i].profit_per_day });
+    }
+  }
+  localPeaks.sort(function(a,b){return b.profit - a.profit;});
+  var top3Tps = localPeaks.slice(0, 3).map(function(p){return p.tp;});
+
+  var dollarPerFillAtBest = (bestTp / 100) * refPrice - 2 * commission - (spreadUsed / 100) * refPrice;
+
+  var tpRow = {
+    ticker: tk, scan_date: scanDate, lookback_days: 30, trading_days: dayKeys.length,
+    tp_pct: bestTp,
+    tp_dollar: refPrice ? Math.round(refPrice * (bestTp / 100) * 100) / 100 : null,
+    expected_fills_per_day: Math.round((bestFills / dayKeys.length) * 100) / 100,
+    expected_profit_pct_per_day: Math.round((bestProfitPct / dayKeys.length) * 100) / 100,
+    expected_profit_dollar_per_day: Math.round(bestProfit * 100) / 100,
+    total_fills_in_window: bestFills,
+    spread_pct_used: Math.round(spreadUsed * 1000) / 1000,
+    cost_dollars_per_fill: Math.round((2 * commission + (spreadUsed / 100) * refPrice) * 10000) / 10000,
+    top_3_tps: top3Tps,
+    score_curve: scoreCurve,
+    ref_price: refPrice
+  };
+
+  return { ticker: tk, status: 'ok', oscRow: oscRow, tpRow: tpRow };
+}
+
+async function runMinuteOsc() {
+  var scanDate = new Date().toISOString().slice(0, 10);
+
+  // Concurrent-run guard
+  try {
+    var lockR = await fetch(SB_URL + "/rest/v1/pipeline_status?mode=eq.minute-osc&status=eq.running&select=started_at&limit=5", { headers: sbHeaders() });
+    if (lockR.ok) {
+      var lockRows = await lockR.json();
+      var nowMs = Date.now();
+      for (var li = 0; li < lockRows.length; li++) {
+        var ageSec = (nowMs - new Date(lockRows[li].started_at).getTime()) / 1000;
+        if (ageSec < 3600) {
+          await reportProgress({ mode: "minute-osc", ticker: "ALL", status: "error", progress_pct: 0, message: "Another minute-osc is running (started " + Math.round(ageSec) + "s ago). Aborting." });
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+
+  await reportProgress({ mode: 'minute-osc', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Loading universe from screener...' });
+
+  // Load universe (latest screener scan, paginated)
+  var universe = [];
+  var seen = {};
+  var off = 0;
+  var batch = [];
+  do {
+    batch = [];
+    var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + (await getLatestScreenerDate()) + '&select=ticker,price,market_cap&order=ticker.asc&limit=1000&offset=' + off, { headers: sbHeaders() });
+    if (r.ok) batch = await r.json();
+    for (var i = 0; i < batch.length; i++) {
+      if (!seen[batch[i].ticker]) { seen[batch[i].ticker] = true; universe.push(batch[i]); }
+    }
+    off += 1000;
+  } while (batch.length >= 1000);
+
+  console.log('Universe size: ' + universe.length);
+  if (!universe.length) {
+    await reportProgress({ mode: 'minute-osc', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'No screener universe found' });
+    return;
+  }
+
+  // Compute date range: 30 calendar days back from scanDate
+  var endDate = new Date(scanDate + 'T12:00:00Z');
+  var startDate = new Date(endDate); startDate.setDate(startDate.getDate() - 45); // 45 cal days = ~30 trading
+  var fromStr = startDate.toISOString().slice(0, 10);
+  var toStr = scanDate;
+
+  // ET offset for scanDate
+  var testDate = new Date(scanDate + 'T12:00:00Z');
+  var utcH = testDate.getUTCHours();
+  var etStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(testDate);
+  var etOff = utcH - parseInt(etStr);
+
+  // Clear today's rows
+  await fetch(SB_URL + '/rest/v1/minute_oscillation_results?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+  await fetch(SB_URL + '/rest/v1/optimal_tp_minute?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+  await sleep(300);
+
+  // Process 2-wide. Use a shared index pointer.
+  var nextIdx = 0;
+  var processed = 0, succeeded = 0, errored = 0, noData = 0;
+  var oscBuffer = [], tpBuffer = [];
+  var totalCount = universe.length;
+
+  async function worker(workerIdx) {
+    while (true) {
+      var myIdx = nextIdx++;
+      if (myIdx >= totalCount) return;
+      var u = universe[myIdx];
+      try {
+        var res = await processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff);
+        if (res.status === 'ok') {
+          oscBuffer.push(res.oscRow);
+          tpBuffer.push(res.tpRow);
+          succeeded++;
+        } else if (res.status === 'no_data' || res.status === 'too_few_days') {
+          noData++;
+        } else {
+          errored++;
+        }
+      } catch (e) {
+        errored++;
+        console.log('Crash on ' + u.ticker + ': ' + e.message);
+      }
+      processed++;
+      if (processed % 25 === 0) {
+        var pct = Math.round((processed / totalCount) * 90); // save phase = remaining 10%
+        await reportProgress({ mode: 'minute-osc', ticker: u.ticker, status: 'running', progress_pct: pct, message: 'Processed ' + processed + '/' + totalCount + ' (' + succeeded + ' ok, ' + noData + ' no-data, ' + errored + ' err)' });
+        // Periodic flush of buffers to avoid memory pressure
+        if (oscBuffer.length >= 100) {
+          await flushBuffers();
+        }
+      }
+    }
+  }
+
+  async function flushBuffers() {
+    if (oscBuffer.length === 0 && tpBuffer.length === 0) return;
+    var oscBatch = oscBuffer.splice(0, oscBuffer.length);
+    var tpBatch = tpBuffer.splice(0, tpBuffer.length);
+    // Save in chunks of 50
+    for (var bi = 0; bi < oscBatch.length; bi += 50) {
+      var chunk = oscBatch.slice(bi, bi + 50);
+      var sr = await fetch(SB_URL + '/rest/v1/minute_oscillation_results', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(chunk) });
+      if (!sr.ok) console.log('osc save batch err: ' + sr.status + ' ' + (await sr.text()).slice(0, 200));
+      await sleep(100);
+    }
+    for (var bi = 0; bi < tpBatch.length; bi += 50) {
+      var chunk = tpBatch.slice(bi, bi + 50);
+      var sr = await fetch(SB_URL + '/rest/v1/optimal_tp_minute', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(chunk) });
+      if (!sr.ok) console.log('tp save batch err: ' + sr.status + ' ' + (await sr.text()).slice(0, 200));
+      await sleep(100);
+    }
+  }
+
+  await Promise.all([worker(0), worker(1)]);
+  await flushBuffers();
+
+  await reportProgress({ mode: 'minute-osc', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. ' + succeeded + ' classified, ' + noData + ' no-data, ' + errored + ' errors of ' + totalCount });
+  console.log('Minute-osc complete: ' + succeeded + ' ok / ' + noData + ' no-data / ' + errored + ' err / ' + totalCount + ' total');
+}
+
+async function getLatestScreenerDate() {
+  var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1', { headers: sbHeaders() });
+  if (r.ok) {
+    var rows = await r.json();
+    if (rows.length) return rows[0].scan_date;
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -3919,6 +4384,11 @@ async function main() {
     try { await runMFE(); } catch (e) {
       console.error('MFE CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'mfe', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'minute-osc') {
+    try { await runMinuteOsc(); } catch (e) {
+      console.error('MINUTE-OSC CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'minute-osc', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'build-universe') {
     try { await runBuildUniverse(); } catch (e) {

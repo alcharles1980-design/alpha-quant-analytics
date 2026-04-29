@@ -23,6 +23,7 @@ on:
           - mfe
           - extended-volume
           - build-universe
+          - minute-osc
       tickers:
         description: 'Comma-separated tickers'
         required: true
