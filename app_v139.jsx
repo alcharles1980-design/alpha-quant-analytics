@@ -7733,7 +7733,7 @@ function OptimalTpMinutePage(p){
   var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
   var s5=useState(false),building=s5[0],setBuilding=s5[1];
   var s6=useState(null),pipeStatus=s6[0],setPipeStatus=s6[1];
-  var s7=useState('expected_profit_dollar_per_day'),sortKey=s7[0],setSortKey=s7[1];
+  var s7=useState('expected_profit_pct_per_day'),sortKey=s7[0],setSortKey=s7[1];
   var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
   var s9=useState(''),tickerFilter=s9[0],setTickerFilter=s9[1];
   var s10=useState(null),uniData=s10[0],setUniData=s10[1];
@@ -7760,7 +7760,7 @@ function OptimalTpMinutePage(p){
       var all=[],off=0,batch=[];
       do{
         var ph=getSbHeaders();ph['Range']=''+off+'-'+(off+999);
-        var pr=await fetch(SB_URL+'/rest/v1/optimal_tp_minute?scan_date=eq.'+sd+'&select=ticker,tp_pct,tp_dollar,expected_fills_per_day,expected_profit_pct_per_day,expected_profit_dollar_per_day,total_fills_in_window,spread_pct_used,cost_dollars_per_fill,top_3_tps,ref_price,trading_days&order=expected_profit_dollar_per_day.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/optimal_tp_minute?scan_date=eq.'+sd+'&select=ticker,tp_pct,tp_dollar,expected_fills_per_day,expected_profit_pct_per_day,expected_profit_dollar_per_day,total_fills_in_window,spread_pct_used,cost_dollars_per_fill,top_3_tps,ref_price,trading_days&order=expected_profit_pct_per_day.desc',{headers:ph});
         batch=pr.ok?await pr.json():[];
         for(var bi=0;bi<batch.length;bi++)all.push(batch[bi]);
         if(batch.length<1000)break;off+=1000;
@@ -7880,7 +7880,11 @@ function OptimalTpMinutePage(p){
     </Cd>}
 
     {filtered.length>0&&<Cd>
-      <SectionHead title={'Ranking ('+filtered.length+')'} sub="Sort by any column. Default: expected $ profit/day descending."/>
+      <SectionHead title={'Ranking ('+filtered.length+')'} sub="Sort by any column. Default: %/day desc (capital-efficient ranking)." info="The %/day column is the capital-efficient metric - it normalizes profit by share price so cross-tier comparisons are fair. The $/day column shows raw dollar profit per share but is biased toward expensive stocks (a 1% TP on a $1000 stock makes $10/fill regardless of capital efficiency). Use $/day to estimate total bot revenue for a given budget; use %/day to find the most efficient deployments per dollar."/>
+      <div style={{padding:8,background:C.bg,borderRadius:6,marginTop:8,marginBottom:8,fontFamily:F,fontSize:8,color:C.txtDim,lineHeight:1.5,border:'1px solid '+C.border}}>
+        <div><span style={{color:C.gold,fontWeight:700}}>%/day</span> = % return per share per day, after spread + commission. Cross-comparable across price tiers.</div>
+        <div><span style={{color:C.txtDim,fontWeight:700}}>$/day</span> = raw dollar profit per share per day. Biased toward higher-priced stocks. Useful to estimate revenue for fixed-share grids, misleading for ranking.</div>
+      </div>
       <div style={{overflowX:'auto',marginTop:8}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
           <thead><tr style={{background:C.bgInput,color:C.txtDim,fontSize:8}}>
@@ -7903,8 +7907,8 @@ function OptimalTpMinutePage(p){
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold,fontWeight:700}}>{fmt(r.tp_pct,1)}%</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.tp_dollar?'$'+r.tp_dollar.toFixed(2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{fmt(r.expected_fills_per_day,1)}</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:r.expected_profit_dollar_per_day>0?C.accent:C.warn,fontWeight:700}}>{r.expected_profit_dollar_per_day!=null?'$'+r.expected_profit_dollar_per_day.toFixed(2):'-'}</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:r.expected_profit_pct_per_day>0?C.accent:C.warn}}>{r.expected_profit_pct_per_day!=null?r.expected_profit_pct_per_day.toFixed(2)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:r.expected_profit_dollar_per_day>0?C.txt:C.warn}}>{r.expected_profit_dollar_per_day!=null?'$'+r.expected_profit_dollar_per_day.toFixed(2):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:r.expected_profit_pct_per_day>0?C.accent:C.warn,fontWeight:700}}>{r.expected_profit_pct_per_day!=null?r.expected_profit_pct_per_day.toFixed(2)+'%':'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>{fmt(r.spread_pct_used,2)}%</td>
               <td style={{padding:'5px 4px',color:C.txtDim,fontSize:8}}>{r.top_3_tps?r.top_3_tps.map(function(t){return t.toFixed(1)+'%';}).join(', '):'-'}</td>
             </tr>;})}
