@@ -3996,6 +3996,122 @@ function _computeOscillationMetrics(bars, dayKey) {
   };
 }
 
+function _realizedPath(allBars) {
+  // Sum of |close[i] - close[i-1]| across all bars. The "total $ traveled" metric.
+  if (allBars.length < 2) return 0;
+  var sum = 0;
+  for (var i = 1; i < allBars.length; i++) sum += Math.abs(allBars[i].c - allBars[i-1].c);
+  return sum;
+}
+
+function _multiGridSpacing(refPrice) {
+  // 0.01% of price, rounded to nearest cent, floor of $0.01
+  var raw = refPrice * 0.0001;
+  var rounded = Math.round(raw * 100) / 100;
+  return Math.max(0.01, rounded);
+}
+
+function _simMultiGrid(allBars, spacing, capitalPerLevel, spreadPct, commissionPerSide, MAX_LEVELS) {
+  // Walk forward through bars maintaining armed buys + pending sells.
+  // Levels are static, evenly spaced from min(low) to max(high) of full window.
+  // Returns { fills_total, fills_per_day, profit_per_tp: { tp -> {fills, profit$} } }
+  // SKIP if levels exceed MAX_LEVELS (returns null).
+  if (allBars.length < 50) return null;
+
+  var minLow = Infinity, maxHigh = -Infinity;
+  for (var i = 0; i < allBars.length; i++) {
+    if (allBars[i].l < minLow) minLow = allBars[i].l;
+    if (allBars[i].h > maxHigh) maxHigh = allBars[i].h;
+  }
+  if (minLow <= 0 || maxHigh <= minLow) return null;
+
+  // Snap min/max to spacing grid
+  var firstLevel = Math.ceil(minLow / spacing) * spacing;
+  var lastLevel = Math.floor(maxHigh / spacing) * spacing;
+  var nLevels = Math.floor((lastLevel - firstLevel) / spacing) + 1;
+  if (nLevels < 2) return null;
+  if (nLevels > MAX_LEVELS) return { skipped: 'too_wide', levels: nLevels, spacing: spacing, range_dollar: maxHigh - minLow };
+
+  // Build level prices
+  var levels = new Array(nLevels);
+  for (var i = 0; i < nLevels; i++) levels[i] = firstLevel + i * spacing;
+
+  // Walk forward ONCE to record (level_idx, fill_bar_idx) pairs.
+  // Tracks: armed[i] = true means level i can fill if low <= levels[i]
+  // After fill: armed[i] becomes false until a TP fires at this level (which depends on TP%, evaluated later)
+  // For multi-TP scoring, we record ALL armed-low touches per level — these are the candidate fills.
+  // Then for each TP%, we simulate sell-sequencing per level: a level that fills at bar B and sells at bar B' can fill again from bar B'+1 onward.
+
+  // For efficiency: per level, record list of bar indices where price touched the buy price.
+  // We then process per-TP: for each level, walk through its candidate bar list, fill -> tp_target, search forward for the first bar where high >= tp_target, that's a complete cycle. Re-arm next bar after.
+
+  // First pass: collect candidate bar indices per level
+  var levelTouches = new Array(nLevels);
+  for (var i = 0; i < nLevels; i++) levelTouches[i] = [];
+
+  // Optimization: levels are sorted ascending. For each bar, find which levels its [low, high] crossed.
+  // A level l is "touched as buy" if bar.low <= levels[l] AND levels[l] <= bar.high (price passed through it during the bar)
+  // But honestly grid bots fire when low <= limit, so we use that
+  for (var bi = 0; bi < allBars.length; bi++) {
+    var b = allBars[bi];
+    // Binary search: find highest level <= bar.high (limit price the bar's high touches)
+    if (b.h < firstLevel || b.l > lastLevel) continue;
+    var lo = Math.max(0, Math.ceil((b.l - firstLevel) / spacing));
+    var hi = Math.min(nLevels - 1, Math.floor((b.h - firstLevel) / spacing));
+    for (var li = lo; li <= hi; li++) {
+      levelTouches[li].push(bi);
+    }
+  }
+
+  // For each TP%, simulate per level using the candidate touch list
+  // Returns map of tp -> { fills, profit_dollar }
+  var simResultsByTp = function(tpPctList) {
+    var results = {};
+    for (var ti = 0; ti < tpPctList.length; ti++) {
+      var tpPct = tpPctList[ti];
+      var totalFills = 0;
+      // For each level: replay touches with sell-blocking
+      for (var li = 0; li < nLevels; li++) {
+        var touches = levelTouches[li];
+        if (!touches.length) continue;
+        var levelPx = levels[li];
+        var tpPx = levelPx * (1 + tpPct / 100);
+        var blockedUntil = -1;
+        for (var ti2 = 0; ti2 < touches.length; ti2++) {
+          var fillBar = touches[ti2];
+          if (fillBar <= blockedUntil) continue;
+          // Fill at levelPx. Find first bar from fillBar onwards where high >= tpPx.
+          var sellBar = -1;
+          for (var sb = fillBar; sb < allBars.length; sb++) {
+            if (allBars[sb].h >= tpPx) { sellBar = sb; break; }
+          }
+          if (sellBar === -1) break; // no exit found in window, stop counting fills for this level
+          totalFills++;
+          blockedUntil = sellBar; // can't refill until next bar after sell
+        }
+      }
+      // Profit per fill = $1 * (TP% - spread%) - commission cost (negligible at $1/level)
+      // Cost: 2 * 0.0025 / fillPrice in $/share, but with $1 capital/level the share count = 1/fillPrice
+      // So commission per fill in $ = 2 * 0.0025 * (1/fillPrice) = 0.005/fillPrice. Negligible vs $1 * TP%.
+      // Approximation: profit_per_fill = capital * (TP% - spread%) / 100, and we ignore comm (always tiny)
+      var profitPerFill = capitalPerLevel * (tpPct - spreadPct) / 100;
+      var totalProfit = totalFills * profitPerFill;
+      results[tpPct.toFixed(1)] = { fills: totalFills, profit_dollar: totalProfit };
+    }
+    return results;
+  };
+
+  return {
+    skipped: null,
+    levels: nLevels,
+    spacing: spacing,
+    first_level: firstLevel,
+    last_level: lastLevel,
+    range_dollar: maxHigh - minLow,
+    simResultsByTp: simResultsByTp
+  };
+}
+
 function _walkForwardOptimalTP(bars, tpPct, refPrice, spreadPct, commissionPerSide) {
   // Single-level walk-forward: buy at first bar's open, TP = buy * (1 + tpPct/100).
   // When TP fills, restart from the bar's low. End-of-extended-hours: cancel any open buy.
@@ -4199,6 +4315,69 @@ async function processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff) {
 
   var dollarPerFillAtBest = (bestTp / 100) * refPrice - 2 * commission - (spreadUsed / 100) * refPrice;
 
+  // ============================================================
+  // Multi-level grid simulation (0.01% spacing rounded to penny, $1/level)
+  // ============================================================
+  var allBarsForGrid = fr.results; // use full window across all sessions
+  var realizedPath = _realizedPath(allBarsForGrid);
+  var pennyTouchesPerDayMean = (realizedPath / 0.01) / dayKeys.length;
+  var priceRange30d = 0;
+  if (allBarsForGrid.length) {
+    var pmin = Infinity, pmax = -Infinity;
+    for (var pi = 0; pi < allBarsForGrid.length; pi++) {
+      if (allBarsForGrid[pi].l < pmin) pmin = allBarsForGrid[pi].l;
+      if (allBarsForGrid[pi].h > pmax) pmax = allBarsForGrid[pi].h;
+    }
+    priceRange30d = pmax - pmin;
+  }
+
+  var multiSpacing = _multiGridSpacing(refPrice);
+  var multiResult = _simMultiGrid(allBarsForGrid, multiSpacing, 1.0, spreadUsed, commission, 5000);
+
+  var multiFields = {
+    multi_grid_spacing_dollar: Math.round(multiSpacing * 10000) / 10000,
+    multi_grid_spacing_pct: 0.01,
+    multi_grid_levels: null,
+    multi_grid_capital_total: null,
+    multi_grid_tp_pct: null,
+    multi_grid_fills_per_day: null,
+    multi_grid_profit_dollar_per_day: null,
+    multi_grid_return_pct_per_day: null,
+    multi_grid_score_curve: null,
+    multi_grid_skipped: null
+  };
+
+  if (multiResult && multiResult.skipped === 'too_wide') {
+    multiFields.multi_grid_levels = multiResult.levels;
+    multiFields.multi_grid_capital_total = multiResult.levels;
+    multiFields.multi_grid_skipped = 'too_wide';
+  } else if (multiResult && multiResult.simResultsByTp) {
+    var tpList = [];
+    for (var ts = 1; ts <= 100; ts++) tpList.push(ts / 10);
+    var simRes = multiResult.simResultsByTp(tpList);
+    var bestMtp = null, bestMprofit = -Infinity, bestMfills = 0;
+    var mScoreCurve = [];
+    for (var ts2 = 0; ts2 < tpList.length; ts2++) {
+      var tpKey = tpList[ts2].toFixed(1);
+      var sr = simRes[tpKey];
+      var profitPerDay = sr.profit_dollar / dayKeys.length;
+      mScoreCurve.push({ tp: tpList[ts2], fills: sr.fills, profit_dollar: Math.round(sr.profit_dollar * 100) / 100, profit_per_day: Math.round(profitPerDay * 100) / 100 });
+      if (profitPerDay > bestMprofit) {
+        bestMprofit = profitPerDay;
+        bestMtp = tpList[ts2];
+        bestMfills = sr.fills;
+      }
+    }
+    var capitalTotal = multiResult.levels * 1.0;
+    multiFields.multi_grid_levels = multiResult.levels;
+    multiFields.multi_grid_capital_total = Math.round(capitalTotal * 100) / 100;
+    multiFields.multi_grid_tp_pct = bestMtp;
+    multiFields.multi_grid_fills_per_day = Math.round((bestMfills / dayKeys.length) * 100) / 100;
+    multiFields.multi_grid_profit_dollar_per_day = Math.round(bestMprofit * 100) / 100;
+    multiFields.multi_grid_return_pct_per_day = capitalTotal > 0 ? Math.round((bestMprofit / capitalTotal) * 10000) / 100 : null;
+    multiFields.multi_grid_score_curve = mScoreCurve;
+  }
+
   var tpRow = {
     ticker: tk, scan_date: scanDate, lookback_days: 30, trading_days: dayKeys.length,
     tp_pct: bestTp,
@@ -4213,7 +4392,20 @@ async function processOneTickerMinuteOsc(u, scanDate, fromStr, toStr, etOff) {
     score_curve: scoreCurve,
     ref_price: refPrice,
     adv_dollars: u.adv_dollars != null ? Math.round(u.adv_dollars) : null,
-    market_cap: u.market_cap != null ? Math.round(u.market_cap) : null
+    market_cap: u.market_cap != null ? Math.round(u.market_cap) : null,
+    realized_path_30d_dollar: Math.round(realizedPath * 100) / 100,
+    penny_touches_per_day_mean: Math.round(pennyTouchesPerDayMean),
+    price_range_30d_dollar: Math.round(priceRange30d * 100) / 100,
+    multi_grid_spacing_dollar: multiFields.multi_grid_spacing_dollar,
+    multi_grid_spacing_pct: multiFields.multi_grid_spacing_pct,
+    multi_grid_levels: multiFields.multi_grid_levels,
+    multi_grid_capital_total: multiFields.multi_grid_capital_total,
+    multi_grid_tp_pct: multiFields.multi_grid_tp_pct,
+    multi_grid_fills_per_day: multiFields.multi_grid_fills_per_day,
+    multi_grid_profit_dollar_per_day: multiFields.multi_grid_profit_dollar_per_day,
+    multi_grid_return_pct_per_day: multiFields.multi_grid_return_pct_per_day,
+    multi_grid_score_curve: multiFields.multi_grid_score_curve,
+    multi_grid_skipped: multiFields.multi_grid_skipped
   };
 
   return { ticker: tk, status: 'ok', oscRow: oscRow, tpRow: tpRow };

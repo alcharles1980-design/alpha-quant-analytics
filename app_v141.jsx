@@ -7733,7 +7733,7 @@ function OptimalTpMinutePage(p){
   var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
   var s5=useState(false),building=s5[0],setBuilding=s5[1];
   var s6=useState(null),pipeStatus=s6[0],setPipeStatus=s6[1];
-  var s7=useState('expected_profit_pct_per_day'),sortKey=s7[0],setSortKey=s7[1];
+  var s7=useState('multi_grid_return_pct_per_day'),sortKey=s7[0],setSortKey=s7[1];
   var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
   var s9=useState(''),tickerFilter=s9[0],setTickerFilter=s9[1];
   var s10=useState(null),uniData=s10[0],setUniData=s10[1];
@@ -7762,7 +7762,7 @@ function OptimalTpMinutePage(p){
       var all=[],off=0,batch=[];
       do{
         var ph=getSbHeaders();ph['Range']=''+off+'-'+(off+999);
-        var pr=await fetch(SB_URL+'/rest/v1/optimal_tp_minute?scan_date=eq.'+sd+'&select=ticker,tp_pct,tp_dollar,expected_fills_per_day,expected_profit_pct_per_day,expected_profit_dollar_per_day,total_fills_in_window,spread_pct_used,cost_dollars_per_fill,top_3_tps,ref_price,trading_days,adv_dollars,market_cap&order=expected_profit_pct_per_day.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/optimal_tp_minute?scan_date=eq.'+sd+'&select=ticker,tp_pct,tp_dollar,expected_fills_per_day,expected_profit_pct_per_day,expected_profit_dollar_per_day,total_fills_in_window,spread_pct_used,cost_dollars_per_fill,top_3_tps,ref_price,trading_days,adv_dollars,market_cap,multi_grid_spacing_dollar,multi_grid_levels,multi_grid_capital_total,multi_grid_tp_pct,multi_grid_fills_per_day,multi_grid_profit_dollar_per_day,multi_grid_return_pct_per_day,multi_grid_score_curve,multi_grid_skipped,realized_path_30d_dollar,penny_touches_per_day_mean,price_range_30d_dollar&order=multi_grid_return_pct_per_day.desc.nullslast',{headers:ph});
         batch=pr.ok?await pr.json():[];
         for(var bi=0;bi<batch.length;bi++)all.push(batch[bi]);
         if(batch.length<1000)break;off+=1000;
@@ -7905,10 +7905,12 @@ function OptimalTpMinutePage(p){
     </Cd>}
 
     {filtered.length>0&&<Cd>
-      <SectionHead title={'Ranking ('+filtered.length+')'} sub="Sort by any column. Default: %/day desc (capital-efficient ranking)." info="The %/day column is the capital-efficient metric - it normalizes profit by share price so cross-tier comparisons are fair. The $/day column shows raw dollar profit per share but is biased toward expensive stocks (a 1% TP on a $1000 stock makes $10/fill regardless of capital efficiency). Use $/day to estimate total bot revenue for a given budget; use %/day to find the most efficient deployments per dollar."/>
+      <SectionHead title={'Ranking ('+filtered.length+')'} sub="Default sort: M-%ret/d desc \u2014 daily return on capital from the multi-level grid model." info="The multi-level grid simulation models a real Alpaca-style grid bot: spacing = max($0.01, round-to-cent of price * 0.01%), so penny-spaced for low-priced stocks, dollar-spaced for very high-priced names. $1 capital per level. Range = full 30d high-to-low (max-opportunity backtest). For each TP% from 0.1% to 10%, walks forward bar-by-bar tracking armed buys + pending sells. Picks the TP% that maximizes total $ profit per day. The headline metric is M-%ret/d = profit/day divided by total capital deployed (= levels). Stocks where the 30d range produces >5,000 levels are skipped (simulation cost too high) - they show as Levels with a warn icon."/>
       <div style={{padding:8,background:C.bg,borderRadius:6,marginTop:8,marginBottom:8,fontFamily:F,fontSize:8,color:C.txtDim,lineHeight:1.5,border:'1px solid '+C.border}}>
-        <div><span style={{color:C.gold,fontWeight:700}}>%/day</span> = % return per share per day, after spread + commission. Cross-comparable across price tiers.</div>
-        <div><span style={{color:C.txtDim,fontWeight:700}}>$/day</span> = raw dollar profit per share per day. Biased toward higher-priced stocks. Useful to estimate revenue for fixed-share grids, misleading for ranking.</div>
+        <div><span style={{color:C.purple,fontWeight:700}}>M-cols (purple)</span> = multi-level grid simulation: $0.01% spacing rounded to penny, $1/level, full 30d range. <span style={{color:C.accent,fontWeight:700}}>M-%ret/d</span> is the headline metric (return on total deployed capital).</div>
+        <div><span style={{color:C.txtDim,fontWeight:700}}>S-cols (gray)</span> = single-level walk-forward (legacy, useful sanity check).</div>
+        <div><span style={{color:C.txt}}>Pennies/d</span> = realized path divided by $0.01 = upper-bound proxy on penny-grid fill density.</div>
+        <div><span style={{color:C.warn}}>\u26A0 on Levels</span> = grid too wide (>5,000 levels), simulation skipped. Use single-level result instead.</div>
       </div>
       <div style={{overflowX:'auto',marginTop:8}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
@@ -7918,28 +7920,36 @@ function OptimalTpMinutePage(p){
             <th onClick={function(){doSort('ref_price');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Px{sortIcon('ref_price')}</th>
             <th onClick={function(){doSort('market_cap');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>MCap{sortIcon('market_cap')}</th>
             <th onClick={function(){doSort('adv_dollars');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>ADV ${sortIcon('adv_dollars')}</th>
-            <th onClick={function(){doSort('tp_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Best TP%{sortIcon('tp_pct')}</th>
-            <th onClick={function(){doSort('tp_dollar');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Best TP${sortIcon('tp_dollar')}</th>
-            <th onClick={function(){doSort('expected_fills_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Fills/d{sortIcon('expected_fills_per_day')}</th>
-            <th onClick={function(){doSort('expected_profit_dollar_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>$/d{sortIcon('expected_profit_dollar_per_day')}</th>
-            <th onClick={function(){doSort('expected_profit_pct_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>%/d{sortIcon('expected_profit_pct_per_day')}</th>
+            <th onClick={function(){doSort('multi_grid_levels');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.purple}}>Levels{sortIcon('multi_grid_levels')}</th>
+            <th onClick={function(){doSort('multi_grid_capital_total');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.purple}}>Cap{sortIcon('multi_grid_capital_total')}</th>
+            <th onClick={function(){doSort('multi_grid_tp_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.purple}}>M-TP%{sortIcon('multi_grid_tp_pct')}</th>
+            <th onClick={function(){doSort('multi_grid_fills_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.purple}}>M-Fills/d{sortIcon('multi_grid_fills_per_day')}</th>
+            <th onClick={function(){doSort('multi_grid_profit_dollar_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.purple}}>M-$/d{sortIcon('multi_grid_profit_dollar_per_day')}</th>
+            <th onClick={function(){doSort('multi_grid_return_pct_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.accent}}>M-%ret/d{sortIcon('multi_grid_return_pct_per_day')}</th>
+            <th onClick={function(){doSort('penny_touches_per_day_mean');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Pennies/d{sortIcon('penny_touches_per_day_mean')}</th>
+            <th onClick={function(){doSort('tp_pct');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.txtDim}}>S-TP%{sortIcon('tp_pct')}</th>
+            <th onClick={function(){doSort('expected_profit_pct_per_day');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none',color:C.txtDim}}>S-$/$1k/d{sortIcon('expected_profit_pct_per_day')}</th>
             <th onClick={function(){doSort('spread_pct_used');}} style={{padding:'6px 4px',textAlign:'right',cursor:'pointer',userSelect:'none'}}>Sprd%{sortIcon('spread_pct_used')}</th>
-            <th style={{padding:'6px 4px',textAlign:'left'}}>Top 3</th>
           </tr></thead>
           <tbody>
-            {filtered.slice(0,300).map(function(r,i){return <tr key={r.ticker} onClick={function(){setDetailTicker(r.ticker);}} style={{borderBottom:'1px solid '+C.border,color:C.txt,cursor:'pointer'}}>
+            {filtered.slice(0,300).map(function(r,i){
+              var skipped=r.multi_grid_skipped==='too_wide';
+              return <tr key={r.ticker} onClick={function(){setDetailTicker(r.ticker);}} style={{borderBottom:'1px solid '+C.border,color:C.txt,cursor:'pointer'}}>
               <td style={{padding:'5px 4px',color:C.txtDim}}>{i+1}</td>
               <td style={{padding:'5px 4px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'5px 4px',textAlign:'right'}}>{r.ref_price?'$'+r.ref_price.toFixed(2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.blue}}>{fmt$(r.market_cap)}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{fmt$(r.adv_dollars)}</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:C.gold,fontWeight:700}}>{fmt(r.tp_pct,1)}%</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:C.gold}}>{r.tp_dollar?'$'+r.tp_dollar.toFixed(2):'-'}</td>
-              <td style={{padding:'5px 4px',textAlign:'right'}}>{fmt(r.expected_fills_per_day,1)}</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:r.expected_profit_dollar_per_day>0?C.txt:C.warn}}>{r.expected_profit_dollar_per_day!=null?'$'+r.expected_profit_dollar_per_day.toFixed(2):'-'}</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:r.expected_profit_pct_per_day>0?C.accent:C.warn,fontWeight:700}}>{r.expected_profit_pct_per_day!=null?r.expected_profit_pct_per_day.toFixed(2)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:skipped?C.warn:C.purple}}>{r.multi_grid_levels!=null?(r.multi_grid_levels.toLocaleString()+(skipped?' \u26A0':'')):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.purple}}>{r.multi_grid_capital_total!=null?'$'+r.multi_grid_capital_total.toLocaleString():'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.purple,fontWeight:700}}>{r.multi_grid_tp_pct!=null?r.multi_grid_tp_pct.toFixed(1)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.purple}}>{r.multi_grid_fills_per_day!=null?r.multi_grid_fills_per_day.toFixed(1):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.purple}}>{r.multi_grid_profit_dollar_per_day!=null?'$'+r.multi_grid_profit_dollar_per_day.toFixed(2):'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:r.multi_grid_return_pct_per_day>0?C.accent:C.warn,fontWeight:700}}>{r.multi_grid_return_pct_per_day!=null?r.multi_grid_return_pct_per_day.toFixed(3)+'%':'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>{r.penny_touches_per_day_mean!=null?Math.round(r.penny_touches_per_day_mean).toLocaleString():'-'}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>{fmt(r.tp_pct,1)}%</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>{r.expected_profit_pct_per_day!=null?'$'+(r.expected_profit_pct_per_day*10).toFixed(2):'-'}</td>
               <td style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>{fmt(r.spread_pct_used,2)}%</td>
-              <td style={{padding:'5px 4px',color:C.txtDim,fontSize:8}}>{r.top_3_tps?r.top_3_tps.map(function(t){return t.toFixed(1)+'%';}).join(', '):'-'}</td>
             </tr>;})}
           </tbody>
         </table>
@@ -8009,8 +8019,8 @@ function TickerDetailModal(p){
         </div>
       </div>}
 
-      {det.score_curve&&det.score_curve.length>0&&<div style={{padding:10,background:C.bg,borderRadius:6}}>
-        <div style={{color:C.purple,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:1}}>TP% SCORE CURVE</div>
+      {det.score_curve&&det.score_curve.length>0&&<div style={{padding:10,background:C.bg,borderRadius:6,marginBottom:10}}>
+        <div style={{color:C.txtDim,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:1}}>SINGLE-LEVEL TP% SCORE CURVE</div>
         <div style={{fontSize:8,fontFamily:F,color:C.txt}}>
           {(function(){
             var maxProfit=0;
@@ -8026,7 +8036,31 @@ function TickerDetailModal(p){
             });
           })()}
         </div>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>Highlighted = optimal TP%. Multiple peaks suggest multi-level grid potential.</div>
+      </div>}
+
+      {det.multi_grid_score_curve&&det.multi_grid_score_curve.length>0&&<div style={{padding:10,background:C.bg,borderRadius:6,marginBottom:10,border:'1px solid '+C.purple}}>
+        <div style={{color:C.purple,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6,letterSpacing:1}}>MULTI-GRID TP% SCORE CURVE</div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginBottom:6}}>{det.multi_grid_levels} levels at ${det.multi_grid_spacing_dollar} spacing, ${det.multi_grid_capital_total} total capital. Best TP%: {det.multi_grid_tp_pct?det.multi_grid_tp_pct.toFixed(1):'-'}% \u2192 ${det.multi_grid_profit_dollar_per_day?det.multi_grid_profit_dollar_per_day.toFixed(2):'-'}/day = {det.multi_grid_return_pct_per_day?det.multi_grid_return_pct_per_day.toFixed(3):'-'}%/day return.</div>
+        <div style={{fontSize:8,fontFamily:F,color:C.txt}}>
+          {(function(){
+            var sc=det.multi_grid_score_curve;
+            var maxProfit=0;
+            for(var i=0;i<sc.length;i++)if(sc[i].profit_per_day>maxProfit)maxProfit=sc[i].profit_per_day;
+            return sc.filter(function(s,i){return i%2===0;}).map(function(s,i){
+              var w=maxProfit>0?Math.max(0,(s.profit_per_day/maxProfit)*100):0;
+              var hi=s.tp===det.multi_grid_tp_pct;
+              return <div key={i} style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                <div style={{width:36,color:hi?C.purple:C.txtDim,fontWeight:hi?700:400}}>{s.tp.toFixed(1)}%</div>
+                <div style={{flex:1,height:8,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:Math.max(0,w)+'%',height:'100%',background:hi?C.purple:C.txtDim}}/></div>
+                <div style={{width:80,textAlign:'right',color:hi?C.purple:C.txt,fontWeight:hi?700:400}}>{s.fills}f \u00B7 ${s.profit_per_day.toFixed(2)}</div>
+              </div>;
+            });
+          })()}
+        </div>
+      </div>}
+
+      {det.multi_grid_skipped==='too_wide'&&<div style={{padding:10,background:'#3d1010',borderRadius:6,marginBottom:10,border:'1px solid '+C.warn,color:C.warn,fontFamily:F,fontSize:9}}>
+        Multi-grid simulation skipped: {det.multi_grid_levels} levels exceeds the 5,000 cap. Use the single-level result instead, or note that this stock's 30-day price range is too wide for a dense penny-spaced grid to be practical.
       </div>}
     </div>
   </div>;
