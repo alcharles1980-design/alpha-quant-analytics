@@ -1508,12 +1508,15 @@ function StockProfileCheatSheetPage(p){
   var bS={width:'100%',padding:'12px',border:'none',borderRadius:8,background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:loading?'default':'pointer',marginTop:10};
 
   // Render a single window block
-  var renderWindow=function(label,sub,w,accent){
+  var renderWindow=function(label,sub,w,accent,lastClose){
     if(!w)return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
       <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>No data for this window.</div>
     </div>;
     var pos=w.range_position!=null?w.range_position:0;
+    var posClamped=Math.max(0,Math.min(100,pos));
+    // Label horizontal alignment: left at low end, center in middle, right at high end
+    var labelTransform = posClamped<8 ? 'translateX(0)' : (posClamped>92 ? 'translateX(-100%)' : 'translateX(-50%)');
     return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
         <div style={{color:accent||C.gold,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
@@ -1531,9 +1534,13 @@ function StockProfileCheatSheetPage(p){
           {w.hi_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.hi_date}</div>}
         </div>
       </div>
+      {/* Price label floating above the indicator */}
+      {lastClose!=null&&<div style={{position:'relative',height:14,marginBottom:2}}>
+        <div style={{position:'absolute',left:posClamped+'%',transform:labelTransform,fontSize:9,fontFamily:F,fontWeight:700,color:C.txtBright,background:C.bgCard,padding:'1px 5px',borderRadius:3,border:'1px solid '+C.txtBright,whiteSpace:'nowrap'}}>${lastClose.toFixed(2)}</div>
+      </div>}
       <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
-        <div style={{position:'absolute',top:0,bottom:0,left:0,width:Math.max(0,Math.min(100,pos))+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.35}}/>
-        <div style={{position:'absolute',top:0,bottom:0,left:'calc('+Math.max(0,Math.min(100,pos))+'% - 1px)',width:2,background:C.txtBright}}/>
+        <div style={{position:'absolute',top:0,bottom:0,left:0,width:posClamped+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.35}}/>
+        <div style={{position:'absolute',top:0,bottom:0,left:'calc('+posClamped+'% - 1px)',width:2,background:C.txtBright}}/>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txtDim}}>
         <span>{w.pct_from_low!=null?(w.pct_from_low>=0?'+':'')+w.pct_from_low.toFixed(1)+'% from low':''}</span>
@@ -1564,14 +1571,22 @@ function StockProfileCheatSheetPage(p){
     </Cd>
 
     {data&&<Cd glow={true}>
-      <SectionHead title={data.ticker+' \u00B7 High/Low Across Windows'} sub={'Last close $'+data.last_close.toFixed(2)+' on '+data.last_date+' \u00B7 '+data.bars_count+' daily bars'}/>
+      <SectionHead title={data.ticker+' \u00B7 High/Low Across Windows'} sub={data.last_date+' \u00B7 '+data.bars_count+' daily bars'}/>
+
+      {/* Hero: big last close */}
+      <div style={{marginTop:12,marginBottom:14,padding:'14px 16px',background:C.bg,borderRadius:10,border:'1px solid '+C.accent,textAlign:'center'}}>
+        <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>LAST CLOSE</div>
+        <div style={{color:C.txtBright,fontSize:32,fontFamily:F,fontWeight:700,marginTop:4,letterSpacing:1}}>${data.last_close.toFixed(2)}</div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.last_date}</div>
+      </div>
+
       <div style={{marginTop:10}}>
-        {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars':'daily bar'):'no session yet',data.windows.today,C.accent)}
-        {renderWindow('This Week','Mon-now',data.windows.week,C.gold)}
-        {renderWindow('2 Weeks','last 14 days',data.windows.wk2,C.gold)}
-        {renderWindow('1 Month','last 30 days',data.windows.mo1,C.gold)}
-        {renderWindow('3 Months','last 90 days',data.windows.mo3,C.gold)}
-        {renderWindow('52 Weeks','last 365 days',data.windows.wk52,C.gold)}
+        {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars':'daily bar'):'no session yet',data.windows.today,C.accent,data.last_close)}
+        {renderWindow('This Week','Mon-now',data.windows.week,C.gold,data.last_close)}
+        {renderWindow('2 Weeks','last 14 days',data.windows.wk2,C.gold,data.last_close)}
+        {renderWindow('1 Month','last 30 days',data.windows.mo1,C.gold,data.last_close)}
+        {renderWindow('3 Months','last 90 days',data.windows.mo3,C.gold,data.last_close)}
+        {renderWindow('52 Weeks','last 365 days',data.windows.wk52,C.gold,data.last_close)}
       </div>
     </Cd>}
   </div>;
