@@ -1361,57 +1361,170 @@ function StockProfileCheatSheetPage(p){
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),data=s4[0],setData=s4[1];
+  var s5=useState(''),progMsg=s5[0],setProgMsg=s5[1];
 
   var fetchProfile=async function(){
     var tk=ticker.trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
-    setLoading(true);setErr(null);setData(null);
+    setLoading(true);setErr(null);setData(null);setProgMsg('Fetching daily bars...');
     try{
-      // 52 weeks of daily bars: today minus 371 calendar days through today
       var today=new Date();
-      var to=today.toISOString().slice(0,10);
+      var todayStr=today.toISOString().slice(0,10);
       var fromDt=new Date(today.getTime()-371*86400000);
-      var from=fromDt.toISOString().slice(0,10);
-      var url='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+from+'/'+to+'?adjusted=true&sort=asc&limit=400&apiKey='+p.apiKey;
-      var r=await fetch(url);
-      if(!r.ok){
-        var errBody=await r.text();
-        setErr('Polygon HTTP '+r.status+': '+errBody.slice(0,200));
-        setLoading(false);return;
+      var fromStr=fromDt.toISOString().slice(0,10);
+
+      // FETCH 1: 52w of daily bars (covers all multi-day windows)
+      var dailyUrl='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=400&apiKey='+p.apiKey;
+      var dr=await fetch(dailyUrl);
+      if(!dr.ok){
+        var errBody=await dr.text();
+        setErr('Polygon HTTP '+dr.status+': '+errBody.slice(0,200));
+        setLoading(false);setProgMsg('');return;
       }
-      var body=await r.json();
-      var bars=body.results||[];
-      if(!bars.length){setErr('No data for '+tk+' over the last 52 weeks. Check ticker symbol.');setLoading(false);return;}
-      // Compute 52w high (max of bar.h), low (min of bar.l), and current = last close
-      var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null;
-      for(var i=0;i<bars.length;i++){
-        var b=bars[i];
-        if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
-        if(b.l<lo){lo=b.l;loDate=new Date(b.t).toISOString().slice(0,10);}
+      var dailyBody=await dr.json();
+      var dailyBars=dailyBody.results||[];
+      if(!dailyBars.length){setErr('No data for '+tk+' over the last 52 weeks. Check ticker symbol.');setLoading(false);setProgMsg('');return;}
+
+      setProgMsg('Fetching today\'s minute bars...');
+      // FETCH 2: today's minute bars (for accurate intraday today H/L)
+      var minuteUrl='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+todayStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var mr=await fetch(minuteUrl);
+      var minuteBars=[];
+      if(mr.ok){
+        var minuteBody=await mr.json();
+        minuteBars=minuteBody.results||[];
       }
-      var last=bars[bars.length-1];
-      var pctFromHi=last.c>0?((last.c-hi)/hi)*100:null;
-      var pctFromLo=last.c>0?((last.c-lo)/lo)*100:null;
-      var rangePos=(hi>lo)?((last.c-lo)/(hi-lo))*100:null;
+      // Don't fail if minute fetch fails - just skip the today section
+
+      // Helper: scan a sub-range of daily bars for hi/lo
+      var scanBars=function(barsArr){
+        var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
+        for(var i=0;i<barsArr.length;i++){
+          var b=barsArr[i];
+          if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
+          if(b.l<lo){lo=b.l;loDate=new Date(b.t).toISOString().slice(0,10);}
+          n++;
+        }
+        if(!n||hi===-Infinity)return null;
+        return {hi:hi,lo:lo,hi_date:hiDate,lo_date:loDate,bars:n};
+      };
+
+      // Build sliced bar arrays for each window (by calendar lookback)
+      var msPerDay=86400000;
+      var slicePast=function(daysBack){
+        var cutoff=today.getTime()-daysBack*msPerDay;
+        return dailyBars.filter(function(b){return b.t>=cutoff;});
+      };
+
+      // Current week: from Monday this week (US convention: Monday=1, Sunday=0->treat as last day)
+      var dow=today.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+      var daysFromMon=dow===0?6:dow-1; // Sun is 6 days from Monday
+      var weekStart=new Date(today);
+      weekStart.setHours(0,0,0,0);
+      weekStart.setDate(weekStart.getDate()-daysFromMon);
+      var weekStartMs=weekStart.getTime();
+      var weekBars=dailyBars.filter(function(b){return b.t>=weekStartMs;});
+
+      // Compute all windows
+      var w52=scanBars(dailyBars);
+      var w3mo=scanBars(slicePast(90));
+      var w1mo=scanBars(slicePast(30));
+      var w2wk=scanBars(slicePast(14));
+      var wWeek=scanBars(weekBars);
+
+      // Today window: prefer minute bars; fall back to last daily bar if it matches today
+      var wToday=null;
+      if(minuteBars.length>0){
+        var thi=-Infinity,tlo=Infinity;
+        for(var i=0;i<minuteBars.length;i++){
+          if(minuteBars[i].h>thi)thi=minuteBars[i].h;
+          if(minuteBars[i].l<tlo)tlo=minuteBars[i].l;
+        }
+        wToday={hi:thi,lo:tlo,bars:minuteBars.length,source:'minute'};
+      } else {
+        // Check if last daily bar is from today
+        var lastDaily=dailyBars[dailyBars.length-1];
+        var lastDailyDate=new Date(lastDaily.t).toISOString().slice(0,10);
+        if(lastDailyDate===todayStr){
+          wToday={hi:lastDaily.h,lo:lastDaily.l,bars:1,source:'daily'};
+        }
+      }
+
+      var last=dailyBars[dailyBars.length-1];
+      var lastDate=new Date(last.t).toISOString().slice(0,10);
+      var lastClose=last.c;
+
+      // Add derived metrics to each window
+      var enrichWin=function(w){
+        if(!w)return null;
+        w.range_position=(w.hi>w.lo)?((lastClose-w.lo)/(w.hi-w.lo))*100:null;
+        w.pct_from_high=w.hi>0?((lastClose-w.hi)/w.hi)*100:null;
+        w.pct_from_low=w.lo>0?((lastClose-w.lo)/w.lo)*100:null;
+        w.range_dollar=w.hi-w.lo;
+        w.range_pct=w.lo>0?((w.hi-w.lo)/w.lo)*100:null;
+        return w;
+      };
+
       setData({
         ticker:tk,
-        bars_count:bars.length,
-        from_date:from, to_date:to,
-        last_close:last.c,
-        last_date:new Date(last.t).toISOString().slice(0,10),
-        wk52_high:hi, wk52_high_date:hiDate,
-        wk52_low:lo, wk52_low_date:loDate,
-        pct_from_high:pctFromHi,
-        pct_from_low:pctFromLo,
-        range_position:rangePos
+        bars_count:dailyBars.length,
+        last_close:lastClose,
+        last_date:lastDate,
+        today_str:todayStr,
+        windows:{
+          today:enrichWin(wToday),
+          week:enrichWin(wWeek),
+          wk2:enrichWin(w2wk),
+          mo1:enrichWin(w1mo),
+          mo3:enrichWin(w3mo),
+          wk52:enrichWin(w52)
+        }
       });
-    }catch(e){setErr('Fetch error: '+e.message);}
+      setProgMsg('');
+    }catch(e){setErr('Fetch error: '+e.message);setProgMsg('');}
     setLoading(false);
   };
 
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:13,fontWeight:700,padding:'10px 12px',outline:'none',letterSpacing:1,textTransform:'uppercase'};
   var bS={width:'100%',padding:'12px',border:'none',borderRadius:8,background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:loading?'default':'pointer',marginTop:10};
+
+  // Render a single window block
+  var renderWindow=function(label,sub,w,accent){
+    if(!w)return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
+      <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
+      <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>No data for this window.</div>
+    </div>;
+    var pos=w.range_position!=null?w.range_position:0;
+    return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+        <div style={{color:accent||C.gold,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{sub}</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <div>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>HIGH</div>
+          <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700}}>${w.hi.toFixed(2)}</div>
+          {w.hi_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.hi_date}</div>}
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>LOW</div>
+          <div style={{color:C.warn,fontSize:13,fontFamily:F,fontWeight:700}}>${w.lo.toFixed(2)}</div>
+          {w.lo_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.lo_date}</div>}
+        </div>
+      </div>
+      <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
+        <div style={{position:'absolute',top:0,bottom:0,left:0,width:Math.max(0,Math.min(100,pos))+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.35}}/>
+        <div style={{position:'absolute',top:0,bottom:0,left:'calc('+Math.max(0,Math.min(100,pos))+'% - 1px)',width:2,background:C.txtBright}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txtDim}}>
+        <span>{w.pct_from_low!=null?(w.pct_from_low>=0?'+':'')+w.pct_from_low.toFixed(1)+'% from low':''}</span>
+        <span style={{color:C.gold}}>{w.range_position!=null?w.range_position.toFixed(0)+'% pos':''}</span>
+        <span>{w.pct_from_high!=null?(w.pct_from_high>=0?'+':'')+w.pct_from_high.toFixed(1)+'% from high':''}</span>
+      </div>
+      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
+    </div>;
+  };
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
@@ -1420,47 +1533,23 @@ function StockProfileCheatSheetPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Quick Lookup" sub="Live Polygon data for any ticker" info="Pulls 52 weeks of daily OHLC bars from Polygon, computes the highest high, lowest low, and current position within the range. More fields will be added (market cap, sector, ADV, fundamentals) over time."/>
+      <SectionHead title="Quick Lookup" sub="Live Polygon data for any ticker" info="Pulls 52 weeks of daily bars + today's minute bars from Polygon. Computes high/low across 6 lookback windows: today (live, from minute bars), this calendar week (Mon-now), past 2 weeks, past 1 month, past 3 months, and 52 weeks. Each window shows high, low, dates, range size, and current price's position within the range."/>
       <div style={{marginTop:10}}>
         <input value={ticker} onChange={function(e){setTicker(e.target.value);}} onKeyDown={function(e){if(e.key==='Enter')fetchProfile();}} placeholder="Enter ticker (e.g. NVDA)" style={iS} autoCapitalize="characters" autoCorrect="off" spellCheck={false}/>
       </div>
-      <button onClick={fetchProfile} disabled={loading} style={bS}>{loading?'Loading...':'Fetch Profile'}</button>
+      <button onClick={fetchProfile} disabled={loading} style={bS}>{loading?(progMsg||'Loading...'):'Fetch Profile'}</button>
       {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {data&&<Cd glow={true}>
-      <SectionHead title={data.ticker+' \u00B7 52-Week Range'} sub={data.bars_count+' trading days, last close '+data.last_date}/>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
-        <Mt label="Last Close" value={'$'+data.last_close.toFixed(2)}/>
-        <Mt label="As Of" value={data.last_date}/>
-        <Mt label="52W High" value={'$'+data.wk52_high.toFixed(2)}/>
-        <Mt label="52W Low" value={'$'+data.wk52_low.toFixed(2)}/>
-        <Mt label="High Date" value={data.wk52_high_date||'-'}/>
-        <Mt label="Low Date" value={data.wk52_low_date||'-'}/>
-      </div>
-
-      <div style={{marginTop:14,padding:12,background:C.bg,borderRadius:8,border:'1px solid '+C.border}}>
-        <div style={{color:C.gold,fontSize:9,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8}}>RANGE POSITION</div>
-        <div style={{position:'relative',height:32,background:C.border,borderRadius:6,overflow:'hidden'}}>
-          <div style={{position:'absolute',top:0,bottom:0,left:0,width:(data.range_position||0)+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.35}}/>
-          <div style={{position:'absolute',top:0,bottom:0,left:'calc('+(data.range_position||0)+'% - 2px)',width:4,background:C.txtBright}}/>
-          <div style={{position:'absolute',top:0,bottom:0,left:8,display:'flex',alignItems:'center',color:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>LOW</div>
-          <div style={{position:'absolute',top:0,bottom:0,right:8,display:'flex',alignItems:'center',color:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>HIGH</div>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:10}}>
-          <div style={{textAlign:'center'}}>
-            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1}}>FROM LOW</div>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,marginTop:2}}>{data.pct_from_low!=null?(data.pct_from_low>=0?'+':'')+data.pct_from_low.toFixed(1)+'%':'-'}</div>
-          </div>
-          <div style={{textAlign:'center'}}>
-            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1}}>RANGE %</div>
-            <div style={{color:C.gold,fontSize:13,fontFamily:F,fontWeight:700,marginTop:2}}>{data.range_position!=null?data.range_position.toFixed(1)+'%':'-'}</div>
-          </div>
-          <div style={{textAlign:'center'}}>
-            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1}}>FROM HIGH</div>
-            <div style={{color:C.warn,fontSize:13,fontFamily:F,fontWeight:700,marginTop:2}}>{data.pct_from_high!=null?(data.pct_from_high>=0?'+':'')+data.pct_from_high.toFixed(1)+'%':'-'}</div>
-          </div>
-        </div>
+      <SectionHead title={data.ticker+' \u00B7 High/Low Across Windows'} sub={'Last close $'+data.last_close.toFixed(2)+' on '+data.last_date+' \u00B7 '+data.bars_count+' daily bars'}/>
+      <div style={{marginTop:10}}>
+        {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars':'daily bar'):'no session yet',data.windows.today,C.accent)}
+        {renderWindow('This Week','Mon-now',data.windows.week,C.gold)}
+        {renderWindow('2 Weeks','last 14 days',data.windows.wk2,C.gold)}
+        {renderWindow('1 Month','last 30 days',data.windows.mo1,C.gold)}
+        {renderWindow('3 Months','last 90 days',data.windows.mo3,C.gold)}
+        {renderWindow('52 Weeks','last 365 days',data.windows.wk52,C.gold)}
       </div>
     </Cd>}
   </div>;
