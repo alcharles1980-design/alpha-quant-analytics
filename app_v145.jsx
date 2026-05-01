@@ -1400,14 +1400,22 @@ function StockProfileCheatSheetPage(p){
       // Helper: scan a sub-range of daily bars for hi/lo
       var scanBars=function(barsArr){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
+        var sumDollarRange=0,sumPctRange=0,validPctCount=0;
         for(var i=0;i<barsArr.length;i++){
           var b=barsArr[i];
           if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
           if(b.l<lo){lo=b.l;loDate=new Date(b.t).toISOString().slice(0,10);}
+          var dr=b.h-b.l;
+          sumDollarRange+=dr;
+          if(b.l>0){sumPctRange+=(dr/b.l)*100;validPctCount++;}
           n++;
         }
         if(!n||hi===-Infinity)return null;
-        return {hi:hi,lo:lo,hi_date:hiDate,lo_date:loDate,bars:n};
+        return {
+          hi:hi, lo:lo, hi_date:hiDate, lo_date:loDate, bars:n,
+          avg_daily_range_dollar: n>0?sumDollarRange/n:null,
+          avg_daily_range_pct: validPctCount>0?sumPctRange/validPctCount:null
+        };
       };
 
       // Build sliced bar arrays for each window (by calendar lookback)
@@ -1441,13 +1449,23 @@ function StockProfileCheatSheetPage(p){
           if(minuteBars[i].h>thi)thi=minuteBars[i].h;
           if(minuteBars[i].l<tlo)tlo=minuteBars[i].l;
         }
-        wToday={hi:thi,lo:tlo,bars:minuteBars.length,source:'minute'};
+        var todayRange=thi-tlo;
+        wToday={
+          hi:thi, lo:tlo, bars:minuteBars.length, source:'minute',
+          avg_daily_range_dollar: todayRange,
+          avg_daily_range_pct: tlo>0?(todayRange/tlo)*100:null
+        };
       } else {
         // Check if last daily bar is from today
         var lastDaily=dailyBars[dailyBars.length-1];
         var lastDailyDate=new Date(lastDaily.t).toISOString().slice(0,10);
         if(lastDailyDate===todayStr){
-          wToday={hi:lastDaily.h,lo:lastDaily.l,bars:1,source:'daily'};
+          var lastRange=lastDaily.h-lastDaily.l;
+          wToday={
+            hi:lastDaily.h, lo:lastDaily.l, bars:1, source:'daily',
+            avg_daily_range_dollar: lastRange,
+            avg_daily_range_pct: lastDaily.l>0?(lastRange/lastDaily.l)*100:null
+          };
         }
       }
 
@@ -1523,6 +1541,10 @@ function StockProfileCheatSheetPage(p){
         <span>{w.pct_from_high!=null?(w.pct_from_high>=0?'+':'')+w.pct_from_high.toFixed(1)+'% from high':''}</span>
       </div>
       <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
+      {w.avg_daily_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S RANGE":'AVG DAILY RANGE'}</span>
+        <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
+      </div>}
     </div>;
   };
 
