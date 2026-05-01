@@ -1503,14 +1503,14 @@ function StockProfileCheatSheetPage(p){
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <div>
-          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>HIGH</div>
-          <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700}}>${w.hi.toFixed(2)}</div>
-          {w.hi_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.hi_date}</div>}
-        </div>
-        <div style={{textAlign:'right'}}>
           <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>LOW</div>
           <div style={{color:C.warn,fontSize:13,fontFamily:F,fontWeight:700}}>${w.lo.toFixed(2)}</div>
           {w.lo_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.lo_date}</div>}
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>HIGH</div>
+          <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700}}>${w.hi.toFixed(2)}</div>
+          {w.hi_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.hi_date}</div>}
         </div>
       </div>
       <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
