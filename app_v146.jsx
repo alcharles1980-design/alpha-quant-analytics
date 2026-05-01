@@ -1537,7 +1537,7 @@ function StockProfileCheatSheetPage(p){
       </div>
       <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txtDim}}>
         <span>{w.pct_from_low!=null?(w.pct_from_low>=0?'+':'')+w.pct_from_low.toFixed(1)+'% from low':''}</span>
-        <span style={{color:C.gold}}>{w.range_position!=null?w.range_position.toFixed(0)+'% pos':''}</span>
+        <span style={{color:C.gold}}>{w.range_position!=null?w.range_position.toFixed(0)+'% position':''}</span>
         <span>{w.pct_from_high!=null?(w.pct_from_high>=0?'+':'')+w.pct_from_high.toFixed(1)+'% from high':''}</span>
       </div>
       <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
