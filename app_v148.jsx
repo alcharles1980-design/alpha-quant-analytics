@@ -1547,7 +1547,7 @@ function StockProfileCheatSheetPage(p){
         <span style={{color:C.gold}}>{w.range_position!=null?w.range_position.toFixed(0)+'% position':''}</span>
         <span>{w.pct_from_high!=null?(w.pct_from_high>=0?'+':'')+w.pct_from_high.toFixed(1)+'% from high':''}</span>
       </div>
-      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
+      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>% from Low Price: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
       {w.avg_daily_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S RANGE":'AVG DAILY RANGE'}</span>
         <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
