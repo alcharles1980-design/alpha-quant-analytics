@@ -1707,11 +1707,9 @@ function StockProfileCheatSheetPage(p){
       }
 
       // Process past earnings into EPS history.
-      // pastEarningsRaw is sorted desc by date. We want last 4 reported quarters
-      // (with eps actual present), then we'll combine with future estimate (existing
+      // pastEarningsRaw is sorted desc by date. We want last 3 reported quarters
+      // (with actual_eps present), then we'll combine with future estimate (existing
       // 'earnings' object) to make a 4-quarter chart: 3 past + 1 next.
-      // Benzinga earnings fields used:
-      // Process past earnings into EPS history.
       // Polygon Benzinga earnings actual API field names (verified vs docs):
       //   actual_eps (number, populated only AFTER the company reports)
       //   estimated_eps (consensus estimate, present before AND after report)
@@ -1747,18 +1745,29 @@ function StockProfileCheatSheetPage(p){
         }).slice(0,3); // last 3 reported
         // Reverse so chronologically ascending (oldest first, left-to-right)
         reported.reverse();
-        // Add the upcoming earnings (from existing fetch) as the 4th column
+        // Add the upcoming earnings (from existing fetch) as the 4th column,
+        // BUT only if not already in `reported` array. On earnings day, the same
+        // record can appear in BOTH past and future fetches (date.lte and date.gte
+        // both include today), and after the company reports the past fetch has
+        // actual_eps populated. Without this dedupe, we'd render the same quarter
+        // twice (once as reported, once as estimate-only).
         var future=[];
         if(earnings&&earnings.source==='benzinga'&&earnings.fiscal_period&&earnings.fiscal_year){
-          future.push({
-            date: earnings.date,
-            fiscal_period: earnings.fiscal_period,
-            fiscal_year: earnings.fiscal_year,
-            label: earnings.fiscal_period+' FY'+(String(earnings.fiscal_year).slice(-2)),
-            eps_actual: null,
-            eps_estimate: earnings.eps_estimate,
-            is_future: true
+          var futureKey=earnings.fiscal_period+'|'+earnings.fiscal_year;
+          var alreadyReported=reported.some(function(q){
+            return (q.fiscal_period+'|'+q.fiscal_year)===futureKey;
           });
+          if(!alreadyReported){
+            future.push({
+              date: earnings.date,
+              fiscal_period: earnings.fiscal_period,
+              fiscal_year: earnings.fiscal_year,
+              label: earnings.fiscal_period+' FY'+(String(earnings.fiscal_year).slice(-2)),
+              eps_actual: null,
+              eps_estimate: earnings.eps_estimate,
+              is_future: true
+            });
+          }
         }
         var quarters=reported.concat(future);
         if(quarters.length>0){
