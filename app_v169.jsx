@@ -1509,6 +1509,122 @@ function StockProfileCheatSheetPage(p){
         checkAbort();
       }
 
+      // ---------------- VOLUME PROFILE FETCHES ----------------
+      // Three intraday-bar fetches to support volume-by-price profiles per window.
+      // 5-min for 14d:  Prev Day, This Week, 2 Weeks
+      // 30-min for 30d: 1 Month
+      // 1-hour for 90d: 3 Months
+      // Today uses already-fetched minuteBars; 52 Weeks approximates from dailyBars.
+      setProgMsg('Fetching 5min bars for short-window profiles...');
+      var bars5m=[];
+      try{
+        var from14=getETDateStr(new Date(today.getTime()-14*86400000));
+        var url5m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/5/minute/'+from14+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var r5m=await fetch(url5m,{signal:aborter.signal});
+        if(r5m.ok){var b5m=await r5m.json();bars5m=b5m.results||[];}
+      }catch(e5m){if(e5m.name==='AbortError')throw e5m;}
+      checkAbort();
+
+      setProgMsg('Fetching 30min bars for monthly profile...');
+      var bars30m=[];
+      try{
+        var from30=getETDateStr(new Date(today.getTime()-30*86400000));
+        var url30m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/30/minute/'+from30+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var r30m=await fetch(url30m,{signal:aborter.signal});
+        if(r30m.ok){var b30m=await r30m.json();bars30m=b30m.results||[];}
+      }catch(e30m){if(e30m.name==='AbortError')throw e30m;}
+      checkAbort();
+
+      setProgMsg('Fetching hourly bars for 3mo profile...');
+      var bars1h=[];
+      try{
+        var from90=getETDateStr(new Date(today.getTime()-90*86400000));
+        var url1h='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/hour/'+from90+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var r1h=await fetch(url1h,{signal:aborter.signal});
+        if(r1h.ok){var b1h=await r1h.json();bars1h=b1h.results||[];}
+      }catch(e1h){if(e1h.name==='AbortError')throw e1h;}
+      checkAbort();
+
+      // Volume profile builder.
+      // Modes:
+      //   'point' = each bar contributes v at price=vw (or close fallback). Used for
+      //              intraday bars where H-L is small relative to bucket size.
+      //   'uniform' = each bar's v is spread uniformly across buckets covered by [L,H].
+      //              Used for daily bars (52w approx) where H-L matters.
+      // POC: bucket with most volume (price = bucket center).
+      // VA:  expanding band from POC capturing 70% of total volume; at each step,
+      //      take the larger neighbor (left or right) until target met.
+      var buildProfile=function(bars,mode){
+        if(!bars||!bars.length)return null;
+        var profileLo=Infinity,profileHi=-Infinity;
+        for(var i=0;i<bars.length;i++){
+          var b=bars[i];
+          if(b.l<profileLo)profileLo=b.l;
+          if(b.h>profileHi)profileHi=b.h;
+        }
+        if(!isFinite(profileLo)||!isFinite(profileHi)||profileHi<=profileLo)return null;
+        var nB=50;
+        var bSize=(profileHi-profileLo)/nB;
+        if(bSize<=0)return null;
+        var buckets=new Array(nB);
+        for(var k=0;k<nB;k++)buckets[k]=0;
+        for(var i=0;i<bars.length;i++){
+          var b=bars[i];
+          if(b.v==null||isNaN(b.v)||b.v<=0)continue;
+          if(mode==='uniform'){
+            var loIdx=Math.max(0,Math.min(nB-1,Math.floor((b.l-profileLo)/bSize)));
+            var hiIdx=Math.max(0,Math.min(nB-1,Math.floor((b.h-profileLo)/bSize)));
+            var span=hiIdx-loIdx+1;
+            var perB=b.v/span;
+            for(var j=loIdx;j<=hiIdx;j++)buckets[j]+=perB;
+          } else {
+            var px=(b.vw!=null&&!isNaN(b.vw)&&b.vw>0)?b.vw:b.c;
+            if(px==null||isNaN(px))continue;
+            var idx=Math.max(0,Math.min(nB-1,Math.floor((px-profileLo)/bSize)));
+            buckets[idx]+=b.v;
+          }
+        }
+        var totalVol=0;for(var k=0;k<nB;k++)totalVol+=buckets[k];
+        if(totalVol<=0)return null;
+        // Find POC (max bucket)
+        var pocIdx=0,pocVol=buckets[0];
+        for(var k=1;k<nB;k++){if(buckets[k]>pocVol){pocVol=buckets[k];pocIdx=k;}}
+        // Expand from POC until 70% captured
+        var target=totalVol*0.7;
+        var captured=buckets[pocIdx];
+        var vaLoIdx=pocIdx,vaHiIdx=pocIdx;
+        var safety=nB*2;
+        while(captured<target&&safety-- >0){
+          var leftAvail=vaLoIdx>0;
+          var rightAvail=vaHiIdx<nB-1;
+          if(!leftAvail&&!rightAvail)break;
+          var leftV=leftAvail?buckets[vaLoIdx-1]:-1;
+          var rightV=rightAvail?buckets[vaHiIdx+1]:-1;
+          if(leftV>=rightV&&leftAvail){vaLoIdx--;captured+=buckets[vaLoIdx];}
+          else if(rightAvail){vaHiIdx++;captured+=buckets[vaHiIdx];}
+          else break;
+        }
+        return {
+          poc: profileLo+(pocIdx+0.5)*bSize,
+          val: profileLo+vaLoIdx*bSize,
+          vah: profileLo+(vaHiIdx+1)*bSize,
+          range_lo: profileLo,
+          range_hi: profileHi,
+          n_buckets: nB,
+          total_volume: totalVol,
+          va_pct_actual: captured/totalVol,
+          mode: mode
+        };
+      };
+
+      // Filter helper for intraday bars by ET trade-date string range.
+      var filterBarsByDateRange=function(bars,fromDateStr,toDateStrInclusive){
+        return bars.filter(function(b){
+          var d=getETDateStr(new Date(b.t));
+          return d>=fromDateStr&&d<=toDateStrInclusive;
+        });
+      };
+
       // Helper: scan a sub-range of daily bars for hi/lo
       // Build a map from bar.t -> index in dailyBars so scanBars can look up
       // each bar's prev close (needed for True Range)
@@ -1703,6 +1819,34 @@ function StockProfileCheatSheetPage(p){
         };
       }
 
+      // ---------------- VOLUME PROFILE PER WINDOW ----------------
+      // Determine prevDate (re-derived here so it's available for profile filter
+      // even when wPrev is null due to no prior bar).
+      var profilePrevDate=null;
+      if(prevBar)profilePrevDate=getETDateStr(new Date(prevBar.t));
+      // From-date strings for filtering intraday bars by ET trade date.
+      var from14Str=getETDateStr(new Date(today.getTime()-14*86400000));
+      var from30Str=getETDateStr(new Date(today.getTime()-30*86400000));
+      var from90Str=getETDateStr(new Date(today.getTime()-90*86400000));
+      // Today: minute bars (already have, all are today by construction)
+      var profToday=minuteBars.length>0?buildProfile(minuteBars,'point'):null;
+      // Prev Day: 5min bars filtered to that single trade date
+      var profPrev=null;
+      if(profilePrevDate&&bars5m.length>0){
+        var prevDayBars=filterBarsByDateRange(bars5m,profilePrevDate,profilePrevDate);
+        profPrev=buildProfile(prevDayBars,'point');
+      }
+      // This Week: 5min bars from weekStartStr -> today
+      var profWeek=bars5m.length>0?buildProfile(filterBarsByDateRange(bars5m,weekStartStr,todayStr),'point'):null;
+      // 2 Weeks: full 5min set (already 14 days)
+      var prof2wk=bars5m.length>0?buildProfile(filterBarsByDateRange(bars5m,from14Str,todayStr),'point'):null;
+      // 1 Month: full 30min set
+      var prof1mo=bars30m.length>0?buildProfile(filterBarsByDateRange(bars30m,from30Str,todayStr),'point'):null;
+      // 3 Months: full 1hour set
+      var prof3mo=bars1h.length>0?buildProfile(filterBarsByDateRange(bars1h,from90Str,todayStr),'point'):null;
+      // 52 Weeks: daily bars approximated (uniform across H-L per bar). Marked as approx.
+      var prof52w=dailyBars.length>0?buildProfile(dailyBars,'uniform'):null;
+
       // Add derived metrics to each window
       var enrichWin=function(w){
         if(!w)return null;
@@ -1833,13 +1977,13 @@ function StockProfileCheatSheetPage(p){
         prev_day_vwap: prevDayVwap,
         earnings: earnings,
         windows:{
-          today:enrichWin(wToday),
-          prev:enrichWin(wPrev),
-          week:enrichWin(wWeek),
-          wk2:enrichWin(w2wk),
-          mo1:enrichWin(w1mo),
-          mo3:enrichWin(w3mo),
-          wk52:enrichWin(w52)
+          today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
+          prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
+          week:(function(w){if(w&&profWeek)w.profile=profWeek;return enrichWin(w);})(wWeek),
+          wk2:(function(w){if(w&&prof2wk)w.profile=prof2wk;return enrichWin(w);})(w2wk),
+          mo1:(function(w){if(w&&prof1mo)w.profile=prof1mo;return enrichWin(w);})(w1mo),
+          mo3:(function(w){if(w&&prof3mo)w.profile=prof3mo;return enrichWin(w);})(w3mo),
+          wk52:(function(w){if(w&&prof52w)w.profile=prof52w;return enrichWin(w);})(w52)
         }
       });
       setProgMsg('');
@@ -1897,6 +2041,18 @@ function StockProfileCheatSheetPage(p){
       </div>}
       <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
         <div style={{position:'absolute',top:0,bottom:0,left:0,width:posClamped+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.6}}/>
+        {/* Volume profile overlay: VA shaded band + POC tick.
+            Positioned in the same coordinate space as the indicator (window's lo->hi). */}
+        {w.profile&&w.hi>w.lo&&(function(){
+          var lo=w.lo, hi=w.hi, span=hi-lo;
+          var valPct=Math.max(0,Math.min(100,((w.profile.val-lo)/span)*100));
+          var vahPct=Math.max(0,Math.min(100,((w.profile.vah-lo)/span)*100));
+          var pocPct=Math.max(0,Math.min(100,((w.profile.poc-lo)/span)*100));
+          return [
+            <div key="va" style={{position:'absolute',top:0,bottom:0,left:valPct+'%',width:(vahPct-valPct)+'%',background:'rgba(168,85,247,0.28)',pointerEvents:'none'}}/>,
+            <div key="poc" style={{position:'absolute',top:0,bottom:0,left:'calc('+pocPct+'% - 1px)',width:2,background:C.purple,boxShadow:'0 0 4px '+C.purple,pointerEvents:'none'}}/>
+          ];
+        })()}
         <div style={{position:'absolute',top:0,bottom:0,left:'calc('+posClamped+'% - 1px)',width:2,background:C.txtBright}}/>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txt}}>
@@ -1936,6 +2092,17 @@ function StockProfileCheatSheetPage(p){
           var color=above?C.accent:below?C.warn:C.gold;
           return <span><span style={{color:C.txtBright,fontWeight:700}}>${vw.toFixed(2)}</span> <span style={{color:color,fontWeight:700,marginLeft:4}}>{arrow}{pct>=0?'+':''}{pct.toFixed(2)}%</span></span>;
         })()}
+      </div>}
+      {w.profile&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,fontSize:8,fontFamily:F}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:3}}>
+          <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>VOLUME PROFILE{w.profile.mode==='uniform'?' (daily approx)':''}</span>
+          <span style={{color:C.txtDim,fontSize:7}}>{(w.profile.va_pct_actual*100).toFixed(0)}% in VA</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',gap:6}}>
+          <span><span style={{color:C.txt,letterSpacing:1,fontSize:7}}>POC</span> <span style={{color:C.purple,fontWeight:700}}>${w.profile.poc.toFixed(2)}</span></span>
+          <span><span style={{color:C.txt,letterSpacing:1,fontSize:7}}>VAL</span> <span style={{color:C.txtBright,fontWeight:700}}>${w.profile.val.toFixed(2)}</span></span>
+          <span><span style={{color:C.txt,letterSpacing:1,fontSize:7}}>VAH</span> <span style={{color:C.txtBright,fontWeight:700}}>${w.profile.vah.toFixed(2)}</span></span>
+        </div>
       </div>}
     </div>;
   };
