@@ -2288,10 +2288,20 @@ function StockProfileCheatSheetPage(p){
       // N=1 means just the most recent pair. Uses maBars (excludes today's
       // incomplete bar) to avoid noisy in-progress data.
       var lhPairs=[];
+      // Rolling C-to-next-day-low. For each bar i (except the last), compute:
+      //   pct = (bar[i+1].l - bar[i].c) / bar[i].c * 100
+      //   dollar = bar[i+1].l - bar[i].c
+      // Typical values are NEGATIVE (next day's intraday low usually goes
+      // below prior close). Positive means a gap-up that held its open.
+      // This is the downside-drop counterpart to L→H's upside reach.
+      var clPairs=[];
       for(var lhi=0;lhi<maBars.length-1;lhi++){
         var todayLow=maBars[lhi].l;
+        var todayClose=maBars[lhi].c;
         var nextHigh=maBars[lhi+1].h;
+        var nextLow=maBars[lhi+1].l;
         if(todayLow>0)lhPairs.push({pct:(nextHigh-todayLow)/todayLow*100,dollar:nextHigh-todayLow});
+        if(todayClose>0)clPairs.push({pct:(nextLow-todayClose)/todayClose*100,dollar:nextLow-todayClose});
       }
       var rollingLH=function(n){
         if(lhPairs.length<n)return null;
@@ -2302,9 +2312,18 @@ function StockProfileCheatSheetPage(p){
         }
         return {pct:sumPct/n,dollar:sumDol/n};
       };
+      var rollingCL=function(n){
+        if(clPairs.length<n)return null;
+        var sumPct=0,sumDol=0;
+        for(var cj=clPairs.length-n;cj<clPairs.length;cj++){
+          sumPct+=clPairs[cj].pct;
+          sumDol+=clPairs[cj].dollar;
+        }
+        return {pct:sumPct/n,dollar:sumDol/n};
+      };
       // Build rolling stats for the new ROLLING STATS card (1d/3d/5d/10d/30d).
       // ATR uses simple mean of last N TRs (responsive to recent regime shifts).
-      // L-to-next-day-high uses rolling simple average ($ and %).
+      // L→H and C→L use rolling simple average ($ and %).
       var rollingStats=null;
       if(maBars.length>=2){
         var refClose=maBars[maBars.length-1].c;
@@ -2314,7 +2333,13 @@ function StockProfileCheatSheetPage(p){
             var atrN=simpleATRLastN(n);
             var atrNPct=(atrN!=null&&refClose>0)?(atrN/refClose)*100:null;
             var lhN=rollingLH(n);
-            return {n:n,atr:atrN,atr_pct:atrNPct,lh:lhN?lhN.pct:null,lh_dollar:lhN?lhN.dollar:null};
+            var clN=rollingCL(n);
+            return {
+              n:n,
+              atr:atrN,atr_pct:atrNPct,
+              lh:lhN?lhN.pct:null, lh_dollar:lhN?lhN.dollar:null,
+              cl:clN?clN.pct:null, cl_dollar:clN?clN.dollar:null
+            };
           }),
           ref_close: refClose
         };
@@ -3216,23 +3241,26 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING STATS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Average True Range (volatility) and Low-to-Next-Day-High (typical swing magnitude) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days. Both shown as dollar AND % so you can compare like-for-like across stocks.'},
+                {p:'Average True Range (volatility), Low-to-Next-Day-High (upside reach), and Close-to-Next-Day-Low (downside drop) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days.'},
                 {b:[
-                  'ATR ($) = average dollar move per bar over last N days - direct stop sizing input',
-                  'ATR (%) = same as $ but as % of price - cross-stock comparable',
-                  'L→H ($) = average dollar reach from today\'s low to next day\'s high - profit target reference',
-                  'L→H (%) = same swing magnitude as % - useful for sizing relative to stop',
-                  'All windows use simple mean over the last N true ranges - responsive to recent regime shifts'
+                  'ATR ($/%) = average dollar move per bar - direct stop sizing input',
+                  'L→H ($/%) = avg next-day reach above today\'s low - upside swing magnitude',
+                  'C→L ($/%) = avg next-day drop below prior close - downside drawdown from close',
+                  'L→H typically positive (green) - stocks usually rally above prior low',
+                  'C→L typically negative (red) - next day usually pierces prior close to the downside',
+                  'All windows use simple mean over the last N values - responsive to recent regime'
                 ]},
                 {h:'Why it matters'},
-                {p:'Compares short-term volatility (1d/3d) against the medium-term baseline (10d/30d) so you can see if the regime is shifting. Dollar values let you size stops/targets directly without doing % math in your head.'},
+                {p:'L→H and C→L bracket the typical NEXT-DAY range: upside reach above today\'s low + downside drop below today\'s close. Together they define a realistic price envelope for next-session expectations.'},
                 {h:'How to use it'},
                 {b:[
-                  'VOL EXPANDING (1d ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings, take profit faster',
-                  'VOL CONTRACTING (1d ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves, hold longer',
-                  'Use 5d or 10d ATR ($) as a default stop distance reference (multiply by 1.5-2x)',
-                  'Use 5d L→H ($) as a realistic next-day profit target in absolute terms',
-                  'Reward:Risk ratio = L→H ($) / (ATR ($) × stop multiplier) - want > 1.5'
+                  'VOL EXPANDING (1d ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings',
+                  'VOL CONTRACTING (1d ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves',
+                  'Use 5d ATR ($) × 1.5-2x as a default stop distance',
+                  'Use 5d L→H ($) as a realistic next-day profit target above today\'s low',
+                  'Use 5d C→L ($) as a stop placement reference below prior close',
+                  'Reward:Risk = L→H ($) / |C→L ($)| - want > 1.5 for clean longs',
+                  'C→L close to zero = tight overnight holds; large negative = gap-down risk'
                 ]}
               ]}</Info>
               <span style={{color:regimeColor,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.2,padding:'2px 8px',borderRadius:4,border:'1px solid '+regimeColor,marginLeft:4}}>VOL {regime}</span>
@@ -3240,29 +3268,36 @@ function StockProfileCheatSheetPage(p){
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rollingExpanded?'▾':'▸'}</div>
           </div>
           {rollingExpanded&&<div>
-            {/* Header row. Columns ordered: ATR(\$), L→H(\$), ATR(%), L→H(%) so the
-                eye can compare apples-to-apples ($-vs-$ and %-vs-%). Window
-                column is fixed-width 56px to leave more room for 4 data columns. */}
+            {/* Header row. Columns: WINDOW + 6 data columns ordered as
+                [ATR$ ATR%] [L→H$ L→H%] [C→L$ C→L%]. ATR pair = volatility,
+                L→H pair = upside reach, C→L pair = downside drop.
+                Window col tightened 56->48px to fit 6 data cols on phone. */}
             <div style={{display:'flex',alignItems:'center',padding:'6px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
-              <div style={{flex:'0 0 56px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>WINDOW</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>ATR ($)</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>ATR (%)</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H ($)</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H (%)</div>
+              <div style={{flex:'0 0 48px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>WINDOW</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>ATR ($)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>ATR (%)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>L→H ($)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>L→H (%)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>C→L ($)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>C→L (%)</div>
             </div>
-            {/* Data rows */}
+            {/* Data rows. C→L typically NEGATIVE (next day's low usually below
+                prior close). Negative values colored red (warn) since they
+                signal downside risk; positive (gap up that held) colored green. */}
             {rs.rows.map(function(r,i){
               return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
-                <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{labelFor(r.n)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
-                <div style={{flex:1,textAlign:'right',color:r.lh_dollar!=null&&r.lh_dollar<0?C.warn:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.lh_dollar)}</div>
-                <div style={{flex:1,textAlign:'right',color:r.lh!=null&&r.lh<0?C.warn:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtLHPct(r.lh)}</div>
+                <div style={{flex:'0 0 48px',color:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{labelFor(r.n)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.lh_dollar!=null&&r.lh_dollar<0?C.warn:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.lh_dollar)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.lh!=null&&r.lh<0?C.warn:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHPct(r.lh)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.cl_dollar!=null&&r.cl_dollar<0?C.warn:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.cl_dollar)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.cl!=null&&r.cl<0?C.warn:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHPct(r.cl)}</div>
               </div>;
             })}
             {/* Footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              ATR = simple mean of last N true ranges. L→H = avg of next day's high - today's low (\$ and %).
+              ATR = simple mean of last N TRs. L→H = avg of next day's high - today's low. C→L = avg of next day's low - today's close (typically negative = drawdown from close).
             </div>
           </div>}
         </div>;
