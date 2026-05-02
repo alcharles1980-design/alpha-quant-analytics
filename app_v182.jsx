@@ -2788,8 +2788,28 @@ function StockProfileCheatSheetPage(p){
           if(p.earnings!=null&&p.earnings>0)allVals.push(p.earnings);
         });
         if(allVals.length===0)return null;
-        var yMax=Math.max.apply(null,allVals);
-        var chartH=160;
+        var yDataMax=Math.max.apply(null,allVals);
+        // Compute "nice" Y-axis ticks: round top up to next clean step
+        // so labels read $0, $20B, $40B, $60B etc instead of $0, $17B, $34B...
+        var niceScale=function(max){
+          if(max<=0)return {top:1,step:1,ticks:[0]};
+          var rough=max/4; // aim for ~4 intervals
+          var pow10=Math.pow(10,Math.floor(Math.log10(rough)));
+          var norm=rough/pow10;
+          var step;
+          if(norm<1.5)step=1*pow10;
+          else if(norm<3.5)step=2*pow10;
+          else if(norm<7.5)step=5*pow10;
+          else step=10*pow10;
+          var top=Math.ceil(max/step)*step;
+          var ticks=[];
+          for(var v=0;v<=top+0.0001;v+=step)ticks.push(v);
+          return {top:top,step:step,ticks:ticks};
+        };
+        var scale=niceScale(yDataMax);
+        var yMax=scale.top;
+        var chartH=220;
+        var yAxisW=46; // px reserved for y-axis labels
         var fmtMoney=function(v){
           if(v==null)return '-';
           var abs=Math.abs(v);
@@ -2797,6 +2817,13 @@ function StockProfileCheatSheetPage(p){
           if(abs>=1e9)return '$'+(v/1e9).toFixed(2)+'B';
           if(abs>=1e6)return '$'+(v/1e6).toFixed(1)+'M';
           return '$'+v.toLocaleString();
+        };
+        var fmtTick=function(v){
+          if(v===0)return '$0';
+          if(v>=1e12)return '$'+(v/1e12).toFixed(0)+'T';
+          if(v>=1e9)return '$'+(v/1e9).toFixed(0)+'B';
+          if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';
+          return '$'+v.toFixed(0);
         };
         // Latest period summary for the collapsed preview
         var latest=periods[periods.length-1];
@@ -2812,40 +2839,64 @@ function StockProfileCheatSheetPage(p){
           </div>
           {revExpanded&&<div>
             {/* Mode toggle */}
-            {hasQ&&hasA&&<div style={{display:'flex',gap:6,marginBottom:12}}>
-              <div onClick={function(){setRevMode('quarterly');}} style={{cursor:'pointer',flex:1,padding:'6px 10px',background:revMode==='quarterly'?C.purple:'transparent',color:revMode==='quarterly'?'#fff':C.txt,border:'1px solid '+(revMode==='quarterly'?C.purple:C.border),borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textAlign:'center'}}>QUARTERLY</div>
-              <div onClick={function(){setRevMode('annual');}} style={{cursor:'pointer',flex:1,padding:'6px 10px',background:revMode==='annual'?C.purple:'transparent',color:revMode==='annual'?'#fff':C.txt,border:'1px solid '+(revMode==='annual'?C.purple:C.border),borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textAlign:'center'}}>ANNUAL</div>
+            {hasQ&&hasA&&<div style={{display:'flex',gap:6,marginBottom:14}}>
+              <div onClick={function(){setRevMode('quarterly');}} style={{cursor:'pointer',flex:1,padding:'7px 10px',background:revMode==='quarterly'?C.purple:'transparent',color:revMode==='quarterly'?'#fff':C.txt,border:'1px solid '+(revMode==='quarterly'?C.purple:C.border),borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textAlign:'center'}}>QUARTERLY</div>
+              <div onClick={function(){setRevMode('annual');}} style={{cursor:'pointer',flex:1,padding:'7px 10px',background:revMode==='annual'?C.purple:'transparent',color:revMode==='annual'?'#fff':C.txt,border:'1px solid '+(revMode==='annual'?C.purple:C.border),borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.5,textAlign:'center'}}>ANNUAL</div>
             </div>}
-            {/* Chart: side-by-side bars per period */}
-            <div style={{display:'flex',height:chartH,alignItems:'flex-end',marginBottom:8,paddingTop:4}}>
-              {periods.map(function(p,i){
-                var revH=p.revenue!=null&&p.revenue>0?(p.revenue/yMax)*chartH:0;
-                var earnH=p.earnings!=null&&p.earnings>0?(p.earnings/yMax)*chartH:0;
-                return <div key={i} style={{flex:1,display:'flex',justifyContent:'center',alignItems:'flex-end',gap:4,minHeight:1}}>
-                  <div style={{width:'46%',height:Math.max(revH,1),background:revColor,borderRadius:'3px 3px 0 0'}}/>
-                  <div style={{width:'46%',height:Math.max(earnH,1),background:C.gold,borderRadius:'3px 3px 0 0'}}/>
-                </div>;
-              })}
+            {/* Chart: Y-axis (labels) + plot area (gridlines + bars) */}
+            <div style={{display:'flex',height:chartH,marginBottom:6}}>
+              {/* Y-axis labels column */}
+              <div style={{width:yAxisW,position:'relative',flexShrink:0}}>
+                {scale.ticks.map(function(t,i){
+                  var pct=((yMax-t)/yMax)*100;
+                  return <div key={i} style={{position:'absolute',top:pct+'%',right:6,transform:'translateY(-50%)',fontSize:7,fontFamily:F,color:C.txtDim,letterSpacing:0.5,whiteSpace:'nowrap'}}>{fmtTick(t)}</div>;
+                })}
+              </div>
+              {/* Plot area: gridlines + bars */}
+              <div style={{flex:1,position:'relative',height:chartH}}>
+                {/* Horizontal gridlines */}
+                {scale.ticks.map(function(t,i){
+                  var pct=((yMax-t)/yMax)*100;
+                  return <div key={i} style={{position:'absolute',top:pct+'%',left:0,right:0,borderTop:t===0?'1px solid '+C.border:'1px dashed '+C.border,opacity:t===0?0.8:0.35,pointerEvents:'none'}}/>;
+                })}
+                {/* Bars container - flex row, bars anchored to bottom */}
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'flex-end',paddingBottom:1}}>
+                  {periods.map(function(p,i){
+                    var revH=p.revenue!=null&&p.revenue>0?(p.revenue/yMax)*chartH:0;
+                    var earnH=p.earnings!=null&&p.earnings>0?(p.earnings/yMax)*chartH:0;
+                    return <div key={i} style={{flex:1,display:'flex',justifyContent:'center',alignItems:'flex-end',gap:4,height:'100%'}}>
+                      <div style={{width:'46%',height:Math.max(revH,1),background:revColor,borderRadius:'3px 3px 0 0',boxShadow:'0 -1px 0 rgba(59,130,246,0.4)'}}/>
+                      <div style={{width:'46%',height:Math.max(earnH,1),background:C.gold,borderRadius:'3px 3px 0 0',boxShadow:'0 -1px 0 rgba(255,176,32,0.4)'}}/>
+                    </div>;
+                  })}
+                </div>
+              </div>
             </div>
-            {/* Period labels */}
-            <div style={{display:'flex',marginBottom:8,borderTop:'1px solid '+C.border,paddingTop:6}}>
-              {periods.map(function(p,i){
-                return <div key={i} style={{flex:1,textAlign:'center',fontSize:8,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{p.label}</div>;
-              })}
+            {/* Period labels - aligned with bars (offset by yAxisW) */}
+            <div style={{display:'flex',marginBottom:8,paddingTop:6}}>
+              <div style={{width:yAxisW,flexShrink:0}}/>
+              <div style={{flex:1,display:'flex'}}>
+                {periods.map(function(p,i){
+                  return <div key={i} style={{flex:1,textAlign:'center',fontSize:8,color:C.txt,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{p.label}</div>;
+                })}
+              </div>
             </div>
-            {/* Per-period values - small grid */}
+            {/* Per-period values - aligned with bars */}
             <div style={{display:'flex',marginBottom:10}}>
-              {periods.map(function(p,i){
-                return <div key={i} style={{flex:1,textAlign:'center'}}>
-                  <div style={{color:revColor,fontSize:8,fontFamily:F,fontWeight:700}}>{fmtMoney(p.revenue)}</div>
-                  <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,marginTop:1}}>{fmtMoney(p.earnings)}</div>
-                </div>;
-              })}
+              <div style={{width:yAxisW,flexShrink:0}}/>
+              <div style={{flex:1,display:'flex'}}>
+                {periods.map(function(p,i){
+                  return <div key={i} style={{flex:1,textAlign:'center'}}>
+                    <div style={{color:revColor,fontSize:8,fontFamily:F,fontWeight:700}}>{fmtMoney(p.revenue)}</div>
+                    <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,marginTop:2}}>{fmtMoney(p.earnings)}</div>
+                  </div>;
+                })}
+              </div>
             </div>
             {/* Legend */}
-            <div style={{display:'flex',justifyContent:'center',gap:18,fontSize:8,fontFamily:F,color:C.txt,letterSpacing:1,paddingTop:6,borderTop:'1px solid '+C.border}}>
-              <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,background:revColor,borderRadius:2}}/>REVENUE</div>
-              <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,background:C.gold,borderRadius:2}}/>NET INCOME</div>
+            <div style={{display:'flex',justifyContent:'center',gap:20,fontSize:8,fontFamily:F,color:C.txt,letterSpacing:1.5,paddingTop:8,borderTop:'1px solid '+C.border,fontWeight:700}}>
+              <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:12,height:12,background:revColor,borderRadius:3}}/>REVENUE</div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:12,height:12,background:C.gold,borderRadius:3}}/>NET INCOME</div>
             </div>
           </div>}
         </div>;
