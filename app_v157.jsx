@@ -1397,6 +1397,16 @@ function StockProfileCheatSheetPage(p){
       }
       // Don't fail if minute fetch fails - just skip the today section
 
+      setProgMsg('Fetching ticker reference...');
+      // FETCH 3: ticker reference (for shares outstanding + name)
+      var refUrl='https://api.polygon.io/v3/reference/tickers/'+tk+'?apiKey='+p.apiKey;
+      var refData=null;
+      try{
+        var refR=await fetch(refUrl);
+        if(refR.ok){var refBody=await refR.json();refData=refBody.results||null;}
+      }catch(refErr){}
+      // Don't fail if reference fetch fails - market cap will show as null
+
       // Helper: scan a sub-range of daily bars for hi/lo
       var scanBars=function(barsArr){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
@@ -1526,12 +1536,27 @@ function StockProfileCheatSheetPage(p){
         return w;
       };
 
+      // Compute market cap + shares out from reference + last close
+      var sharesOut=null,marketCap=null,name=null,sicDesc=null;
+      if(refData){
+        sharesOut = refData.weighted_shares_outstanding || refData.share_class_shares_outstanding || null;
+        if(sharesOut!=null && lastClose>0) marketCap = sharesOut * lastClose;
+        // Fall back to Polygon's stored market_cap if no shares data
+        if(marketCap==null && refData.market_cap!=null) marketCap = refData.market_cap;
+        name = refData.name || null;
+        sicDesc = refData.sic_description || null;
+      }
+
       setData({
         ticker:tk,
         bars_count:dailyBars.length,
         last_close:lastClose,
         last_date:lastDate,
         today_str:todayStr,
+        market_cap: marketCap,
+        shares_out: sharesOut,
+        name: name,
+        sic_description: sicDesc,
         windows:{
           today:enrichWin(wToday),
           week:enrichWin(wWeek),
@@ -1636,6 +1661,13 @@ function StockProfileCheatSheetPage(p){
         <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>LAST CLOSE</div>
         <div style={{color:C.txtBright,fontSize:32,fontFamily:F,fontWeight:700,marginTop:4,letterSpacing:1}}>${data.last_close.toFixed(2)}</div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.last_date}</div>
+        {data.market_cap!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
+          <div style={{color:C.txtDim,fontSize:8,letterSpacing:2,fontWeight:700,marginBottom:3}}>MARKET CAP</div>
+          <div style={{color:C.gold,fontSize:16,fontWeight:700}}>{(function(v){if(v>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v.toFixed(0);})(data.market_cap)}</div>
+          {data.shares_out!=null&&<div style={{color:C.txtDim,fontSize:8,marginTop:2}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(data.shares_out)} shares outstanding</div>}
+        </div>}
+        {data.name&&<div style={{marginTop:8,color:C.txt,fontSize:9,fontFamily:F}}>{data.name}</div>}
+        {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
       </div>
 
       <div style={{marginTop:10}}>
