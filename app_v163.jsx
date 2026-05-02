@@ -1686,12 +1686,12 @@ function StockProfileCheatSheetPage(p){
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <div>
-          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>LOW</div>
+          <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1}}>LOW</div>
           <div style={{color:C.warn,fontSize:13,fontFamily:F,fontWeight:700}}>${w.lo.toFixed(2)}</div>
           {w.lo_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.lo_date}</div>}
         </div>
         <div style={{textAlign:'right'}}>
-          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>HIGH</div>
+          <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1}}>HIGH</div>
           <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700}}>${w.hi.toFixed(2)}</div>
           {w.hi_date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{w.hi_date}</div>}
         </div>
@@ -1701,37 +1701,37 @@ function StockProfileCheatSheetPage(p){
         <div style={{position:'absolute',left:posClamped+'%',transform:labelTransform,fontSize:9,fontFamily:F,fontWeight:700,color:C.txtBright,background:C.bgCard,padding:'1px 5px',borderRadius:3,border:'1px solid '+C.txtBright,whiteSpace:'nowrap'}}>${lastClose.toFixed(2)}</div>
       </div>}
       <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
-        <div style={{position:'absolute',top:0,bottom:0,left:0,width:posClamped+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.35}}/>
+        <div style={{position:'absolute',top:0,bottom:0,left:0,width:posClamped+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.6}}/>
         <div style={{position:'absolute',top:0,bottom:0,left:'calc('+posClamped+'% - 1px)',width:2,background:C.txtBright}}/>
       </div>
-      <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txtDim}}>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txt}}>
         <span>{w.pct_from_low!=null?(w.pct_from_low>=0?'+':'')+w.pct_from_low.toFixed(1)+'% from low':''}</span>
         <span style={{color:C.gold}}>{w.range_position!=null?w.range_position.toFixed(0)+'% position of period price range':''}</span>
         <span>{w.pct_from_high!=null?(w.pct_from_high>=0?'+':'')+w.pct_from_high.toFixed(1)+'% from high':''}</span>
       </div>
-      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>Period Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
+      <div style={{fontSize:8,fontFamily:F,color:C.txt,marginTop:4,textAlign:'center'}}>Period Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
       {w.avg_daily_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix==='AVG DAILY '?'AVG DAILY RANGE':labelPrefix+'RANGE'}</span>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix==='AVG DAILY '?'AVG DAILY RANGE':labelPrefix+'RANGE'}</span>
         <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>LOW → NEXT DAY HIGH</span>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>LOW → NEXT DAY HIGH</span>
         <span><span style={{color:C.accent,fontWeight:700}}>${w.avg_low_to_next_high_dollar.toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_volume_shares!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'VOLUME'}</span>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix+'VOLUME'}</span>
         <span style={{color:C.blue,fontWeight:700}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(w.avg_volume_shares)} shares</span>
       </div>}
       {w.avg_dollar_notional!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'$ VOLUME'}</span>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix+'$ VOLUME'}</span>
         <span style={{color:C.gold,fontWeight:700}}>{(function(v){if(v>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v.toFixed(0);})(w.avg_dollar_notional)}</span>
       </div>}
       {w.avg_trade_count!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'TRADES'}</span>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix+'TRADES'}</span>
         <span style={{color:C.purple,fontWeight:700}}>{(function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toLocaleString();})(w.avg_trade_count)}</span>
       </div>}
       {w.period_vwap!=null&&lastClose!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>PERIOD VWAP</span>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>PERIOD VWAP</span>
         {(function(){
           var vw=w.period_vwap;
           var diff=lastClose-vw;
@@ -1765,11 +1765,11 @@ function StockProfileCheatSheetPage(p){
 
       {/* Hero: big last close */}
       <div style={{marginTop:12,marginBottom:14,padding:'14px 16px',background:C.bg,borderRadius:10,border:'1px solid '+C.accent,textAlign:'center'}}>
-        <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>LAST CLOSE</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>LAST CLOSE</div>
         <div style={{color:C.txtBright,fontSize:32,fontFamily:F,fontWeight:700,marginTop:4,letterSpacing:1}}>${data.last_close.toFixed(2)}</div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.last_date}</div>
         {data.market_cap!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
-          <div style={{color:C.txtDim,fontSize:8,letterSpacing:2,fontWeight:700,marginBottom:3}}>MARKET CAP</div>
+          <div style={{color:C.txt,fontSize:8,letterSpacing:2,fontWeight:700,marginBottom:3}}>MARKET CAP</div>
           <div style={{color:C.gold,fontSize:16,fontWeight:700}}>{(function(v){if(v>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v.toFixed(0);})(data.market_cap)}</div>
           {data.shares_out!=null&&<div style={{color:C.txtDim,fontSize:8,marginTop:2}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(data.shares_out)} shares outstanding</div>}
           {(function(){
@@ -1790,7 +1790,7 @@ function StockProfileCheatSheetPage(p){
 
       {/* Trends reference card: SMA vs VWAP per period + session/prev-day VWAP */}
       {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:10,textAlign:'center'}}>TRENDS</div>
+        <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:10,textAlign:'center'}}>TRENDS</div>
 
         {/* SMA vs VWAP comparison block */}
         {(function(){
@@ -1811,13 +1811,13 @@ function StockProfileCheatSheetPage(p){
           ];
           return periods.map(function(p,i){
             return <div key={i} style={{padding:'8px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
-              <div style={{color:C.txtDim,fontWeight:700,letterSpacing:1.5,fontSize:8,marginBottom:4}}>{p.n}-DAY</div>
+              <div style={{color:C.txt,fontWeight:700,letterSpacing:1.5,fontSize:8,marginBottom:4}}>{p.n}-DAY</div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
-                <span style={{color:C.txtDim,fontSize:8,letterSpacing:1,minWidth:42}}>SMA</span>
+                <span style={{color:C.txt,fontSize:8,letterSpacing:1,minWidth:42}}>SMA</span>
                 <span style={{textAlign:'right'}}>{renderTrendValue(p.sma)}</span>
               </div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <span style={{color:C.txtDim,fontSize:8,letterSpacing:1,minWidth:42}}>VWAP</span>
+                <span style={{color:C.txt,fontSize:8,letterSpacing:1,minWidth:42}}>VWAP</span>
                 <span style={{textAlign:'right'}}>{renderTrendValue(p.vwap)}</span>
               </div>
             </div>;
@@ -1838,11 +1838,11 @@ function StockProfileCheatSheetPage(p){
           return <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.gold}}>
             <div style={{color:C.gold,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>INTRADAY VWAP</div>
             {data.session_vwap!=null&&<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',fontFamily:F,fontSize:10}}>
-              <span style={{color:C.txtDim,fontSize:8,letterSpacing:1}}>SESSION (today)</span>
+              <span style={{color:C.txt,fontSize:8,letterSpacing:1}}>SESSION (today)</span>
               <span style={{textAlign:'right'}}>{renderTrendValue(data.session_vwap)}</span>
             </div>}
             {data.prev_day_vwap!=null&&<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',fontFamily:F,fontSize:10,borderTop:data.session_vwap!=null?'1px solid '+C.border:'none'}}>
-              <span style={{color:C.txtDim,fontSize:8,letterSpacing:1}}>PREV DAY</span>
+              <span style={{color:C.txt,fontSize:8,letterSpacing:1}}>PREV DAY</span>
               <span style={{textAlign:'right'}}>{renderTrendValue(data.prev_day_vwap)}</span>
             </div>}
           </div>;
