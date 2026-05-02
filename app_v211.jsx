@@ -2549,28 +2549,44 @@ function StockProfileCheatSheetPage(p){
           // 3-day volume profile: build fresh from 5m bars over the last 3
           // maBars trade dates (no pre-built profile exists for this window).
           // Reuses pickRollingProfileBars from the Rolling Vol Profile card.
-          var prof3day=null;
+          var prof3day=null,vwap3day=null;
           if(threeHL){
             var threeBars=pickRollingProfileBars({kind:'rolling',n:3});
             if(threeBars&&threeBars.length>0){
               prof3day=buildProfile(threeBars,'point',null,null);
+              // 3-day VWAP from the same 5m bar set powering the profile.
+              // VWAP = sum(bar.vw * bar.v) / sum(bar.v). Defensive against null/NaN
+              // following the established computeVWAP pattern. The 3-day window has
+              // no pre-built window object so we compute it inline here.
+              var vNum=0,vDen=0;
+              for(var bi=0;bi<threeBars.length;bi++){
+                var bb=threeBars[bi];
+                if(bb.vw==null||isNaN(bb.vw)||bb.v==null||isNaN(bb.v))continue;
+                vNum+=bb.vw*bb.v;vDen+=bb.v;
+              }
+              if(vDen>0)vwap3day=vNum/vDen;
             }
           }
-          // Period ranges array - each entry has label + hi + lo + poc/val/vah.
-          // POC fields are nullable - if a profile couldn't be built (insufficient
-          // intraday bars for the window), that period's POC/VAL/VAH render as '-'
+          // Period ranges array - each entry has label + hi + lo + poc/val/vah + vwap.
+          // POC and VWAP fields are nullable - if a profile couldn't be built (insufficient
+          // intraday bars for the window), that period's POC/VAL/VAH/VWAP render as '-'
           // but the LOW/HIGH/RANGE columns still populate from the daily bars.
           var periodRanges=[];
           if(prevHL)periodRanges.push({label:'Prev Day',hi:prevHL.hi,lo:prevHL.lo,
-            poc:profPrev?profPrev.poc:null,val:profPrev?profPrev.val:null,vah:profPrev?profPrev.vah:null});
+            poc:profPrev?profPrev.poc:null,val:profPrev?profPrev.val:null,vah:profPrev?profPrev.vah:null,
+            vwap:wPrev?wPrev.period_vwap:null});
           if(threeHL)periodRanges.push({label:'3 Day',hi:threeHL.hi,lo:threeHL.lo,
-            poc:prof3day?prof3day.poc:null,val:prof3day?prof3day.val:null,vah:prof3day?prof3day.vah:null});
+            poc:prof3day?prof3day.poc:null,val:prof3day?prof3day.val:null,vah:prof3day?prof3day.vah:null,
+            vwap:vwap3day});
           if(wWeek)periodRanges.push({label:'1 Week',hi:wWeek.hi,lo:wWeek.lo,
-            poc:profWeek?profWeek.poc:null,val:profWeek?profWeek.val:null,vah:profWeek?profWeek.vah:null});
+            poc:profWeek?profWeek.poc:null,val:profWeek?profWeek.val:null,vah:profWeek?profWeek.vah:null,
+            vwap:wWeek.period_vwap});
           if(w2wk)periodRanges.push({label:'2 Weeks',hi:w2wk.hi,lo:w2wk.lo,
-            poc:prof2wk?prof2wk.poc:null,val:prof2wk?prof2wk.val:null,vah:prof2wk?prof2wk.vah:null});
+            poc:prof2wk?prof2wk.poc:null,val:prof2wk?prof2wk.val:null,vah:prof2wk?prof2wk.vah:null,
+            vwap:w2wk.period_vwap});
           if(w1mo)periodRanges.push({label:'1 Month',hi:w1mo.hi,lo:w1mo.lo,
-            poc:prof1mo?prof1mo.poc:null,val:prof1mo?prof1mo.val:null,vah:prof1mo?prof1mo.vah:null});
+            poc:prof1mo?prof1mo.poc:null,val:prof1mo?prof1mo.val:null,vah:prof1mo?prof1mo.vah:null,
+            vwap:w1mo.period_vwap});
           swingTargets={
             base_close: swingBaseClose,
             base_date: swingBaseDate,
@@ -3724,7 +3740,8 @@ function StockProfileCheatSheetPage(p){
                   'Both averages come from the Rolling Stats card\'s 3-day row',
                   'avg C→L typically negative (drops happen); avg L→H typically positive (rallies happen)',
                   'PERIOD RANGES: actual high/low extremes across recent windows (Prev Day, 3 Day, 1 Week, 2 Weeks, 1 Month) with absolute $ and % range',
-                  'VOL PROFILE per window: VAL = lower 70% volume boundary, POC = volume magnet (highest-traded price), VAH = upper 70% boundary'
+                  'VOL PROFILE per window: VAL = lower 70% volume boundary, POC = volume magnet (highest-traded price), VAH = upper 70% boundary',
+                  'PERIOD VWAP per window: volume-weighted average price - the "fair value" of the period. Arrow shows where the base close sits vs that average'
                 ]},
                 {h:'Why it matters'},
                 {p:'The projection captures the natural intraday rhythm: price tends to dip below the prior close, then rally back. The actual period ranges show what the stock has actually done recently - useful sanity check on whether projected targets are within or beyond observed reach.'},
@@ -3738,6 +3755,8 @@ function StockProfileCheatSheetPage(p){
                   'Period ranges narrow over time = consolidation; widen = expansion',
                   'Compare current price to each period\'s POC - above all = stretched up; below all = oversold',
                   'VAL/VAH boundaries are common reversal zones - watch for reactions',
+                  'Period VWAP rising across timeframes (1M < 2W < 1W) = uptrend; falling = downtrend',
+                  'Base close above all period VWAPs = strong relative position; below all = weakness',
                   'Use as a sanity check on entry/exit levels - not a hard prediction'
                 ]}
               ]}</Info>
@@ -3778,19 +3797,27 @@ function StockProfileCheatSheetPage(p){
                 font sizes: 'Range' line (LOW/HIGH/RANGE) and 'Vol Profile'
                 line (VAL/POC/VAH). */}
             {st.period_ranges&&st.period_ranges.length>0&&<div style={{padding:'8px 0',borderTop:'1px solid '+C.border,marginBottom:6}}>
-              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>PERIOD RANGES &amp; VOL PROFILE</div>
-              {/* Header rows - 2 stacked headers (RANGE / VOL PROFILE) */}
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>PERIOD RANGES, VOL PROFILE &amp; VWAP</div>
+              {/* Header rows - dual-meaning labels: range columns + vol profile columns */}
               <div style={{display:'flex',alignItems:'center',padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:2,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700,color:C.txtDim}}>
                 <div style={{flex:'0 0 64px'}}>WINDOW</div>
                 <div style={{flex:1,textAlign:'right'}}>LOW / VAL</div>
                 <div style={{flex:1,textAlign:'right'}}>HIGH / VAH</div>
                 <div style={{flex:1,textAlign:'right'}}>RANGE / POC</div>
               </div>
-              {/* Data rows - each window gets 2 sub-rows */}
+              {/* Data rows - each window gets 3 sub-rows: range, vol profile, vwap */}
               {st.period_ranges.map(function(r,i){
                 var rng=(r.hi!=null&&r.lo!=null)?r.hi-r.lo:null;
                 var rngPct=(rng!=null&&st.base_close>0)?(rng/st.base_close)*100:null;
                 var hasVP=(r.poc!=null&&r.val!=null&&r.vah!=null);
+                var hasVwap=(r.vwap!=null&&!isNaN(r.vwap));
+                // VWAP position relative to base close - tells the user whether
+                // the period's average pricing was above or below the current base.
+                // Above VWAP = price has been climbing (avg below current); below = falling.
+                var vwapDiff=hasVwap?(st.base_close-r.vwap):null;
+                var vwapPct=(vwapDiff!=null&&r.vwap>0)?(vwapDiff/r.vwap)*100:null;
+                var vwapColor=(vwapPct!=null&&vwapPct>0.3)?C.accent:(vwapPct!=null&&vwapPct<-0.3)?C.warn:C.gold;
+                var vwapArrow=(vwapPct!=null&&vwapPct>0.3)?'\u2191':(vwapPct!=null&&vwapPct<-0.3)?'\u2193':'\u2192';
                 return <div key={i} style={{padding:'6px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
                   {/* Sub-row 1: actual hi/lo/range */}
                   <div style={{display:'flex',alignItems:'center'}}>
@@ -3808,6 +3835,18 @@ function StockProfileCheatSheetPage(p){
                     <div style={{flex:1,textAlign:'right',color:hasVP?C.warn:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.val.toFixed(2):'-'}</div>
                     <div style={{flex:1,textAlign:'right',color:hasVP?C.accent:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.vah.toFixed(2):'-'}</div>
                     <div style={{flex:1,textAlign:'right',color:hasVP?C.txtBright:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.poc.toFixed(2):'-'}</div>
+                  </div>
+                  {/* Sub-row 3: VWAP single value + position vs base. VWAP is a single
+                      price (volume-weighted avg), so we span the data area with the
+                      value + an arrow showing where the base close sits relative to it. */}
+                  <div style={{display:'flex',alignItems:'center',marginTop:2}}>
+                    <div style={{flex:'0 0 64px',color:C.txtDim,fontSize:7,fontFamily:F,fontStyle:'italic',letterSpacing:0.3}}>vwap</div>
+                    <div style={{flex:3,textAlign:'right',fontSize:8,fontFamily:F,fontWeight:600}}>
+                      {hasVwap?<span>
+                        <span style={{color:C.txtBright,opacity:0.85}}>${r.vwap.toFixed(2)}</span>
+                        {vwapPct!=null&&<span style={{color:vwapColor,marginLeft:6}}>{vwapArrow}{vwapPct>=0?'+':''}{vwapPct.toFixed(2)}% vs base</span>}
+                      </span>:<span style={{color:C.txtDim}}>-</span>}
+                    </div>
                   </div>
                 </div>;
               })}
