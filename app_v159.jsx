@@ -1525,6 +1525,29 @@ function StockProfileCheatSheetPage(p){
       var lastDate=new Date(last.t).toISOString().slice(0,10);
       var lastClose=last.c;
 
+      // Previous trading day: most recent COMPLETED daily bar that isn't today.
+      // If last bar is today, use second-to-last. Otherwise the last bar IS the previous day.
+      var prevBar=null;
+      if(lastDate===todayStr){
+        if(dailyBars.length>=2)prevBar=dailyBars[dailyBars.length-2];
+      } else {
+        prevBar=last;
+      }
+      var wPrev=null;
+      if(prevBar){
+        var prevDate=new Date(prevBar.t).toISOString().slice(0,10);
+        var prevRange=prevBar.h-prevBar.l;
+        var prevPx=prevBar.vw!=null&&!isNaN(prevBar.vw)&&prevBar.vw>0?prevBar.vw:prevBar.c;
+        wPrev={
+          hi:prevBar.h, lo:prevBar.l, hi_date:prevDate, lo_date:prevDate, bars:1, source:'prev',
+          avg_daily_range_dollar: prevRange,
+          avg_daily_range_pct: prevBar.l>0?(prevRange/prevBar.l)*100:null,
+          avg_volume_shares: prevBar.v!=null?prevBar.v:null,
+          avg_dollar_notional: prevBar.v!=null&&prevPx!=null?(prevBar.v*prevPx):null,
+          avg_trade_count: prevBar.n!=null?prevBar.n:null
+        };
+      }
+
       // Add derived metrics to each window
       var enrichWin=function(w){
         if(!w)return null;
@@ -1559,6 +1582,7 @@ function StockProfileCheatSheetPage(p){
         sic_description: sicDesc,
         windows:{
           today:enrichWin(wToday),
+          prev:enrichWin(wPrev),
           week:enrichWin(wWeek),
           wk2:enrichWin(w2wk),
           mo1:enrichWin(w1mo),
@@ -1580,6 +1604,9 @@ function StockProfileCheatSheetPage(p){
       <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>No data for this window.</div>
     </div>;
+    // Single-day windows (Today / Previous Day) show that day's stats not "average"
+    var isSingleDay = w.bars===1 || (w.source&&(w.source==='minute'||w.source==='prev'));
+    var labelPrefix = isSingleDay ? (w.source==='prev' ? "PREV DAY'S " : "TODAY'S ") : 'AVG DAILY ';
     var pos=w.range_position!=null?w.range_position:0;
     var posClamped=Math.max(0,Math.min(100,pos));
     // Label horizontal alignment: left at low end, center in middle, right at high end
@@ -1616,7 +1643,7 @@ function StockProfileCheatSheetPage(p){
       </div>
       <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,textAlign:'center'}}>Period Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
       {w.avg_daily_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S RANGE":'AVG DAILY RANGE'}</span>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix==='AVG DAILY '?'AVG DAILY RANGE':labelPrefix+'RANGE'}</span>
         <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
@@ -1624,15 +1651,15 @@ function StockProfileCheatSheetPage(p){
         <span><span style={{color:C.accent,fontWeight:700}}>${w.avg_low_to_next_high_dollar.toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_volume_shares!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S VOLUME":'AVG DAILY VOLUME'}</span>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'VOLUME'}</span>
         <span style={{color:C.blue,fontWeight:700}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(w.avg_volume_shares)} shares</span>
       </div>}
       {w.avg_dollar_notional!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S $ VOLUME":'AVG DAILY $ VOLUME'}</span>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'$ VOLUME'}</span>
         <span style={{color:C.gold,fontWeight:700}}>{(function(v){if(v>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v.toFixed(0);})(w.avg_dollar_notional)}</span>
       </div>}
       {w.avg_trade_count!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S TRADES":'AVG DAILY TRADES'}</span>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'TRADES'}</span>
         <span style={{color:C.purple,fontWeight:700}}>{(function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toLocaleString();})(w.avg_trade_count)}</span>
       </div>}
     </div>;
@@ -1683,6 +1710,7 @@ function StockProfileCheatSheetPage(p){
 
       <div style={{marginTop:10}}>
         {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars':'daily bar'):'no session yet',data.windows.today,C.accent,data.last_close)}
+        {renderWindow('Previous Day',data.windows.prev?data.windows.prev.hi_date:'',data.windows.prev,C.blue,data.last_close)}
         {renderWindow('This Week','Mon-now',data.windows.week,C.gold,data.last_close)}
         {renderWindow('2 Weeks','last 14 days',data.windows.wk2,C.gold,data.last_close)}
         {renderWindow('1 Month','last 30 days',data.windows.mo1,C.gold,data.last_close)}
