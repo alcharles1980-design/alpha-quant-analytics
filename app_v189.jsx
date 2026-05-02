@@ -2848,13 +2848,18 @@ function StockProfileCheatSheetPage(p){
           if(abs>=1e6)return sign+'$'+(abs/1e6).toFixed(1)+'M';
           return sign+'$'+abs.toLocaleString();
         };
+        // Format Y-axis tick label. Uses toFixed(1) when value has a fractional
+        // part in its unit (e.g. 1.5B) and toFixed(0) when whole (e.g. 2B).
+        // Without this, niceScale's 500M step produces ticks like 1.5B and 2B
+        // that BOTH render as '$2B' if we always round to 0 decimals.
         var fmtTick=function(v){
           if(v===0)return '$0';
           var abs=Math.abs(v);
           var sign=v<0?'-':'';
-          if(abs>=1e12)return sign+'$'+(abs/1e12).toFixed(0)+'T';
-          if(abs>=1e9)return sign+'$'+(abs/1e9).toFixed(0)+'B';
-          if(abs>=1e6)return sign+'$'+(abs/1e6).toFixed(0)+'M';
+          var fmt=function(n){return n%1===0?n.toFixed(0):n.toFixed(1);};
+          if(abs>=1e12)return sign+'$'+fmt(abs/1e12)+'T';
+          if(abs>=1e9)return sign+'$'+fmt(abs/1e9)+'B';
+          if(abs>=1e6)return sign+'$'+fmt(abs/1e6)+'M';
           return sign+'$'+abs.toFixed(0);
         };
         // Latest period summary for the collapsed preview
