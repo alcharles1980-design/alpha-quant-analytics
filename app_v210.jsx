@@ -2521,6 +2521,9 @@ function StockProfileCheatSheetPage(p){
           // Period actual hi/lo ranges - real prices from completed sessions,
           // shown alongside the projected swing targets above. Helps the
           // user gauge how the projection relates to recent observed extremes.
+          // Each row also carries volume profile values (POC, VAL, VAH) for
+          // the same period, so the user sees both the absolute extremes
+          // and the volume-weighted center of gravity.
           // Sources:
           //   Prev Day -> wPrev (set later via wPrev path) - use maBars last bar
           //               directly here since wPrev/window cards build later
@@ -2543,15 +2546,31 @@ function StockProfileCheatSheetPage(p){
           };
           var prevHL=hiLoLastN(1);
           var threeHL=hiLoLastN(3);
-          // Period ranges array - each entry has label + hi + lo + optional dates.
-          // Using the calendar-based windows (wWeek/w2wk/w1mo) for 1w/2w/1m so
-          // the values match what users see in the existing window cards.
+          // 3-day volume profile: build fresh from 5m bars over the last 3
+          // maBars trade dates (no pre-built profile exists for this window).
+          // Reuses pickRollingProfileBars from the Rolling Vol Profile card.
+          var prof3day=null;
+          if(threeHL){
+            var threeBars=pickRollingProfileBars({kind:'rolling',n:3});
+            if(threeBars&&threeBars.length>0){
+              prof3day=buildProfile(threeBars,'point',null,null);
+            }
+          }
+          // Period ranges array - each entry has label + hi + lo + poc/val/vah.
+          // POC fields are nullable - if a profile couldn't be built (insufficient
+          // intraday bars for the window), that period's POC/VAL/VAH render as '-'
+          // but the LOW/HIGH/RANGE columns still populate from the daily bars.
           var periodRanges=[];
-          if(prevHL)periodRanges.push({label:'Prev Day',hi:prevHL.hi,lo:prevHL.lo});
-          if(threeHL)periodRanges.push({label:'3 Day',hi:threeHL.hi,lo:threeHL.lo});
-          if(wWeek)periodRanges.push({label:'1 Week',hi:wWeek.hi,lo:wWeek.lo});
-          if(w2wk)periodRanges.push({label:'2 Weeks',hi:w2wk.hi,lo:w2wk.lo});
-          if(w1mo)periodRanges.push({label:'1 Month',hi:w1mo.hi,lo:w1mo.lo});
+          if(prevHL)periodRanges.push({label:'Prev Day',hi:prevHL.hi,lo:prevHL.lo,
+            poc:profPrev?profPrev.poc:null,val:profPrev?profPrev.val:null,vah:profPrev?profPrev.vah:null});
+          if(threeHL)periodRanges.push({label:'3 Day',hi:threeHL.hi,lo:threeHL.lo,
+            poc:prof3day?prof3day.poc:null,val:prof3day?prof3day.val:null,vah:prof3day?prof3day.vah:null});
+          if(wWeek)periodRanges.push({label:'1 Week',hi:wWeek.hi,lo:wWeek.lo,
+            poc:profWeek?profWeek.poc:null,val:profWeek?profWeek.val:null,vah:profWeek?profWeek.vah:null});
+          if(w2wk)periodRanges.push({label:'2 Weeks',hi:w2wk.hi,lo:w2wk.lo,
+            poc:prof2wk?prof2wk.poc:null,val:prof2wk?prof2wk.val:null,vah:prof2wk?prof2wk.vah:null});
+          if(w1mo)periodRanges.push({label:'1 Month',hi:w1mo.hi,lo:w1mo.lo,
+            poc:prof1mo?prof1mo.poc:null,val:prof1mo?prof1mo.val:null,vah:prof1mo?prof1mo.vah:null});
           swingTargets={
             base_close: swingBaseClose,
             base_date: swingBaseDate,
@@ -3704,7 +3723,8 @@ function StockProfileCheatSheetPage(p){
                   'TOP END: low_swing × (1 + avg 3-day L→H%) - models a typical rally from the projected low',
                   'Both averages come from the Rolling Stats card\'s 3-day row',
                   'avg C→L typically negative (drops happen); avg L→H typically positive (rallies happen)',
-                  'PERIOD HIGHS & LOWS: actual extreme prices observed across recent windows (Prev Day, 3 Day, 1 Week, 2 Weeks, 1 Month) with absolute and % range'
+                  'PERIOD RANGES: actual high/low extremes across recent windows (Prev Day, 3 Day, 1 Week, 2 Weeks, 1 Month) with absolute $ and % range',
+                  'VOL PROFILE per window: VAL = lower 70% volume boundary, POC = volume magnet (highest-traded price), VAH = upper 70% boundary'
                 ]},
                 {h:'Why it matters'},
                 {p:'The projection captures the natural intraday rhythm: price tends to dip below the prior close, then rally back. The actual period ranges show what the stock has actually done recently - useful sanity check on whether projected targets are within or beyond observed reach.'},
@@ -3716,6 +3736,8 @@ function StockProfileCheatSheetPage(p){
                   'If price already above TOP END: extended above typical reach - mean-revert risk',
                   'Compare LOW SWING / TOP END to the period actuals - if projection extends beyond 1-month range, expect regime shift required',
                   'Period ranges narrow over time = consolidation; widen = expansion',
+                  'Compare current price to each period\'s POC - above all = stretched up; below all = oversold',
+                  'VAL/VAH boundaries are common reversal zones - watch for reactions',
                   'Use as a sanity check on entry/exit levels - not a hard prediction'
                 ]}
               ]}</Info>
@@ -3748,29 +3770,44 @@ function StockProfileCheatSheetPage(p){
                 <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{fmtSignedPct(st.top_end_pct)}</div>
               </div>
             </div>
-            {/* Period actual high/low ranges - real prices observed in completed
-                sessions. Provides context for how the projected swing targets
-                compare to recent extremes. */}
+            {/* Period actual high/low ranges + volume profile values - real
+                observed extremes and the volume-weighted center of gravity for
+                each window. Provides context for how the projected swing
+                targets compare to recent extremes AND the volume magnet zones.
+                Each window renders as TWO sub-rows on mobile to keep readable
+                font sizes: 'Range' line (LOW/HIGH/RANGE) and 'Vol Profile'
+                line (VAL/POC/VAH). */}
             {st.period_ranges&&st.period_ranges.length>0&&<div style={{padding:'8px 0',borderTop:'1px solid '+C.border,marginBottom:6}}>
-              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>PERIOD HIGHS &amp; LOWS</div>
-              {/* Header row */}
-              <div style={{display:'flex',alignItems:'center',padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:2}}>
-                <div style={{flex:'0 0 64px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>WINDOW</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>LOW</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>HIGH</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>RANGE</div>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>PERIOD RANGES &amp; VOL PROFILE</div>
+              {/* Header rows - 2 stacked headers (RANGE / VOL PROFILE) */}
+              <div style={{display:'flex',alignItems:'center',padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:2,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700,color:C.txtDim}}>
+                <div style={{flex:'0 0 64px'}}>WINDOW</div>
+                <div style={{flex:1,textAlign:'right'}}>LOW / VAL</div>
+                <div style={{flex:1,textAlign:'right'}}>HIGH / VAH</div>
+                <div style={{flex:1,textAlign:'right'}}>RANGE / POC</div>
               </div>
-              {/* Data rows */}
+              {/* Data rows - each window gets 2 sub-rows */}
               {st.period_ranges.map(function(r,i){
                 var rng=(r.hi!=null&&r.lo!=null)?r.hi-r.lo:null;
                 var rngPct=(rng!=null&&st.base_close>0)?(rng/st.base_close)*100:null;
-                return <div key={i} style={{display:'flex',alignItems:'center',padding:'5px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
-                  <div style={{flex:'0 0 64px',color:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{r.label}</div>
-                  <div style={{flex:1,textAlign:'right',color:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{r.lo!=null?'$'+r.lo.toFixed(2):'-'}</div>
-                  <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{r.hi!=null?'$'+r.hi.toFixed(2):'-'}</div>
-                  <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>
-                    {rng!=null?'$'+rng.toFixed(2):'-'}
-                    {rngPct!=null&&<span style={{color:C.txtDim,fontSize:7,marginLeft:4,fontWeight:400}}>({rngPct.toFixed(1)}%)</span>}
+                var hasVP=(r.poc!=null&&r.val!=null&&r.vah!=null);
+                return <div key={i} style={{padding:'6px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
+                  {/* Sub-row 1: actual hi/lo/range */}
+                  <div style={{display:'flex',alignItems:'center'}}>
+                    <div style={{flex:'0 0 64px',color:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{r.label}</div>
+                    <div style={{flex:1,textAlign:'right',color:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{r.lo!=null?'$'+r.lo.toFixed(2):'-'}</div>
+                    <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{r.hi!=null?'$'+r.hi.toFixed(2):'-'}</div>
+                    <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>
+                      {rng!=null?'$'+rng.toFixed(2):'-'}
+                      {rngPct!=null&&<span style={{color:C.txtDim,fontSize:7,marginLeft:4,fontWeight:400}}>({rngPct.toFixed(1)}%)</span>}
+                    </div>
+                  </div>
+                  {/* Sub-row 2: volume profile (VAL / VAH / POC) - dimmer, smaller, italic prefix */}
+                  <div style={{display:'flex',alignItems:'center',marginTop:2}}>
+                    <div style={{flex:'0 0 64px',color:C.txtDim,fontSize:7,fontFamily:F,fontStyle:'italic',letterSpacing:0.3}}>vol profile</div>
+                    <div style={{flex:1,textAlign:'right',color:hasVP?C.warn:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.val.toFixed(2):'-'}</div>
+                    <div style={{flex:1,textAlign:'right',color:hasVP?C.accent:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.vah.toFixed(2):'-'}</div>
+                    <div style={{flex:1,textAlign:'right',color:hasVP?C.txtBright:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.poc.toFixed(2):'-'}</div>
                   </div>
                 </div>;
               })}
