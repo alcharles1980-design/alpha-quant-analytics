@@ -1394,6 +1394,7 @@ function StockProfileCheatSheetPage(p){
   var s10=useState('quarterly'),revMode=s10[0],setRevMode=s10[1];
   var s11=useState(true),rollingExpanded=s11[0],setRollingExpanded=s11[1];
   var s12=useState(true),rpcExpanded=s12[0],setRpcExpanded=s12[1];
+  var s13=useState(true),swingExpanded=s13[0],setSwingExpanded=s13[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -2489,6 +2490,49 @@ function StockProfileCheatSheetPage(p){
         rollingPocStats={rows:rpcRows};
       }
 
+      // ======== SWING POTENTIAL TARGETS (3-day projection model) ========
+      // Models a typical swing-trade scenario from the most recent COMPLETED
+      // session's close. Uses the rolling 3-day averages of:
+      //   C→L%: typical close-to-next-day-low pct (negative = drawdown)
+      //   L→H%: typical low-to-next-day-high pct (positive = rally reach)
+      //
+      // Step 1: project the LOW SWING from the base close using avg C→L:
+      //   low_swing = base_close * (1 + avg_cl_pct/100)
+      //   - typical avg_cl_pct is negative, so low_swing < base_close
+      //
+      // Step 2: project the TOP END from the projected low using avg L→H:
+      //   top_end = low_swing * (1 + avg_lh_pct/100)
+      //   - typical avg_lh_pct is positive, so top_end > low_swing
+      //
+      // The two targets bracket a realistic swing range: 'where might price
+      // dip to' (low_swing) and 'what's the typical reach from there' (top_end).
+      // base_close is the most recent COMPLETED daily close (= maBars last
+      // entry); never the in-progress today close.
+      var swingTargets=null;
+      if(maBars.length>0){
+        var swingBaseBar=maBars[maBars.length-1];
+        var swingBaseClose=swingBaseBar.c;
+        var swingBaseDate=getETDateStr(new Date(swingBaseBar.t));
+        var swingCL3=rollingCL(3);
+        var swingLH3=rollingLH(3);
+        if(swingBaseClose!=null&&swingBaseClose>0&&swingCL3&&swingLH3){
+          var swingLow=swingBaseClose*(1+swingCL3.pct/100);
+          var swingTop=swingLow*(1+swingLH3.pct/100);
+          swingTargets={
+            base_close: swingBaseClose,
+            base_date: swingBaseDate,
+            avg_cl_pct: swingCL3.pct,
+            avg_lh_pct: swingLH3.pct,
+            low_swing: swingLow,
+            top_end: swingTop,
+            low_swing_diff: swingLow-swingBaseClose,
+            top_end_diff: swingTop-swingBaseClose,
+            low_swing_pct: ((swingLow-swingBaseClose)/swingBaseClose)*100,
+            top_end_pct: ((swingTop-swingBaseClose)/swingBaseClose)*100
+          };
+        }
+      }
+
       // VWAP variants
       // VWAP_N = sum(bar.vw * bar.v) / sum(bar.v) over last N daily bars from maBars
       // (maBars already excludes today's incomplete bar)
@@ -2575,6 +2619,7 @@ function StockProfileCheatSheetPage(p){
         financials: financials,
         rolling_stats: rollingStats,
         rolling_poc_stats: rollingPocStats,
+        swing_targets: swingTargets,
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -3579,6 +3624,100 @@ function StockProfileCheatSheetPage(p){
         {renderWindow('3 Months','last 90 days',data.windows.mo3,C.gold,data.last_close)}
         {renderWindow('52 Weeks','last 365 days',data.windows.wk52,C.gold,data.last_close)}
       </div>
+
+      {/* SWING POTENTIAL TARGETS card - placed at the very end of the cheat
+          sheet. Models a typical swing-trade range from the most recent
+          completed daily close, using the rolling 3-day average drawdown
+          (close-to-low) and rolling 3-day average upside reach (low-to-high).
+          Step 1: project low_swing = base_close * (1 + avg_cl_3 / 100)
+          Step 2: project top_end   = low_swing  * (1 + avg_lh_3 / 100)
+          Default expanded. Collapsible header with Info modal explaining
+          the methodology + tactical use cases. */}
+      {data.swing_targets&&(function(){
+        var st=data.swing_targets;
+        // Friendly date formatter: 2026-04-30 -> 'Apr 30, 2026'
+        var monthAbbr=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var fmtDate=function(dStr){
+          if(!dStr)return '';
+          var parts=dStr.split('-');
+          if(parts.length!==3)return dStr;
+          var y=parts[0],m=parseInt(parts[1],10)-1,d=parseInt(parts[2],10);
+          if(m<0||m>11)return dStr;
+          return monthAbbr[m]+' '+d+', '+y;
+        };
+        var fmtSignedDollar=function(v){
+          if(v==null)return '-';
+          var sign=v<0?'-':'+';
+          return sign+'$'+Math.abs(v).toFixed(2);
+        };
+        var fmtSignedPct=function(v){
+          if(v==null)return '-';
+          var sign=v<0?'':'+'; // toFixed already includes '-' for negatives
+          return sign+v.toFixed(2)+'%';
+        };
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border,marginTop:14}}>
+          {/* Header */}
+          <div onClick={function(){setSwingExpanded(!swingExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:swingExpanded?12:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>SWING POTENTIAL TARGETS</span>
+              <Info>{[
+                {h:'What this shows'},
+                {p:'A two-target projection model of a typical swing-trade range, anchored to the most recent completed daily close.'},
+                {b:[
+                  'BASE: the most recent completed trading day\'s close (excludes today\'s in-progress session)',
+                  'LOW SWING: base_close × (1 + avg 3-day C→L%) - models a typical drawdown from close',
+                  'TOP END: low_swing × (1 + avg 3-day L→H%) - models a typical rally from the projected low',
+                  'Both averages come from the Rolling Stats card\'s 3-day row',
+                  'avg C→L typically negative (drops happen); avg L→H typically positive (rallies happen)'
+                ]},
+                {h:'Why it matters'},
+                {p:'Captures the natural intraday rhythm: price tends to dip below the prior close, then rally back. The two targets bracket a realistic swing range using only the last 3 days of data - responsive to current regime, not contaminated by older history.'},
+                {h:'How to use it'},
+                {b:[
+                  'LOW SWING = potential bounce zone - dip-buy entry candidate',
+                  'TOP END = potential resistance / take-profit zone',
+                  'If price already below LOW SWING: drawdown is unusually deep relative to recent norm',
+                  'If price already above TOP END: extended above typical reach - mean-revert risk',
+                  'Compare LOW SWING to today\'s actual low to gauge whether the daily drop is normal or extreme',
+                  'Use as a sanity check on entry/exit levels - not a hard prediction'
+                ]}
+              ]}</Info>
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{swingExpanded?'\u25BE':'\u25B8'}</div>
+          </div>
+          {swingExpanded&&<div>
+            {/* BASE: last completed close + date */}
+            <div style={{padding:'8px 0',borderBottom:'1px solid '+C.border,marginBottom:10}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:3}}>BASE - LAST COMPLETED CLOSE</div>
+              <div style={{display:'flex',alignItems:'baseline',gap:10,fontFamily:F}}>
+                <span style={{color:C.txtBright,fontSize:18,fontWeight:700}}>${st.base_close.toFixed(2)}</span>
+                <span style={{color:C.txtDim,fontSize:9}}>{fmtDate(st.base_date)}</span>
+              </div>
+            </div>
+            {/* TWO TARGET COLUMNS */}
+            <div style={{display:'flex',gap:10,marginBottom:10}}>
+              {/* LOW SWING - red/warn coloring */}
+              <div style={{flex:1,padding:'10px 8px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.warn+'33'}}>
+                <div style={{color:C.warn,fontSize:8,fontFamily:F,letterSpacing:1.2,fontWeight:700,marginBottom:4}}>LOW SWING</div>
+                <div style={{color:C.warn,fontSize:15,fontFamily:F,fontWeight:700,marginBottom:2}}>${st.low_swing.toFixed(2)}</div>
+                <div style={{color:C.txt,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtSignedDollar(st.low_swing_diff)}</div>
+                <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{fmtSignedPct(st.low_swing_pct)}</div>
+              </div>
+              {/* TOP END - green/accent coloring */}
+              <div style={{flex:1,padding:'10px 8px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.accent+'33'}}>
+                <div style={{color:C.accent,fontSize:8,fontFamily:F,letterSpacing:1.2,fontWeight:700,marginBottom:4}}>TOP END</div>
+                <div style={{color:C.accent,fontSize:15,fontFamily:F,fontWeight:700,marginBottom:2}}>${st.top_end.toFixed(2)}</div>
+                <div style={{color:C.txt,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtSignedDollar(st.top_end_diff)}</div>
+                <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{fmtSignedPct(st.top_end_pct)}</div>
+              </div>
+            </div>
+            {/* Methodology footer */}
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
+              3-day avg C→L: <span style={{color:C.warn,fontStyle:'normal',fontWeight:700}}>{fmtSignedPct(st.avg_cl_pct)}</span> (low swing from base)&nbsp;·&nbsp;3-day avg L→H: <span style={{color:C.accent,fontStyle:'normal',fontWeight:700}}>{fmtSignedPct(st.avg_lh_pct)}</span> (top end from projected low). Models price dipping to the low, then rallying to the top.
+            </div>
+          </div>}
+        </div>;
+      })()}
     </Cd>}
   </div>;
 }
