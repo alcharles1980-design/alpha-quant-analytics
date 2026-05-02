@@ -2224,9 +2224,17 @@ function StockProfileCheatSheetPage(p){
       var maBars=lastDate===todayStr?dailyBars.slice(0,-1):dailyBars.slice();
       var computeMA=function(n){
         if(maBars.length<n)return null;
-        var sum=0;
-        for(var i=maBars.length-n;i<maBars.length;i++)sum+=maBars[i].c;
-        return sum/n;
+        // Defensive: skip bars with null/NaN close. Matches the pattern used
+        // by computeVWAP. If Polygon ever returns a corrupt bar in the window,
+        // the SMA degrades gracefully (computed over the valid bars) instead
+        // of returning NaN and rendering as '$NaN' downstream.
+        var sum=0,count=0;
+        for(var i=maBars.length-n;i<maBars.length;i++){
+          var c=maBars[i].c;
+          if(c==null||isNaN(c))continue;
+          sum+=c;count++;
+        }
+        return count>0?sum/count:null;
       };
       var ma3=computeMA(3);
       var ma5=computeMA(5);
@@ -3289,7 +3297,9 @@ function StockProfileCheatSheetPage(p){
         {/* SMA vs VWAP comparison block */}
         {(function(){
           var renderTrendValue=function(v){
-            if(v==null)return <span style={{color:C.txtDim,fontSize:8,fontStyle:'italic'}}>insufficient data</span>;
+            // Reject null AND NaN (NaN!=null in JS). Defends against any upstream
+            // helper returning NaN (e.g. computeMA pre-v206 with a corrupt close).
+            if(v==null||isNaN(v))return <span style={{color:C.txtDim,fontSize:8,fontStyle:'italic'}}>insufficient data</span>;
             var diff=data.last_close-v;
             var pct=v>0?(diff/v)*100:0;
             var above=pct>0.5,below=pct<-0.5;
@@ -3325,7 +3335,8 @@ function StockProfileCheatSheetPage(p){
         {/* Intraday VWAP references (session + prev day) */}
         {(data.session_vwap!=null||data.prev_day_vwap!=null)&&(function(){
           var renderTrendValue=function(v){
-            if(v==null)return null;
+            // Reject null AND NaN (matches the SMA block's renderTrendValue).
+            if(v==null||isNaN(v))return null;
             var diff=data.last_close-v;
             var pct=v>0?(diff/v)*100:0;
             var above=pct>0.5,below=pct<-0.5;
