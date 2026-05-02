@@ -1554,13 +1554,20 @@ function StockProfileCheatSheetPage(p){
       // POC: bucket with most volume (price = bucket center).
       // VA:  expanding band from POC capturing 70% of total volume; at each step,
       //      take the larger neighbor (left or right) until target met.
-      var buildProfile=function(bars,mode){
+      var buildProfile=function(bars,mode,forceLo,forceHi){
         if(!bars||!bars.length)return null;
-        var profileLo=Infinity,profileHi=-Infinity;
-        for(var i=0;i<bars.length;i++){
-          var b=bars[i];
-          if(b.l<profileLo)profileLo=b.l;
-          if(b.h>profileHi)profileHi=b.h;
+        var profileLo,profileHi;
+        // If explicit range provided, use it (so histogram aligns to gradient bar price axis).
+        // Otherwise compute from bars (the original behavior).
+        if(forceLo!=null&&forceHi!=null&&forceHi>forceLo){
+          profileLo=forceLo;profileHi=forceHi;
+        } else {
+          profileLo=Infinity;profileHi=-Infinity;
+          for(var i=0;i<bars.length;i++){
+            var b=bars[i];
+            if(b.l<profileLo)profileLo=b.l;
+            if(b.h>profileHi)profileHi=b.h;
+          }
         }
         if(!isFinite(profileLo)||!isFinite(profileHi)||profileHi<=profileLo)return null;
         var nB=50;
@@ -1572,6 +1579,7 @@ function StockProfileCheatSheetPage(p){
           var b=bars[i];
           if(b.v==null||isNaN(b.v)||b.v<=0)continue;
           if(mode==='uniform'){
+            // Volume that falls outside [profileLo, profileHi] gets clamped to edge buckets.
             var loIdx=Math.max(0,Math.min(nB-1,Math.floor((b.l-profileLo)/bSize)));
             var hiIdx=Math.max(0,Math.min(nB-1,Math.floor((b.h-profileLo)/bSize)));
             var span=hiIdx-loIdx+1;
@@ -1604,6 +1612,9 @@ function StockProfileCheatSheetPage(p){
           else if(rightAvail){vaHiIdx++;captured+=buckets[vaHiIdx];}
           else break;
         }
+        // Find max bucket vol for histogram normalization
+        var maxBucketVol=0;
+        for(var k=0;k<nB;k++)if(buckets[k]>maxBucketVol)maxBucketVol=buckets[k];
         return {
           poc: profileLo+(pocIdx+0.5)*bSize,
           val: profileLo+vaLoIdx*bSize,
@@ -1613,7 +1624,13 @@ function StockProfileCheatSheetPage(p){
           n_buckets: nB,
           total_volume: totalVol,
           va_pct_actual: captured/totalVol,
-          mode: mode
+          mode: mode,
+          // Histogram rendering data
+          buckets: buckets,
+          poc_idx: pocIdx,
+          va_lo_idx: vaLoIdx,
+          va_hi_idx: vaHiIdx,
+          max_bucket_vol: maxBucketVol
         };
       };
 
@@ -1828,24 +1845,24 @@ function StockProfileCheatSheetPage(p){
       var from14Str=getETDateStr(new Date(today.getTime()-14*86400000));
       var from30Str=getETDateStr(new Date(today.getTime()-30*86400000));
       var from90Str=getETDateStr(new Date(today.getTime()-90*86400000));
-      // Today: minute bars (already have, all are today by construction)
-      var profToday=minuteBars.length>0?buildProfile(minuteBars,'point'):null;
+      // Today: minute bars (already have, all are today by construction). Force range = window lo/hi for visual alignment with gradient bar.
+      var profToday=(minuteBars.length>0&&wToday)?buildProfile(minuteBars,'point',wToday.lo,wToday.hi):null;
       // Prev Day: 5min bars filtered to that single trade date
       var profPrev=null;
-      if(profilePrevDate&&bars5m.length>0){
+      if(profilePrevDate&&bars5m.length>0&&wPrev){
         var prevDayBars=filterBarsByDateRange(bars5m,profilePrevDate,profilePrevDate);
-        profPrev=buildProfile(prevDayBars,'point');
+        profPrev=buildProfile(prevDayBars,'point',wPrev.lo,wPrev.hi);
       }
       // This Week: 5min bars from weekStartStr -> today
-      var profWeek=bars5m.length>0?buildProfile(filterBarsByDateRange(bars5m,weekStartStr,todayStr),'point'):null;
+      var profWeek=(bars5m.length>0&&wWeek)?buildProfile(filterBarsByDateRange(bars5m,weekStartStr,todayStr),'point',wWeek.lo,wWeek.hi):null;
       // 2 Weeks: full 5min set (already 14 days)
-      var prof2wk=bars5m.length>0?buildProfile(filterBarsByDateRange(bars5m,from14Str,todayStr),'point'):null;
+      var prof2wk=(bars5m.length>0&&w2wk)?buildProfile(filterBarsByDateRange(bars5m,from14Str,todayStr),'point',w2wk.lo,w2wk.hi):null;
       // 1 Month: full 30min set
-      var prof1mo=bars30m.length>0?buildProfile(filterBarsByDateRange(bars30m,from30Str,todayStr),'point'):null;
+      var prof1mo=(bars30m.length>0&&w1mo)?buildProfile(filterBarsByDateRange(bars30m,from30Str,todayStr),'point',w1mo.lo,w1mo.hi):null;
       // 3 Months: full 1hour set
-      var prof3mo=bars1h.length>0?buildProfile(filterBarsByDateRange(bars1h,from90Str,todayStr),'point'):null;
+      var prof3mo=(bars1h.length>0&&w3mo)?buildProfile(filterBarsByDateRange(bars1h,from90Str,todayStr),'point',w3mo.lo,w3mo.hi):null;
       // 52 Weeks: daily bars approximated (uniform across H-L per bar). Marked as approx.
-      var prof52w=dailyBars.length>0?buildProfile(dailyBars,'uniform'):null;
+      var prof52w=(dailyBars.length>0&&w52)?buildProfile(dailyBars,'uniform',w52.lo,w52.hi):null;
 
       // Add derived metrics to each window
       var enrichWin=function(w){
@@ -2039,20 +2056,20 @@ function StockProfileCheatSheetPage(p){
       {lastClose!=null&&<div style={{position:'relative',height:14,marginBottom:2}}>
         <div style={{position:'absolute',left:posClamped+'%',transform:labelTransform,fontSize:9,fontFamily:F,fontWeight:700,color:C.txtBright,background:C.bgCard,padding:'1px 5px',borderRadius:3,border:'1px solid '+C.txtBright,whiteSpace:'nowrap'}}>${lastClose.toFixed(2)}</div>
       </div>}
+      {/* Mini volume profile histogram - shares price x-axis with gradient bar below.
+          50 vertical bars, each bucket's height proportional to volume in that bucket.
+          POC bucket = bright purple, VA buckets = medium purple, others = dim white. */}
+      {w.profile&&w.profile.buckets&&w.profile.max_bucket_vol>0&&<div style={{display:'flex',alignItems:'flex-end',height:32,marginBottom:3,gap:1,padding:'0 1px'}}>
+        {w.profile.buckets.map(function(vol,i){
+          var h=(vol/w.profile.max_bucket_vol)*100;
+          var inVA=i>=w.profile.va_lo_idx&&i<=w.profile.va_hi_idx;
+          var isPOC=i===w.profile.poc_idx;
+          var bg=isPOC?C.purple:(inVA?'rgba(168,85,247,0.55)':'rgba(255,255,255,0.18)');
+          return <div key={i} style={{flex:1,height:h+'%',background:bg,minHeight:vol>0?1:0,borderRadius:'1px 1px 0 0'}}/>;
+        })}
+      </div>}
       <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
         <div style={{position:'absolute',top:0,bottom:0,left:0,width:posClamped+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.6}}/>
-        {/* Volume profile overlay: VA shaded band + POC tick.
-            Positioned in the same coordinate space as the indicator (window's lo->hi). */}
-        {w.profile&&w.hi>w.lo&&(function(){
-          var lo=w.lo, hi=w.hi, span=hi-lo;
-          var valPct=Math.max(0,Math.min(100,((w.profile.val-lo)/span)*100));
-          var vahPct=Math.max(0,Math.min(100,((w.profile.vah-lo)/span)*100));
-          var pocPct=Math.max(0,Math.min(100,((w.profile.poc-lo)/span)*100));
-          return [
-            <div key="va" style={{position:'absolute',top:0,bottom:0,left:valPct+'%',width:(vahPct-valPct)+'%',background:'rgba(168,85,247,0.28)',pointerEvents:'none'}}/>,
-            <div key="poc" style={{position:'absolute',top:0,bottom:0,left:'calc('+pocPct+'% - 1px)',width:2,background:C.purple,boxShadow:'0 0 4px '+C.purple,pointerEvents:'none'}}/>
-          ];
-        })()}
         <div style={{position:'absolute',top:0,bottom:0,left:'calc('+posClamped+'% - 1px)',width:2,background:C.txtBright}}/>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',fontSize:8,fontFamily:F,color:C.txt}}>
