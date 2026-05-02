@@ -1451,7 +1451,10 @@ function StockProfileCheatSheetPage(p){
           pair_count: pairCount,
           avg_volume_shares: volBarCount>0?sumVolume/volBarCount:null,
           avg_dollar_notional: notionalBarCount>0?sumDollarNotional/notionalBarCount:null,
-          avg_trade_count: tradeBarCount>0?sumTrades/tradeBarCount:null
+          avg_trade_count: tradeBarCount>0?sumTrades/tradeBarCount:null,
+          // Period VWAP: total dollar notional / total volume across all bars in window.
+          // Uses same accumulators as the average dollar notional above.
+          period_vwap: sumVolume>0?sumDollarNotional/sumVolume:null
         };
       };
 
@@ -1501,7 +1504,8 @@ function StockProfileCheatSheetPage(p){
           avg_daily_range_pct: tlo>0?(todayRange/tlo)*100:null,
           avg_volume_shares: tVol>0?tVol:null,
           avg_dollar_notional: tNotional>0?tNotional:null,
-          avg_trade_count: tTrades>0?tTrades:null
+          avg_trade_count: tTrades>0?tTrades:null,
+          period_vwap: tVol>0?tNotional/tVol:null
         };
       } else {
         // Check if last daily bar is from today
@@ -1516,7 +1520,8 @@ function StockProfileCheatSheetPage(p){
             avg_daily_range_pct: lastDaily.l>0?(lastRange/lastDaily.l)*100:null,
             avg_volume_shares: lastDaily.v!=null?lastDaily.v:null,
             avg_dollar_notional: lastDaily.v!=null&&lastPx!=null?(lastDaily.v*lastPx):null,
-            avg_trade_count: lastDaily.n!=null?lastDaily.n:null
+            avg_trade_count: lastDaily.n!=null?lastDaily.n:null,
+            period_vwap: lastDaily.vw!=null&&!isNaN(lastDaily.vw)?lastDaily.vw:null
           };
         }
       }
@@ -1544,7 +1549,8 @@ function StockProfileCheatSheetPage(p){
           avg_daily_range_pct: prevBar.l>0?(prevRange/prevBar.l)*100:null,
           avg_volume_shares: prevBar.v!=null?prevBar.v:null,
           avg_dollar_notional: prevBar.v!=null&&prevPx!=null?(prevBar.v*prevPx):null,
-          avg_trade_count: prevBar.n!=null?prevBar.n:null
+          avg_trade_count: prevBar.n!=null?prevBar.n:null,
+          period_vwap: prevBar.vw!=null&&!isNaN(prevBar.vw)?prevBar.vw:null
         };
       }
 
@@ -1723,6 +1729,18 @@ function StockProfileCheatSheetPage(p){
       {w.avg_trade_count!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{labelPrefix+'TRADES'}</span>
         <span style={{color:C.purple,fontWeight:700}}>{(function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toLocaleString();})(w.avg_trade_count)}</span>
+      </div>}
+      {w.period_vwap!=null&&lastClose!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>PERIOD VWAP</span>
+        {(function(){
+          var vw=w.period_vwap;
+          var diff=lastClose-vw;
+          var pct=vw>0?(diff/vw)*100:0;
+          var above=pct>0.5,below=pct<-0.5;
+          var arrow=above?'↑':below?'↓':'→';
+          var color=above?C.accent:below?C.warn:C.gold;
+          return <span><span style={{color:C.txtBright,fontWeight:700}}>${vw.toFixed(2)}</span> <span style={{color:color,fontWeight:700,marginLeft:4}}>{arrow}{pct>=0?'+':''}{pct.toFixed(2)}%</span></span>;
+        })()}
       </div>}
     </div>;
   };
