@@ -3836,15 +3836,19 @@ function StockProfileCheatSheetPage(p){
                     <div style={{flex:1,textAlign:'right',color:hasVP?C.accent:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.vah.toFixed(2):'-'}</div>
                     <div style={{flex:1,textAlign:'right',color:hasVP?C.txtBright:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,opacity:hasVP?0.85:1}}>{hasVP?'$'+r.poc.toFixed(2):'-'}</div>
                   </div>
-                  {/* Sub-row 3: VWAP single value + position vs base. VWAP is a single
-                      price (volume-weighted avg), so we span the data area with the
-                      value + an arrow showing where the base close sits relative to it. */}
+                  {/* Sub-row 3: VWAP - aligned to the 4-column grid. VWAP is a
+                      single price (volume-weighted avg), so it occupies just the
+                      rightmost data column (the same column as RANGE and POC
+                      above). LOW and HIGH columns stay empty. Value renders with
+                      color-coded signed %% delta to its left, showing where base
+                      close sits relative to that VWAP. Compact, column-aligned. */}
                   <div style={{display:'flex',alignItems:'center',marginTop:2}}>
                     <div style={{flex:'0 0 64px',color:C.txtDim,fontSize:7,fontFamily:F,fontStyle:'italic',letterSpacing:0.3}}>vwap</div>
-                    <div style={{flex:3,textAlign:'right',fontSize:8,fontFamily:F,fontWeight:600}}>
+                    <div style={{flex:2}}></div>
+                    <div style={{flex:1,textAlign:'right',fontSize:8,fontFamily:F,fontWeight:600}}>
                       {hasVwap?<span>
                         <span style={{color:C.txtBright,opacity:0.85}}>${r.vwap.toFixed(2)}</span>
-                        {vwapPct!=null&&<span style={{color:vwapColor,marginLeft:6}}>{vwapArrow}{vwapPct>=0?'+':''}{vwapPct.toFixed(2)}% vs base</span>}
+                        {vwapPct!=null&&<span style={{color:vwapColor,marginLeft:5,fontWeight:700}}>{vwapArrow}{vwapPct>=0?'+':''}{vwapPct.toFixed(2)}%</span>}
                       </span>:<span style={{color:C.txtDim}}>-</span>}
                     </div>
                   </div>
