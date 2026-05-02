@@ -2470,7 +2470,7 @@ function StockProfileCheatSheetPage(p){
           <Info>{[
             {h:'What this shows'},
             {p:'Price action statistics for the '+label.toLowerCase()+' lookback window.'},
-            {b:['HIGH / LOW: extremes of the period with the dates they occurred','POSITION %: where current price sits inside the range (0% at low, 100% at high)','AVG TRUE RANGE: Wilder ATR + per-window TR for stop sizing','LOW to NEXT DAY HIGH: average swing magnitude useful for profit targets','AVG DAILY VOLUME / DOLLAR VOLUME / TRADES: liquidity gauges','PERIOD VWAP: volume-weighted price for the window','VOLUME PROFILE: histogram with POC, VAL, VAH (where most trading happened)']},
+            {b:['HIGH / LOW: extremes of the period with the dates they occurred','POSITION %: where current price sits inside the range (0% at low, 100% at high)','AVG TRUE RANGE: average TR across bars in window; % normalized by today\'s last close (consistent with hero ATR)','LOW to NEXT DAY HIGH: average swing magnitude useful for profit targets','AVG DAILY VOLUME / DOLLAR VOLUME / TRADES: liquidity gauges','PERIOD VWAP: volume-weighted price for the window','VOLUME PROFILE: histogram with POC, VAL, VAH (where most trading happened)']},
             {h:'Why it matters'},
             {p:'Each window targets a different decision in the swing trade lifecycle.'},
             {b:['SHORT (today/prev/week): entry timing and intraday bias','MEDIUM (2wk/1mo): primary swing trade range - where stops, targets, and entry retests anchor','LONG (3mo/52w): regime context - are you trading inside or against the bigger structure?']},
@@ -2537,7 +2537,7 @@ function StockProfileCheatSheetPage(p){
       </div>}
       {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>LOW → NEXT DAY HIGH</span>
-        <span><span style={{color:C.accent,fontWeight:700}}>${w.avg_low_to_next_high_dollar.toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}</span>
+        <span><span style={{color:w.avg_low_to_next_high_dollar<0?C.warn:C.accent,fontWeight:700}}>{(w.avg_low_to_next_high_dollar<0?'-$':'$')+Math.abs(w.avg_low_to_next_high_dollar).toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_volume_shares!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix+'VOLUME'}</span>
@@ -3206,7 +3206,10 @@ function StockProfileCheatSheetPage(p){
         var rs=data.rolling_stats;
         // Volatility regime signal: 1d vs 30d ATR%.
         // Use ATR% (not $) for the comparison so it's price-invariant.
-        var oneD=rs.rows[0],thirtyD=rs.rows[4];
+        // Look up rows by n value (not array index) so this stays robust if
+        // the rsWindows array is ever reordered or extended.
+        var findByN=function(n){for(var i=0;i<rs.rows.length;i++)if(rs.rows[i].n===n)return rs.rows[i];return null;};
+        var oneD=findByN(1),thirtyD=findByN(30);
         var regime='STABLE',regimeColor=C.gold;
         if(oneD&&thirtyD&&oneD.atr_pct!=null&&thirtyD.atr_pct!=null&&thirtyD.atr_pct>0){
           var ratio=oneD.atr_pct/thirtyD.atr_pct;
@@ -3291,7 +3294,7 @@ function StockProfileCheatSheetPage(p){
                 <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
                 <div style={{flex:1,textAlign:'right',color:r.lh_dollar!=null&&r.lh_dollar<0?C.warn:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.lh_dollar)}</div>
                 <div style={{flex:1,textAlign:'right',color:r.lh!=null&&r.lh<0?C.warn:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHPct(r.lh)}</div>
-                <div style={{flex:1,textAlign:'right',color:r.cl_dollar!=null&&r.cl_dollar<0?C.warn:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.cl_dollar)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.cl_dollar!=null&&r.cl_dollar<0?C.warn:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.cl_dollar)}</div>
                 <div style={{flex:1,textAlign:'right',color:r.cl!=null&&r.cl<0?C.warn:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHPct(r.cl)}</div>
               </div>;
             })}
