@@ -2228,6 +2228,9 @@ function StockProfileCheatSheetPage(p){
         for(var i=maBars.length-n;i<maBars.length;i++)sum+=maBars[i].c;
         return sum/n;
       };
+      var ma3=computeMA(3);
+      var ma5=computeMA(5);
+      var ma10=computeMA(10);
       var ma20=computeMA(20);
       var ma50=computeMA(50);
       var ma100=computeMA(100);
@@ -2492,6 +2495,9 @@ function StockProfileCheatSheetPage(p){
         }
         return den>0?num/den:null;
       };
+      var vwap3=computeVWAP(3);
+      var vwap5=computeVWAP(5);
+      var vwap10=computeVWAP(10);
       var vwap20=computeVWAP(20);
       var vwap50=computeVWAP(50);
       var vwap100=computeVWAP(100);
@@ -2536,12 +2542,18 @@ function StockProfileCheatSheetPage(p){
         shares_out: sharesOut,
         name: name,
         sic_description: sicDesc,
+        ma3: ma3,
+        ma5: ma5,
+        ma10: ma10,
         ma20: ma20,
         ma50: ma50,
         ma100: ma100,
         ma200: ma200,
         atr14: atr14,
         atr14_pct: atr14Pct,
+        vwap3: vwap3,
+        vwap5: vwap5,
+        vwap10: vwap10,
         vwap20: vwap20,
         vwap50: vwap50,
         vwap100: vwap100,
@@ -3260,17 +3272,17 @@ function StockProfileCheatSheetPage(p){
       })()}
 
       {/* Trends reference card: SMA vs VWAP per period + session/prev-day VWAP */}
-      {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+      {(data.ma3!=null||data.ma5!=null||data.ma10!=null||data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'center',marginBottom:10}}>
           <div style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>TRENDS</div>
           <Info>{[
             {h:'What this shows'},
-            {p:'Moving averages and VWAP at multiple time horizons.'},
-            {b:['SMA = arithmetic mean of last N daily closes','VWAP = same average weighted by trading volume','Each block: 20-day, 50-day, 100-day, 200-day','Percentage shows distance of current price from each level','INTRADAY VWAP: today\'s session + previous session for short-term reference']},
+            {p:'Moving averages and VWAP across 7 time horizons - from short-term swing-trade references to long-term regime markers.'},
+            {b:['SMA = arithmetic mean of last N daily closes','VWAP = same average weighted by trading volume','Windows: 3, 5, 10, 20, 50, 100, 200-day','Percentage shows distance of current price from each level','INTRADAY VWAP: today\'s session + previous session for short-term reference']},
                 {h:'Why it matters'},
-                {p:'These are the lines institutions and algos use as decision boundaries. They become self-fulfilling support and resistance because so many systems trade off them.'},
+                {p:'These are the lines institutions and algos use as decision boundaries. They become self-fulfilling support and resistance because so many systems trade off them. Short windows (3/5/10) capture micro-trend; mid (20/50) anchor swing trades; long (100/200) define regime.'},
                 {h:'How to use it'},
-                {b:['Price above all four (20/50/100/200) = strong uptrend, low-resistance buy regime','Price flipping below 50-day from above = early trend break warning','200-day = textbook bull/bear bias divider for long-term holds','20 and 50-day are primary swing references for stop placement','Pullbacks to the 20 or 50-day are common buy-the-dip entries','Above today\'s session VWAP = bulls in control intraday']}
+                {b:['3/5/10-day = micro-trend - whipsaws fast but signals fastest','20/50-day = primary swing references for stop placement and pullback entries','Price above all 7 = strong uptrend, low-resistance buy regime','Price flipping below 50-day from above = early trend break warning','200-day = textbook bull/bear bias divider for long-term holds','Above today\'s session VWAP = bulls in control intraday']}
           ]}</Info>
         </div>
 
@@ -3286,13 +3298,17 @@ function StockProfileCheatSheetPage(p){
             return <span><span style={{color:C.txtBright,fontWeight:700}}>${v.toFixed(2)}</span> <span style={{color:color,fontWeight:700,fontSize:9}}>{arrow}{pct>=0?'+':''}{pct.toFixed(2)}%</span></span>;
           };
           var periods=[
+            {n:3,sma:data.ma3,vwap:data.vwap3},
+            {n:5,sma:data.ma5,vwap:data.vwap5},
+            {n:10,sma:data.ma10,vwap:data.vwap10},
             {n:20,sma:data.ma20,vwap:data.vwap20},
             {n:50,sma:data.ma50,vwap:data.vwap50},
             {n:100,sma:data.ma100,vwap:data.vwap100},
             {n:200,sma:data.ma200,vwap:data.vwap200}
           ];
+          var lastIdx=periods.length-1;
           return periods.map(function(p,i){
-            return <div key={i} style={{padding:'8px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
+            return <div key={i} style={{padding:'8px 0',borderBottom:i<lastIdx?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
               <div style={{color:C.txt,fontWeight:700,letterSpacing:1.5,fontSize:8,marginBottom:4}}>{p.n}-DAY</div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
                 <span style={{color:C.txt,fontSize:8,letterSpacing:1,minWidth:42}}>SMA</span>
