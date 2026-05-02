@@ -2277,9 +2277,11 @@ function StockProfileCheatSheetPage(p){
       };
       var atr14=computeWilderATR(14);
       var atr14Pct=null;
-      if(atr14!=null&&maBars.length>0){
-        var refCl=maBars[maBars.length-1].c;
-        if(refCl>0)atr14Pct=(atr14/refCl)*100;
+      // ATR% denominator standardized to lastClose - same as window cards,
+      // rolling stats card, and the comment near enrichWin. Reads as 'one TR
+      // move as a fraction of today's actual price'. Cross-section comparable.
+      if(atr14!=null&&lastClose>0){
+        atr14Pct=(atr14/lastClose)*100;
       }
       // Rolling L-to-next-day-high. For each bar i (except the last), compute:
       //   pct = (bar[i+1].h - bar[i].l) / bar[i].l * 100
@@ -2331,14 +2333,19 @@ function StockProfileCheatSheetPage(p){
       // L→H and C→L use rolling simple average ($ and %).
       var rollingStats=null;
       if(maBars.length>=1){
-        var refClose=maBars[maBars.length-1].c;
+        // ATR% denominator: lastClose (consistent with hero ATR(14), window cards,
+        // and the Today row computed below). Reads as 'one TR move as a fraction
+        // of today's actual price'. The rolling stats Prev Day + rolling rows
+        // previously used maBars[length-1].c (yesterday's close); switched to
+        // lastClose in v204 so all 6 rows are directly comparable.
+        var atrPctDenom=lastClose;
         // Compute the 'Today' row: uses wToday (today's hi/lo/TR) + the most
         // recent maBars entry (prev day's low/close) to define the L→H and C→L
         // pairs. wToday is null on weekends/holidays - row falls through to all-null.
         var computeTodayRow=function(){
           if(!wToday)return {atr:null,atr_pct:null,lh:null,lh_dollar:null,cl:null,cl_dollar:null};
           var atr=wToday.avg_true_range_dollar;
-          var atrPct=(atr!=null&&lastClose>0)?(atr/lastClose)*100:null;
+          var atrPct=(atr!=null&&atrPctDenom>0)?(atr/atrPctDenom)*100:null;
           var lhDollar=null,lhPct=null,clDollar=null,clPct=null;
           // prev day = last maBars entry (maBars excludes today by design)
           if(maBars.length>=1){
@@ -2373,7 +2380,7 @@ function StockProfileCheatSheetPage(p){
             // 'prev' uses N=1 (most recent completed pair); 'rolling' uses N=w.n.
             var n=w.kind==='prev'?1:w.n;
             var atrN=simpleATRLastN(n);
-            var atrNPct=(atrN!=null&&refClose>0)?(atrN/refClose)*100:null;
+            var atrNPct=(atrN!=null&&atrPctDenom>0)?(atrN/atrPctDenom)*100:null;
             var lhN=rollingLH(n);
             var clN=rollingCL(n);
             return {
@@ -2384,11 +2391,11 @@ function StockProfileCheatSheetPage(p){
               cl:clN?clN.pct:null, cl_dollar:clN?clN.dollar:null
             };
           }),
-          ref_close: refClose
+          ref_close: lastClose
         };
       }
 
-      // ======== ROLLING POC RELATION (volume profile, 1d/3d/5d/10d/30d) ========
+      // ======== ROLLING POC RELATION (volume profile, Today/Prev Day/3d/5d/10d/30d) ========
       // For each rolling window, build a fresh volume profile over the same
       // trading-day boundaries used by the Rolling Stats card. Surfaces:
       //   - POC ($): price level with the most volume
@@ -3324,23 +3331,38 @@ function StockProfileCheatSheetPage(p){
         })()}
       </div>}
 
-      {/* ROLLING STATS card - Wilder ATR + L-to-next-day-high % over 1d/3d/5d/10d/30d.
+      {/* ROLLING STATS card - simple ATR + L→H + C→L over Today / Prev Day / 3d / 5d / 10d / 30d.
           Positioned between Trends (calendar-anchored) and window cards. Default expanded.
-          Header includes a volatility regime signal: comparing 1d ATR% vs 30d ATR% tells
-          you whether vol is expanding (widen stops, larger swings expected) or
-          contracting (tighter stops, smaller moves expected). */}
+          Header includes a volatility regime pill: max of Today/Prev Day ATR% vs 30d ATR%
+          tells you whether vol is expanding (widen stops, larger swings expected) or
+          contracting (tighter stops, smaller moves expected). The MAX heuristic avoids
+          early-session false signals when today's intraday range hasn't developed yet. */}
       {data.rolling_stats&&data.rolling_stats.rows&&data.rolling_stats.rows.length>0&&(function(){
         var rs=data.rolling_stats;
-        // Volatility regime signal: short-term vs 30d ATR%.
-        // Use ATR% (not $) for the comparison so it's price-invariant.
-        // Prefer Today's ATR (most current) for the short-term reading;
-        // fall back to Prev Day if Today data is unavailable (weekends/holidays).
+        // Volatility regime signal: short-term ATR% vs 30d ATR%.
+        // Use MAX(Today, Prev Day) ATR% as the short-term reading, NOT just Today.
+        // Reason: today's TR can be artificially low early in the session before
+        // the intraday range has developed. The MAX heuristic picks Prev Day's
+        // settled value when today is undeveloped, and picks Today's value once
+        // it expands. Result:
+        //   - EXPANDING fires when EITHER Today or Prev Day is hot (catches both
+        //     a volatile yesterday and a today gap-day)
+        //   - CONTRACTING fires only when BOTH days are quiet (avoids early-session
+        //     false negatives)
+        // Use ATR% (not $) so the comparison is price-invariant.
         var findByLabel=function(lab){for(var i=0;i<rs.rows.length;i++)if(rs.rows[i].label===lab)return rs.rows[i];return null;};
         var todayRow=findByLabel('Today'),prevRow=findByLabel('Prev Day'),thirtyD=findByLabel('30 days');
-        var shortRow=(todayRow&&todayRow.atr_pct!=null)?todayRow:prevRow;
+        var shortAtr=null;
+        if(todayRow&&todayRow.atr_pct!=null&&prevRow&&prevRow.atr_pct!=null){
+          shortAtr=Math.max(todayRow.atr_pct,prevRow.atr_pct);
+        } else if(todayRow&&todayRow.atr_pct!=null){
+          shortAtr=todayRow.atr_pct;
+        } else if(prevRow&&prevRow.atr_pct!=null){
+          shortAtr=prevRow.atr_pct;
+        }
         var regime='STABLE',regimeColor=C.gold;
-        if(shortRow&&thirtyD&&shortRow.atr_pct!=null&&thirtyD.atr_pct!=null&&thirtyD.atr_pct>0){
-          var ratio=shortRow.atr_pct/thirtyD.atr_pct;
+        if(shortAtr!=null&&thirtyD&&thirtyD.atr_pct!=null&&thirtyD.atr_pct>0){
+          var ratio=shortAtr/thirtyD.atr_pct;
           if(ratio>=1.3){regime='EXPANDING';regimeColor=C.warn;}
           else if(ratio<=0.7){regime='CONTRACTING';regimeColor=C.accent;}
         }
@@ -3387,8 +3409,8 @@ function StockProfileCheatSheetPage(p){
                 {p:'L→H and C→L bracket the typical NEXT-DAY range: upside reach above today\'s low + downside drop below today\'s close. Today vs Prev Day vs rolling averages reveals whether the current session is unusual relative to recent history.'},
                 {h:'How to use it'},
                 {b:[
-                  'VOL EXPANDING (Today ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings',
-                  'VOL CONTRACTING (Today ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves',
+                  'VOL EXPANDING (max of Today / Prev Day ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings',
+                  'VOL CONTRACTING (max of Today / Prev Day ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves',
                   'Use 5d ATR ($) × 1.5-2x as a default stop distance',
                   'Use 5d L→H ($) as a realistic next-day profit target above today\'s low',
                   'Use 5d C→L ($) as a stop placement reference below prior close',
