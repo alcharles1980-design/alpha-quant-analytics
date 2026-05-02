@@ -1395,6 +1395,8 @@ function StockProfileCheatSheetPage(p){
   var s11=useState(true),rollingExpanded=s11[0],setRollingExpanded=s11[1];
   var s12=useState(true),rpcExpanded=s12[0],setRpcExpanded=s12[1];
   var s13=useState(true),swingExpanded=s13[0],setSwingExpanded=s13[1];
+  var s14=useState(true),chartExpanded=s14[0],setChartExpanded=s14[1];
+  var s15=useState(90),chartPeriod=s15[0],setChartPeriod=s15[1]; // 30 / 90 / 365 days
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -2245,6 +2247,28 @@ function StockProfileCheatSheetPage(p){
       var ma100=computeMA(100);
       var ma200=computeMA(200);
 
+      // SMA SERIES for the price chart (rolling at every bar index, not just latest).
+      // Returns array of length barsArr.length where series[i] = SMA(n) ending at i.
+      // First (n-1) elements are null since insufficient data for smoothing.
+      // Uses dailyBars (NOT maBars) so the series aligns with what the chart renders;
+      // today's in-progress bar gets its own SMA value (slightly noisy but more current).
+      var computeMASeries=function(barsArr,n){
+        var series=new Array(barsArr.length);
+        for(var i=0;i<barsArr.length;i++){
+          if(i<n-1){series[i]=null;continue;}
+          var sum=0,count=0;
+          for(var j=i-n+1;j<=i;j++){
+            var c=barsArr[j].c;
+            if(c==null||isNaN(c))continue;
+            sum+=c;count++;
+          }
+          series[i]=count>0?sum/count:null;
+        }
+        return series;
+      };
+      var ma20Series=computeMASeries(dailyBars,20);
+      var ma50Series=computeMASeries(dailyBars,50);
+
       // Wilder's ATR(14) - the trader's standard. Uses true range with
       // exponential smoothing (Welles Wilder's original 1978 formula).
       // True Range per bar = max(H-L, |H-prev_C|, |L-prev_C|)
@@ -2697,6 +2721,12 @@ function StockProfileCheatSheetPage(p){
         rolling_stats: rollingStats,
         rolling_poc_stats: rollingPocStats,
         swing_targets: swingTargets,
+        // chart_series: minimal per-bar data for the price chart card.
+        // Avoid pushing the full Polygon bar (saves memory; many fields unused in chart).
+        // ma20/ma50 from computeMASeries (parallel arrays, null when insufficient history).
+        chart_series: dailyBars.map(function(b,i){
+          return {t:b.t,h:b.h,l:b.l,c:b.c,v:b.v,ma20:ma20Series[i],ma50:ma50Series[i]};
+        }),
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -2900,6 +2930,206 @@ function StockProfileCheatSheetPage(p){
           <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>Stop sizing reference · typical 2x ATR stop = ${(data.atr14*2).toFixed(2)} ({data.atr14_pct!=null?(data.atr14_pct*2).toFixed(2)+'%':'-'})</div>
         </div>}
       </div>
+
+      {/* ============== PRICE CHART card ==============
+          Mobile-first SVG price chart. Default expanded, ~400px tall total.
+          Period toggle: 30D / 90D / 1Y (all from existing 1-year dailyBars fetch).
+          Layout: header (title + info + caret) -> stats summary -> period toggle ->
+                  main price area (close line + range bars + SMA20 + SMA50) ->
+                  volume sub-chart (up-day green / down-day red).
+          No new API calls - reuses dailyBars + pre-computed ma20/ma50 series. */}
+      {data.chart_series&&data.chart_series.length>0&&(function(){
+        var fullSeries=data.chart_series;
+        // Slice to the selected period (most recent N bars)
+        var periodLen=chartPeriod>=fullSeries.length?fullSeries.length:chartPeriod;
+        var series=fullSeries.slice(-periodLen);
+        if(series.length<2)return null;
+
+        // Compute price + volume bounds for the visible window
+        var minP=Infinity,maxP=-Infinity,maxV=0;
+        for(var i=0;i<series.length;i++){
+          var b=series[i];
+          if(b.l!=null&&!isNaN(b.l)&&b.l<minP)minP=b.l;
+          if(b.h!=null&&!isNaN(b.h)&&b.h>maxP)maxP=b.h;
+          // Include MA in bounds so lines never clip outside the chart area
+          if(b.ma20!=null&&!isNaN(b.ma20)){if(b.ma20<minP)minP=b.ma20;if(b.ma20>maxP)maxP=b.ma20;}
+          if(b.ma50!=null&&!isNaN(b.ma50)){if(b.ma50<minP)minP=b.ma50;if(b.ma50>maxP)maxP=b.ma50;}
+          if(b.v!=null&&!isNaN(b.v)&&b.v>maxV)maxV=b.v;
+        }
+        if(!isFinite(minP)||!isFinite(maxP)||maxP<=minP)return null;
+
+        // Pad the price range slightly so the chart isn't flush against edges
+        var pricePad=(maxP-minP)*0.05;
+        var pMin=minP-pricePad,pMax=maxP+pricePad;
+        var pSpan=pMax-pMin;
+
+        // Returns calc for header
+        var firstClose=series[0].c,lastClose=series[series.length-1].c;
+        var pctReturn=(firstClose>0)?((lastClose-firstClose)/firstClose)*100:0;
+        var returnColor=pctReturn>0.5?C.accent:pctReturn<-0.5?C.warn:C.gold;
+        var returnArrow=pctReturn>0.5?'\u2191':pctReturn<-0.5?'\u2193':'\u2192';
+
+        // Chart geometry - mobile-first sizing
+        var chartW=340; // SVG viewBox width; scales to container via CSS
+        var priceH=220;
+        var volH=60;
+        var gap=8;
+        var totalH=priceH+gap+volH+18; // +18 for x-axis labels
+        var yAxisW=44; // reserved on right for y-axis labels
+        var plotW=chartW-yAxisW;
+
+        // Coordinate helpers
+        var xAt=function(idx){return (idx/(series.length-1))*plotW;};
+        var yPriceAt=function(p){return priceH-((p-pMin)/pSpan)*priceH;};
+        var yVolAt=function(v){return maxV>0?volH-(v/maxV)*volH:volH;};
+
+        // Build close-price line path
+        var closePath='';
+        for(var i=0;i<series.length;i++){
+          if(series[i].c==null||isNaN(series[i].c))continue;
+          closePath+=(closePath?'L':'M')+xAt(i).toFixed(2)+','+yPriceAt(series[i].c).toFixed(2)+' ';
+        }
+        // SMA20 path
+        var ma20Path='';
+        for(var i=0;i<series.length;i++){
+          if(series[i].ma20==null||isNaN(series[i].ma20))continue;
+          ma20Path+=(ma20Path?'L':'M')+xAt(i).toFixed(2)+','+yPriceAt(series[i].ma20).toFixed(2)+' ';
+        }
+        // SMA50 path
+        var ma50Path='';
+        for(var i=0;i<series.length;i++){
+          if(series[i].ma50==null||isNaN(series[i].ma50))continue;
+          ma50Path+=(ma50Path?'L':'M')+xAt(i).toFixed(2)+','+yPriceAt(series[i].ma50).toFixed(2)+' ';
+        }
+
+        // Y-axis tick marks (5 evenly spaced)
+        var yTicks=[];
+        for(var k=0;k<=4;k++){
+          var p=pMin+(pSpan*k/4);
+          yTicks.push({y:yPriceAt(p),label:'$'+p.toFixed(2)});
+        }
+        // X-axis tick marks (4 evenly distributed dates)
+        var monthAbbrChart=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var fmtBarDate=function(t){
+          var d=new Date(t);
+          return monthAbbrChart[d.getUTCMonth()]+' '+d.getUTCDate();
+        };
+        var xTickIndices=[0,Math.floor(series.length/3),Math.floor(2*series.length/3),series.length-1];
+
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header */}
+          <div onClick={function(){setChartExpanded(!chartExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:chartExpanded?10:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PRICE CHART</span>
+              <Info>{[
+                {h:'What this shows'},
+                {p:'Daily close-price chart with 20-day and 50-day SMA overlays, volume bars below, and toggleable timeframe (30 days / 90 days / 1 year).'},
+                {b:[
+                  'Bright white line: daily close price',
+                  'Faint vertical bars: each day\'s high-low range',
+                  'Green line: 20-day SMA (short-term trend)',
+                  'Gold line: 50-day SMA (medium-term trend)',
+                  'Volume sub-chart: green = up-day, red = down-day, height = volume',
+                  'Header stats: visible-window low/high + period return %'
+                ]},
+                {h:'Why it matters'},
+                {p:'Visualizes the trend underlying all the cheat sheet\'s computed values. SMA crossovers, range expansion/contraction, volume surges - all become apparent at a glance and provide context for the projection numbers below.'},
+                {h:'How to use it'},
+                {b:[
+                  'Price above both SMAs = uptrend regime; below both = downtrend',
+                  '20-day crossing 50-day from below = bullish momentum shift',
+                  'Volume spike on up-day = institutional buying interest',
+                  'Volume spike on down-day = distribution / selling pressure',
+                  'Use as a sanity check on the rolling stats - does the chart agree with the numbers?',
+                  'Switch to 1Y for regime view; 30D for current swing context'
+                ]}
+              ]}</Info>
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{chartExpanded?'\u25BE':'\u25B8'}</div>
+          </div>
+
+          {chartExpanded&&<div>
+            {/* Stats summary line */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,fontFamily:F}}>
+              <div>
+                <span style={{color:C.txtDim,fontSize:7,letterSpacing:1.5,fontWeight:700}}>RANGE</span>
+                <span style={{color:C.txtBright,fontSize:10,fontWeight:700,marginLeft:6}}>${minP.toFixed(2)} \u2014 ${maxP.toFixed(2)}</span>
+              </div>
+              <div>
+                <span style={{color:C.txtDim,fontSize:7,letterSpacing:1.5,fontWeight:700}}>RETURN</span>
+                <span style={{color:returnColor,fontSize:10,fontWeight:700,marginLeft:6}}>{returnArrow}{pctReturn>=0?'+':''}{pctReturn.toFixed(2)}%</span>
+              </div>
+            </div>
+
+            {/* Period toggle */}
+            <div style={{display:'flex',gap:4,marginBottom:10}}>
+              {[{n:30,l:'30D'},{n:90,l:'90D'},{n:365,l:'1Y'}].map(function(opt){
+                var sel=chartPeriod===opt.n;
+                return <div key={opt.n} onClick={function(){setChartPeriod(opt.n);}} style={{flex:1,padding:'7px 0',textAlign:'center',background:sel?C.accentDim:C.bgInput,border:'1px solid '+(sel?C.accent:C.border),borderRadius:5,color:sel?C.accent:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>{opt.l}</div>;
+              })}
+            </div>
+
+            {/* Main SVG chart */}
+            <svg viewBox={'0 0 '+chartW+' '+totalH} style={{width:'100%',height:'auto',display:'block'}} preserveAspectRatio="none">
+              {/* Background grid - 5 horizontal lines on price area */}
+              {yTicks.map(function(t,i){
+                return <line key={'g'+i} x1="0" y1={t.y} x2={plotW} y2={t.y} stroke={C.border} strokeWidth="0.5" strokeDasharray="2,3" opacity="0.5"/>;
+              })}
+
+              {/* Daily range bars (h-l vertical lines, faint) */}
+              {series.map(function(b,i){
+                if(b.h==null||b.l==null||isNaN(b.h)||isNaN(b.l))return null;
+                return <line key={'r'+i} x1={xAt(i)} y1={yPriceAt(b.h)} x2={xAt(i)} y2={yPriceAt(b.l)} stroke={C.txt} strokeWidth="0.8" opacity="0.18"/>;
+              })}
+
+              {/* SMA50 line (gold, behind SMA20) */}
+              {ma50Path&&<path d={ma50Path} fill="none" stroke={C.gold} strokeWidth="1.4" opacity="0.8"/>}
+              {/* SMA20 line (green) */}
+              {ma20Path&&<path d={ma20Path} fill="none" stroke={C.accent} strokeWidth="1.4" opacity="0.85"/>}
+              {/* Close-price line (bright white, on top) */}
+              <path d={closePath} fill="none" stroke={C.txtBright} strokeWidth="1.6"/>
+
+              {/* Y-axis labels on the right side */}
+              {yTicks.map(function(t,i){
+                return <text key={'y'+i} x={plotW+4} y={t.y+3} fill={C.txtDim} fontSize="8" fontFamily={F}>{t.label}</text>;
+              })}
+
+              {/* Volume sub-chart */}
+              <g transform={'translate(0,'+(priceH+gap)+')'}>
+                {/* Volume baseline */}
+                <line x1="0" y1={volH} x2={plotW} y2={volH} stroke={C.border} strokeWidth="0.5" opacity="0.5"/>
+                {/* Volume bars */}
+                {series.map(function(b,i){
+                  if(b.v==null||isNaN(b.v)||b.v<=0)return null;
+                  var barW=Math.max(1,(plotW/series.length)*0.7);
+                  var prev=i>0?series[i-1]:null;
+                  var isUp=prev&&prev.c!=null&&b.c!=null?b.c>=prev.c:true;
+                  var color=isUp?C.accent:C.warn;
+                  return <rect key={'v'+i} x={xAt(i)-barW/2} y={yVolAt(b.v)} width={barW} height={volH-yVolAt(b.v)} fill={color} opacity="0.5"/>;
+                })}
+                {/* VOL label */}
+                <text x={plotW+4} y={volH/2+3} fill={C.txtDim} fontSize="7" fontFamily={F} letterSpacing="1">VOL</text>
+              </g>
+
+              {/* X-axis labels */}
+              <g transform={'translate(0,'+(priceH+gap+volH+12)+')'}>
+                {xTickIndices.map(function(idx,j){
+                  var anchor=j===0?'start':j===xTickIndices.length-1?'end':'middle';
+                  var xPos=xAt(idx);
+                  return <text key={'x'+j} x={xPos} y="0" fill={C.txtDim} fontSize="8" fontFamily={F} textAnchor={anchor}>{fmtBarDate(series[idx].t)}</text>;
+                })}
+              </g>
+            </svg>
+
+            {/* Legend */}
+            <div style={{display:'flex',gap:14,marginTop:8,fontSize:8,fontFamily:F,color:C.txt,flexWrap:'wrap'}}>
+              <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.txtBright,display:'inline-block'}}></span>Close</span>
+              <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.accent,display:'inline-block'}}></span>20-day SMA</span>
+              <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>50-day SMA</span>
+            </div>
+          </div>}
+        </div>;
+      })()}
 
       {/* NEXT EARNINGS card */}
       {data.earnings&&(function(){
