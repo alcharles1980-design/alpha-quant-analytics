@@ -1402,6 +1402,9 @@ function StockProfileCheatSheetPage(p){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
         var sumDollarRange=0,sumPctRange=0,validPctCount=0;
         var sumLowToNextHighDollar=0,sumLowToNextHighPct=0,pairCount=0,pairValidPctCount=0;
+        var sumVolume=0,volBarCount=0;
+        var sumDollarNotional=0,notionalBarCount=0;
+        var sumTrades=0,tradeBarCount=0;
         for(var i=0;i<barsArr.length;i++){
           var b=barsArr[i];
           if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
@@ -1409,6 +1412,15 @@ function StockProfileCheatSheetPage(p){
           var dr=b.h-b.l;
           sumDollarRange+=dr;
           if(b.l>0){sumPctRange+=(dr/b.l)*100;validPctCount++;}
+          // Volume (shares)
+          if(b.v!=null&&!isNaN(b.v)){sumVolume+=b.v;volBarCount++;}
+          // Dollar notional: v * vw (VWAP). Fall back to v * close if vw missing.
+          if(b.v!=null&&!isNaN(b.v)){
+            var px=b.vw!=null&&!isNaN(b.vw)&&b.vw>0?b.vw:b.c;
+            if(px!=null&&!isNaN(px)){sumDollarNotional+=(b.v*px);notionalBarCount++;}
+          }
+          // Trade count (Polygon's "n" field)
+          if(b.n!=null&&!isNaN(b.n)){sumTrades+=b.n;tradeBarCount++;}
           n++;
           // Consecutive day pair: bar[i].low -> bar[i+1].high
           if(i<barsArr.length-1){
@@ -1426,7 +1438,10 @@ function StockProfileCheatSheetPage(p){
           avg_daily_range_pct: validPctCount>0?sumPctRange/validPctCount:null,
           avg_low_to_next_high_dollar: pairCount>0?sumLowToNextHighDollar/pairCount:null,
           avg_low_to_next_high_pct: pairValidPctCount>0?sumLowToNextHighPct/pairValidPctCount:null,
-          pair_count: pairCount
+          pair_count: pairCount,
+          avg_volume_shares: volBarCount>0?sumVolume/volBarCount:null,
+          avg_dollar_notional: notionalBarCount>0?sumDollarNotional/notionalBarCount:null,
+          avg_trade_count: tradeBarCount>0?sumTrades/tradeBarCount:null
         };
       };
 
@@ -1457,15 +1472,26 @@ function StockProfileCheatSheetPage(p){
       var wToday=null;
       if(minuteBars.length>0){
         var thi=-Infinity,tlo=Infinity;
+        var tVol=0,tNotional=0,tTrades=0;
         for(var i=0;i<minuteBars.length;i++){
-          if(minuteBars[i].h>thi)thi=minuteBars[i].h;
-          if(minuteBars[i].l<tlo)tlo=minuteBars[i].l;
+          var mb=minuteBars[i];
+          if(mb.h>thi)thi=mb.h;
+          if(mb.l<tlo)tlo=mb.l;
+          if(mb.v!=null&&!isNaN(mb.v)){
+            tVol+=mb.v;
+            var mpx=mb.vw!=null&&!isNaN(mb.vw)&&mb.vw>0?mb.vw:mb.c;
+            if(mpx!=null&&!isNaN(mpx))tNotional+=(mb.v*mpx);
+          }
+          if(mb.n!=null&&!isNaN(mb.n))tTrades+=mb.n;
         }
         var todayRange=thi-tlo;
         wToday={
           hi:thi, lo:tlo, bars:minuteBars.length, source:'minute',
           avg_daily_range_dollar: todayRange,
-          avg_daily_range_pct: tlo>0?(todayRange/tlo)*100:null
+          avg_daily_range_pct: tlo>0?(todayRange/tlo)*100:null,
+          avg_volume_shares: tVol>0?tVol:null,
+          avg_dollar_notional: tNotional>0?tNotional:null,
+          avg_trade_count: tTrades>0?tTrades:null
         };
       } else {
         // Check if last daily bar is from today
@@ -1473,10 +1499,14 @@ function StockProfileCheatSheetPage(p){
         var lastDailyDate=new Date(lastDaily.t).toISOString().slice(0,10);
         if(lastDailyDate===todayStr){
           var lastRange=lastDaily.h-lastDaily.l;
+          var lastPx=lastDaily.vw!=null&&!isNaN(lastDaily.vw)&&lastDaily.vw>0?lastDaily.vw:lastDaily.c;
           wToday={
             hi:lastDaily.h, lo:lastDaily.l, bars:1, source:'daily',
             avg_daily_range_dollar: lastRange,
-            avg_daily_range_pct: lastDaily.l>0?(lastRange/lastDaily.l)*100:null
+            avg_daily_range_pct: lastDaily.l>0?(lastRange/lastDaily.l)*100:null,
+            avg_volume_shares: lastDaily.v!=null?lastDaily.v:null,
+            avg_dollar_notional: lastDaily.v!=null&&lastPx!=null?(lastDaily.v*lastPx):null,
+            avg_trade_count: lastDaily.n!=null?lastDaily.n:null
           };
         }
       }
@@ -1567,6 +1597,18 @@ function StockProfileCheatSheetPage(p){
       {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>LOW → NEXT DAY HIGH</span>
         <span><span style={{color:C.accent,fontWeight:700}}>${w.avg_low_to_next_high_dollar.toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}</span>
+      </div>}
+      {w.avg_volume_shares!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S VOLUME":'AVG DAILY VOLUME'}</span>
+        <span style={{color:C.blue,fontWeight:700}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(w.avg_volume_shares)} sh</span>
+      </div>}
+      {w.avg_dollar_notional!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S $ VOLUME":'AVG DAILY $ VOLUME'}</span>
+        <span style={{color:C.gold,fontWeight:700}}>{(function(v){if(v>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v.toFixed(0);})(w.avg_dollar_notional)}</span>
+      </div>}
+      {w.avg_trade_count!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S TRADES":'AVG DAILY TRADES'}</span>
+        <span style={{color:C.purple,fontWeight:700}}>{(function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toLocaleString();})(w.avg_trade_count)}</span>
       </div>}
     </div>;
   };
