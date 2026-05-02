@@ -1559,6 +1559,22 @@ function StockProfileCheatSheetPage(p){
         return w;
       };
 
+      // Compute simple moving averages: MA20, MA50, MA100, MA200
+      // Average of last N daily closes. Excludes today's bar if today is incomplete
+      // (since intraday close from an in-progress session would distort the MA).
+      // We use lastDate vs todayStr to detect this: if last bar IS today, skip it.
+      var maBars=lastDate===todayStr?dailyBars.slice(0,-1):dailyBars.slice();
+      var computeMA=function(n){
+        if(maBars.length<n)return null;
+        var sum=0;
+        for(var i=maBars.length-n;i<maBars.length;i++)sum+=maBars[i].c;
+        return sum/n;
+      };
+      var ma20=computeMA(20);
+      var ma50=computeMA(50);
+      var ma100=computeMA(100);
+      var ma200=computeMA(200);
+
       // Compute market cap + shares out from reference + last close
       var sharesOut=null,marketCap=null,name=null,sicDesc=null;
       if(refData){
@@ -1580,6 +1596,10 @@ function StockProfileCheatSheetPage(p){
         shares_out: sharesOut,
         name: name,
         sic_description: sicDesc,
+        ma20: ma20,
+        ma50: ma50,
+        ma100: ma100,
+        ma200: ma200,
         windows:{
           today:enrichWin(wToday),
           prev:enrichWin(wPrev),
@@ -1707,6 +1727,31 @@ function StockProfileCheatSheetPage(p){
         {data.name&&<div style={{marginTop:8,color:C.txt,fontSize:9,fontFamily:F}}>{data.name}</div>}
         {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
       </div>
+
+      {/* Moving Averages reference card */}
+      {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:8,textAlign:'center'}}>MOVING AVERAGES</div>
+        {(function(){
+          var rows=[{label:'MA20',v:data.ma20},{label:'MA50',v:data.ma50},{label:'MA100',v:data.ma100},{label:'MA200',v:data.ma200}];
+          return rows.map(function(r,i){
+            if(r.v==null)return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
+              <span style={{color:C.txtDim,fontWeight:700,letterSpacing:1}}>{r.label}</span>
+              <span style={{color:C.txtDim,fontSize:8}}>insufficient data</span>
+            </div>;
+            var diff=data.last_close-r.v;
+            var pct=r.v>0?(diff/r.v)*100:0;
+            var above=pct>0.5;
+            var below=pct<-0.5;
+            var arrow=above?'↑':below?'↓':'→';
+            var color=above?C.accent:below?C.warn:C.gold;
+            return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
+              <span style={{color:C.txtDim,fontWeight:700,letterSpacing:1,minWidth:46}}>{r.label}</span>
+              <span style={{color:C.txtBright,fontWeight:700,flex:1,textAlign:'center'}}>${r.v.toFixed(2)}</span>
+              <span style={{color:color,fontWeight:700,minWidth:90,textAlign:'right'}}>{arrow} {pct>=0?'+':''}{pct.toFixed(2)}%</span>
+            </div>;
+          });
+        })()}
+      </div>}
 
       <div style={{marginTop:10}}>
         {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars':'daily bar'):'no session yet',data.windows.today,C.accent,data.last_close)}
