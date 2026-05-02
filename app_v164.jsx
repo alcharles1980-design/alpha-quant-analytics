@@ -1407,6 +1407,69 @@ function StockProfileCheatSheetPage(p){
       }catch(refErr){}
       // Don't fail if reference fetch fails - market cap will show as null
 
+      setProgMsg('Fetching upcoming earnings...');
+      // FETCH 4a: Benzinga earnings (primary source - exact dates with confirmation status)
+      // Filter by ticker, date >= today, sort ascending, take first record
+      var earnings=null;
+      var todayDateStr=todayStr;
+      try{
+        var bzUrl='https://api.polygon.io/benzinga/v1/earnings?ticker='+tk+'&date.gte='+todayDateStr+'&order=asc&sort=date&limit=1&apiKey='+p.apiKey;
+        var bzR=await fetch(bzUrl);
+        if(bzR.ok){
+          var bzBody=await bzR.json();
+          var bzResults=bzBody.results||[];
+          if(bzResults.length>0){
+            var ev=bzResults[0];
+            earnings={
+              date: ev.date,
+              source: 'benzinga',
+              status: ev.date_status||null,
+              fiscal_period: ev.fiscal_period||null,
+              fiscal_year: ev.fiscal_year||null,
+              time: ev.time||null,
+              eps_estimate: ev.eps_estimate!=null?ev.eps_estimate:null,
+              revenue_estimate: ev.revenue_estimate!=null?ev.revenue_estimate:null
+            };
+          }
+        }
+      }catch(bzErr){}
+
+      // FETCH 4b: Financials fallback - if Benzinga returned nothing, infer from most recent filing
+      if(!earnings){
+        try{
+          var finUrl='https://api.polygon.io/vX/reference/financials?ticker='+tk+'&order=desc&sort=period_of_report_date&limit=1&apiKey='+p.apiKey;
+          var finR=await fetch(finUrl);
+          if(finR.ok){
+            var finBody=await finR.json();
+            var finResults=finBody.results||[];
+            if(finResults.length>0){
+              var lastFiling=finResults[0];
+              var lastReportDate=lastFiling.period_of_report_date||lastFiling.end_date;
+              if(lastReportDate){
+                // Estimate next earnings: ~3 months after the period_of_report_date
+                var d=new Date(lastReportDate+'T00:00:00Z');
+                d.setUTCMonth(d.getUTCMonth()+3);
+                // Add ~25 days buffer (typical reporting lag for next quarter)
+                d.setUTCDate(d.getUTCDate()+25);
+                var inferredDate=d.toISOString().slice(0,10);
+                if(inferredDate>todayDateStr){
+                  earnings={
+                    date: inferredDate,
+                    source: 'inferred',
+                    status: 'estimated',
+                    fiscal_period: null,
+                    fiscal_year: null,
+                    time: null,
+                    last_filing_period: lastFiling.fiscal_period+' '+lastFiling.fiscal_year,
+                    last_filing_report_date: lastReportDate
+                  };
+                }
+              }
+            }
+          }
+        }catch(finErr){}
+      }
+
       // Helper: scan a sub-range of daily bars for hi/lo
       var scanBars=function(barsArr){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
@@ -1648,6 +1711,7 @@ function StockProfileCheatSheetPage(p){
         vwap200: vwap200,
         session_vwap: sessionVwap,
         prev_day_vwap: prevDayVwap,
+        earnings: earnings,
         windows:{
           today:enrichWin(wToday),
           prev:enrichWin(wPrev),
@@ -1787,6 +1851,43 @@ function StockProfileCheatSheetPage(p){
         {data.name&&<div style={{marginTop:8,color:C.txt,fontSize:9,fontFamily:F}}>{data.name}</div>}
         {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
       </div>
+
+      {/* NEXT EARNINGS card */}
+      {data.earnings&&(function(){
+        var ev=data.earnings;
+        var todayMs=new Date(data.today_str+'T00:00:00Z').getTime();
+        var earnMs=new Date(ev.date+'T00:00:00Z').getTime();
+        var daysAway=Math.round((earnMs-todayMs)/86400000);
+        var risk,borderColor,bgTint,labelColor,riskMsg;
+        if(daysAway<=14){risk='HIGH';borderColor=C.warn;bgTint='#3d1010';labelColor=C.warn;riskMsg='within 14 days \u2014 swing trade risk';}
+        else if(daysAway<=30){risk='MED';borderColor=C.gold;bgTint='#3d2d10';labelColor=C.gold;riskMsg='within 30 days \u2014 caution';}
+        else{risk='LOW';borderColor=C.accent;bgTint=C.bg;labelColor=C.accent;riskMsg='clear runway';}
+        var timeLabel=ev.time?(function(){
+          var h=parseInt(ev.time.slice(0,2),10);
+          if(h>=15)return 'AMC (after market close)';
+          if(h<9)return 'BMO (before market open)';
+          return 'During market hours';
+        })():null;
+        return <div style={{marginBottom:14,padding:'12px 14px',background:bgTint,borderRadius:10,border:'1px solid '+borderColor}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+            <div style={{color:labelColor,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>NEXT EARNINGS</div>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>{ev.source==='benzinga'?'BENZINGA':'ESTIMATED'}</div>
+          </div>
+          <div style={{color:C.txtBright,fontSize:18,fontFamily:F,fontWeight:700,marginBottom:2}}>{ev.date}</div>
+          <div style={{color:labelColor,fontSize:11,fontFamily:F,fontWeight:700,marginBottom:6}}>{daysAway===0?'today':daysAway===1?'tomorrow':'in '+daysAway+' days'}</div>
+          {(ev.fiscal_period||ev.fiscal_year||ev.status||timeLabel)&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+            {ev.fiscal_period&&ev.fiscal_year&&<span style={{padding:'2px 8px',background:C.bgInput,borderRadius:10,color:C.txt,fontSize:8,fontFamily:F,fontWeight:700}}>{ev.fiscal_period} {ev.fiscal_year}</span>}
+            {ev.status&&<span style={{padding:'2px 8px',background:C.bgInput,borderRadius:10,color:ev.status==='confirmed'?C.accent:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1}}>{ev.status.toUpperCase()}</span>}
+            {timeLabel&&<span style={{padding:'2px 8px',background:C.bgInput,borderRadius:10,color:C.blue,fontSize:8,fontFamily:F,fontWeight:700}}>{timeLabel}</span>}
+          </div>}
+          <div style={{padding:6,background:'rgba(0,0,0,0.25)',borderRadius:4,fontSize:8,fontFamily:F,color:labelColor,fontWeight:700,letterSpacing:1,textAlign:'center'}}>{risk==='HIGH'?'\u26A0 ':''}{riskMsg.toUpperCase()}</div>
+          {ev.source==='inferred'&&<div style={{marginTop:6,color:C.txtDim,fontSize:7,fontFamily:F,fontStyle:'italic'}}>Estimated from last filing ({ev.last_filing_period}, period {ev.last_filing_report_date}). Actual date may vary by ~2 weeks.</div>}
+          {(ev.eps_estimate!=null||ev.revenue_estimate!=null)&&<div style={{marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border,display:'flex',gap:12,fontSize:9,fontFamily:F}}>
+            {ev.eps_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>EPS EST</span> <span style={{color:C.txtBright,fontWeight:700}}>${ev.eps_estimate.toFixed(2)}</span></div>}
+            {ev.revenue_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>REV EST</span> <span style={{color:C.txtBright,fontWeight:700}}>{(function(v){if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';return '$'+v.toLocaleString();})(ev.revenue_estimate)}</span></div>}
+          </div>}
+        </div>;
+      })()}
 
       {/* Trends reference card: SMA vs VWAP per period + session/prev-day VWAP */}
       {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
