@@ -1392,6 +1392,7 @@ function StockProfileCheatSheetPage(p){
   var s8=useState(true),epsExpanded=s8[0],setEpsExpanded=s8[1];
   var s9=useState(true),revExpanded=s9[0],setRevExpanded=s9[1];
   var s10=useState('quarterly'),revMode=s10[0],setRevMode=s10[1];
+  var s11=useState(true),rollingExpanded=s11[0],setRollingExpanded=s11[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -2229,29 +2230,65 @@ function StockProfileCheatSheetPage(p){
       // First ATR = simple mean of first 14 TRs
       // Subsequent: ATR_today = (ATR_yesterday * 13 + TR_today) / 14
       // Use maBars (excludes today's incomplete bar) for stability.
-      var atr14=null,atr14Pct=null;
-      if(maBars.length>=15){
-        // Need at least 15 bars: 1 to compute prev_close for the first TR
-        var trs=[];
-        for(var ai=1;ai<maBars.length;ai++){
-          var bar=maBars[ai];
-          var prevClose=maBars[ai-1].c;
-          var tr=Math.max(bar.h-bar.l, Math.abs(bar.h-prevClose), Math.abs(bar.l-prevClose));
-          trs.push(tr);
+      // Compute the full TR series ONCE - reused below for rolling ATR card
+      var allTRs=[];
+      for(var ai=1;ai<maBars.length;ai++){
+        var barTR=maBars[ai];
+        var prevCloseTR=maBars[ai-1].c;
+        var trVal=Math.max(barTR.h-barTR.l, Math.abs(barTR.h-prevCloseTR), Math.abs(barTR.l-prevCloseTR));
+        allTRs.push(trVal);
+      }
+      // General Wilder ATR(N) computer. Returns null if insufficient bars.
+      // For N=1 it's just the most recent TR (no smoothing possible).
+      // For N>=2 it follows Wilder's: seed = mean of first N TRs, then RMA-smooth forward.
+      var computeWilderATR=function(n){
+        if(allTRs.length<n)return null;
+        if(n===1)return allTRs[allTRs.length-1];
+        var atrV=0;
+        for(var ti=0;ti<n;ti++)atrV+=allTRs[ti];
+        atrV=atrV/n;
+        for(var ti2=n;ti2<allTRs.length;ti2++){
+          atrV=(atrV*(n-1)+allTRs[ti2])/n;
         }
-        if(trs.length>=14){
-          // Initialize with simple mean of first 14
-          var atr=0;
-          for(var ti=0;ti<14;ti++)atr+=trs[ti];
-          atr=atr/14;
-          // Smooth forward
-          for(var ti2=14;ti2<trs.length;ti2++){
-            atr=(atr*13+trs[ti2])/14;
-          }
-          atr14=atr;
-          var refClose=maBars[maBars.length-1].c;
-          if(refClose>0)atr14Pct=(atr/refClose)*100;
-        }
+        return atrV;
+      };
+      var atr14=computeWilderATR(14);
+      var atr14Pct=null;
+      if(atr14!=null&&maBars.length>0){
+        var refCl=maBars[maBars.length-1].c;
+        if(refCl>0)atr14Pct=(atr14/refCl)*100;
+      }
+      // Rolling L-to-next-day-high % average. For each bar i (except the last),
+      // compute (bar[i+1].h - bar[i].l) / bar[i].l * 100, then average over the last N.
+      // N=1 means just the most recent value (most recent l with the next bar's h).
+      // Uses maBars (excludes today's incomplete bar) to avoid noisy in-progress data.
+      var lhPairs=[];
+      for(var lhi=0;lhi<maBars.length-1;lhi++){
+        var todayLow=maBars[lhi].l;
+        var nextHigh=maBars[lhi+1].h;
+        if(todayLow>0)lhPairs.push((nextHigh-todayLow)/todayLow*100);
+      }
+      var rollingLH=function(n){
+        if(lhPairs.length<n)return null;
+        var sum=0;
+        for(var lj=lhPairs.length-n;lj<lhPairs.length;lj++)sum+=lhPairs[lj];
+        return sum/n;
+      };
+      // Build rolling stats for the new ROLLING STATS card (1d/3d/5d/10d/30d).
+      // ATR uses Wilder; L-to-next-day-high uses rolling simple average.
+      var rollingStats=null;
+      if(maBars.length>=2){
+        var refClose=maBars[maBars.length-1].c;
+        var rsWindows=[1,3,5,10,30];
+        rollingStats={
+          rows: rsWindows.map(function(n){
+            var atrN=computeWilderATR(n);
+            var atrNPct=(atrN!=null&&refClose>0)?(atrN/refClose)*100:null;
+            var lhN=rollingLH(n);
+            return {n:n,atr:atrN,atr_pct:atrNPct,lh:lhN};
+          }),
+          ref_close: refClose
+        };
       }
 
       // VWAP variants
@@ -2329,6 +2366,7 @@ function StockProfileCheatSheetPage(p){
         analyst: analyst,
         eps_history: epsHistory,
         financials: financials,
+        rolling_stats: rollingStats,
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -3104,6 +3142,80 @@ function StockProfileCheatSheetPage(p){
           </div>;
         })()}
       </div>}
+
+      {/* ROLLING STATS card - Wilder ATR + L-to-next-day-high % over 1d/3d/5d/10d/30d.
+          Positioned between Trends (calendar-anchored) and window cards. Default expanded.
+          Header includes a volatility regime signal: comparing 1d ATR% vs 30d ATR% tells
+          you whether vol is expanding (widen stops, larger swings expected) or
+          contracting (tighter stops, smaller moves expected). */}
+      {data.rolling_stats&&data.rolling_stats.rows&&data.rolling_stats.rows.length>0&&(function(){
+        var rs=data.rolling_stats;
+        // Volatility regime signal: 1d vs 30d ATR%.
+        // Use ATR% (not $) for the comparison so it's price-invariant.
+        var oneD=rs.rows[0],thirtyD=rs.rows[4];
+        var regime='STABLE',regimeColor=C.gold;
+        if(oneD&&thirtyD&&oneD.atr_pct!=null&&thirtyD.atr_pct!=null&&thirtyD.atr_pct>0){
+          var ratio=oneD.atr_pct/thirtyD.atr_pct;
+          if(ratio>=1.3){regime='EXPANDING';regimeColor=C.warn;}
+          else if(ratio<=0.7){regime='CONTRACTING';regimeColor=C.accent;}
+        }
+        var fmtATR=function(v){return v!=null?'$'+v.toFixed(2):'-';};
+        var fmtPct=function(v){return v!=null?v.toFixed(2)+'%':'-';};
+        var labelFor=function(n){return n===1?'1 day':n+' days';};
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header */}
+          <div onClick={function(){setRollingExpanded(!rollingExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:rollingExpanded?12:0}}>
+            <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING STATS</span>
+              <Info>{[
+                {h:'What this shows'},
+                {p:'Wilder ATR (volatility) and Low-to-Next-Day-High % (typical swing magnitude) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days.'},
+                {b:[
+                  'ATR ($) = average dollar move per bar - direct stop sizing input',
+                  'ATR (%) = same thing as % of price - cross-stock comparable',
+                  'L→H SWING % = average reach from today\'s low to next day\'s high - profit target reference',
+                  '1d row uses just the most recent value (no smoothing possible)',
+                  '3d-30d use Wilder smoothing (RMA) for stability'
+                ]},
+                {h:'Why it matters'},
+                {p:'Compares short-term volatility (1d/3d) against the medium-term baseline (10d/30d) so you can see if the regime is shifting.'},
+                {h:'How to use it'},
+                {b:[
+                  'VOL EXPANDING (1d ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings, take profit faster',
+                  'VOL CONTRACTING (1d ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves, hold longer',
+                  'Use 5d or 10d ATR$ as a default stop distance reference (multiply by 1.5-2x)',
+                  'Use the 5d L→H swing as a realistic next-day profit target',
+                  'When 1d L→H is much higher than 30d, recent days have been more volatile than typical'
+                ]}
+              ]}</Info>
+              <span style={{color:regimeColor,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.2,padding:'2px 8px',borderRadius:4,border:'1px solid '+regimeColor,marginLeft:4}}>VOL {regime}</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rollingExpanded?'▾':'▸'}</div>
+          </div>
+          {rollingExpanded&&<div>
+            {/* Header row */}
+            <div style={{display:'flex',alignItems:'center',padding:'6px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
+              <div style={{flex:'0 0 70px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>WINDOW</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>ATR ($)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>ATR (%)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>L→H SWING</div>
+            </div>
+            {/* Data rows */}
+            {rs.rows.map(function(r,i){
+              return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
+                <div style={{flex:'0 0 70px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{labelFor(r.n)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{r.lh!=null?'+'+r.lh.toFixed(2)+'%':'-'}</div>
+              </div>;
+            })}
+            {/* Footnote */}
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
+              ATR = Wilder smoothed (1d = raw last TR). L→H = avg of (next day's high - today's low) / today's low.
+            </div>
+          </div>}
+        </div>;
+      })()}
 
       <div style={{marginTop:10}}>
         {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars · incl ext hours':'daily bar'):'no session yet',data.windows.today,C.accent,data.last_close)}
