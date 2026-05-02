@@ -1363,6 +1363,7 @@ function StockProfileCheatSheetPage(p){
   var s4=useState(null),data=s4[0],setData=s4[1];
   var s5=useState(''),progMsg=s5[0],setProgMsg=s5[1];
   var s6=useState(false),newsExpanded=s6[0],setNewsExpanded=s6[1];
+  var s7=useState(false),analystExpanded=s7[0],setAnalystExpanded=s7[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -1527,6 +1528,9 @@ function StockProfileCheatSheetPage(p){
       // News from Polygon's reference endpoint (Benzinga-sourced), 10 most recent.
       // Includes per-ticker sentiment + reasoning when available.
       var urlNews='https://api.polygon.io/v2/reference/news?ticker='+tkEnc+'&limit=15&order=desc&sort=published_utc&apiKey='+p.apiKey;
+      // Analyst ratings from Polygon's Benzinga ratings endpoint.
+      // Pull 50 most recent so we capture roughly last 90 days of activity.
+      var urlRatings='https://api.polygon.io/benzinga/v1/ratings?ticker='+tkEnc+'&limit=50&order=desc&sort=date&apiKey='+p.apiKey;
       // Wrapper: fetch + parse, soft-fail to empty array, but rethrow AbortError so
       // Promise.all bails fast when the user cancels.
       var safeFetchBars=async function(url){
@@ -1540,13 +1544,13 @@ function StockProfileCheatSheetPage(p){
           return [];
         }
       };
-      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[];
+      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[],ratingsRaw=[];
       try{
-        var quad=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews)]);
-        bars5m=quad[0];bars30m=quad[1];bars1h=quad[2];newsRaw=quad[3];
+        var quint=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews),safeFetchBars(urlRatings)]);
+        bars5m=quint[0];bars30m=quint[1];bars1h=quint[2];newsRaw=quint[3];ratingsRaw=quint[4];
       }catch(eAll){
         if(eAll.name==='AbortError')throw eAll;
-        // Other errors: keep arrays empty, profiles + news will silently skip.
+        // Other errors: keep arrays empty, profiles + news + ratings will silently skip.
       }
       checkAbort();
 
@@ -1574,6 +1578,96 @@ function StockProfileCheatSheetPage(p){
           sentiment_reasoning: insight?(insight.sentiment_reasoning||''):''
         };
       });
+
+      // Process analyst ratings. Polygon's Benzinga ratings endpoint returns:
+      //   date, firm, analyst, action_company (Maintains/Upgrades/Downgrades/Initiates/Reiterates),
+      //   action_pt (Raises/Lowers/Maintains/Announces), rating_current, rating_prior,
+      //   adjusted_pt_current (number USD), adjusted_pt_prior, importance.
+      // We compute: aggregated consensus + range + buy/hold/sell distribution from
+      // the last ~90 days, plus a chronological list of recent changes for display.
+      var analyst=null;
+      if(ratingsRaw.length>0){
+        var ninetyDaysAgo=Date.now()-90*86400000;
+        // Active = ratings issued in the last 90 days (older ones are stale)
+        var activeRatings=ratingsRaw.filter(function(r){
+          if(!r.date)return false;
+          var t=new Date(r.date+'T00:00:00Z').getTime();
+          return !isNaN(t)&&t>=ninetyDaysAgo;
+        });
+        // Aggregate: dedupe to one rating per firm (keep most recent per firm)
+        // since multiple updates from same firm in 90d would over-count consensus.
+        var perFirm={};
+        activeRatings.forEach(function(r){
+          var firm=r.firm||'';
+          if(!firm)return;
+          if(!perFirm[firm]||r.date>perFirm[firm].date)perFirm[firm]=r;
+        });
+        var firmKeys=Object.keys(perFirm);
+        var validTargets=[];
+        var dist={buy:0,hold:0,sell:0};
+        firmKeys.forEach(function(k){
+          var r=perFirm[k];
+          // Parse target price (Polygon returns as string)
+          var pt=r.adjusted_pt_current!=null?parseFloat(r.adjusted_pt_current):null;
+          if(pt&&!isNaN(pt)&&pt>0)validTargets.push(pt);
+          // Bucket the rating
+          var rt=(r.rating_current||'').toLowerCase();
+          if(/(strong\s*buy|buy|outperform|overweight|positive|accumulate)/.test(rt))dist.buy++;
+          else if(/(strong\s*sell|sell|underperform|underweight|negative|reduce)/.test(rt))dist.sell++;
+          else if(/(hold|neutral|equal[\s-]?weight|market\s*perform|sector\s*perform|in[\s-]?line|peer\s*perform)/.test(rt))dist.hold++;
+        });
+        var consensus=validTargets.length>0?validTargets.reduce(function(a,b){return a+b;},0)/validTargets.length:null;
+        var minPT=validTargets.length>0?Math.min.apply(null,validTargets):null;
+        var maxPT=validTargets.length>0?Math.max.apply(null,validTargets):null;
+        // Build "recent changes" list - all returned ratings, with sentiment derived
+        // from action+target movement. Filter out pure no-op maintains for clarity.
+        var changes=ratingsRaw.map(function(r){
+          var act=(r.action_company||'').toLowerCase();
+          var actPT=(r.action_pt||'').toLowerCase();
+          var ptNow=r.adjusted_pt_current!=null?parseFloat(r.adjusted_pt_current):null;
+          var ptPrev=r.adjusted_pt_prior!=null?parseFloat(r.adjusted_pt_prior):null;
+          var sent='neutral';
+          var verb='';
+          if(act.indexOf('upgrade')>=0){sent='positive';verb='upgraded';}
+          else if(act.indexOf('downgrade')>=0){sent='negative';verb='downgraded';}
+          else if(act.indexOf('initiate')>=0){sent='neutral';verb='initiated';}
+          else if(actPT.indexOf('raise')>=0){sent='positive';verb='target raised';}
+          else if(actPT.indexOf('lower')>=0){sent='negative';verb='target lowered';}
+          else if(act.indexOf('maintain')>=0||act.indexOf('reiterate')>=0){sent='neutral';verb='maintained';}
+          // Target delta override (strongest signal)
+          if(ptNow&&ptPrev&&!isNaN(ptNow)&&!isNaN(ptPrev)){
+            if(ptNow>ptPrev*1.001)sent='positive';
+            else if(ptNow<ptPrev*0.999)sent='negative';
+          }
+          return {
+            date: r.date||'',
+            firm: r.firm||'',
+            analyst: r.analyst||'',
+            action: r.action_company||'',
+            action_pt: r.action_pt||'',
+            rating_now: r.rating_current||'',
+            rating_prev: r.rating_prior||'',
+            pt_now: (ptNow&&!isNaN(ptNow))?ptNow:null,
+            pt_prev: (ptPrev&&!isNaN(ptPrev))?ptPrev:null,
+            sentiment: sent,
+            verb: verb,
+            // Filter flag: skip pure maintains where rating + target both unchanged
+            is_change: (act.indexOf('upgrade')>=0||act.indexOf('downgrade')>=0||act.indexOf('initiate')>=0
+                      ||actPT.indexOf('raise')>=0||actPT.indexOf('lower')>=0
+                      ||(ptNow&&ptPrev&&Math.abs(ptNow-ptPrev)>0.001))
+          };
+        }).filter(function(r){return r.is_change&&r.firm;});
+        analyst={
+          consensus: consensus,
+          min_pt: minPT,
+          max_pt: maxPT,
+          target_count: validTargets.length,
+          firm_count: firmKeys.length,
+          distribution: dist,
+          total_active: dist.buy+dist.hold+dist.sell,
+          changes: changes
+        };
+      }
 
       // Volume profile builder.
       // Modes:
@@ -2048,6 +2142,7 @@ function StockProfileCheatSheetPage(p){
         prev_day_vwap: prevDayVwap,
         earnings: earnings,
         news: news,
+        analyst: analyst,
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -2345,6 +2440,132 @@ function StockProfileCheatSheetPage(p){
           {/* Show-more hint when collapsed */}
           {!newsExpanded&&hasMore&&<div style={{color:C.purple,fontSize:9,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,fontWeight:700,padding:'4px 0',borderTop:'1px solid '+C.border}}>+ {data.news.length-1} MORE · TAP TO EXPAND ▸</div>}
           {newsExpanded&&data.news.length>1&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,paddingTop:8,borderTop:'1px solid '+C.border}}>tap header to collapse ▾</div>}
+        </div>;
+      })()}
+
+      {/* ANALYST CONSENSUS card - collapsed by default. Tap header to expand.
+          Shows consensus + range bar + distribution + recent rating changes. */}
+      {data.analyst&&data.analyst.changes&&data.analyst.changes.length>0&&(function(){
+        var a=data.analyst;
+        var px=data.last_close;
+        // Time-ago helper (reuses local pattern)
+        var timeAgo=function(dStr){
+          if(!dStr)return '';
+          var t=new Date(dStr+'T00:00:00Z').getTime();
+          if(isNaN(t))return '';
+          var ms=Date.now()-t;
+          var day=Math.floor(ms/86400000);
+          if(day===0)return 'today';
+          if(day===1)return 'yesterday';
+          if(day<7)return day+'d';
+          if(day<30)return Math.floor(day/7)+'w';
+          if(day<90)return Math.floor(day/30)+'mo';
+          return dStr;
+        };
+        var sentColor=function(s){
+          if(s==='positive')return C.accent;
+          if(s==='negative')return C.warn;
+          return C.gold;
+        };
+        var arrowFor=function(r){
+          if(r.pt_now&&r.pt_prev){
+            if(r.pt_now>r.pt_prev*1.001)return '▲';
+            if(r.pt_now<r.pt_prev*0.999)return '▼';
+          }
+          var act=(r.action||'').toLowerCase();
+          if(act.indexOf('upgrade')>=0)return '▲▲';
+          if(act.indexOf('downgrade')>=0)return '▼▼';
+          if(act.indexOf('initiate')>=0)return '★';
+          return '·';
+        };
+        var fmtPT=function(v){return v!=null?'$'+v.toFixed(0):'-';};
+        var visibleChanges=analystExpanded?a.changes:a.changes.slice(0,3);
+        var hasMore=a.changes.length>3;
+        // Range bar positions
+        var hasRange=a.min_pt!=null&&a.max_pt!=null&&a.max_pt>a.min_pt;
+        var pricePct=null,consensusPct=null;
+        if(hasRange){
+          var span=a.max_pt-a.min_pt;
+          if(px!=null)pricePct=Math.max(0,Math.min(100,((px-a.min_pt)/span)*100));
+          if(a.consensus!=null)consensusPct=Math.max(0,Math.min(100,((a.consensus-a.min_pt)/span)*100));
+        }
+        // Upside calc vs current price
+        var upsidePct=(a.consensus!=null&&px!=null&&px>0)?((a.consensus-px)/px)*100:null;
+        var upsideColor=upsidePct!=null?(upsidePct>0?C.accent:C.warn):C.txt;
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header - tap to expand/collapse */}
+          <div onClick={function(){setAnalystExpanded(!analystExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>ANALYST CONSENSUS</span>
+              {a.total_active>0&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{a.total_active} active</span>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{analystExpanded?'▾':'▸'}</div>
+          </div>
+          {/* Consensus + upside */}
+          {a.consensus!=null&&<div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
+            <span style={{color:C.txtBright,fontSize:18,fontFamily:F,fontWeight:700}}>${a.consensus.toFixed(2)}</span>
+            <span style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1}}>AVG · {a.target_count} targets</span>
+            {upsidePct!=null&&<span style={{color:upsideColor,fontSize:11,fontFamily:F,fontWeight:700,marginLeft:'auto'}}>{upsidePct>=0?'+':''}{upsidePct.toFixed(1)}% upside</span>}
+          </div>}
+          {/* Range bar visualization */}
+          {hasRange&&<div style={{marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:7,fontFamily:F,marginBottom:2}}>
+              <span style={{color:C.warn,fontWeight:700}}>${a.min_pt.toFixed(0)}</span>
+              <span style={{color:C.txtDim,letterSpacing:1}}>RANGE</span>
+              <span style={{color:C.accent,fontWeight:700}}>${a.max_pt.toFixed(0)}</span>
+            </div>
+            <div style={{position:'relative',height:14,background:C.border,borderRadius:4,overflow:'hidden'}}>
+              <div style={{position:'absolute',top:0,bottom:0,left:0,right:0,background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.3}}/>
+              {/* Consensus marker (purple) */}
+              {consensusPct!=null&&<div style={{position:'absolute',top:0,bottom:0,left:'calc('+consensusPct+'% - 1px)',width:2,background:C.purple,boxShadow:'0 0 3px '+C.purple}} title="Consensus"/>}
+              {/* Current price marker (white) */}
+              {pricePct!=null&&<div style={{position:'absolute',top:-2,bottom:-2,left:'calc('+pricePct+'% - 1px)',width:2,background:C.txtBright}} title="Current"/>}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:7,fontFamily:F,marginTop:2,color:C.txtDim}}>
+              <span style={{color:C.purple}}>● consensus</span>
+              <span style={{color:C.txtBright}}>▏ current ${px!=null?px.toFixed(2):'-'}</span>
+            </div>
+          </div>}
+          {/* Distribution: BUY / HOLD / SELL counts */}
+          {a.total_active>0&&<div style={{display:'flex',gap:6,marginBottom:10}}>
+            <div style={{flex:a.distribution.buy||0.01,padding:'4px 6px',background:'rgba(0,229,160,0.18)',border:'1px solid '+C.accent,borderRadius:4,textAlign:'center',minWidth:0}}>
+              <div style={{color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{a.distribution.buy}</div>
+              <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1}}>BUY</div>
+            </div>
+            <div style={{flex:a.distribution.hold||0.01,padding:'4px 6px',background:'rgba(255,176,32,0.18)',border:'1px solid '+C.gold,borderRadius:4,textAlign:'center',minWidth:0}}>
+              <div style={{color:C.gold,fontSize:11,fontFamily:F,fontWeight:700}}>{a.distribution.hold}</div>
+              <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1}}>HOLD</div>
+            </div>
+            <div style={{flex:a.distribution.sell||0.01,padding:'4px 6px',background:'rgba(255,92,58,0.18)',border:'1px solid '+C.warn,borderRadius:4,textAlign:'center',minWidth:0}}>
+              <div style={{color:C.warn,fontSize:11,fontFamily:F,fontWeight:700}}>{a.distribution.sell}</div>
+              <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1}}>SELL</div>
+            </div>
+          </div>}
+          {/* Recent changes list */}
+          <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:6,marginTop:4}}>RECENT CHANGES</div>
+          {visibleChanges.map(function(r,i){
+            return <div key={i} style={{padding:'6px 0',borderTop:i>0?'1px solid '+C.border:'none',display:'flex',alignItems:'flex-start',gap:8}}>
+              {/* Sentiment dot */}
+              <div style={{width:8,height:8,borderRadius:'50%',background:sentColor(r.sentiment),flexShrink:0,marginTop:4}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:6}}>
+                  <span style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{r.firm}</span>
+                  <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{timeAgo(r.date)}</span>
+                </div>
+                <div style={{display:'flex',gap:6,alignItems:'baseline',flexWrap:'wrap',marginTop:2,fontSize:8,fontFamily:F}}>
+                  <span style={{color:sentColor(r.sentiment),fontWeight:700}}>{arrowFor(r)}</span>
+                  {r.pt_now!=null&&<span style={{color:C.txtBright,fontWeight:700}}>{fmtPT(r.pt_now)}</span>}
+                  {r.pt_prev!=null&&r.pt_now!=null&&Math.abs(r.pt_now-r.pt_prev)>0.001&&<span style={{color:C.txtDim,fontSize:7}}>(was {fmtPT(r.pt_prev)})</span>}
+                  {r.rating_now&&<span style={{color:C.txt,fontSize:8}}>· {r.rating_now}</span>}
+                  {r.rating_prev&&r.rating_now&&r.rating_prev!==r.rating_now&&<span style={{color:C.txtDim,fontSize:7}}>(from {r.rating_prev})</span>}
+                </div>
+                {r.verb&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2,fontStyle:'italic'}}>{r.verb}</div>}
+              </div>
+            </div>;
+          })}
+          {/* Show-more hint when collapsed */}
+          {!analystExpanded&&hasMore&&<div onClick={function(){setAnalystExpanded(true);}} style={{cursor:'pointer',color:C.purple,fontSize:9,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,fontWeight:700,padding:'4px 0',borderTop:'1px solid '+C.border}}>+ {a.changes.length-3} MORE · TAP TO EXPAND ▸</div>}
+          {analystExpanded&&a.changes.length>3&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,paddingTop:8,borderTop:'1px solid '+C.border}}>tap header to collapse ▾</div>}
         </div>;
       })()}
 
