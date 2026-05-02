@@ -1600,7 +1600,7 @@ function StockProfileCheatSheetPage(p){
       </div>}
       {w.avg_volume_shares!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S VOLUME":'AVG DAILY VOLUME'}</span>
-        <span style={{color:C.blue,fontWeight:700}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(w.avg_volume_shares)} sh</span>
+        <span style={{color:C.blue,fontWeight:700}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(w.avg_volume_shares)} shares</span>
       </div>}
       {w.avg_dollar_notional!=null&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S $ VOLUME":'AVG DAILY $ VOLUME'}</span>
