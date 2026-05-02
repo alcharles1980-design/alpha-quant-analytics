@@ -2340,7 +2340,7 @@ function StockProfileCheatSheetPage(p){
   // Render a single window block
   var renderWindow=function(label,sub,w,accent,lastClose){
     if(!w)return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
-      <div style={{color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
+      <div style={{color:C.txtDim,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>{label.toUpperCase()}</div>
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6}}>No data for this window.</div>
     </div>;
     // Single-day windows (Today / Previous Day) show that day's stats not "average"
@@ -2352,7 +2352,7 @@ function StockProfileCheatSheetPage(p){
     var labelTransform = posClamped<8 ? 'translateX(0)' : (posClamped>92 ? 'translateX(-100%)' : 'translateX(-50%)');
     return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
-        <div style={{color:accent||C.gold,fontSize:9,fontFamily:F,letterSpacing:1,fontWeight:700}}>{label.toUpperCase()}</div>
+        <div style={{color:accent||C.gold,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>{label.toUpperCase()}</div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{sub}</div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
@@ -2518,7 +2518,7 @@ function StockProfileCheatSheetPage(p){
         })():null;
         return <div style={{marginBottom:14,padding:'12px 14px',background:bgTint,borderRadius:10,border:'1px solid '+borderColor}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
-            <div style={{color:labelColor,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>NEXT EARNINGS</div>
+            <div style={{color:labelColor,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>NEXT EARNINGS</div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>{ev.source==='benzinga'?'BENZINGA':'ESTIMATED'}</div>
           </div>
           <div style={{color:C.txtBright,fontSize:18,fontFamily:F,fontWeight:700,marginBottom:2}}>{ev.date}</div>
@@ -2572,7 +2572,7 @@ function StockProfileCheatSheetPage(p){
           {/* Header - tap to expand/collapse */}
           <div onClick={function(){setNewsExpanded(!newsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:newsExpanded?10:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>RECENT NEWS</span>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>RECENT NEWS</span>
               <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{data.news.length} · last {mostRecentTime}</span>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:6,fontSize:8,fontFamily:F,fontWeight:700}}>
@@ -2661,7 +2661,7 @@ function StockProfileCheatSheetPage(p){
           {/* Header - tap to expand/collapse */}
           <div onClick={function(){setAnalystExpanded(!analystExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>ANALYST CONSENSUS</span>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ANALYST CONSENSUS</span>
               {a.total_active>0&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{a.total_active} active</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{analystExpanded?'▾':'▸'}</div>
@@ -2760,7 +2760,7 @@ function StockProfileCheatSheetPage(p){
           {/* Header with collapse chip */}
           <div onClick={function(){setEpsExpanded(!epsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:epsExpanded?8:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>EARNINGS PER SHARE</span>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>EARNINGS PER SHARE</span>
               {beatPct!=null&&<span style={{color:beatPct>=0?C.accent:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{beatPct>=0?'BEAT +':'MISS '}{beatPct.toFixed(1)}%</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{epsExpanded?'▾':'▸'}</div>
@@ -2883,7 +2883,7 @@ function StockProfileCheatSheetPage(p){
           {/* Header */}
           <div onClick={function(){setRevExpanded(!revExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:revExpanded?10:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>REVENUE &amp; EARNINGS</span>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>REVENUE &amp; EARNINGS</span>
               {latest&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{latest.label}: {fmtMoney(latest.revenue)} rev</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{revExpanded?'▾':'▸'}</div>
@@ -2955,7 +2955,7 @@ function StockProfileCheatSheetPage(p){
 
       {/* Trends reference card: SMA vs VWAP per period + session/prev-day VWAP */}
       {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
-        <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:10,textAlign:'center'}}>TRENDS</div>
+        <div style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:10,textAlign:'center'}}>TRENDS</div>
 
         {/* SMA vs VWAP comparison block */}
         {(function(){
