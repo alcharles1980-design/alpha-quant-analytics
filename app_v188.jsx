@@ -2801,19 +2801,25 @@ function StockProfileCheatSheetPage(p){
         if(!periods||periods.length===0)periods=revMode==='annual'?f.quarterly:f.annual;
         var hasQ=f.quarterly&&f.quarterly.length>0;
         var hasA=f.annual&&f.annual.length>0;
-        // Y-axis range: max of revenue + earnings (positives only). Negatives clamp to 0.
+        // Y-axis range: include both positives AND negatives. Companies losing
+        // money have negative net income - clamping to 0 silently lies about it.
         var allVals=[];
         periods.forEach(function(p){
-          if(p.revenue!=null&&p.revenue>0)allVals.push(p.revenue);
-          if(p.earnings!=null&&p.earnings>0)allVals.push(p.earnings);
+          if(p.revenue!=null&&!isNaN(p.revenue))allVals.push(p.revenue);
+          if(p.earnings!=null&&!isNaN(p.earnings))allVals.push(p.earnings);
         });
         if(allVals.length===0)return null;
         var yDataMax=Math.max.apply(null,allVals);
-        // Compute "nice" Y-axis ticks: round top up to next clean step
-        // so labels read $0, $20B, $40B, $60B etc instead of $0, $17B, $34B...
-        var niceScale=function(max){
-          if(max<=0)return {top:1,step:1,ticks:[0]};
-          var rough=max/4; // aim for ~4 intervals
+        var yDataMin=Math.min.apply(null,allVals);
+        // Compute "nice" Y-axis ticks. Top rounds up; bottom rounds down to next clean
+        // step. For positive-only data, bottom is forced to 0 (chart starts at baseline).
+        // For mixed-sign data, scale extends below 0 so loss bars render correctly.
+        var niceScale=function(yMin,yMax){
+          // For positive-only data, force bottom to 0 so bars start at proper baseline
+          var adjMin=yMin>=0?0:yMin;
+          var range=yMax-adjMin;
+          if(range<=0)return {top:yMax||1,bottom:adjMin,step:1,ticks:[adjMin]};
+          var rough=range/4; // aim for ~4-5 intervals
           var pow10=Math.pow(10,Math.floor(Math.log10(rough)));
           var norm=rough/pow10;
           var step;
@@ -2821,33 +2827,53 @@ function StockProfileCheatSheetPage(p){
           else if(norm<3.5)step=2*pow10;
           else if(norm<7.5)step=5*pow10;
           else step=10*pow10;
-          var top=Math.ceil(max/step)*step;
+          var top=Math.ceil(yMax/step)*step;
+          var bottom=adjMin>=0?0:Math.floor(adjMin/step)*step;
           var ticks=[];
-          for(var v=0;v<=top+0.0001;v+=step)ticks.push(v);
-          return {top:top,step:step,ticks:ticks};
+          for(var v=bottom;v<=top+0.0001;v+=step)ticks.push(v);
+          return {top:top,bottom:bottom,step:step,ticks:ticks};
         };
-        var scale=niceScale(yDataMax);
+        var scale=niceScale(yDataMin,yDataMax);
         var yMax=scale.top;
+        var yMin=scale.bottom;
+        var yRange=yMax-yMin; // total span including any negatives
         var chartH=220;
         var yAxisW=46; // px reserved for y-axis labels
         var fmtMoney=function(v){
           if(v==null)return '-';
           var abs=Math.abs(v);
-          if(abs>=1e12)return '$'+(v/1e12).toFixed(2)+'T';
-          if(abs>=1e9)return '$'+(v/1e9).toFixed(2)+'B';
-          if(abs>=1e6)return '$'+(v/1e6).toFixed(1)+'M';
-          return '$'+v.toLocaleString();
+          var sign=v<0?'-':'';
+          if(abs>=1e12)return sign+'$'+(abs/1e12).toFixed(2)+'T';
+          if(abs>=1e9)return sign+'$'+(abs/1e9).toFixed(2)+'B';
+          if(abs>=1e6)return sign+'$'+(abs/1e6).toFixed(1)+'M';
+          return sign+'$'+abs.toLocaleString();
         };
         var fmtTick=function(v){
           if(v===0)return '$0';
-          if(v>=1e12)return '$'+(v/1e12).toFixed(0)+'T';
-          if(v>=1e9)return '$'+(v/1e9).toFixed(0)+'B';
-          if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';
-          return '$'+v.toFixed(0);
+          var abs=Math.abs(v);
+          var sign=v<0?'-':'';
+          if(abs>=1e12)return sign+'$'+(abs/1e12).toFixed(0)+'T';
+          if(abs>=1e9)return sign+'$'+(abs/1e9).toFixed(0)+'B';
+          if(abs>=1e6)return sign+'$'+(abs/1e6).toFixed(0)+'M';
+          return sign+'$'+abs.toFixed(0);
         };
         // Latest period summary for the collapsed preview
         var latest=periods[periods.length-1];
         var revColor='#3b82f6';
+        // Position helper: given a value, return {top, height} in px relative to chart top
+        // - For positive value: bar from value DOWN to baseline (0 or scale bottom)
+        // - For negative value: bar from baseline (0) DOWN to value
+        // - All measurements in px from top of chart area
+        var barRect=function(v){
+          if(v==null||isNaN(v))return null;
+          var anchor=yMin<0?0:yMin; // baseline ($0 if mixed sign, otherwise scale bottom)
+          var hi=Math.max(v,anchor);
+          var lo=Math.min(v,anchor);
+          var topPx=((yMax-hi)/yRange)*chartH;
+          var botPx=((yMax-lo)/yRange)*chartH;
+          var h=Math.max(botPx-topPx,1); // minimum 1px so zero-value bars are visible
+          return {top:topPx,h:h,negative:v<anchor};
+        };
         return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
           {/* Header */}
           <div onClick={function(){setRevExpanded(!revExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:revExpanded?10:0}}>
@@ -2868,25 +2894,25 @@ function StockProfileCheatSheetPage(p){
               {/* Y-axis labels column */}
               <div style={{width:yAxisW,position:'relative',flexShrink:0}}>
                 {scale.ticks.map(function(t,i){
-                  var pct=((yMax-t)/yMax)*100;
-                  return <div key={i} style={{position:'absolute',top:pct+'%',right:6,transform:'translateY(-50%)',fontSize:7,fontFamily:F,color:C.txtDim,letterSpacing:0.5,whiteSpace:'nowrap'}}>{fmtTick(t)}</div>;
+                  var pct=((yMax-t)/yRange)*100;
+                  return <div key={i} style={{position:'absolute',top:pct+'%',right:6,transform:'translateY(-50%)',fontSize:7,fontFamily:F,color:t===0?C.txt:C.txtDim,letterSpacing:0.5,whiteSpace:'nowrap',fontWeight:t===0?700:400}}>{fmtTick(t)}</div>;
                 })}
               </div>
-              {/* Plot area: gridlines + bars */}
+              {/* Plot area: gridlines + bars (absolute positioned to support negatives) */}
               <div style={{flex:1,position:'relative',height:chartH}}>
                 {/* Horizontal gridlines */}
                 {scale.ticks.map(function(t,i){
-                  var pct=((yMax-t)/yMax)*100;
+                  var pct=((yMax-t)/yRange)*100;
                   return <div key={i} style={{position:'absolute',top:pct+'%',left:0,right:0,borderTop:t===0?'1px solid '+C.border:'1px dashed '+C.border,opacity:t===0?0.8:0.35,pointerEvents:'none'}}/>;
                 })}
-                {/* Bars container - flex row, bars anchored to bottom */}
-                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'flex-end',paddingBottom:1}}>
+                {/* Bars container - one column per period, bars absolute-positioned */}
+                <div style={{position:'absolute',inset:0,display:'flex'}}>
                   {periods.map(function(p,i){
-                    var revH=p.revenue!=null&&p.revenue>0?(p.revenue/yMax)*chartH:0;
-                    var earnH=p.earnings!=null&&p.earnings>0?(p.earnings/yMax)*chartH:0;
-                    return <div key={i} style={{flex:1,display:'flex',justifyContent:'center',alignItems:'flex-end',gap:4,height:'100%'}}>
-                      <div style={{width:'46%',height:Math.max(revH,1),background:revColor,borderRadius:'3px 3px 0 0',boxShadow:'0 -1px 0 rgba(59,130,246,0.4)'}}/>
-                      <div style={{width:'46%',height:Math.max(earnH,1),background:C.gold,borderRadius:'3px 3px 0 0',boxShadow:'0 -1px 0 rgba(255,176,32,0.4)'}}/>
+                    var revR=barRect(p.revenue);
+                    var earnR=barRect(p.earnings);
+                    return <div key={i} style={{flex:1,position:'relative'}}>
+                      {revR&&<div style={{position:'absolute',top:revR.top+'px',height:revR.h+'px',left:'4%',width:'42%',background:revColor,borderRadius:revR.negative?'0 0 3px 3px':'3px 3px 0 0'}}/>}
+                      {earnR&&<div style={{position:'absolute',top:earnR.top+'px',height:earnR.h+'px',right:'4%',width:'42%',background:C.gold,borderRadius:earnR.negative?'0 0 3px 3px':'3px 3px 0 0'}}/>}
                     </div>;
                   })}
                 </div>
