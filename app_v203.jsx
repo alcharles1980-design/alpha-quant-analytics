@@ -2322,21 +2322,63 @@ function StockProfileCheatSheetPage(p){
         }
         return {pct:sumPct/n,dollar:sumDol/n};
       };
-      // Build rolling stats for the new ROLLING STATS card (1d/3d/5d/10d/30d).
+      // Build rolling stats for the ROLLING STATS card (Today / Prev Day / 3d / 5d / 10d / 30d).
+      // Window kinds:
+      //   'today'   -> today's in-progress data: today's TR + today.h vs prev.l + today.l vs prev.c
+      //   'prev'    -> the most recent COMPLETED bar in maBars (was 'n=1' before v203 rename)
+      //   'rolling' -> simple mean of last N completed bars (3/5/10/30)
       // ATR uses simple mean of last N TRs (responsive to recent regime shifts).
       // L→H and C→L use rolling simple average ($ and %).
       var rollingStats=null;
-      if(maBars.length>=2){
+      if(maBars.length>=1){
         var refClose=maBars[maBars.length-1].c;
-        var rsWindows=[1,3,5,10,30];
+        // Compute the 'Today' row: uses wToday (today's hi/lo/TR) + the most
+        // recent maBars entry (prev day's low/close) to define the L→H and C→L
+        // pairs. wToday is null on weekends/holidays - row falls through to all-null.
+        var computeTodayRow=function(){
+          if(!wToday)return {atr:null,atr_pct:null,lh:null,lh_dollar:null,cl:null,cl_dollar:null};
+          var atr=wToday.avg_true_range_dollar;
+          var atrPct=(atr!=null&&lastClose>0)?(atr/lastClose)*100:null;
+          var lhDollar=null,lhPct=null,clDollar=null,clPct=null;
+          // prev day = last maBars entry (maBars excludes today by design)
+          if(maBars.length>=1){
+            var prevDay=maBars[maBars.length-1];
+            var prevLow=prevDay.l, prevClose=prevDay.c;
+            // L→H_today = today.h - prev.l (today's reach above prev's low)
+            // Same semantic as L→H rolling: bar[i].l vs bar[i+1].h, where today is bar[i+1].
+            lhDollar=wToday.hi-prevLow;
+            if(prevLow>0)lhPct=(wToday.hi-prevLow)/prevLow*100;
+            // C→L_today = today.l - prev.c (today's drawdown from prev close)
+            clDollar=wToday.lo-prevClose;
+            if(prevClose>0)clPct=(wToday.lo-prevClose)/prevClose*100;
+          }
+          return {atr:atr,atr_pct:atrPct,lh:lhPct,lh_dollar:lhDollar,cl:clPct,cl_dollar:clDollar};
+        };
+        // Window descriptors. 'Today' inserted at top (in-progress); 'Prev Day'
+        // is the renamed former '1 day' (most recent completed bar from maBars).
+        var rsWindows=[
+          {kind:'today',   label:'Today'},
+          {kind:'prev',    label:'Prev Day'},
+          {kind:'rolling', label:'3 days',  n:3},
+          {kind:'rolling', label:'5 days',  n:5},
+          {kind:'rolling', label:'10 days', n:10},
+          {kind:'rolling', label:'30 days', n:30}
+        ];
         rollingStats={
-          rows: rsWindows.map(function(n){
+          rows: rsWindows.map(function(w){
+            if(w.kind==='today'){
+              var t=computeTodayRow();
+              return {label:w.label,kind:w.kind,atr:t.atr,atr_pct:t.atr_pct,lh:t.lh,lh_dollar:t.lh_dollar,cl:t.cl,cl_dollar:t.cl_dollar};
+            }
+            // 'prev' uses N=1 (most recent completed pair); 'rolling' uses N=w.n.
+            var n=w.kind==='prev'?1:w.n;
             var atrN=simpleATRLastN(n);
             var atrNPct=(atrN!=null&&refClose>0)?(atrN/refClose)*100:null;
             var lhN=rollingLH(n);
             var clN=rollingCL(n);
             return {
-              n:n,
+              label:w.label,
+              kind:w.kind,
               atr:atrN,atr_pct:atrNPct,
               lh:lhN?lhN.pct:null, lh_dollar:lhN?lhN.dollar:null,
               cl:clN?clN.pct:null, cl_dollar:clN?clN.dollar:null
@@ -2398,7 +2440,7 @@ function StockProfileCheatSheetPage(p){
         // Today and Prev Day are complementary - today is in-progress, prev day is
         // the last COMPLETED session. 3d/5d/10d/30d are multi-day rolling.
         var rpcWindows=[
-          {kind:'today',   label:'1 day'},
+          {kind:'today',   label:'Today'},
           {kind:'prev',    label:'Prev Day'},
           {kind:'rolling', label:'3 days',  n:3},
           {kind:'rolling', label:'5 days',  n:5},
@@ -3289,15 +3331,16 @@ function StockProfileCheatSheetPage(p){
           contracting (tighter stops, smaller moves expected). */}
       {data.rolling_stats&&data.rolling_stats.rows&&data.rolling_stats.rows.length>0&&(function(){
         var rs=data.rolling_stats;
-        // Volatility regime signal: 1d vs 30d ATR%.
+        // Volatility regime signal: short-term vs 30d ATR%.
         // Use ATR% (not $) for the comparison so it's price-invariant.
-        // Look up rows by n value (not array index) so this stays robust if
-        // the rsWindows array is ever reordered or extended.
-        var findByN=function(n){for(var i=0;i<rs.rows.length;i++)if(rs.rows[i].n===n)return rs.rows[i];return null;};
-        var oneD=findByN(1),thirtyD=findByN(30);
+        // Prefer Today's ATR (most current) for the short-term reading;
+        // fall back to Prev Day if Today data is unavailable (weekends/holidays).
+        var findByLabel=function(lab){for(var i=0;i<rs.rows.length;i++)if(rs.rows[i].label===lab)return rs.rows[i];return null;};
+        var todayRow=findByLabel('Today'),prevRow=findByLabel('Prev Day'),thirtyD=findByLabel('30 days');
+        var shortRow=(todayRow&&todayRow.atr_pct!=null)?todayRow:prevRow;
         var regime='STABLE',regimeColor=C.gold;
-        if(oneD&&thirtyD&&oneD.atr_pct!=null&&thirtyD.atr_pct!=null&&thirtyD.atr_pct>0){
-          var ratio=oneD.atr_pct/thirtyD.atr_pct;
+        if(shortRow&&thirtyD&&shortRow.atr_pct!=null&&thirtyD.atr_pct!=null&&thirtyD.atr_pct>0){
+          var ratio=shortRow.atr_pct/thirtyD.atr_pct;
           if(ratio>=1.3){regime='EXPANDING';regimeColor=C.warn;}
           else if(ratio<=0.7){regime='CONTRACTING';regimeColor=C.accent;}
         }
@@ -3321,7 +3364,8 @@ function StockProfileCheatSheetPage(p){
           var sign=v<0?'':'+'; // .toFixed already includes '-' for negatives
           return sign+v.toFixed(2)+'%';
         };
-        var labelFor=function(n){return n===1?'1 day':n+' days';};
+        // Each row carries its own .label (Today / Prev Day / N days), so no
+        // labelFor mapping needed since v203.
         return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
           {/* Header */}
           <div onClick={function(){setRollingExpanded(!rollingExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:rollingExpanded?12:0}}>
@@ -3329,26 +3373,28 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING STATS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Average True Range (volatility), Low-to-Next-Day-High (upside reach), and Close-to-Next-Day-Low (downside drop) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days.'},
+                {p:'Average True Range (volatility), Low-to-Next-Day-High (upside reach), and Close-to-Next-Day-Low (downside drop) across 6 windows: Today (in-progress), Prev Day (last completed session), and 3, 5, 10, 30-day rolling.'},
                 {b:[
                   'ATR ($/%) = average dollar move per bar - direct stop sizing input',
                   'L→H ($/%) = avg next-day reach above today\'s low - upside swing magnitude',
                   'C→L ($/%) = avg next-day drop below prior close - downside drawdown from close',
+                  'For Today: L→H = today.high vs prev.low (today\'s reach above prev day\'s low); C→L = today.low vs prev.close (today\'s drawdown from prev close)',
                   'L→H typically positive (green) - stocks usually rally above prior low',
                   'C→L typically negative (red) - next day usually pierces prior close to the downside',
-                  'All windows use simple mean over the last N values - responsive to recent regime'
+                  'Rolling rows use simple mean over the last N completed values - responsive to recent regime'
                 ]},
                 {h:'Why it matters'},
-                {p:'L→H and C→L bracket the typical NEXT-DAY range: upside reach above today\'s low + downside drop below today\'s close. Together they define a realistic price envelope for next-session expectations.'},
+                {p:'L→H and C→L bracket the typical NEXT-DAY range: upside reach above today\'s low + downside drop below today\'s close. Today vs Prev Day vs rolling averages reveals whether the current session is unusual relative to recent history.'},
                 {h:'How to use it'},
                 {b:[
-                  'VOL EXPANDING (1d ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings',
-                  'VOL CONTRACTING (1d ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves',
+                  'VOL EXPANDING (Today ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings',
+                  'VOL CONTRACTING (Today ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves',
                   'Use 5d ATR ($) × 1.5-2x as a default stop distance',
                   'Use 5d L→H ($) as a realistic next-day profit target above today\'s low',
                   'Use 5d C→L ($) as a stop placement reference below prior close',
                   'Reward:Risk = L→H ($) / |C→L ($)| - want > 1.5 for clean longs',
-                  'C→L close to zero = tight overnight holds; large negative = gap-down risk'
+                  'C→L close to zero = tight overnight holds; large negative = gap-down risk',
+                  'Today\'s row is in-progress and updates as the session continues'
                 ]}
               ]}</Info>
               <span style={{color:regimeColor,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.2,padding:'2px 8px',borderRadius:4,border:'1px solid '+regimeColor,marginLeft:4}}>VOL {regime}</span>
@@ -3361,7 +3407,7 @@ function StockProfileCheatSheetPage(p){
                 L→H pair = upside reach, C→L pair = downside drop.
                 Window col tightened 56->48px to fit 6 data cols on phone. */}
             <div style={{display:'flex',alignItems:'center',padding:'6px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
-              <div style={{flex:'0 0 48px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>WINDOW</div>
+              <div style={{flex:'0 0 56px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>WINDOW</div>
               <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>ATR ($)</div>
               <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>ATR (%)</div>
               <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>L→H ($)</div>
@@ -3374,7 +3420,7 @@ function StockProfileCheatSheetPage(p){
                 signal downside risk; positive (gap up that held) colored green. */}
             {rs.rows.map(function(r,i){
               return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
-                <div style={{flex:'0 0 48px',color:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{labelFor(r.n)}</div>
+                <div style={{flex:'0 0 56px',color:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{r.label}</div>
                 <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
                 <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
                 <div style={{flex:1,textAlign:'right',color:r.lh_dollar!=null&&r.lh_dollar<0?C.warn:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.lh_dollar)}</div>
@@ -3385,7 +3431,7 @@ function StockProfileCheatSheetPage(p){
             })}
             {/* Footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              ATR = simple mean of last N TRs. L→H = avg of next day's high - today's low. C→L = avg of next day's low - today's close (typically negative = drawdown from close).
+              ATR = single TR for Today/Prev Day, simple mean of last N TRs for rolling windows. L→H = today.high vs prev.low (Today) or avg next-day-high vs prior-low (rolling). C→L = today.low vs prev.close (Today) or avg next-day-low vs prior-close (rolling). C→L typically negative = drawdown from close.
             </div>
           </div>}
         </div>;
@@ -3394,7 +3440,7 @@ function StockProfileCheatSheetPage(p){
       {/* ROLLING POC RELATION card - volume profile rebuilt for each rolling
           window, surfacing POC / VAL / VAH and current price's distance to
           POC + position relative to value area. Same windows as ROLLING STATS.
-          Mixed bar resolution: 1d=minute, 3d/5d/10d=5m, 30d=1h. Default expanded. */}
+          Mixed bar resolution: Today=minute, Prev Day/3d/5d/10d=5m, 30d=1h. Default expanded. */}
       {data.rolling_poc_stats&&data.rolling_poc_stats.rows&&data.rolling_poc_stats.rows.length>0&&(function(){
         var rpc=data.rolling_poc_stats;
         var fmtMoney=function(v){return v!=null?'$'+v.toFixed(2):'-';};
@@ -3428,7 +3474,7 @@ function StockProfileCheatSheetPage(p){
                   'VAH = Value Area High: top of that 70% band',
                   '% FROM POC: signed distance from current price to the POC',
                   'POSITION: IN VA (inside value), ABOVE (above VAH), BELOW (below VAL)',
-                  'Mixed bar resolution: 1d=minute, Prev Day/3d/5d/10d=5m, 30d=1h'
+                  'Mixed bar resolution: Today=minute, Prev Day/3d/5d/10d=5m, 30d=1h'
                 ]},
                 {h:'Why it matters'},
                 {p:'POC is a magnet - prices tend to retest it. Value area boundaries (VAL/VAH) are common reversal zones. Comparing where price sits across timeframes reveals positioning extremes.'},
@@ -3469,7 +3515,7 @@ function StockProfileCheatSheetPage(p){
             })}
             {/* Footnote: current price + bar resolution disclosure */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              Current price: ${data.last_close.toFixed(2)}. Bar resolution: 1d=minute, Prev Day/3d/5d/10d=5min, 30d=1hr. POC is the highest-volume price level; VA is the 70% band.
+              Current price: ${data.last_close.toFixed(2)}. Bar resolution: Today=minute, Prev Day/3d/5d/10d=5min, 30d=1hr. POC is the highest-volume price level; VA is the 70% band.
             </div>
           </div>}
         </div>;
