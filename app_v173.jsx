@@ -2084,16 +2084,28 @@ function StockProfileCheatSheetPage(p){
       {/* Mini volume profile histogram - shares price x-axis with gradient bar below.
           50 vertical bars, each bucket's height proportional to volume in that bucket.
           POC bucket = bright purple, VA buckets = medium purple, others = dim white.
-          No horizontal padding so the histogram aligns pixel-exactly with the gradient bar. */}
-      {w.profile&&w.profile.buckets&&w.profile.max_bucket_vol>0&&<div style={{display:'flex',alignItems:'flex-end',height:32,marginBottom:3,gap:1}}>
-        {w.profile.buckets.map(function(vol,i){
-          var h=(vol/w.profile.max_bucket_vol)*100;
-          var inVA=i>=w.profile.va_lo_idx&&i<=w.profile.va_hi_idx;
-          var isPOC=i===w.profile.poc_idx;
-          var bg=isPOC?C.purple:(inVA?'rgba(168,85,247,0.55)':'rgba(255,255,255,0.18)');
-          return <div key={i} style={{flex:1,height:h+'%',background:bg,minHeight:vol>0?1:0,borderRadius:'1px 1px 0 0'}}/>;
-        })}
-      </div>}
+          Two solid purple boundary lines mark VAL (left) and VAH (right) edges of the
+          70% Value Area for unmistakable visual delimiting. */}
+      {w.profile&&w.profile.buckets&&w.profile.max_bucket_vol>0&&(function(){
+        var nB=w.profile.n_buckets||50;
+        var valLeftPct=(w.profile.va_lo_idx/nB)*100;
+        var vahRightPct=((w.profile.va_hi_idx+1)/nB)*100;
+        return <div style={{position:'relative',marginBottom:3}}>
+          <div style={{display:'flex',alignItems:'flex-end',height:32,gap:1}}>
+            {w.profile.buckets.map(function(vol,i){
+              var h=(vol/w.profile.max_bucket_vol)*100;
+              var inVA=i>=w.profile.va_lo_idx&&i<=w.profile.va_hi_idx;
+              var isPOC=i===w.profile.poc_idx;
+              var bg=isPOC?C.purple:(inVA?'rgba(168,85,247,0.55)':'rgba(255,255,255,0.18)');
+              return <div key={i} style={{flex:1,height:h+'%',background:bg,minHeight:vol>0?1:0,borderRadius:'1px 1px 0 0'}}/>;
+            })}
+          </div>
+          {/* VAL boundary line - left edge of leftmost VA bucket */}
+          <div style={{position:'absolute',top:-2,bottom:-2,left:'calc('+valLeftPct+'% - 1px)',width:2,background:C.purple,boxShadow:'0 0 3px '+C.purple,pointerEvents:'none',borderRadius:1}}/>
+          {/* VAH boundary line - right edge of rightmost VA bucket */}
+          <div style={{position:'absolute',top:-2,bottom:-2,left:'calc('+vahRightPct+'% - 1px)',width:2,background:C.purple,boxShadow:'0 0 3px '+C.purple,pointerEvents:'none',borderRadius:1}}/>
+        </div>;
+      })()}
       <div style={{position:'relative',height:18,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}>
         <div style={{position:'absolute',top:0,bottom:0,left:0,width:posClamped+'%',background:'linear-gradient(90deg, '+C.warn+' 0%, '+C.gold+' 50%, '+C.accent+' 100%)',opacity:0.6}}/>
         <div style={{position:'absolute',top:0,bottom:0,left:'calc('+posClamped+'% - 1px)',width:2,background:C.txtBright}}/>
