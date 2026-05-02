@@ -3206,8 +3206,8 @@ function StockProfileCheatSheetPage(p){
             <div style={{display:'flex',alignItems:'center',padding:'6px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
               <div style={{flex:'0 0 56px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>WINDOW</div>
               <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>ATR ($)</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H ($)</div>
               <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>ATR (%)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H ($)</div>
               <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H (%)</div>
             </div>
             {/* Data rows */}
@@ -3215,8 +3215,8 @@ function StockProfileCheatSheetPage(p){
               return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
                 <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{labelFor(r.n)}</div>
                 <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh_dollar!=null?'$'+r.lh_dollar.toFixed(2):'-'}</div>
                 <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh_dollar!=null?'$'+r.lh_dollar.toFixed(2):'-'}</div>
                 <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh!=null?'+'+r.lh.toFixed(2)+'%':'-'}</div>
               </div>;
             })}
