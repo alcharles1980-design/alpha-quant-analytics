@@ -1565,7 +1565,7 @@ function StockProfileCheatSheetPage(p){
         <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>LOW {'\u2192'} NEXT DAY HIGH</span>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>LOW → NEXT DAY HIGH</span>
         <span><span style={{color:C.accent,fontWeight:700}}>${w.avg_low_to_next_high_dollar.toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}<span style={{color:C.txtDim,marginLeft:6,fontSize:7}}>n={w.pair_count}</span></span>
       </div>}
     </div>;
