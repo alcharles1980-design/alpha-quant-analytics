@@ -2258,24 +2258,30 @@ function StockProfileCheatSheetPage(p){
         var refCl=maBars[maBars.length-1].c;
         if(refCl>0)atr14Pct=(atr14/refCl)*100;
       }
-      // Rolling L-to-next-day-high % average. For each bar i (except the last),
-      // compute (bar[i+1].h - bar[i].l) / bar[i].l * 100, then average over the last N.
-      // N=1 means just the most recent value (most recent l with the next bar's h).
-      // Uses maBars (excludes today's incomplete bar) to avoid noisy in-progress data.
+      // Rolling L-to-next-day-high. For each bar i (except the last), compute:
+      //   pct = (bar[i+1].h - bar[i].l) / bar[i].l * 100
+      //   dollar = bar[i+1].h - bar[i].l
+      // Then average each over the last N. Both kept so we can show absolute
+      // notional (for stop/target sizing) AND % (for cross-stock comparison).
+      // N=1 means just the most recent pair. Uses maBars (excludes today's
+      // incomplete bar) to avoid noisy in-progress data.
       var lhPairs=[];
       for(var lhi=0;lhi<maBars.length-1;lhi++){
         var todayLow=maBars[lhi].l;
         var nextHigh=maBars[lhi+1].h;
-        if(todayLow>0)lhPairs.push((nextHigh-todayLow)/todayLow*100);
+        if(todayLow>0)lhPairs.push({pct:(nextHigh-todayLow)/todayLow*100,dollar:nextHigh-todayLow});
       }
       var rollingLH=function(n){
         if(lhPairs.length<n)return null;
-        var sum=0;
-        for(var lj=lhPairs.length-n;lj<lhPairs.length;lj++)sum+=lhPairs[lj];
-        return sum/n;
+        var sumPct=0,sumDol=0;
+        for(var lj=lhPairs.length-n;lj<lhPairs.length;lj++){
+          sumPct+=lhPairs[lj].pct;
+          sumDol+=lhPairs[lj].dollar;
+        }
+        return {pct:sumPct/n,dollar:sumDol/n};
       };
       // Build rolling stats for the new ROLLING STATS card (1d/3d/5d/10d/30d).
-      // ATR uses Wilder; L-to-next-day-high uses rolling simple average.
+      // ATR uses Wilder; L-to-next-day-high uses rolling simple average ($ and %).
       var rollingStats=null;
       if(maBars.length>=2){
         var refClose=maBars[maBars.length-1].c;
@@ -2285,7 +2291,7 @@ function StockProfileCheatSheetPage(p){
             var atrN=computeWilderATR(n);
             var atrNPct=(atrN!=null&&refClose>0)?(atrN/refClose)*100:null;
             var lhN=rollingLH(n);
-            return {n:n,atr:atrN,atr_pct:atrNPct,lh:lhN};
+            return {n:n,atr:atrN,atr_pct:atrNPct,lh:lhN?lhN.pct:null,lh_dollar:lhN?lhN.dollar:null};
           }),
           ref_close: refClose
         };
@@ -3169,23 +3175,24 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING STATS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Wilder ATR (volatility) and Low-to-Next-Day-High % (typical swing magnitude) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days.'},
+                {p:'Wilder ATR (volatility) and Low-to-Next-Day-High % (typical swing magnitude) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days. Both shown as dollar AND % so you can compare like-for-like across stocks.'},
                 {b:[
                   'ATR ($) = average dollar move per bar - direct stop sizing input',
-                  'ATR (%) = same thing as % of price - cross-stock comparable',
-                  'L→H SWING % = average reach from today\'s low to next day\'s high - profit target reference',
+                  'L→H ($) = average dollar reach from today\'s low to next day\'s high - profit target reference in absolute terms',
+                  'ATR (%) = same as $ but as % of price - cross-stock comparable',
+                  'L→H (%) = same swing magnitude as % - useful for sizing relative to stop',
                   '1d row uses just the most recent value (no smoothing possible)',
                   '3d-30d use Wilder smoothing (RMA) for stability'
                 ]},
                 {h:'Why it matters'},
-                {p:'Compares short-term volatility (1d/3d) against the medium-term baseline (10d/30d) so you can see if the regime is shifting.'},
+                {p:'Compares short-term volatility (1d/3d) against the medium-term baseline (10d/30d) so you can see if the regime is shifting. Dollar values let you size stops/targets directly without doing % math in your head.'},
                 {h:'How to use it'},
                 {b:[
                   'VOL EXPANDING (1d ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings, take profit faster',
                   'VOL CONTRACTING (1d ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves, hold longer',
-                  'Use 5d or 10d ATR$ as a default stop distance reference (multiply by 1.5-2x)',
-                  'Use the 5d L→H swing as a realistic next-day profit target',
-                  'When 1d L→H is much higher than 30d, recent days have been more volatile than typical'
+                  'Use 5d or 10d ATR ($) as a default stop distance reference (multiply by 1.5-2x)',
+                  'Use 5d L→H ($) as a realistic next-day profit target in absolute terms',
+                  'Reward:Risk ratio = L→H ($) / (ATR ($) × stop multiplier) - want > 1.5'
                 ]}
               ]}</Info>
               <span style={{color:regimeColor,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.2,padding:'2px 8px',borderRadius:4,border:'1px solid '+regimeColor,marginLeft:4}}>VOL {regime}</span>
@@ -3193,25 +3200,29 @@ function StockProfileCheatSheetPage(p){
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rollingExpanded?'▾':'▸'}</div>
           </div>
           {rollingExpanded&&<div>
-            {/* Header row */}
+            {/* Header row. Columns ordered: ATR(\$), L→H(\$), ATR(%), L→H(%) so the
+                eye can compare apples-to-apples ($-vs-$ and %-vs-%). Window
+                column is fixed-width 56px to leave more room for 4 data columns. */}
             <div style={{display:'flex',alignItems:'center',padding:'6px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
-              <div style={{flex:'0 0 70px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>WINDOW</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>ATR ($)</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>ATR (%)</div>
-              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>L→H SWING</div>
+              <div style={{flex:'0 0 56px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>WINDOW</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>ATR ($)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H ($)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>ATR (%)</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.2,fontWeight:700}}>L→H (%)</div>
             </div>
             {/* Data rows */}
             {rs.rows.map(function(r,i){
               return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
-                <div style={{flex:'0 0 70px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{labelFor(r.n)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{r.lh!=null?'+'+r.lh.toFixed(2)+'%':'-'}</div>
+                <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{labelFor(r.n)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh_dollar!=null?'$'+r.lh_dollar.toFixed(2):'-'}</div>
+                <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh!=null?'+'+r.lh.toFixed(2)+'%':'-'}</div>
               </div>;
             })}
             {/* Footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              ATR = Wilder smoothed (1d = raw last TR). L→H = avg of (next day's high - today's low) / today's low.
+              ATR = Wilder smoothed (1d = raw last TR). L→H = avg of next day's high - today's low (\$ and %).
             </div>
           </div>}
         </div>;
