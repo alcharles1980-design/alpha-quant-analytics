@@ -2359,6 +2359,8 @@ function StockProfileCheatSheetPage(p){
       //   5d   -> 5m bars  (last 5 maBars trading dates)
       //   10d  -> 5m bars  (last 10 maBars trading dates - 14 cal day fetch covers ~10 trading days)
       //   30d  -> 1h bars  (last 30 maBars trading dates - 90 cal day fetch covers ~63 trading days, plenty)
+      //   Prev Day -> 5m bars filtered to the most recent COMPLETED trading day
+      //              (i.e. the last entry in maBars, which excludes today's bar)
       // Build a list of maBars trade dates so windows align with Rolling Stats.
       var maBarDates=maBars.map(function(b){return getETDateStr(new Date(b.t));});
       // Filter helper: given an intraday bar set, keep only bars whose ET trade
@@ -2366,39 +2368,58 @@ function StockProfileCheatSheetPage(p){
       var filterBarsByDateSet=function(bars,dateSet){
         return bars.filter(function(b){return dateSet[getETDateStr(new Date(b.t))]===true;});
       };
-      // For a trade-date window of size N, return the bars to use + the bars set.
-      var pickRollingProfileBars=function(n){
-        if(n===1){
-          // Use today's minute bars - same source the Today window card uses.
+      // Window descriptor -> bar set. Three window kinds:
+      //   {kind:'today'}        -> today's minute bars (in-progress session)
+      //   {kind:'prev'}         -> single completed previous trading day, 5m bars
+      //   {kind:'rolling', n:N} -> last N maBars trading dates, 5m or 1h
+      var pickRollingProfileBars=function(w){
+        if(w.kind==='today'){
           return minuteBars.length>0?minuteBars:null;
         }
-        // Pick the last N maBars trading dates and filter the appropriate intraday set.
-        if(maBarDates.length<n)return null;
-        var pickedDates=maBarDates.slice(-n);
+        if(w.kind==='prev'){
+          if(maBarDates.length===0)return null;
+          var prevDate=maBarDates[maBarDates.length-1];
+          var ds={};ds[prevDate]=true;
+          return bars5m.length>0?filterBarsByDateSet(bars5m,ds):null;
+        }
+        // rolling N trading days
+        if(maBarDates.length<w.n)return null;
+        var pickedDates=maBarDates.slice(-w.n);
         var dateSet={};pickedDates.forEach(function(d){dateSet[d]=true;});
         // 30 trading days: use 1h bars (we have 90 cal days). 5m only covers ~10 trading days
         // and 30m only ~21, both insufficient for a full 30-trading-day window.
-        if(n>=20)return bars1h.length>0?filterBarsByDateSet(bars1h,dateSet):null;
+        if(w.n>=20)return bars1h.length>0?filterBarsByDateSet(bars1h,dateSet):null;
         // 3/5/10 trading days: use 5m bars (we have 14 cal days = ~10 trading days, fits)
         return bars5m.length>0?filterBarsByDateSet(bars5m,dateSet):null;
       };
       var rollingPocStats=null;
       if(maBars.length>=1&&lastClose!=null&&lastClose>0){
-        var rpcWindows=[1,3,5,10,30];
-        var rpcRows=rpcWindows.map(function(n){
-          var bars=pickRollingProfileBars(n);
-          if(!bars||bars.length===0)return {n:n,poc:null,val:null,vah:null,pct_from_poc:null,position:null,bars_used:0};
+        // Window descriptors. 'Prev Day' inserted between '1 day' (today) and '3 days'.
+        // Today and Prev Day are complementary - today is in-progress, prev day is
+        // the last COMPLETED session. 3d/5d/10d/30d are multi-day rolling.
+        var rpcWindows=[
+          {kind:'today',   label:'1 day'},
+          {kind:'prev',    label:'Prev Day'},
+          {kind:'rolling', label:'3 days',  n:3},
+          {kind:'rolling', label:'5 days',  n:5},
+          {kind:'rolling', label:'10 days', n:10},
+          {kind:'rolling', label:'30 days', n:30}
+        ];
+        var rpcRows=rpcWindows.map(function(w){
+          var bars=pickRollingProfileBars(w);
+          if(!bars||bars.length===0)return {label:w.label,kind:w.kind,poc:null,val:null,vah:null,pct_from_poc:null,position:null,bars_used:0};
           // Use 'point' mode (intraday bars - vw price + volume per bar)
           // Don't force range; let buildProfile compute from bars themselves.
           var prof=buildProfile(bars,'point',null,null);
-          if(!prof)return {n:n,poc:null,val:null,vah:null,pct_from_poc:null,position:null,bars_used:bars.length};
+          if(!prof)return {label:w.label,kind:w.kind,poc:null,val:null,vah:null,pct_from_poc:null,position:null,bars_used:bars.length};
           var pctFromPoc=(prof.poc>0)?((lastClose-prof.poc)/prof.poc)*100:null;
           var position;
           if(lastClose<prof.val)position='BELOW';
           else if(lastClose>prof.vah)position='ABOVE';
           else position='IN VA';
           return {
-            n:n,
+            label:w.label,
+            kind:w.kind,
             poc:prof.poc, val:prof.val, vah:prof.vah,
             pct_from_poc:pctFromPoc,
             position:position,
@@ -3382,7 +3403,9 @@ function StockProfileCheatSheetPage(p){
           var sign=v<0?'':'+'; // toFixed includes - for negatives
           return sign+v.toFixed(2)+'%';
         };
-        var labelFor=function(n){return n===1?'1 day':n+' days';};
+        // Each row now carries its own .label (today / prev / N days), so no
+        // labelFor mapping needed. Different from rolling-stats card which uses
+        // numeric n only.
         // Position pill colors: ABOVE=green (price above value), BELOW=red
         // (below value), IN VA=gold (consolidation/balanced).
         var posColor=function(p){
@@ -3398,14 +3421,14 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING VOL PROFILE</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Volume profile (POC, VAL, VAH) rebuilt for each rolling window (1, 3, 5, 10, 30 trading days). Surfaces where the volume magnet is at each timeframe and where current price sits relative to it.'},
+                {p:'Volume profile (POC, VAL, VAH) rebuilt for each window: today (in-progress), Prev Day (last completed session), and 3/5/10/30-day rolling. Surfaces where the volume magnet is at each timeframe and where current price sits relative to it.'},
                 {b:[
                   'POC = Point of Control: price level with the most volume traded in the window',
                   'VAL = Value Area Low: bottom of the band capturing 70% of volume',
                   'VAH = Value Area High: top of that 70% band',
                   '% FROM POC: signed distance from current price to the POC',
                   'POSITION: IN VA (inside value), ABOVE (above VAH), BELOW (below VAL)',
-                  'Mixed bar resolution: 1d=minute, 3d/5d/10d=5m, 30d=1h'
+                  'Mixed bar resolution: 1d=minute, Prev Day/3d/5d/10d=5m, 30d=1h'
                 ]},
                 {h:'Why it matters'},
                 {p:'POC is a magnet - prices tend to retest it. Value area boundaries (VAL/VAH) are common reversal zones. Comparing where price sits across timeframes reveals positioning extremes.'},
@@ -3436,7 +3459,7 @@ function StockProfileCheatSheetPage(p){
             {/* Data rows */}
             {rpc.rows.map(function(r,i){
               return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
-                <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{labelFor(r.n)}</div>
+                <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{r.label}</div>
                 <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtMoney(r.poc)}</div>
                 <div style={{flex:1,textAlign:'right',color:C.warn,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtMoney(r.val)}</div>
                 <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtMoney(r.vah)}</div>
@@ -3446,7 +3469,7 @@ function StockProfileCheatSheetPage(p){
             })}
             {/* Footnote: current price + bar resolution disclosure */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              Current price: ${data.last_close.toFixed(2)}. Bar resolution: 1d=minute, 3d/5d/10d=5min, 30d=1hr. POC is the highest-volume price level; VA is the 70% band.
+              Current price: ${data.last_close.toFixed(2)}. Bar resolution: 1d=minute, Prev Day/3d/5d/10d=5min, 30d=1hr. POC is the highest-volume price level; VA is the 70% band.
             </div>
           </div>}
         </div>;
