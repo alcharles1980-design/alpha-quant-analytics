@@ -1409,17 +1409,32 @@ function StockProfileCheatSheetPage(p){
 
       setProgMsg('Fetching upcoming earnings...');
       // FETCH 4a: Benzinga earnings (primary source - exact dates with confirmation status)
-      // Filter by ticker, date >= today, sort ascending, take first record
+      // Pull a bunch of upcoming records, filter out invalid dates, take the soonest.
+      // The single-result query was unreliable - some records have date set to a
+      // far-future placeholder when the actual report hasn't been scheduled yet.
       var earnings=null;
+      var earningsDebug=null;
       var todayDateStr=todayStr;
       try{
-        var bzUrl='https://api.polygon.io/benzinga/v1/earnings?ticker='+tk+'&date.gte='+todayDateStr+'&order=asc&sort=date&limit=1&apiKey='+p.apiKey;
+        var bzUrl='https://api.polygon.io/benzinga/v1/earnings?ticker='+tk+'&date.gte='+todayDateStr+'&order=asc&sort=date&limit=20&apiKey='+p.apiKey;
         var bzR=await fetch(bzUrl);
         if(bzR.ok){
           var bzBody=await bzR.json();
           var bzResults=bzBody.results||[];
-          if(bzResults.length>0){
-            var ev=bzResults[0];
+          earningsDebug={count:bzResults.length, raw:bzResults.slice(0,5).map(function(r){return {date:r.date,fp:r.fiscal_period,fy:r.fiscal_year,status:r.date_status,updated:r.last_updated};})};
+          // Filter for valid dates (must be a parseable YYYY-MM-DD string) and take first.
+          // Sort by date ascending (the API may not always return them sorted as expected).
+          var valid=bzResults.filter(function(r){
+            if(!r.date)return false;
+            // Date must be reasonable - not more than 200 days out (we want NEXT earnings, not far future projections)
+            var d=new Date(r.date+'T00:00:00Z').getTime();
+            var t=new Date(todayDateStr+'T00:00:00Z').getTime();
+            var daysAway=(d-t)/86400000;
+            return daysAway>=0 && daysAway<=200;
+          }).sort(function(a,b){return (a.date<b.date?-1:a.date>b.date?1:0);});
+
+          if(valid.length>0){
+            var ev=valid[0];
             earnings={
               date: ev.date,
               source: 'benzinga',
@@ -1432,7 +1447,7 @@ function StockProfileCheatSheetPage(p){
             };
           }
         }
-      }catch(bzErr){}
+      }catch(bzErr){earningsDebug={error:String(bzErr)};}
 
       // FETCH 4b: Financials fallback - if Benzinga returned nothing, infer from most recent filing
       if(!earnings){
@@ -1712,6 +1727,7 @@ function StockProfileCheatSheetPage(p){
         session_vwap: sessionVwap,
         prev_day_vwap: prevDayVwap,
         earnings: earnings,
+        earnings_debug: earningsDebug,
         windows:{
           today:enrichWin(wToday),
           prev:enrichWin(wPrev),
@@ -1882,6 +1898,10 @@ function StockProfileCheatSheetPage(p){
           </div>}
           <div style={{padding:6,background:'rgba(0,0,0,0.25)',borderRadius:4,fontSize:8,fontFamily:F,color:labelColor,fontWeight:700,letterSpacing:1,textAlign:'center'}}>{risk==='HIGH'?'\u26A0 ':''}{riskMsg.toUpperCase()}</div>
           {ev.source==='inferred'&&<div style={{marginTop:6,color:C.txtDim,fontSize:7,fontFamily:F,fontStyle:'italic'}}>Estimated from last filing ({ev.last_filing_period}, period {ev.last_filing_report_date}). Actual date may vary by ~2 weeks.</div>}
+          {data.earnings_debug&&<details style={{marginTop:6}}>
+            <summary style={{color:C.txtDim,fontSize:7,fontFamily:F,cursor:'pointer'}}>debug: raw earnings records</summary>
+            <pre style={{fontSize:7,fontFamily:F,color:C.txtDim,overflow:'auto',background:'rgba(0,0,0,0.3)',padding:6,borderRadius:4,marginTop:4}}>{JSON.stringify(data.earnings_debug,null,2)}</pre>
+          </details>}
           {(ev.eps_estimate!=null||ev.revenue_estimate!=null)&&<div style={{marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border,display:'flex',gap:12,fontSize:9,fontFamily:F}}>
             {ev.eps_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>EPS EST</span> <span style={{color:C.txtBright,fontWeight:700}}>${ev.eps_estimate.toFixed(2)}</span></div>}
             {ev.revenue_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>REV EST</span> <span style={{color:C.txtBright,fontWeight:700}}>{(function(v){if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';return '$'+v.toLocaleString();})(ev.revenue_estimate)}</span></div>}
