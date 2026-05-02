@@ -1515,34 +1515,35 @@ function StockProfileCheatSheetPage(p){
       // 30-min for 30d: 1 Month
       // 1-hour for 90d: 3 Months
       // Today uses already-fetched minuteBars; 52 Weeks approximates from dailyBars.
-      setProgMsg('Fetching 5min bars for short-window profiles...');
-      var bars5m=[];
+      // Fetched in parallel via Promise.all to save ~800-1200ms vs sequential.
+      setProgMsg('Fetching profile bars (5min/30min/1h)...');
+      var from14=getETDateStr(new Date(today.getTime()-14*86400000));
+      var from30=getETDateStr(new Date(today.getTime()-30*86400000));
+      var from90=getETDateStr(new Date(today.getTime()-90*86400000));
+      var url5m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/5/minute/'+from14+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var url30m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/30/minute/'+from30+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var url1h='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/hour/'+from90+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      // Wrapper: fetch + parse, soft-fail to empty array, but rethrow AbortError so
+      // Promise.all bails fast when the user cancels.
+      var safeFetchBars=async function(url){
+        try{
+          var r=await fetch(url,{signal:aborter.signal});
+          if(!r.ok)return [];
+          var body=await r.json();
+          return body.results||[];
+        }catch(e){
+          if(e.name==='AbortError')throw e;
+          return [];
+        }
+      };
+      var bars5m=[],bars30m=[],bars1h=[];
       try{
-        var from14=getETDateStr(new Date(today.getTime()-14*86400000));
-        var url5m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/5/minute/'+from14+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var r5m=await fetch(url5m,{signal:aborter.signal});
-        if(r5m.ok){var b5m=await r5m.json();bars5m=b5m.results||[];}
-      }catch(e5m){if(e5m.name==='AbortError')throw e5m;}
-      checkAbort();
-
-      setProgMsg('Fetching 30min bars for monthly profile...');
-      var bars30m=[];
-      try{
-        var from30=getETDateStr(new Date(today.getTime()-30*86400000));
-        var url30m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/30/minute/'+from30+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var r30m=await fetch(url30m,{signal:aborter.signal});
-        if(r30m.ok){var b30m=await r30m.json();bars30m=b30m.results||[];}
-      }catch(e30m){if(e30m.name==='AbortError')throw e30m;}
-      checkAbort();
-
-      setProgMsg('Fetching hourly bars for 3mo profile...');
-      var bars1h=[];
-      try{
-        var from90=getETDateStr(new Date(today.getTime()-90*86400000));
-        var url1h='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/hour/'+from90+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var r1h=await fetch(url1h,{signal:aborter.signal});
-        if(r1h.ok){var b1h=await r1h.json();bars1h=b1h.results||[];}
-      }catch(e1h){if(e1h.name==='AbortError')throw e1h;}
+        var triple=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h)]);
+        bars5m=triple[0];bars30m=triple[1];bars1h=triple[2];
+      }catch(eAll){
+        if(eAll.name==='AbortError')throw eAll;
+        // Other errors: keep arrays empty, profiles will silently skip.
+      }
       checkAbort();
 
       // Volume profile builder.
@@ -1557,9 +1558,10 @@ function StockProfileCheatSheetPage(p){
       var buildProfile=function(bars,mode,forceLo,forceHi){
         if(!bars||!bars.length)return null;
         var profileLo,profileHi;
+        var hasForcedRange=(forceLo!=null&&forceHi!=null&&forceHi>forceLo);
         // If explicit range provided, use it (so histogram aligns to gradient bar price axis).
         // Otherwise compute from bars (the original behavior).
-        if(forceLo!=null&&forceHi!=null&&forceHi>forceLo){
+        if(hasForcedRange){
           profileLo=forceLo;profileHi=forceHi;
         } else {
           profileLo=Infinity;profileHi=-Infinity;
@@ -1575,19 +1577,42 @@ function StockProfileCheatSheetPage(p){
         if(bSize<=0)return null;
         var buckets=new Array(nB);
         for(var k=0;k<nB;k++)buckets[k]=0;
+        // When forcing range, SKIP volume outside [profileLo, profileHi] to avoid
+        // inflating edge buckets with extended-hours volume that fell outside
+        // the gradient's RTH range. When NOT forcing (range was derived from bars),
+        // clamping is safe since all bars are inside the range by construction.
         for(var i=0;i<bars.length;i++){
           var b=bars[i];
           if(b.v==null||isNaN(b.v)||b.v<=0)continue;
           if(mode==='uniform'){
-            // Volume that falls outside [profileLo, profileHi] gets clamped to edge buckets.
-            var loIdx=Math.max(0,Math.min(nB-1,Math.floor((b.l-profileLo)/bSize)));
-            var hiIdx=Math.max(0,Math.min(nB-1,Math.floor((b.h-profileLo)/bSize)));
-            var span=hiIdx-loIdx+1;
-            var perB=b.v/span;
-            for(var j=loIdx;j<=hiIdx;j++)buckets[j]+=perB;
+            if(hasForcedRange){
+              // Skip bars entirely outside range
+              if(b.h<profileLo||b.l>profileHi)continue;
+              // Clip the bar's covered range to the profile range
+              var clipLo=Math.max(b.l,profileLo);
+              var clipHi=Math.min(b.h,profileHi);
+              var loIdx=Math.max(0,Math.min(nB-1,Math.floor((clipLo-profileLo)/bSize)));
+              var hiIdx=Math.max(0,Math.min(nB-1,Math.floor((clipHi-profileLo)/bSize)));
+              // Pro-rate the bar's volume by what fraction of [b.l,b.h] is inside the profile range
+              var origSpan=b.h-b.l;
+              var clippedSpan=clipHi-clipLo;
+              var vClipped=(origSpan>0)?b.v*(clippedSpan/origSpan):b.v;
+              var span=hiIdx-loIdx+1;
+              var perB=vClipped/span;
+              for(var j=loIdx;j<=hiIdx;j++)buckets[j]+=perB;
+            } else {
+              var loIdx=Math.max(0,Math.min(nB-1,Math.floor((b.l-profileLo)/bSize)));
+              var hiIdx=Math.max(0,Math.min(nB-1,Math.floor((b.h-profileLo)/bSize)));
+              var span=hiIdx-loIdx+1;
+              var perB=b.v/span;
+              for(var j=loIdx;j<=hiIdx;j++)buckets[j]+=perB;
+            }
           } else {
             var px=(b.vw!=null&&!isNaN(b.vw)&&b.vw>0)?b.vw:b.c;
             if(px==null||isNaN(px))continue;
+            // Skip volume that falls outside the forced range (avoids edge inflation
+            // from extended-hours wicks beyond the gradient bar's RTH range).
+            if(hasForcedRange&&(px<profileLo||px>profileHi))continue;
             var idx=Math.max(0,Math.min(nB-1,Math.floor((px-profileLo)/bSize)));
             buckets[idx]+=b.v;
           }
@@ -2058,8 +2083,9 @@ function StockProfileCheatSheetPage(p){
       </div>}
       {/* Mini volume profile histogram - shares price x-axis with gradient bar below.
           50 vertical bars, each bucket's height proportional to volume in that bucket.
-          POC bucket = bright purple, VA buckets = medium purple, others = dim white. */}
-      {w.profile&&w.profile.buckets&&w.profile.max_bucket_vol>0&&<div style={{display:'flex',alignItems:'flex-end',height:32,marginBottom:3,gap:1,padding:'0 1px'}}>
+          POC bucket = bright purple, VA buckets = medium purple, others = dim white.
+          No horizontal padding so the histogram aligns pixel-exactly with the gradient bar. */}
+      {w.profile&&w.profile.buckets&&w.profile.max_bucket_vol>0&&<div style={{display:'flex',alignItems:'flex-end',height:32,marginBottom:3,gap:1}}>
         {w.profile.buckets.map(function(vol,i){
           var h=(vol/w.profile.max_bucket_vol)*100;
           var inVA=i>=w.profile.va_lo_idx&&i<=w.profile.va_hi_idx;
