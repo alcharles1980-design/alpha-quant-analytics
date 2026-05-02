@@ -2549,11 +2549,18 @@ function StockProfileCheatSheetPage(p){
           // 3-day volume profile: build fresh from 5m bars over the last 3
           // maBars trade dates (no pre-built profile exists for this window).
           // Reuses pickRollingProfileBars from the Rolling Vol Profile card.
+          // FORCE the range to threeHL.lo/threeHL.hi (daily-bar derived) for
+          // consistency with profPrev/profWeek/prof2wk/prof1mo - those all
+          // pass forced ranges, ensuring VAL/VAH/POC fall WITHIN the displayed
+          // [LOW, HIGH] of the same row. Without forcing, buildProfile would
+          // compute range from 5m bars themselves, and edge-case extended-hours
+          // volume could push the profile range outside the daily-bar [LOW, HIGH]
+          // creating visual inconsistency.
           var prof3day=null,vwap3day=null;
           if(threeHL){
             var threeBars=pickRollingProfileBars({kind:'rolling',n:3});
             if(threeBars&&threeBars.length>0){
-              prof3day=buildProfile(threeBars,'point',null,null);
+              prof3day=buildProfile(threeBars,'point',threeHL.lo,threeHL.hi);
               // 3-day VWAP from the same 5m bar set powering the profile.
               // VWAP = sum(bar.vw * bar.v) / sum(bar.v). Defensive against null/NaN
               // following the established computeVWAP pattern. The 3-day window has
