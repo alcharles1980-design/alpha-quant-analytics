@@ -2518,6 +2518,40 @@ function StockProfileCheatSheetPage(p){
         if(swingBaseClose!=null&&swingBaseClose>0&&swingCL3&&swingLH3){
           var swingLow=swingBaseClose*(1+swingCL3.pct/100);
           var swingTop=swingLow*(1+swingLH3.pct/100);
+          // Period actual hi/lo ranges - real prices from completed sessions,
+          // shown alongside the projected swing targets above. Helps the
+          // user gauge how the projection relates to recent observed extremes.
+          // Sources:
+          //   Prev Day -> wPrev (set later via wPrev path) - use maBars last bar
+          //               directly here since wPrev/window cards build later
+          //   3 Day    -> hi/lo across last 3 maBars (no existing window for 3d)
+          //   1 Week   -> wWeek (calendar-Mon-to-now scan) - reuse
+          //   2 Weeks  -> w2wk - reuse
+          //   1 Month  -> w1mo - reuse
+          // For Prev Day and 3 Day we compute from maBars directly to avoid
+          // ordering coupling with the window builders.
+          var hiLoLastN=function(n){
+            if(maBars.length<n)return null;
+            var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null;
+            for(var i=maBars.length-n;i<maBars.length;i++){
+              var b=maBars[i];
+              if(b.h!=null&&!isNaN(b.h)&&b.h>hi){hi=b.h;hiDate=getETDateStr(new Date(b.t));}
+              if(b.l!=null&&!isNaN(b.l)&&b.l<lo){lo=b.l;loDate=getETDateStr(new Date(b.t));}
+            }
+            if(hi===-Infinity||lo===Infinity)return null;
+            return {hi:hi,lo:lo,hi_date:hiDate,lo_date:loDate};
+          };
+          var prevHL=hiLoLastN(1);
+          var threeHL=hiLoLastN(3);
+          // Period ranges array - each entry has label + hi + lo + optional dates.
+          // Using the calendar-based windows (wWeek/w2wk/w1mo) for 1w/2w/1m so
+          // the values match what users see in the existing window cards.
+          var periodRanges=[];
+          if(prevHL)periodRanges.push({label:'Prev Day',hi:prevHL.hi,lo:prevHL.lo});
+          if(threeHL)periodRanges.push({label:'3 Day',hi:threeHL.hi,lo:threeHL.lo});
+          if(wWeek)periodRanges.push({label:'1 Week',hi:wWeek.hi,lo:wWeek.lo});
+          if(w2wk)periodRanges.push({label:'2 Weeks',hi:w2wk.hi,lo:w2wk.lo});
+          if(w1mo)periodRanges.push({label:'1 Month',hi:w1mo.hi,lo:w1mo.lo});
           swingTargets={
             base_close: swingBaseClose,
             base_date: swingBaseDate,
@@ -2528,7 +2562,8 @@ function StockProfileCheatSheetPage(p){
             low_swing_diff: swingLow-swingBaseClose,
             top_end_diff: swingTop-swingBaseClose,
             low_swing_pct: ((swingLow-swingBaseClose)/swingBaseClose)*100,
-            top_end_pct: ((swingTop-swingBaseClose)/swingBaseClose)*100
+            top_end_pct: ((swingTop-swingBaseClose)/swingBaseClose)*100,
+            period_ranges: periodRanges
           };
         }
       }
@@ -3662,23 +3697,25 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>SWING POTENTIAL TARGETS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'A two-target projection model of a typical swing-trade range, anchored to the most recent completed daily close.'},
+                {p:'A two-target projection model of a typical swing-trade range, anchored to the most recent completed daily close. Plus actual high/low ranges for Prev Day, 3 Day, 1 Week, 2 Weeks, and 1 Month for context.'},
                 {b:[
                   'BASE: the most recent completed trading day\'s close (excludes today\'s in-progress session)',
                   'LOW SWING: base_close × (1 + avg 3-day C→L%) - models a typical drawdown from close',
                   'TOP END: low_swing × (1 + avg 3-day L→H%) - models a typical rally from the projected low',
                   'Both averages come from the Rolling Stats card\'s 3-day row',
-                  'avg C→L typically negative (drops happen); avg L→H typically positive (rallies happen)'
+                  'avg C→L typically negative (drops happen); avg L→H typically positive (rallies happen)',
+                  'PERIOD HIGHS & LOWS: actual extreme prices observed across recent windows (Prev Day, 3 Day, 1 Week, 2 Weeks, 1 Month) with absolute and % range'
                 ]},
                 {h:'Why it matters'},
-                {p:'Captures the natural intraday rhythm: price tends to dip below the prior close, then rally back. The two targets bracket a realistic swing range using only the last 3 days of data - responsive to current regime, not contaminated by older history.'},
+                {p:'The projection captures the natural intraday rhythm: price tends to dip below the prior close, then rally back. The actual period ranges show what the stock has actually done recently - useful sanity check on whether projected targets are within or beyond observed reach.'},
                 {h:'How to use it'},
                 {b:[
                   'LOW SWING = potential bounce zone - dip-buy entry candidate',
                   'TOP END = potential resistance / take-profit zone',
                   'If price already below LOW SWING: drawdown is unusually deep relative to recent norm',
                   'If price already above TOP END: extended above typical reach - mean-revert risk',
-                  'Compare LOW SWING to today\'s actual low to gauge whether the daily drop is normal or extreme',
+                  'Compare LOW SWING / TOP END to the period actuals - if projection extends beyond 1-month range, expect regime shift required',
+                  'Period ranges narrow over time = consolidation; widen = expansion',
                   'Use as a sanity check on entry/exit levels - not a hard prediction'
                 ]}
               ]}</Info>
@@ -3711,6 +3748,33 @@ function StockProfileCheatSheetPage(p){
                 <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{fmtSignedPct(st.top_end_pct)}</div>
               </div>
             </div>
+            {/* Period actual high/low ranges - real prices observed in completed
+                sessions. Provides context for how the projected swing targets
+                compare to recent extremes. */}
+            {st.period_ranges&&st.period_ranges.length>0&&<div style={{padding:'8px 0',borderTop:'1px solid '+C.border,marginBottom:6}}>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>PERIOD HIGHS &amp; LOWS</div>
+              {/* Header row */}
+              <div style={{display:'flex',alignItems:'center',padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:2}}>
+                <div style={{flex:'0 0 64px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>WINDOW</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>LOW</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>HIGH</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>RANGE</div>
+              </div>
+              {/* Data rows */}
+              {st.period_ranges.map(function(r,i){
+                var rng=(r.hi!=null&&r.lo!=null)?r.hi-r.lo:null;
+                var rngPct=(rng!=null&&st.base_close>0)?(rng/st.base_close)*100:null;
+                return <div key={i} style={{display:'flex',alignItems:'center',padding:'5px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
+                  <div style={{flex:'0 0 64px',color:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{r.label}</div>
+                  <div style={{flex:1,textAlign:'right',color:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{r.lo!=null?'$'+r.lo.toFixed(2):'-'}</div>
+                  <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:9,fontFamily:F,fontWeight:700}}>{r.hi!=null?'$'+r.hi.toFixed(2):'-'}</div>
+                  <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700}}>
+                    {rng!=null?'$'+rng.toFixed(2):'-'}
+                    {rngPct!=null&&<span style={{color:C.txtDim,fontSize:7,marginLeft:4,fontWeight:400}}>({rngPct.toFixed(1)}%)</span>}
+                  </div>
+                </div>;
+              })}
+            </div>}
             {/* Methodology footer */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
               3-day avg C→L: <span style={{color:C.warn,fontStyle:'normal',fontWeight:700}}>{fmtSignedPct(st.avg_cl_pct)}</span> (low swing from base)&nbsp;·&nbsp;3-day avg L→H: <span style={{color:C.accent,fontStyle:'normal',fontWeight:700}}>{fmtSignedPct(st.avg_lh_pct)}</span> (top end from projected low). Models price dipping to the low, then rallying to the top.
