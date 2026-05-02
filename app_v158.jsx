@@ -1665,6 +1665,17 @@ function StockProfileCheatSheetPage(p){
           <div style={{color:C.txtDim,fontSize:8,letterSpacing:2,fontWeight:700,marginBottom:3}}>MARKET CAP</div>
           <div style={{color:C.gold,fontSize:16,fontWeight:700}}>{(function(v){if(v>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';if(v>=1e3)return '$'+(v/1e3).toFixed(1)+'K';return '$'+v.toFixed(0);})(data.market_cap)}</div>
           {data.shares_out!=null&&<div style={{color:C.txtDim,fontSize:8,marginTop:2}}>{(function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);})(data.shares_out)} shares outstanding</div>}
+          {(function(){
+            var mc=data.market_cap;
+            var tier,tierColor,tierBg;
+            if(mc>=200e9){tier='MEGA CAP';tierColor='#9333ea';tierBg='#1e0a3d';}
+            else if(mc>=10e9){tier='LARGE CAP';tierColor='#10b981';tierBg='#0a2e22';}
+            else if(mc>=2e9){tier='MID CAP';tierColor='#fbbf24';tierBg='#3d2d10';}
+            else if(mc>=300e6){tier='SMALL CAP';tierColor='#3b82f6';tierBg='#0a1a3d';}
+            else if(mc>=50e6){tier='MICRO CAP';tierColor='#f97316';tierBg='#3d1e0a';}
+            else{tier='NANO CAP';tierColor='#ef4444';tierBg='#3d1010';}
+            return <div style={{marginTop:8,display:'inline-block',padding:'4px 10px',background:tierBg,border:'1px solid '+tierColor,borderRadius:12,color:tierColor,fontSize:9,fontWeight:700,letterSpacing:1.5,fontFamily:F}}>{tier}</div>;
+          })()}
         </div>}
         {data.name&&<div style={{marginTop:8,color:C.txt,fontSize:9,fontFamily:F}}>{data.name}</div>}
         {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
