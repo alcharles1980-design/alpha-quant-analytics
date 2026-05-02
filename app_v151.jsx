@@ -1401,6 +1401,7 @@ function StockProfileCheatSheetPage(p){
       var scanBars=function(barsArr){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
         var sumDollarRange=0,sumPctRange=0,validPctCount=0;
+        var sumLowToNextHighDollar=0,sumLowToNextHighPct=0,pairCount=0,pairValidPctCount=0;
         for(var i=0;i<barsArr.length;i++){
           var b=barsArr[i];
           if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
@@ -1409,12 +1410,23 @@ function StockProfileCheatSheetPage(p){
           sumDollarRange+=dr;
           if(b.l>0){sumPctRange+=(dr/b.l)*100;validPctCount++;}
           n++;
+          // Consecutive day pair: bar[i].low -> bar[i+1].high
+          if(i<barsArr.length-1){
+            var prevLow=barsArr[i].l;
+            var nextHigh=barsArr[i+1].h;
+            sumLowToNextHighDollar+=(nextHigh-prevLow);
+            pairCount++;
+            if(prevLow>0){sumLowToNextHighPct+=((nextHigh-prevLow)/prevLow)*100;pairValidPctCount++;}
+          }
         }
         if(!n||hi===-Infinity)return null;
         return {
           hi:hi, lo:lo, hi_date:hiDate, lo_date:loDate, bars:n,
           avg_daily_range_dollar: n>0?sumDollarRange/n:null,
-          avg_daily_range_pct: validPctCount>0?sumPctRange/validPctCount:null
+          avg_daily_range_pct: validPctCount>0?sumPctRange/validPctCount:null,
+          avg_low_to_next_high_dollar: pairCount>0?sumLowToNextHighDollar/pairCount:null,
+          avg_low_to_next_high_pct: pairValidPctCount>0?sumLowToNextHighPct/pairValidPctCount:null,
+          pair_count: pairCount
         };
       };
 
@@ -1551,6 +1563,10 @@ function StockProfileCheatSheetPage(p){
       {w.avg_daily_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>{w.bars===1||(w.source&&w.source==='minute')?"TODAY'S RANGE":'AVG DAILY RANGE'}</span>
         <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
+      </div>}
+      {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txtDim,letterSpacing:1,fontWeight:700}}>LOW \u2192 NEXT DAY HIGH</span>
+        <span><span style={{color:C.accent,fontWeight:700}}>${w.avg_low_to_next_high_dollar.toFixed(2)}</span>{w.avg_low_to_next_high_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_low_to_next_high_pct.toFixed(2)}%)</span>}<span style={{color:C.txtDim,marginLeft:6,fontSize:7}}>n={w.pair_count}</span></span>
       </div>}
     </div>;
   };
