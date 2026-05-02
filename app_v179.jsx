@@ -2544,19 +2544,21 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright}}>▏ current ${px!=null?px.toFixed(2):'-'}</span>
             </div>
           </div>}
-          {/* Distribution: BUY / HOLD / SELL counts */}
+          {/* Distribution: BUY / HOLD / SELL counts. Equal-width pills so labels
+              always fit; the COUNT and color carry the visual weight, not pill size.
+              (Proportional flex collapses the 0-count pills to vertical letter wrap.) */}
           {a.total_active>0&&<div style={{display:'flex',gap:6,marginBottom:10}}>
-            <div style={{flex:a.distribution.buy||0.01,padding:'4px 6px',background:'rgba(0,229,160,0.18)',border:'1px solid '+C.accent,borderRadius:4,textAlign:'center',minWidth:0}}>
-              <div style={{color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{a.distribution.buy}</div>
-              <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1}}>BUY</div>
+            <div style={{flex:1,padding:'6px 4px',background:'rgba(0,229,160,0.18)',border:'1px solid '+C.accent,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.buy>0?1:0.4}}>
+              <div style={{color:C.accent,fontSize:14,fontFamily:F,fontWeight:700,lineHeight:1}}>{a.distribution.buy}</div>
+              <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.5,marginTop:2}}>BUY</div>
             </div>
-            <div style={{flex:a.distribution.hold||0.01,padding:'4px 6px',background:'rgba(255,176,32,0.18)',border:'1px solid '+C.gold,borderRadius:4,textAlign:'center',minWidth:0}}>
-              <div style={{color:C.gold,fontSize:11,fontFamily:F,fontWeight:700}}>{a.distribution.hold}</div>
-              <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1}}>HOLD</div>
+            <div style={{flex:1,padding:'6px 4px',background:'rgba(255,176,32,0.18)',border:'1px solid '+C.gold,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.hold>0?1:0.4}}>
+              <div style={{color:C.gold,fontSize:14,fontFamily:F,fontWeight:700,lineHeight:1}}>{a.distribution.hold}</div>
+              <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1.5,marginTop:2}}>HOLD</div>
             </div>
-            <div style={{flex:a.distribution.sell||0.01,padding:'4px 6px',background:'rgba(255,92,58,0.18)',border:'1px solid '+C.warn,borderRadius:4,textAlign:'center',minWidth:0}}>
-              <div style={{color:C.warn,fontSize:11,fontFamily:F,fontWeight:700}}>{a.distribution.sell}</div>
-              <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1}}>SELL</div>
+            <div style={{flex:1,padding:'6px 4px',background:'rgba(255,92,58,0.18)',border:'1px solid '+C.warn,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.sell>0?1:0.4}}>
+              <div style={{color:C.warn,fontSize:14,fontFamily:F,fontWeight:700,lineHeight:1}}>{a.distribution.sell}</div>
+              <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1.5,marginTop:2}}>SELL</div>
             </div>
           </div>}
           {/* Recent changes list - only render if there are interesting changes */}
