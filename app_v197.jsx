@@ -1984,7 +1984,7 @@ function StockProfileCheatSheetPage(p){
 
       var scanBars=function(barsArr){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
-        var sumTrueRange=0,sumTruePctRange=0,trCount=0,trPctValidCount=0;
+        var sumTrueRange=0,trCount=0;
         var sumLowToNextHighDollar=0,sumLowToNextHighPct=0,pairCount=0,pairValidPctCount=0;
         var sumVolume=0,volBarCount=0;
         var sumDollarNotional=0,notionalBarCount=0;
@@ -2006,7 +2006,6 @@ function StockProfileCheatSheetPage(p){
           }
           sumTrueRange+=tr;
           trCount++;
-          if(b.l>0){sumTruePctRange+=(tr/b.l)*100;trPctValidCount++;}
           // Volume (shares)
           if(b.v!=null&&!isNaN(b.v)){sumVolume+=b.v;volBarCount++;}
           // Dollar notional: v * vw (VWAP). Fall back to v * close if vw missing.
@@ -2030,7 +2029,9 @@ function StockProfileCheatSheetPage(p){
         return {
           hi:hi, lo:lo, hi_date:hiDate, lo_date:loDate, bars:n,
           avg_true_range_dollar: trCount>0?sumTrueRange/trCount:null,
-          avg_true_range_pct: trPctValidCount>0?sumTruePctRange/trPctValidCount:null,
+          // avg_true_range_pct is set in enrichWin using last close as denominator
+          // for consistency with hero ATR(14) and Rolling Stats card.
+          avg_true_range_pct: null,
           avg_low_to_next_high_dollar: pairCount>0?sumLowToNextHighDollar/pairCount:null,
           avg_low_to_next_high_pct: pairValidPctCount>0?sumLowToNextHighPct/pairValidPctCount:null,
           pair_count: pairCount,
@@ -2101,7 +2102,8 @@ function StockProfileCheatSheetPage(p){
         wToday={
           hi:thi, lo:tlo, bars:minuteBars.length, source:'minute',
           avg_true_range_dollar: todayTR,
-          avg_true_range_pct: tlo>0?(todayTR/tlo)*100:null,
+          // avg_true_range_pct set in enrichWin using last close
+          avg_true_range_pct: null,
           avg_volume_shares: tVol>0?tVol:null,
           avg_dollar_notional: tNotional>0?tNotional:null,
           avg_trade_count: tTrades>0?tTrades:null,
@@ -2120,7 +2122,7 @@ function StockProfileCheatSheetPage(p){
           wToday={
             hi:lastDaily.h, lo:lastDaily.l, bars:1, source:'daily',
             avg_true_range_dollar: lastTR,
-            avg_true_range_pct: lastDaily.l>0?(lastTR/lastDaily.l)*100:null,
+            avg_true_range_pct: null,
             avg_volume_shares: lastDaily.v!=null?lastDaily.v:null,
             avg_dollar_notional: lastDaily.v!=null&&lastPx!=null?(lastDaily.v*lastPx):null,
             avg_trade_count: lastDaily.n!=null?lastDaily.n:null,
@@ -2162,7 +2164,7 @@ function StockProfileCheatSheetPage(p){
         wPrev={
           hi:prevBar.h, lo:prevBar.l, hi_date:prevDate, lo_date:prevDate, bars:1, source:'prev',
           avg_true_range_dollar: prevTR,
-          avg_true_range_pct: prevBar.l>0?(prevTR/prevBar.l)*100:null,
+          avg_true_range_pct: null,
           avg_volume_shares: prevBar.v!=null?prevBar.v:null,
           avg_dollar_notional: prevBar.v!=null&&prevPx!=null?(prevBar.v*prevPx):null,
           avg_trade_count: prevBar.n!=null?prevBar.n:null,
@@ -2198,7 +2200,10 @@ function StockProfileCheatSheetPage(p){
       // 52 Weeks: daily bars approximated (uniform across H-L per bar). Marked as approx.
       var prof52w=(dailyBars.length>0&&w52)?buildProfile(dailyBars,'uniform',w52.lo,w52.hi):null;
 
-      // Add derived metrics to each window
+      // Add derived metrics to each window. ATR% is normalized by lastClose
+      // (the same denominator used by hero ATR(14) and Rolling Stats card) so
+      // every ATR% on the page reads as 'how much of today's price is one
+      // average TR move worth'. Cross-section comparable.
       var enrichWin=function(w){
         if(!w)return null;
         w.range_position=(w.hi>w.lo)?((lastClose-w.lo)/(w.hi-w.lo))*100:null;
@@ -2206,6 +2211,8 @@ function StockProfileCheatSheetPage(p){
         w.pct_from_low=w.lo>0?((lastClose-w.lo)/w.lo)*100:null;
         w.range_dollar=w.hi-w.lo;
         w.range_pct=w.lo>0?((w.hi-w.lo)/w.lo)*100:null;
+        // ATR% normalized by last close (consistent with hero + rolling card)
+        w.avg_true_range_pct=(w.avg_true_range_dollar!=null&&lastClose>0)?(w.avg_true_range_dollar/lastClose)*100:null;
         return w;
       };
 
