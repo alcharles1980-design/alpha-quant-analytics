@@ -1362,6 +1362,7 @@ function StockProfileCheatSheetPage(p){
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),data=s4[0],setData=s4[1];
   var s5=useState(''),progMsg=s5[0],setProgMsg=s5[1];
+  var s6=useState(false),newsExpanded=s6[0],setNewsExpanded=s6[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -1516,13 +1517,16 @@ function StockProfileCheatSheetPage(p){
       // 1-hour for 90d: 3 Months
       // Today uses already-fetched minuteBars; 52 Weeks approximates from dailyBars.
       // Fetched in parallel via Promise.all to save ~800-1200ms vs sequential.
-      setProgMsg('Fetching profile bars (5min/30min/1h)...');
+      setProgMsg('Fetching profile bars + news...');
       var from14=getETDateStr(new Date(today.getTime()-14*86400000));
       var from30=getETDateStr(new Date(today.getTime()-30*86400000));
       var from90=getETDateStr(new Date(today.getTime()-90*86400000));
       var url5m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/5/minute/'+from14+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
       var url30m='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/30/minute/'+from30+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
       var url1h='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/hour/'+from90+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      // News from Polygon's reference endpoint (Benzinga-sourced), 10 most recent.
+      // Includes per-ticker sentiment + reasoning when available.
+      var urlNews='https://api.polygon.io/v2/reference/news?ticker='+tkEnc+'&limit=10&order=desc&sort=published_utc&apiKey='+p.apiKey;
       // Wrapper: fetch + parse, soft-fail to empty array, but rethrow AbortError so
       // Promise.all bails fast when the user cancels.
       var safeFetchBars=async function(url){
@@ -1536,15 +1540,40 @@ function StockProfileCheatSheetPage(p){
           return [];
         }
       };
-      var bars5m=[],bars30m=[],bars1h=[];
+      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[];
       try{
-        var triple=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h)]);
-        bars5m=triple[0];bars30m=triple[1];bars1h=triple[2];
+        var quad=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews)]);
+        bars5m=quad[0];bars30m=quad[1];bars1h=quad[2];newsRaw=quad[3];
       }catch(eAll){
         if(eAll.name==='AbortError')throw eAll;
-        // Other errors: keep arrays empty, profiles will silently skip.
+        // Other errors: keep arrays empty, profiles + news will silently skip.
       }
       checkAbort();
+
+      // Process news: extract ticker-specific sentiment + reasoning.
+      // Each article may have insights[] keyed by ticker. We pick the entry
+      // matching our ticker, fall back to first insight if no match.
+      var news=newsRaw.map(function(a){
+        var insight=null;
+        if(a.insights&&a.insights.length){
+          for(var i=0;i<a.insights.length;i++){
+            if(a.insights[i].ticker===tk){insight=a.insights[i];break;}
+          }
+          if(!insight)insight=a.insights[0];
+        }
+        return {
+          id: a.id,
+          title: a.title||'',
+          publisher: (a.publisher&&a.publisher.name)||'',
+          published_utc: a.published_utc||null,
+          author: a.author||'',
+          description: a.description||'',
+          article_url: a.article_url||'',
+          image_url: a.image_url||null,
+          sentiment: insight?(insight.sentiment||'neutral'):'neutral',
+          sentiment_reasoning: insight?(insight.sentiment_reasoning||''):''
+        };
+      });
 
       // Volume profile builder.
       // Modes:
@@ -2018,6 +2047,7 @@ function StockProfileCheatSheetPage(p){
         session_vwap: sessionVwap,
         prev_day_vwap: prevDayVwap,
         earnings: earnings,
+        news: news,
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -2244,6 +2274,76 @@ function StockProfileCheatSheetPage(p){
             {ev.eps_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>EPS EST</span> <span style={{color:C.txtBright,fontWeight:700}}>${ev.eps_estimate.toFixed(2)}</span></div>}
             {ev.revenue_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>REV EST</span> <span style={{color:C.txtBright,fontWeight:700}}>{(function(v){if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';return '$'+v.toLocaleString();})(ev.revenue_estimate)}</span></div>}
           </div>}
+        </div>;
+      })()}
+
+      {/* RECENT NEWS card - collapsed by default. Tap header to expand.
+          Shows up to 5 articles with sentiment dot + reasoning for top 3. */}
+      {data.news&&data.news.length>0&&(function(){
+        // time-ago helper: returns "2h ago", "yesterday", "3d ago", "Apr 28"
+        var timeAgo=function(iso){
+          if(!iso)return '';
+          var t=new Date(iso).getTime();
+          if(isNaN(t))return '';
+          var ms=Date.now()-t;
+          var min=Math.floor(ms/60000);
+          var hr=Math.floor(ms/3600000);
+          var day=Math.floor(ms/86400000);
+          if(min<1)return 'just now';
+          if(min<60)return min+'m ago';
+          if(hr<24)return hr+'h ago';
+          if(day===1)return 'yesterday';
+          if(day<7)return day+'d ago';
+          // Older: show ET date
+          return getETDateStr(new Date(iso));
+        };
+        var sentColor=function(s){
+          if(s==='positive')return C.accent;
+          if(s==='negative')return C.warn;
+          return C.gold; // neutral or unknown
+        };
+        var mostRecentTime=data.news[0]?timeAgo(data.news[0].published_utc):'';
+        var visibleNews=newsExpanded?data.news.slice(0,5):data.news.slice(0,1);
+        var hasMore=data.news.length>1;
+        // Sentiment summary across all returned articles
+        var sCounts={positive:0,neutral:0,negative:0};
+        data.news.forEach(function(n){if(sCounts[n.sentiment]!=null)sCounts[n.sentiment]++;});
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header - tap to expand/collapse */}
+          <div onClick={function(){setNewsExpanded(!newsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:newsExpanded?10:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>RECENT NEWS</span>
+              <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{data.news.length} \u00B7 last {mostRecentTime}</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,fontSize:8,fontFamily:F,fontWeight:700}}>
+              {sCounts.positive>0&&<span style={{color:C.accent}}>{sCounts.positive}+</span>}
+              {sCounts.neutral>0&&<span style={{color:C.gold}}>{sCounts.neutral}\u25CB</span>}
+              {sCounts.negative>0&&<span style={{color:C.warn}}>{sCounts.negative}-</span>}
+              <span style={{color:C.txtDim,fontSize:9,marginLeft:4}}>{newsExpanded?'\u25BE':'\u25B8'}</span>
+            </div>
+          </div>
+          {/* Article list - 5 most recent when expanded, 1 when collapsed */}
+          {visibleNews.map(function(n,i){
+            var showReasoning=newsExpanded&&i<3&&n.sentiment_reasoning;
+            return <div key={n.id||i} style={{marginTop:i>0?10:(newsExpanded?0:8),paddingTop:i>0?10:(newsExpanded?0:8),borderTop:i>0?'1px solid '+C.border:(newsExpanded?'none':'1px solid '+C.border)}}>
+              <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
+                {/* Sentiment dot */}
+                <div style={{width:8,height:8,borderRadius:'50%',background:sentColor(n.sentiment),flexShrink:0,marginTop:3}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  {/* Time + publisher */}
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1,marginBottom:2}}>
+                    {timeAgo(n.published_utc)}{n.publisher?' \u00B7 '+n.publisher:''}
+                  </div>
+                  {/* Headline as link */}
+                  <a href={n.article_url} target="_blank" rel="noopener noreferrer" style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',lineHeight:1.3,display:'block'}}>{n.title}</a>
+                  {/* Reasoning for top 3 when expanded */}
+                  {showReasoning&&<div style={{color:C.txt,fontSize:8,fontFamily:F,fontStyle:'italic',marginTop:3,lineHeight:1.3}}>"{n.sentiment_reasoning}"</div>}
+                </div>
+              </div>
+            </div>;
+          })}
+          {/* Show-more hint when collapsed */}
+          {!newsExpanded&&hasMore&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:8,textAlign:'center',letterSpacing:1}}>+ {data.news.length-1} more \u00B7 tap to expand</div>}
         </div>;
       })()}
 
