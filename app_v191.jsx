@@ -434,7 +434,7 @@ function Info(p){
     {show&&<div onClick={function(e){e.stopPropagation();}} style={{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.6)',padding:20}}>
       <div style={{background:C.bgCard,border:'1px solid '+C.accent,borderRadius:10,padding:'16px 18px',maxWidth:300,width:'100%',boxShadow:'0 12px 40px rgba(0,0,0,0.7)'}}>
         <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.7}}>{p.children}</div>
-        <div onClick={function(){setShow(false);}} style={{color:C.bg,background:C.accent,fontSize:9,fontFamily:F,fontWeight:700,marginTop:12,padding:'6px 0',borderRadius:5,textAlign:'center',cursor:'pointer',letterSpacing:1,textTransform:'uppercase'}}>Got it</div>
+        <div onClick={function(e){e.stopPropagation();setShow(false);}} style={{color:C.bg,background:C.accent,fontSize:9,fontFamily:F,fontWeight:700,marginTop:12,padding:'6px 0',borderRadius:5,textAlign:'center',cursor:'pointer',letterSpacing:1,textTransform:'uppercase'}}>Got it</div>
       </div>
     </div>}
   </span>;
@@ -2352,7 +2352,10 @@ function StockProfileCheatSheetPage(p){
     var labelTransform = posClamped<8 ? 'translateX(0)' : (posClamped>92 ? 'translateX(-100%)' : 'translateX(-50%)');
     return <div style={{padding:10,background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
-        <div style={{color:accent||C.gold,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>{label.toUpperCase()}</div>
+        <div style={{display:'flex',alignItems:'center'}}>
+          <div style={{color:accent||C.gold,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>{label.toUpperCase()}</div>
+          <Info>Price action statistics for the {label.toLowerCase()} lookback window. KEY METRICS in each card: HIGH/LOW (extremes + dates), POSITION % (where current price sits inside the range -- 0% at low, 100% at high), AVG TRUE RANGE (Wilder ATR + per-window TR for stop sizing), LOW to NEXT DAY HIGH (avg swing magnitude useful for profit targets), AVG DAILY VOLUME / DOLLAR VOLUME / TRADES (liquidity gauges), PERIOD VWAP (volume-weighted price for the window), VOLUME PROFILE (histogram with POC/VAL/VAH -- where the bulk of trading happened). WHY IT MATTERS for swing trading: each window targets a different decision. SHORT (today/prev/week) = entry timing and intraday bias. MEDIUM (2wk/1mo) = primary swing trade range -- where most of your stops, targets, and entry retests should anchor. LONG (3mo/52w) = regime context -- whether you're trading inside or against the bigger structure. The volume profile POC is often a magnet price; VAL/VAH are common reversal zones.</Info>
+        </div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{sub}</div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
@@ -2518,7 +2521,10 @@ function StockProfileCheatSheetPage(p){
         })():null;
         return <div style={{marginBottom:14,padding:'12px 14px',background:bgTint,borderRadius:10,border:'1px solid '+borderColor}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
-            <div style={{color:labelColor,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>NEXT EARNINGS</div>
+            <div style={{display:'flex',alignItems:'center'}}>
+              <div style={{color:labelColor,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>NEXT EARNINGS</div>
+              <Info>The next confirmed or projected earnings report date. Color-coded by proximity: red within 14 days, gold 15-30 days, green beyond. WHY IT MATTERS for swing trading: earnings are the single biggest scheduled volatility event for a stock. Holding through earnings is a coin flip on a 5-15% gap. Most swing traders flatten positions 1-3 days before reporting, then re-enter post-print once the dust settles. The EPS / Revenue estimate sub-pills show what Wall Street expects -- a beat or miss vs these moves the stock.</Info>
+            </div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>{ev.source==='benzinga'?'BENZINGA':'ESTIMATED'}</div>
           </div>
           <div style={{color:C.txtBright,fontSize:18,fontFamily:F,fontWeight:700,marginBottom:2}}>{ev.date}</div>
@@ -2573,6 +2579,7 @@ function StockProfileCheatSheetPage(p){
           <div onClick={function(){setNewsExpanded(!newsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:newsExpanded?10:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>RECENT NEWS</span>
+              <Info>The most recent news articles tagged to this ticker, sourced from Polygon's news feed (Benzinga + others). Each article gets a sentiment dot: green=positive, gold=neutral, red=negative, with the AI-generated reasoning quoted below the headline. The header summary (4+ 5o 1-) gives you the sentiment skew at a glance. WHY IT MATTERS for swing trading: news flow drives short-term direction. A stock breaking out on bullish news has tailwind; one breaking out into bearish news headlines may be a trap. Tap any article to read the full piece. Use the sentiment summary as a quick gut-check before sizing in.</Info>
               <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{data.news.length} · last {mostRecentTime}</span>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:6,fontSize:8,fontFamily:F,fontWeight:700}}>
@@ -2662,6 +2669,7 @@ function StockProfileCheatSheetPage(p){
           <div onClick={function(){setAnalystExpanded(!analystExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ANALYST CONSENSUS</span>
+              <Info>Wall Street firms' price targets and ratings for this stock, sourced from Benzinga. The big number is the AVERAGE target across all active analysts (last 90 days, deduped to one rating per firm). The range bar shows lowest-to-highest target with a purple marker for consensus and white marker for current price -- visualizing where the market sits relative to the analyst spread. BUY/HOLD/SELL pills show distribution. WHY IT MATTERS for swing trading: a stock trading 20% below consensus has analyst tailwind for a mean-revert trade; one trading above consensus is fading the crowd. RECENT CHANGES section shows momentum -- a flurry of upgrades or target raises often precedes institutional buying flow.</Info>
               {a.total_active>0&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{a.total_active} active</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{analystExpanded?'▾':'▸'}</div>
@@ -2761,6 +2769,7 @@ function StockProfileCheatSheetPage(p){
           <div onClick={function(){setEpsExpanded(!epsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:epsExpanded?8:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>EARNINGS PER SHARE</span>
+              <Info>Last 3 reported quarters plus the next expected quarter, visualized two ways. The DOTTED CIRCLE is what analysts EXPECTED (consensus estimate); the SOLID GREEN DOT is what the company actually REPORTED. Vertical separation between them = the beat or miss. Dot above circle = beat, below = miss. The BEAT/MISS percentage in the header is calculated for the most recent quarter. WHY IT MATTERS for swing trading: companies with a streak of beats tend to trade with bullish bias going into the next print -- analysts and algos extrapolate the trend. A surprise miss after consecutive beats often triggers sharp selloffs. The future-quarter dotted circle (no green dot yet) shows what the market's pricing in.</Info>
               {beatPct!=null&&<span style={{color:beatPct>=0?C.accent:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{beatPct>=0?'BEAT +':'MISS '}{beatPct.toFixed(1)}%</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{epsExpanded?'▾':'▸'}</div>
@@ -2884,6 +2893,7 @@ function StockProfileCheatSheetPage(p){
           <div onClick={function(){setRevExpanded(!revExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:revExpanded?10:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>REVENUE &amp; EARNINGS</span>
+              <Info>Quarterly or annual revenue (blue) and net income (gold) for the last 4 periods. Toggle between QUARTERLY (last 4 quarters) and ANNUAL (last 4 fiscal years). Bars below the $0 line indicate net losses. WHY IT MATTERS for swing trading: this is the fastest way to see business trajectory. Revenue growing while earnings shrink = margin pressure (often bearish). Both growing = healthy momentum. Both shrinking = wind down. ANNUAL view smooths quarterly noise to show secular trend; QUARTERLY view catches recent inflection points. Profitable companies with growing revenue are easier swing trade setups -- they can absorb bad news without falling apart. Loss-makers (negative bars) require tighter stops since they're more volatile to sentiment shifts.</Info>
               {latest&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{latest.label}: {fmtMoney(latest.revenue)} rev</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{revExpanded?'▾':'▸'}</div>
@@ -2955,7 +2965,10 @@ function StockProfileCheatSheetPage(p){
 
       {/* Trends reference card: SMA vs VWAP per period + session/prev-day VWAP */}
       {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
-        <div style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:10,textAlign:'center'}}>TRENDS</div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',marginBottom:10}}>
+          <div style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>TRENDS</div>
+          <Info>Moving averages and VWAP at multiple time horizons. Each block shows: SMA (Simple Moving Average) = arithmetic mean of last N daily closes; VWAP (Volume-Weighted Average Price) = same thing weighted by volume. The percentage shows current price's distance from each level. WHY IT MATTERS for swing trading: these are the lines institutions and algos use as decision boundaries. Price above all four (20/50/100/200-day) = strong uptrend, low-resistance buy regime. Price flipping below 50-day from above = early trend break warning. The 200-day is the textbook bull/bear bias divider for long-term holds. The 20 and 50-day are the swing trader's primary references -- price reverts to them often on pullbacks, and they act as natural stop placements. INTRADAY VWAP (today + prev day) is the day trader's reference -- being above today's VWAP = bulls in control intraday.</Info>
+        </div>
 
         {/* SMA vs VWAP comparison block */}
         {(function(){
