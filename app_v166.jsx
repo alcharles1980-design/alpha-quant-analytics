@@ -1486,9 +1486,14 @@ function StockProfileCheatSheetPage(p){
       }
 
       // Helper: scan a sub-range of daily bars for hi/lo
+      // Build a map from bar.t -> index in dailyBars so scanBars can look up
+      // each bar's prev close (needed for True Range)
+      var barIndexByT={};
+      for(var bIdx=0;bIdx<dailyBars.length;bIdx++)barIndexByT[dailyBars[bIdx].t]=bIdx;
+
       var scanBars=function(barsArr){
         var hi=-Infinity,lo=Infinity,hiDate=null,loDate=null,n=0;
-        var sumDollarRange=0,sumPctRange=0,validPctCount=0;
+        var sumTrueRange=0,sumTruePctRange=0,trCount=0,trPctValidCount=0;
         var sumLowToNextHighDollar=0,sumLowToNextHighPct=0,pairCount=0,pairValidPctCount=0;
         var sumVolume=0,volBarCount=0;
         var sumDollarNotional=0,notionalBarCount=0;
@@ -1497,9 +1502,20 @@ function StockProfileCheatSheetPage(p){
           var b=barsArr[i];
           if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
           if(b.l<lo){lo=b.l;loDate=new Date(b.t).toISOString().slice(0,10);}
-          var dr=b.h-b.l;
-          sumDollarRange+=dr;
-          if(b.l>0){sumPctRange+=(dr/b.l)*100;validPctCount++;}
+          // True Range: max(H-L, |H-prevC|, |L-prevC|). Need previous bar's close.
+          // Look up b's index in dailyBars to find the bar before it.
+          var globalIdx=barIndexByT[b.t];
+          var tr;
+          if(globalIdx!=null && globalIdx>0){
+            var prevC=dailyBars[globalIdx-1].c;
+            tr=Math.max(b.h-b.l, Math.abs(b.h-prevC), Math.abs(b.l-prevC));
+          } else {
+            // First bar in dataset has no prev close - fall back to H-L
+            tr=b.h-b.l;
+          }
+          sumTrueRange+=tr;
+          trCount++;
+          if(b.l>0){sumTruePctRange+=(tr/b.l)*100;trPctValidCount++;}
           // Volume (shares)
           if(b.v!=null&&!isNaN(b.v)){sumVolume+=b.v;volBarCount++;}
           // Dollar notional: v * vw (VWAP). Fall back to v * close if vw missing.
@@ -1522,8 +1538,8 @@ function StockProfileCheatSheetPage(p){
         if(!n||hi===-Infinity)return null;
         return {
           hi:hi, lo:lo, hi_date:hiDate, lo_date:loDate, bars:n,
-          avg_daily_range_dollar: n>0?sumDollarRange/n:null,
-          avg_daily_range_pct: validPctCount>0?sumPctRange/validPctCount:null,
+          avg_true_range_dollar: trCount>0?sumTrueRange/trCount:null,
+          avg_true_range_pct: trPctValidCount>0?sumTruePctRange/trPctValidCount:null,
           avg_low_to_next_high_dollar: pairCount>0?sumLowToNextHighDollar/pairCount:null,
           avg_low_to_next_high_pct: pairValidPctCount>0?sumLowToNextHighPct/pairValidPctCount:null,
           pair_count: pairCount,
@@ -1576,10 +1592,18 @@ function StockProfileCheatSheetPage(p){
           if(mb.n!=null&&!isNaN(mb.n))tTrades+=mb.n;
         }
         var todayRange=thi-tlo;
+        // True Range for today: needs yesterday's close. Find the most recent daily
+        // bar that's NOT today (since today's daily bar may not exist in feed yet).
+        var yClose=null;
+        for(var di=dailyBars.length-1;di>=0;di--){
+          var ddate=new Date(dailyBars[di].t).toISOString().slice(0,10);
+          if(ddate!==todayStr){yClose=dailyBars[di].c;break;}
+        }
+        var todayTR = yClose!=null ? Math.max(todayRange, Math.abs(thi-yClose), Math.abs(tlo-yClose)) : todayRange;
         wToday={
           hi:thi, lo:tlo, bars:minuteBars.length, source:'minute',
-          avg_daily_range_dollar: todayRange,
-          avg_daily_range_pct: tlo>0?(todayRange/tlo)*100:null,
+          avg_true_range_dollar: todayTR,
+          avg_true_range_pct: tlo>0?(todayTR/tlo)*100:null,
           avg_volume_shares: tVol>0?tVol:null,
           avg_dollar_notional: tNotional>0?tNotional:null,
           avg_trade_count: tTrades>0?tTrades:null,
@@ -1591,11 +1615,14 @@ function StockProfileCheatSheetPage(p){
         var lastDailyDate=new Date(lastDaily.t).toISOString().slice(0,10);
         if(lastDailyDate===todayStr){
           var lastRange=lastDaily.h-lastDaily.l;
+          // True Range for today (daily fallback): use prev day's close
+          var prevC=dailyBars.length>=2?dailyBars[dailyBars.length-2].c:null;
+          var lastTR = prevC!=null ? Math.max(lastRange, Math.abs(lastDaily.h-prevC), Math.abs(lastDaily.l-prevC)) : lastRange;
           var lastPx=lastDaily.vw!=null&&!isNaN(lastDaily.vw)&&lastDaily.vw>0?lastDaily.vw:lastDaily.c;
           wToday={
             hi:lastDaily.h, lo:lastDaily.l, bars:1, source:'daily',
-            avg_daily_range_dollar: lastRange,
-            avg_daily_range_pct: lastDaily.l>0?(lastRange/lastDaily.l)*100:null,
+            avg_true_range_dollar: lastTR,
+            avg_true_range_pct: lastDaily.l>0?(lastTR/lastDaily.l)*100:null,
             avg_volume_shares: lastDaily.v!=null?lastDaily.v:null,
             avg_dollar_notional: lastDaily.v!=null&&lastPx!=null?(lastDaily.v*lastPx):null,
             avg_trade_count: lastDaily.n!=null?lastDaily.n:null,
@@ -1610,21 +1637,24 @@ function StockProfileCheatSheetPage(p){
 
       // Previous trading day: most recent COMPLETED daily bar that isn't today.
       // If last bar is today, use second-to-last. Otherwise the last bar IS the previous day.
-      var prevBar=null;
+      var prevBar=null,prevBarIdx=null;
       if(lastDate===todayStr){
-        if(dailyBars.length>=2)prevBar=dailyBars[dailyBars.length-2];
+        if(dailyBars.length>=2){prevBar=dailyBars[dailyBars.length-2];prevBarIdx=dailyBars.length-2;}
       } else {
-        prevBar=last;
+        prevBar=last;prevBarIdx=dailyBars.length-1;
       }
       var wPrev=null;
       if(prevBar){
         var prevDate=new Date(prevBar.t).toISOString().slice(0,10);
         var prevRange=prevBar.h-prevBar.l;
+        // True Range for prev day: use day-before-prev's close
+        var prevPrevC=prevBarIdx>=1?dailyBars[prevBarIdx-1].c:null;
+        var prevTR = prevPrevC!=null ? Math.max(prevRange, Math.abs(prevBar.h-prevPrevC), Math.abs(prevBar.l-prevPrevC)) : prevRange;
         var prevPx=prevBar.vw!=null&&!isNaN(prevBar.vw)&&prevBar.vw>0?prevBar.vw:prevBar.c;
         wPrev={
           hi:prevBar.h, lo:prevBar.l, hi_date:prevDate, lo_date:prevDate, bars:1, source:'prev',
-          avg_daily_range_dollar: prevRange,
-          avg_daily_range_pct: prevBar.l>0?(prevRange/prevBar.l)*100:null,
+          avg_true_range_dollar: prevTR,
+          avg_true_range_pct: prevBar.l>0?(prevTR/prevBar.l)*100:null,
           avg_volume_shares: prevBar.v!=null?prevBar.v:null,
           avg_dollar_notional: prevBar.v!=null&&prevPx!=null?(prevBar.v*prevPx):null,
           avg_trade_count: prevBar.n!=null?prevBar.n:null,
@@ -1658,6 +1688,37 @@ function StockProfileCheatSheetPage(p){
       var ma50=computeMA(50);
       var ma100=computeMA(100);
       var ma200=computeMA(200);
+
+      // Wilder's ATR(14) - the trader's standard. Uses true range with
+      // exponential smoothing (Welles Wilder's original 1978 formula).
+      // True Range per bar = max(H-L, |H-prev_C|, |L-prev_C|)
+      // First ATR = simple mean of first 14 TRs
+      // Subsequent: ATR_today = (ATR_yesterday * 13 + TR_today) / 14
+      // Use maBars (excludes today's incomplete bar) for stability.
+      var atr14=null,atr14Pct=null;
+      if(maBars.length>=15){
+        // Need at least 15 bars: 1 to compute prev_close for the first TR
+        var trs=[];
+        for(var ai=1;ai<maBars.length;ai++){
+          var bar=maBars[ai];
+          var prevClose=maBars[ai-1].c;
+          var tr=Math.max(bar.h-bar.l, Math.abs(bar.h-prevClose), Math.abs(bar.l-prevClose));
+          trs.push(tr);
+        }
+        if(trs.length>=14){
+          // Initialize with simple mean of first 14
+          var atr=0;
+          for(var ti=0;ti<14;ti++)atr+=trs[ti];
+          atr=atr/14;
+          // Smooth forward
+          for(var ti2=14;ti2<trs.length;ti2++){
+            atr=(atr*13+trs[ti2])/14;
+          }
+          atr14=atr;
+          var refClose=maBars[maBars.length-1].c;
+          if(refClose>0)atr14Pct=(atr/refClose)*100;
+        }
+      }
 
       // VWAP variants
       // VWAP_N = sum(bar.vw * bar.v) / sum(bar.v) over last N daily bars from maBars
@@ -1720,6 +1781,8 @@ function StockProfileCheatSheetPage(p){
         ma50: ma50,
         ma100: ma100,
         ma200: ma200,
+        atr14: atr14,
+        atr14_pct: atr14Pct,
         vwap20: vwap20,
         vwap50: vwap50,
         vwap100: vwap100,
@@ -1790,9 +1853,9 @@ function StockProfileCheatSheetPage(p){
         <span>{w.pct_from_high!=null?(w.pct_from_high>=0?'+':'')+w.pct_from_high.toFixed(1)+'% from high':''}</span>
       </div>
       <div style={{fontSize:8,fontFamily:F,color:C.txt,marginTop:4,textAlign:'center'}}>Period Range: ${w.range_dollar.toFixed(2)} ({w.range_pct!=null?w.range_pct.toFixed(1)+'%':'-'})</div>
-      {w.avg_daily_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
-        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix==='AVG DAILY '?'AVG DAILY RANGE':labelPrefix+'RANGE'}</span>
-        <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_daily_range_dollar.toFixed(2)}</span>{w.avg_daily_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_daily_range_pct.toFixed(2)}%)</span>}</span>
+      {w.avg_true_range_dollar!=null&&<div style={{marginTop:6,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
+        <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>{labelPrefix==='AVG DAILY '?'AVG TRUE RANGE':labelPrefix+'TRUE RANGE'}</span>
+        <span><span style={{color:C.gold,fontWeight:700}}>${w.avg_true_range_dollar.toFixed(2)}</span>{w.avg_true_range_pct!=null&&<span style={{color:C.txtDim,marginLeft:6}}>({w.avg_true_range_pct.toFixed(2)}%)</span>}</span>
       </div>}
       {w.avg_low_to_next_high_dollar!=null&&w.pair_count>0&&<div style={{marginTop:4,padding:6,background:C.bgInput,borderRadius:4,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:8,fontFamily:F}}>
         <span style={{color:C.txt,letterSpacing:1,fontWeight:700}}>LOW → NEXT DAY HIGH</span>
@@ -1866,6 +1929,11 @@ function StockProfileCheatSheetPage(p){
         </div>}
         {data.name&&<div style={{marginTop:8,color:C.txt,fontSize:9,fontFamily:F}}>{data.name}</div>}
         {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
+        {data.atr14!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
+          <div style={{color:C.txt,fontSize:8,letterSpacing:2,fontWeight:700,marginBottom:3}}>ATR(14) — WILDER</div>
+          <div><span style={{color:C.gold,fontSize:14,fontWeight:700}}>${data.atr14.toFixed(2)}</span>{data.atr14_pct!=null&&<span style={{color:C.txt,fontSize:11,marginLeft:6,fontWeight:700}}>({data.atr14_pct.toFixed(2)}%)</span>}</div>
+          <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:2}}>Stop sizing reference \u00B7 typical 2x ATR stop = ${(data.atr14*2).toFixed(2)} ({data.atr14_pct!=null?(data.atr14_pct*2).toFixed(2)+'%':'-'})</div>
+        </div>}
       </div>
 
       {/* NEXT EARNINGS card */}
