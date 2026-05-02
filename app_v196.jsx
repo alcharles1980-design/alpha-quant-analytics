@@ -1649,17 +1649,18 @@ function StockProfileCheatSheetPage(p){
         var firmKeys=Object.keys(perFirm);
         var validTargets=[];
         var dist={buy:0,hold:0,sell:0};
-        // Helper: get current price target, prefer adjusted, fallback to unadjusted
+        // Helper: get current price target, prefer adjusted, fallback to unadjusted.
+        // (inner var named `pt` to avoid shadowing the outer `p` = component props)
         var ptCurrent=function(r){
-          var p=r.adjusted_price_target!=null?r.adjusted_price_target:r.price_target;
-          if(p==null)return null;
-          var n=typeof p==='number'?p:parseFloat(p);
+          var pt=r.adjusted_price_target!=null?r.adjusted_price_target:r.price_target;
+          if(pt==null)return null;
+          var n=typeof pt==='number'?pt:parseFloat(pt);
           return (!isNaN(n)&&n>0)?n:null;
         };
         var ptPrevious=function(r){
-          var p=r.previous_adjusted_price_target!=null?r.previous_adjusted_price_target:r.previous_price_target;
-          if(p==null)return null;
-          var n=typeof p==='number'?p:parseFloat(p);
+          var pt=r.previous_adjusted_price_target!=null?r.previous_adjusted_price_target:r.previous_price_target;
+          if(pt==null)return null;
+          var n=typeof pt==='number'?pt:parseFloat(pt);
           return (!isNaN(n)&&n>0)?n:null;
         };
         firmKeys.forEach(function(k){
@@ -2238,9 +2239,13 @@ function StockProfileCheatSheetPage(p){
         var trVal=Math.max(barTR.h-barTR.l, Math.abs(barTR.h-prevCloseTR), Math.abs(barTR.l-prevCloseTR));
         allTRs.push(trVal);
       }
-      // General Wilder ATR(N) computer. Returns null if insufficient bars.
-      // For N=1 it's just the most recent TR (no smoothing possible).
-      // For N>=2 it follows Wilder's: seed = mean of first N TRs, then RMA-smooth forward.
+      // General Wilder ATR(N) computer for use in the HERO block ATR(14) reference.
+      // Wilder's 1978 formula: seed = simple mean of first N TRs, then RMA-smooth
+      // forward across all subsequent TRs. With ~250 days of TR data and N=14, the
+      // result converges to the textbook Wilder ATR(14) value.
+      // NOTE: This is correct ONLY for "long-term smoothed volatility reference"
+      // - which is what ATR(14) means in trading context. For "average TR over the
+      // last N days" (rolling stats card), use simpleATRLastN() instead.
       var computeWilderATR=function(n){
         if(allTRs.length<n)return null;
         if(n===1)return allTRs[allTRs.length-1];
@@ -2251,6 +2256,16 @@ function StockProfileCheatSheetPage(p){
           atrV=(atrV*(n-1)+allTRs[ti2])/n;
         }
         return atrV;
+      };
+      // Simple ATR over the LAST N true ranges. Used for the rolling stats card
+      // where the user's mental model is "average volatility over the last N days"
+      // - not Wilder's perpetually-smoothed value with parameter N.
+      // Returns the actual recent average; responsive to recent vol regime shifts.
+      var simpleATRLastN=function(n){
+        if(allTRs.length<n)return null;
+        var sum=0;
+        for(var i=allTRs.length-n;i<allTRs.length;i++)sum+=allTRs[i];
+        return sum/n;
       };
       var atr14=computeWilderATR(14);
       var atr14Pct=null;
@@ -2281,14 +2296,15 @@ function StockProfileCheatSheetPage(p){
         return {pct:sumPct/n,dollar:sumDol/n};
       };
       // Build rolling stats for the new ROLLING STATS card (1d/3d/5d/10d/30d).
-      // ATR uses Wilder; L-to-next-day-high uses rolling simple average ($ and %).
+      // ATR uses simple mean of last N TRs (responsive to recent regime shifts).
+      // L-to-next-day-high uses rolling simple average ($ and %).
       var rollingStats=null;
       if(maBars.length>=2){
         var refClose=maBars[maBars.length-1].c;
         var rsWindows=[1,3,5,10,30];
         rollingStats={
           rows: rsWindows.map(function(n){
-            var atrN=computeWilderATR(n);
+            var atrN=simpleATRLastN(n);
             var atrNPct=(atrN!=null&&refClose>0)?(atrN/refClose)*100:null;
             var lhN=rollingLH(n);
             return {n:n,atr:atrN,atr_pct:atrNPct,lh:lhN?lhN.pct:null,lh_dollar:lhN?lhN.dollar:null};
@@ -3165,8 +3181,26 @@ function StockProfileCheatSheetPage(p){
           if(ratio>=1.3){regime='EXPANDING';regimeColor=C.warn;}
           else if(ratio<=0.7){regime='CONTRACTING';regimeColor=C.accent;}
         }
-        var fmtATR=function(v){return v!=null?'$'+v.toFixed(2):'-';};
+        // Format helpers - handle negative values cleanly so sign appears BEFORE
+        // the dollar sign ('-$1.50' not '$-1.50') and percent sign comes after the
+        // signed number ('-1.50%' not '+-1.50%'). Triggered when L→H pulls negative
+        // due to gap-down days where next-day high < today's low.
+        var fmtATR=function(v){
+          if(v==null)return '-';
+          var sign=v<0?'-':'';
+          return sign+'$'+Math.abs(v).toFixed(2);
+        };
         var fmtPct=function(v){return v!=null?v.toFixed(2)+'%':'-';};
+        var fmtLHDollar=function(v){
+          if(v==null)return '-';
+          var sign=v<0?'-':'+';
+          return sign+'$'+Math.abs(v).toFixed(2);
+        };
+        var fmtLHPct=function(v){
+          if(v==null)return '-';
+          var sign=v<0?'':'+'; // .toFixed already includes '-' for negatives
+          return sign+v.toFixed(2)+'%';
+        };
         var labelFor=function(n){return n===1?'1 day':n+' days';};
         return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
           {/* Header */}
@@ -3175,14 +3209,13 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING STATS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Wilder ATR (volatility) and Low-to-Next-Day-High % (typical swing magnitude) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days. Both shown as dollar AND % so you can compare like-for-like across stocks.'},
+                {p:'Average True Range (volatility) and Low-to-Next-Day-High (typical swing magnitude) over 5 rolling windows: 1, 3, 5, 10, and 30 trading days. Both shown as dollar AND % so you can compare like-for-like across stocks.'},
                 {b:[
-                  'ATR ($) = average dollar move per bar - direct stop sizing input',
-                  'L→H ($) = average dollar reach from today\'s low to next day\'s high - profit target reference in absolute terms',
+                  'ATR ($) = average dollar move per bar over last N days - direct stop sizing input',
                   'ATR (%) = same as $ but as % of price - cross-stock comparable',
+                  'L→H ($) = average dollar reach from today\'s low to next day\'s high - profit target reference',
                   'L→H (%) = same swing magnitude as % - useful for sizing relative to stop',
-                  '1d row uses just the most recent value (no smoothing possible)',
-                  '3d-30d use Wilder smoothing (RMA) for stability'
+                  'All windows use simple mean over the last N true ranges - responsive to recent regime shifts'
                 ]},
                 {h:'Why it matters'},
                 {p:'Compares short-term volatility (1d/3d) against the medium-term baseline (10d/30d) so you can see if the regime is shifting. Dollar values let you size stops/targets directly without doing % math in your head.'},
@@ -3216,13 +3249,13 @@ function StockProfileCheatSheetPage(p){
                 <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{labelFor(r.n)}</div>
                 <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
                 <div style={{flex:1,textAlign:'right',color:C.gold,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtPct(r.atr_pct)}</div>
-                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh_dollar!=null?'$'+r.lh_dollar.toFixed(2):'-'}</div>
-                <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{r.lh!=null?'+'+r.lh.toFixed(2)+'%':'-'}</div>
+                <div style={{flex:1,textAlign:'right',color:r.lh_dollar!=null&&r.lh_dollar<0?C.warn:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtLHDollar(r.lh_dollar)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.lh!=null&&r.lh<0?C.warn:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtLHPct(r.lh)}</div>
               </div>;
             })}
             {/* Footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              ATR = Wilder smoothed (1d = raw last TR). L→H = avg of next day's high - today's low (\$ and %).
+              ATR = simple mean of last N true ranges. L→H = avg of next day's high - today's low (\$ and %).
             </div>
           </div>}
         </div>;
