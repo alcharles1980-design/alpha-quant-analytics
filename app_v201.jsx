@@ -1393,6 +1393,7 @@ function StockProfileCheatSheetPage(p){
   var s9=useState(true),revExpanded=s9[0],setRevExpanded=s9[1];
   var s10=useState('quarterly'),revMode=s10[0],setRevMode=s10[1];
   var s11=useState(true),rollingExpanded=s11[0],setRollingExpanded=s11[1];
+  var s12=useState(true),rpcExpanded=s12[0],setRpcExpanded=s12[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -2345,6 +2346,68 @@ function StockProfileCheatSheetPage(p){
         };
       }
 
+      // ======== ROLLING POC RELATION (volume profile, 1d/3d/5d/10d/30d) ========
+      // For each rolling window, build a fresh volume profile over the same
+      // trading-day boundaries used by the Rolling Stats card. Surfaces:
+      //   - POC ($): price level with the most volume
+      //   - VAL/VAH ($): boundaries of the 70% value area
+      //   - % from POC: signed distance of current price to the POC
+      //   - position: IN VA / ABOVE / BELOW
+      // Bar resolution per window (mixed - all bars already fetched):
+      //   1d   -> minute bars (today only; 390 bars)
+      //   3d   -> 5m bars  (last 3 maBars trading dates)
+      //   5d   -> 5m bars  (last 5 maBars trading dates)
+      //   10d  -> 5m bars  (last 10 maBars trading dates - 14 cal day fetch covers ~10 trading days)
+      //   30d  -> 1h bars  (last 30 maBars trading dates - 90 cal day fetch covers ~63 trading days, plenty)
+      // Build a list of maBars trade dates so windows align with Rolling Stats.
+      var maBarDates=maBars.map(function(b){return getETDateStr(new Date(b.t));});
+      // Filter helper: given an intraday bar set, keep only bars whose ET trade
+      // date is in the supplied trade-date set. Returns array of bars.
+      var filterBarsByDateSet=function(bars,dateSet){
+        return bars.filter(function(b){return dateSet[getETDateStr(new Date(b.t))]===true;});
+      };
+      // For a trade-date window of size N, return the bars to use + the bars set.
+      var pickRollingProfileBars=function(n){
+        if(n===1){
+          // Use today's minute bars - same source the Today window card uses.
+          return minuteBars.length>0?minuteBars:null;
+        }
+        // Pick the last N maBars trading dates and filter the appropriate intraday set.
+        if(maBarDates.length<n)return null;
+        var pickedDates=maBarDates.slice(-n);
+        var dateSet={};pickedDates.forEach(function(d){dateSet[d]=true;});
+        // 30 trading days: use 1h bars (we have 90 cal days). 5m only covers ~10 trading days
+        // and 30m only ~21, both insufficient for a full 30-trading-day window.
+        if(n>=20)return bars1h.length>0?filterBarsByDateSet(bars1h,dateSet):null;
+        // 3/5/10 trading days: use 5m bars (we have 14 cal days = ~10 trading days, fits)
+        return bars5m.length>0?filterBarsByDateSet(bars5m,dateSet):null;
+      };
+      var rollingPocStats=null;
+      if(maBars.length>=1&&lastClose!=null&&lastClose>0){
+        var rpcWindows=[1,3,5,10,30];
+        var rpcRows=rpcWindows.map(function(n){
+          var bars=pickRollingProfileBars(n);
+          if(!bars||bars.length===0)return {n:n,poc:null,val:null,vah:null,pct_from_poc:null,position:null,bars_used:0};
+          // Use 'point' mode (intraday bars - vw price + volume per bar)
+          // Don't force range; let buildProfile compute from bars themselves.
+          var prof=buildProfile(bars,'point',null,null);
+          if(!prof)return {n:n,poc:null,val:null,vah:null,pct_from_poc:null,position:null,bars_used:bars.length};
+          var pctFromPoc=(prof.poc>0)?((lastClose-prof.poc)/prof.poc)*100:null;
+          var position;
+          if(lastClose<prof.val)position='BELOW';
+          else if(lastClose>prof.vah)position='ABOVE';
+          else position='IN VA';
+          return {
+            n:n,
+            poc:prof.poc, val:prof.val, vah:prof.vah,
+            pct_from_poc:pctFromPoc,
+            position:position,
+            bars_used:bars.length
+          };
+        });
+        rollingPocStats={rows:rpcRows};
+      }
+
       // VWAP variants
       // VWAP_N = sum(bar.vw * bar.v) / sum(bar.v) over last N daily bars from maBars
       // (maBars already excludes today's incomplete bar)
@@ -2421,6 +2484,7 @@ function StockProfileCheatSheetPage(p){
         eps_history: epsHistory,
         financials: financials,
         rolling_stats: rollingStats,
+        rolling_poc_stats: rollingPocStats,
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -3301,6 +3365,88 @@ function StockProfileCheatSheetPage(p){
             {/* Footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
               ATR = simple mean of last N TRs. L→H = avg of next day's high - today's low. C→L = avg of next day's low - today's close (typically negative = drawdown from close).
+            </div>
+          </div>}
+        </div>;
+      })()}
+
+      {/* ROLLING POC RELATION card - volume profile rebuilt for each rolling
+          window, surfacing POC / VAL / VAH and current price's distance to
+          POC + position relative to value area. Same windows as ROLLING STATS.
+          Mixed bar resolution: 1d=minute, 3d/5d/10d=5m, 30d=1h. Default expanded. */}
+      {data.rolling_poc_stats&&data.rolling_poc_stats.rows&&data.rolling_poc_stats.rows.length>0&&(function(){
+        var rpc=data.rolling_poc_stats;
+        var fmtMoney=function(v){return v!=null?'$'+v.toFixed(2):'-';};
+        var fmtSignedPct=function(v){
+          if(v==null)return '-';
+          var sign=v<0?'':'+'; // toFixed includes - for negatives
+          return sign+v.toFixed(2)+'%';
+        };
+        var labelFor=function(n){return n===1?'1 day':n+' days';};
+        // Position pill colors: ABOVE=green (price above value), BELOW=red
+        // (below value), IN VA=gold (consolidation/balanced).
+        var posColor=function(p){
+          if(p==='ABOVE')return C.accent;
+          if(p==='BELOW')return C.warn;
+          if(p==='IN VA')return C.gold;
+          return C.txtDim;
+        };
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header */}
+          <div onClick={function(){setRpcExpanded(!rpcExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:rpcExpanded?12:0}}>
+            <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ROLLING VOL PROFILE</span>
+              <Info>{[
+                {h:'What this shows'},
+                {p:'Volume profile (POC, VAL, VAH) rebuilt for each rolling window (1, 3, 5, 10, 30 trading days). Surfaces where the volume magnet is at each timeframe and where current price sits relative to it.'},
+                {b:[
+                  'POC = Point of Control: price level with the most volume traded in the window',
+                  'VAL = Value Area Low: bottom of the band capturing 70% of volume',
+                  'VAH = Value Area High: top of that 70% band',
+                  '% FROM POC: signed distance from current price to the POC',
+                  'POSITION: IN VA (inside value), ABOVE (above VAH), BELOW (below VAL)',
+                  'Mixed bar resolution: 1d=minute, 3d/5d/10d=5m, 30d=1h'
+                ]},
+                {h:'Why it matters'},
+                {p:'POC is a magnet - prices tend to retest it. Value area boundaries (VAL/VAH) are common reversal zones. Comparing where price sits across timeframes reveals positioning extremes.'},
+                {h:'How to use it'},
+                {b:[
+                  'Price ABOVE all 5 POCs = stretched above value (mean-revert risk)',
+                  'Price BELOW all 5 POCs = oversold below value (bounce candidate)',
+                  'POCs migrating UP across timeframes = uptrend confirmation',
+                  'POCs migrating DOWN = downtrend confirmation',
+                  'Use the closest POC as a mean-reversion target',
+                  'Use VAL/VAH as natural stop placement levels'
+                ]}
+              ]}</Info>
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rpcExpanded?'▾':'▸'}</div>
+          </div>
+          {rpcExpanded&&<div>
+            {/* Header row. Window col + 5 data cols (POC, VAL, VAH, %, POS).
+                Mirroring rolling-stats card layout. POS col fits 'IN VA'/'ABOVE'/'BELOW'. */}
+            <div style={{display:'flex',alignItems:'center',padding:'6px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
+              <div style={{flex:'0 0 56px',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>WINDOW</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>POC</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>VAL</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>VAH</div>
+              <div style={{flex:1,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>% FROM POC</div>
+              <div style={{flex:'0 0 50px',textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1.0,fontWeight:700}}>POS</div>
+            </div>
+            {/* Data rows */}
+            {rpc.rows.map(function(r,i){
+              return <div key={i} style={{display:'flex',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid '+C.border:'none'}}>
+                <div style={{flex:'0 0 56px',color:C.txt,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.3}}>{labelFor(r.n)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtMoney(r.poc)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.warn,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtMoney(r.val)}</div>
+                <div style={{flex:1,textAlign:'right',color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtMoney(r.vah)}</div>
+                <div style={{flex:1,textAlign:'right',color:r.pct_from_poc!=null&&r.pct_from_poc<0?C.warn:C.gold,fontSize:10,fontFamily:F,fontWeight:700}}>{fmtSignedPct(r.pct_from_poc)}</div>
+                <div style={{flex:'0 0 50px',textAlign:'right',color:posColor(r.position),fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{r.position||'-'}</div>
+              </div>;
+            })}
+            {/* Footnote: current price + bar resolution disclosure */}
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
+              Current price: ${data.last_close.toFixed(2)}. Bar resolution: 1d=minute, 3d/5d/10d=5min, 30d=1hr. POC is the highest-volume price level; VA is the 70% band.
             </div>
           </div>}
         </div>;
