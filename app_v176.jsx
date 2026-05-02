@@ -1526,7 +1526,7 @@ function StockProfileCheatSheetPage(p){
       var url1h='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/hour/'+from90+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
       // News from Polygon's reference endpoint (Benzinga-sourced), 10 most recent.
       // Includes per-ticker sentiment + reasoning when available.
-      var urlNews='https://api.polygon.io/v2/reference/news?ticker='+tkEnc+'&limit=10&order=desc&sort=published_utc&apiKey='+p.apiKey;
+      var urlNews='https://api.polygon.io/v2/reference/news?ticker='+tkEnc+'&limit=15&order=desc&sort=published_utc&apiKey='+p.apiKey;
       // Wrapper: fetch + parse, soft-fail to empty array, but rethrow AbortError so
       // Promise.all bails fast when the user cancels.
       var safeFetchBars=async function(url){
@@ -2303,7 +2303,7 @@ function StockProfileCheatSheetPage(p){
           return C.gold; // neutral or unknown
         };
         var mostRecentTime=data.news[0]?timeAgo(data.news[0].published_utc):'';
-        var visibleNews=newsExpanded?data.news.slice(0,5):data.news.slice(0,1);
+        var visibleNews=newsExpanded?data.news:data.news.slice(0,1);
         var hasMore=data.news.length>1;
         // Sentiment summary across all returned articles
         var sCounts={positive:0,neutral:0,negative:0};
@@ -2319,7 +2319,7 @@ function StockProfileCheatSheetPage(p){
               {sCounts.positive>0&&<span style={{color:C.accent}}>{sCounts.positive}+</span>}
               {sCounts.neutral>0&&<span style={{color:C.gold}}>{sCounts.neutral}○</span>}
               {sCounts.negative>0&&<span style={{color:C.warn}}>{sCounts.negative}-</span>}
-              <span style={{color:C.txtDim,fontSize:9,marginLeft:4}}>{newsExpanded?'▾':'▸'}</span>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{newsExpanded?'▾':'▸'}</div>
             </div>
           </div>
           {/* Article list - 5 most recent when expanded, 1 when collapsed */}
@@ -2343,7 +2343,8 @@ function StockProfileCheatSheetPage(p){
             </div>;
           })}
           {/* Show-more hint when collapsed */}
-          {!newsExpanded&&hasMore&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:8,textAlign:'center',letterSpacing:1}}>+ {data.news.length-1} more · tap to expand</div>}
+          {!newsExpanded&&hasMore&&<div style={{color:C.purple,fontSize:9,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,fontWeight:700,padding:'4px 0',borderTop:'1px solid '+C.border}}>+ {data.news.length-1} MORE · TAP TO EXPAND ▸</div>}
+          {newsExpanded&&data.news.length>1&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,paddingTop:8,borderTop:'1px solid '+C.border}}>tap header to collapse ▾</div>}
         </div>;
       })()}
 
