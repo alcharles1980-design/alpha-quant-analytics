@@ -1575,6 +1575,42 @@ function StockProfileCheatSheetPage(p){
       var ma100=computeMA(100);
       var ma200=computeMA(200);
 
+      // VWAP variants
+      // VWAP_N = sum(bar.vw * bar.v) / sum(bar.v) over last N daily bars from maBars
+      // (maBars already excludes today's incomplete bar)
+      var computeVWAP=function(n){
+        if(maBars.length<n)return null;
+        var num=0,den=0;
+        for(var i=maBars.length-n;i<maBars.length;i++){
+          var b=maBars[i];
+          if(b.vw==null||isNaN(b.vw)||b.v==null||isNaN(b.v))continue;
+          num+=b.vw*b.v;
+          den+=b.v;
+        }
+        return den>0?num/den:null;
+      };
+      var vwap20=computeVWAP(20);
+      var vwap50=computeVWAP(50);
+      var vwap100=computeVWAP(100);
+      var vwap200=computeVWAP(200);
+
+      // Session VWAP (today): from minute bars, sum(mb.vw * mb.v) / sum(mb.v)
+      var sessionVwap=null;
+      if(minuteBars.length>0){
+        var sNum=0,sDen=0;
+        for(var sm=0;sm<minuteBars.length;sm++){
+          var smb=minuteBars[sm];
+          if(smb.vw==null||isNaN(smb.vw)||smb.v==null||isNaN(smb.v))continue;
+          sNum+=smb.vw*smb.v;
+          sDen+=smb.v;
+        }
+        if(sDen>0)sessionVwap=sNum/sDen;
+      }
+
+      // Previous Day VWAP: directly from prevBar.vw (Polygon's session VWAP for that day)
+      var prevDayVwap=null;
+      if(prevBar&&prevBar.vw!=null&&!isNaN(prevBar.vw))prevDayVwap=prevBar.vw;
+
       // Compute market cap + shares out from reference + last close
       var sharesOut=null,marketCap=null,name=null,sicDesc=null;
       if(refData){
@@ -1600,6 +1636,12 @@ function StockProfileCheatSheetPage(p){
         ma50: ma50,
         ma100: ma100,
         ma200: ma200,
+        vwap20: vwap20,
+        vwap50: vwap50,
+        vwap100: vwap100,
+        vwap200: vwap200,
+        session_vwap: sessionVwap,
+        prev_day_vwap: prevDayVwap,
         windows:{
           today:enrichWin(wToday),
           prev:enrichWin(wPrev),
@@ -1728,28 +1770,64 @@ function StockProfileCheatSheetPage(p){
         {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
       </div>
 
-      {/* Moving Averages reference card */}
-      {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:8,textAlign:'center'}}>MOVING AVERAGES</div>
+      {/* Trends reference card: SMA vs VWAP per period + session/prev-day VWAP */}
+      {(data.ma20!=null||data.ma50!=null||data.ma100!=null||data.ma200!=null||data.session_vwap!=null||data.prev_day_vwap!=null)&&<div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:10,textAlign:'center'}}>TRENDS</div>
+
+        {/* SMA vs VWAP comparison block */}
         {(function(){
-          var rows=[{label:'MA20',v:data.ma20},{label:'MA50',v:data.ma50},{label:'MA100',v:data.ma100},{label:'MA200',v:data.ma200}];
-          return rows.map(function(r,i){
-            if(r.v==null)return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
-              <span style={{color:C.txtDim,fontWeight:700,letterSpacing:1}}>{r.label}</span>
-              <span style={{color:C.txtDim,fontSize:8}}>insufficient data</span>
-            </div>;
-            var diff=data.last_close-r.v;
-            var pct=r.v>0?(diff/r.v)*100:0;
-            var above=pct>0.5;
-            var below=pct<-0.5;
+          var renderTrendValue=function(v){
+            if(v==null)return <span style={{color:C.txtDim,fontSize:8,fontStyle:'italic'}}>insufficient data</span>;
+            var diff=data.last_close-v;
+            var pct=v>0?(diff/v)*100:0;
+            var above=pct>0.5,below=pct<-0.5;
             var arrow=above?'↑':below?'↓':'→';
             var color=above?C.accent:below?C.warn:C.gold;
-            return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
-              <span style={{color:C.txtDim,fontWeight:700,letterSpacing:1,minWidth:46}}>{r.label}</span>
-              <span style={{color:C.txtBright,fontWeight:700,flex:1,textAlign:'center'}}>${r.v.toFixed(2)}</span>
-              <span style={{color:color,fontWeight:700,minWidth:90,textAlign:'right'}}>{arrow} {pct>=0?'+':''}{pct.toFixed(2)}%</span>
+            return <span><span style={{color:C.txtBright,fontWeight:700}}>${v.toFixed(2)}</span> <span style={{color:color,fontWeight:700,fontSize:9}}>{arrow}{pct>=0?'+':''}{pct.toFixed(2)}%</span></span>;
+          };
+          var periods=[
+            {n:20,sma:data.ma20,vwap:data.vwap20},
+            {n:50,sma:data.ma50,vwap:data.vwap50},
+            {n:100,sma:data.ma100,vwap:data.vwap100},
+            {n:200,sma:data.ma200,vwap:data.vwap200}
+          ];
+          return periods.map(function(p,i){
+            return <div key={i} style={{padding:'8px 0',borderBottom:i<3?'1px solid '+C.border:'none',fontFamily:F,fontSize:10}}>
+              <div style={{color:C.txtDim,fontWeight:700,letterSpacing:1.5,fontSize:8,marginBottom:4}}>{p.n}-DAY</div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                <span style={{color:C.txtDim,fontSize:8,letterSpacing:1,minWidth:42}}>SMA</span>
+                <span style={{textAlign:'right'}}>{renderTrendValue(p.sma)}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{color:C.txtDim,fontSize:8,letterSpacing:1,minWidth:42}}>VWAP</span>
+                <span style={{textAlign:'right'}}>{renderTrendValue(p.vwap)}</span>
+              </div>
             </div>;
           });
+        })()}
+
+        {/* Intraday VWAP references (session + prev day) */}
+        {(data.session_vwap!=null||data.prev_day_vwap!=null)&&(function(){
+          var renderTrendValue=function(v){
+            if(v==null)return null;
+            var diff=data.last_close-v;
+            var pct=v>0?(diff/v)*100:0;
+            var above=pct>0.5,below=pct<-0.5;
+            var arrow=above?'↑':below?'↓':'→';
+            var color=above?C.accent:below?C.warn:C.gold;
+            return <span><span style={{color:C.txtBright,fontWeight:700}}>${v.toFixed(2)}</span> <span style={{color:color,fontWeight:700,fontSize:9}}>{arrow}{pct>=0?'+':''}{pct.toFixed(2)}%</span></span>;
+          };
+          return <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.gold}}>
+            <div style={{color:C.gold,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:6}}>INTRADAY VWAP</div>
+            {data.session_vwap!=null&&<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',fontFamily:F,fontSize:10}}>
+              <span style={{color:C.txtDim,fontSize:8,letterSpacing:1}}>SESSION (today)</span>
+              <span style={{textAlign:'right'}}>{renderTrendValue(data.session_vwap)}</span>
+            </div>}
+            {data.prev_day_vwap!=null&&<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',fontFamily:F,fontSize:10,borderTop:data.session_vwap!=null?'1px solid '+C.border:'none'}}>
+              <span style={{color:C.txtDim,fontSize:8,letterSpacing:1}}>PREV DAY</span>
+              <span style={{textAlign:'right'}}>{renderTrendValue(data.prev_day_vwap)}</span>
+            </div>}
+          </div>;
         })()}
       </div>}
 
