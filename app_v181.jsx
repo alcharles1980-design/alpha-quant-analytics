@@ -2789,7 +2789,7 @@ function StockProfileCheatSheetPage(p){
         });
         if(allVals.length===0)return null;
         var yMax=Math.max.apply(null,allVals);
-        var chartH=130;
+        var chartH=160;
         var fmtMoney=function(v){
           if(v==null)return '-';
           var abs=Math.abs(v);
@@ -2821,9 +2821,9 @@ function StockProfileCheatSheetPage(p){
               {periods.map(function(p,i){
                 var revH=p.revenue!=null&&p.revenue>0?(p.revenue/yMax)*chartH:0;
                 var earnH=p.earnings!=null&&p.earnings>0?(p.earnings/yMax)*chartH:0;
-                return <div key={i} style={{flex:1,display:'flex',justifyContent:'center',alignItems:'flex-end',gap:3,minHeight:1}}>
-                  <div style={{width:'38%',height:Math.max(revH,1),background:revColor,borderRadius:'2px 2px 0 0'}}/>
-                  <div style={{width:'38%',height:Math.max(earnH,1),background:C.gold,borderRadius:'2px 2px 0 0'}}/>
+                return <div key={i} style={{flex:1,display:'flex',justifyContent:'center',alignItems:'flex-end',gap:4,minHeight:1}}>
+                  <div style={{width:'46%',height:Math.max(revH,1),background:revColor,borderRadius:'3px 3px 0 0'}}/>
+                  <div style={{width:'46%',height:Math.max(earnH,1),background:C.gold,borderRadius:'3px 3px 0 0'}}/>
                 </div>;
               })}
             </div>
