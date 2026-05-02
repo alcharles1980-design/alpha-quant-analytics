@@ -1364,6 +1364,9 @@ function StockProfileCheatSheetPage(p){
   var s5=useState(''),progMsg=s5[0],setProgMsg=s5[1];
   var s6=useState(false),newsExpanded=s6[0],setNewsExpanded=s6[1];
   var s7=useState(false),analystExpanded=s7[0],setAnalystExpanded=s7[1];
+  var s8=useState(true),epsExpanded=s8[0],setEpsExpanded=s8[1];
+  var s9=useState(true),revExpanded=s9[0],setRevExpanded=s9[1];
+  var s10=useState('quarterly'),revMode=s10[0],setRevMode=s10[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -1531,6 +1534,14 @@ function StockProfileCheatSheetPage(p){
       // Analyst ratings from Polygon's Benzinga ratings endpoint.
       // Pull 50 most recent so we capture roughly last 90 days of activity.
       var urlRatings='https://api.polygon.io/benzinga/v1/ratings?ticker='+tkEnc+'&limit=50&order=desc&sort=date&apiKey='+p.apiKey;
+      // Past earnings (with reported actuals) for EPS history chart.
+      // Existing earnings fetch above (line ~1446) gets FUTURE earnings - this
+      // is a separate fetch for HISTORICAL ones.
+      var urlPastEarnings='https://api.polygon.io/benzinga/v1/earnings?ticker='+tkEnc+'&date.lte='+todayStr+'&order=desc&sort=date&limit=8&apiKey='+p.apiKey;
+      // Financials: quarterly (last 8 quarters) + annual (last 5 fiscal years).
+      // Used for the Revenue vs Earnings chart with Annual/Quarterly toggle.
+      var urlFinQ='https://api.polygon.io/vX/reference/financials?ticker='+tkEnc+'&timeframe=quarterly&limit=8&order=desc&sort=period_of_report_date&apiKey='+p.apiKey;
+      var urlFinA='https://api.polygon.io/vX/reference/financials?ticker='+tkEnc+'&timeframe=annual&limit=5&order=desc&sort=period_of_report_date&apiKey='+p.apiKey;
       // Wrapper: fetch + parse, soft-fail to empty array, but rethrow AbortError so
       // Promise.all bails fast when the user cancels.
       var safeFetchBars=async function(url){
@@ -1544,13 +1555,13 @@ function StockProfileCheatSheetPage(p){
           return [];
         }
       };
-      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[],ratingsRaw=[];
+      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[],ratingsRaw=[],pastEarningsRaw=[],finQRaw=[],finARaw=[];
       try{
-        var quint=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews),safeFetchBars(urlRatings)]);
-        bars5m=quint[0];bars30m=quint[1];bars1h=quint[2];newsRaw=quint[3];ratingsRaw=quint[4];
+        var oct=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews),safeFetchBars(urlRatings),safeFetchBars(urlPastEarnings),safeFetchBars(urlFinQ),safeFetchBars(urlFinA)]);
+        bars5m=oct[0];bars30m=oct[1];bars1h=oct[2];newsRaw=oct[3];ratingsRaw=oct[4];pastEarningsRaw=oct[5];finQRaw=oct[6];finARaw=oct[7];
       }catch(eAll){
         if(eAll.name==='AbortError')throw eAll;
-        // Other errors: keep arrays empty, profiles + news + ratings will silently skip.
+        // Other errors: keep arrays empty, all dependent cards will silently skip.
       }
       checkAbort();
 
@@ -1684,6 +1695,120 @@ function StockProfileCheatSheetPage(p){
           distribution: dist,
           total_active: dist.buy+dist.hold+dist.sell,
           changes: changes
+        };
+      }
+
+      // Process past earnings into EPS history.
+      // pastEarningsRaw is sorted desc by date. We want last 4 reported quarters
+      // (with eps actual present), then we'll combine with future estimate (existing
+      // 'earnings' object) to make a 4-quarter chart: 3 past + 1 next.
+      // Benzinga earnings fields used:
+      //   eps (actual, populated only AFTER the company reports)
+      //   eps_estimate (consensus)
+      //   eps_surprise_percent (% diff)
+      //   fiscal_period ('Q1'/'Q2'/'Q3'/'Q4'/'FY'/'H1')
+      //   fiscal_year (integer)
+      //   date (YYYY-MM-DD)
+      var epsHistory=null;
+      if(pastEarningsRaw.length>0||(earnings&&earnings.source==='benzinga'&&earnings.eps_estimate!=null)){
+        // Reported = past records that actually have eps present (number, not empty string)
+        var reported=pastEarningsRaw.filter(function(r){
+          var e=r.eps;
+          if(e==null||e==='')return false;
+          var n=typeof e==='number'?e:parseFloat(e);
+          return !isNaN(n)&&r.fiscal_period&&r.fiscal_year;
+        }).map(function(r){
+          var act=typeof r.eps==='number'?r.eps:parseFloat(r.eps);
+          var est=null;
+          if(r.eps_estimate!=null&&r.eps_estimate!==''){
+            var e2=typeof r.eps_estimate==='number'?r.eps_estimate:parseFloat(r.eps_estimate);
+            if(!isNaN(e2))est=e2;
+          }
+          return {
+            date: r.date,
+            fiscal_period: r.fiscal_period,
+            fiscal_year: r.fiscal_year,
+            label: r.fiscal_period+' FY'+(String(r.fiscal_year).slice(-2)),
+            eps_actual: act,
+            eps_estimate: est,
+            is_future: false
+          };
+        }).slice(0,3); // last 3 reported
+        // Reverse so chronologically ascending (oldest first, left-to-right)
+        reported.reverse();
+        // Add the upcoming earnings (from existing fetch) as the 4th column
+        var future=[];
+        if(earnings&&earnings.source==='benzinga'&&earnings.fiscal_period&&earnings.fiscal_year){
+          future.push({
+            date: earnings.date,
+            fiscal_period: earnings.fiscal_period,
+            fiscal_year: earnings.fiscal_year,
+            label: earnings.fiscal_period+' FY'+(String(earnings.fiscal_year).slice(-2)),
+            eps_actual: null,
+            eps_estimate: earnings.eps_estimate,
+            is_future: true
+          });
+        }
+        var quarters=reported.concat(future);
+        if(quarters.length>0){
+          // Y-axis range: max of all EPS values (actual + estimate), with 15% headroom
+          var allVals=[];
+          quarters.forEach(function(q){
+            if(q.eps_actual!=null)allVals.push(q.eps_actual);
+            if(q.eps_estimate!=null)allVals.push(q.eps_estimate);
+          });
+          if(allVals.length>0){
+            var yMin=Math.min.apply(null,allVals);
+            var yMax=Math.max.apply(null,allVals);
+            // Pad range so dots aren't pinned to top/bottom edges
+            var yRange=yMax-yMin;
+            if(yRange<=0)yRange=Math.abs(yMax)*0.5||1; // single value: synthetic range
+            var yLo=yMin-yRange*0.2;
+            var yHi=yMax+yRange*0.2;
+            epsHistory={
+              quarters: quarters,
+              y_lo: yLo,
+              y_hi: yHi
+            };
+          }
+        }
+      }
+
+      // Process financials into quarterly + annual revenue/earnings arrays.
+      // Polygon vX/reference/financials returns nested structure:
+      //   r.financials.income_statement.revenues.value (USD)
+      //   r.financials.income_statement.net_income_loss.value (USD)
+      //   r.fiscal_period ('Q1'/'Q2'/'Q3'/'Q4'/'FY'/'TTM')
+      //   r.fiscal_year (string)
+      //   r.end_date / r.start_date / r.period_of_report_date
+      // We extract revenue + net income + period label, sorted ascending for display.
+      var extractFinancialPeriod=function(r,isAnnual){
+        var inc=r.financials&&r.financials.income_statement;
+        if(!inc)return null;
+        var rev=inc.revenues&&typeof inc.revenues.value==='number'?inc.revenues.value:null;
+        var ni=inc.net_income_loss&&typeof inc.net_income_loss.value==='number'?inc.net_income_loss.value:null;
+        if(rev==null&&ni==null)return null;
+        var fy=r.fiscal_year?String(r.fiscal_year):'';
+        var fp=r.fiscal_period||'';
+        var label=isAnnual?('FY '+fy):(fp+' FY'+fy.slice(-2));
+        return {
+          label: label,
+          fiscal_year: fy,
+          fiscal_period: fp,
+          end_date: r.end_date||r.period_of_report_date||'',
+          revenue: rev,
+          earnings: ni
+        };
+      };
+      var finQuarterly=finQRaw.map(function(r){return extractFinancialPeriod(r,false);}).filter(function(x){return x;}).slice(0,4);
+      finQuarterly.reverse(); // ascending chronologically
+      var finAnnual=finARaw.map(function(r){return extractFinancialPeriod(r,true);}).filter(function(x){return x;}).slice(0,4);
+      finAnnual.reverse(); // ascending chronologically
+      var financials=null;
+      if(finQuarterly.length>0||finAnnual.length>0){
+        financials={
+          quarterly: finQuarterly,
+          annual: finAnnual
         };
       }
 
@@ -2161,6 +2286,8 @@ function StockProfileCheatSheetPage(p){
         earnings: earnings,
         news: news,
         analyst: analyst,
+        eps_history: epsHistory,
+        financials: financials,
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -2586,6 +2713,141 @@ function StockProfileCheatSheetPage(p){
           {/* Show-more hint when collapsed */}
           {!analystExpanded&&hasMore&&<div onClick={function(){setAnalystExpanded(true);}} style={{cursor:'pointer',color:C.purple,fontSize:9,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,fontWeight:700,padding:'4px 0',borderTop:'1px solid '+C.border}}>+ {a.changes.length-3} MORE · TAP TO EXPAND ▸</div>}
           {analystExpanded&&a.changes.length>3&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:10,textAlign:'center',letterSpacing:1,paddingTop:8,borderTop:'1px solid '+C.border}}>tap header to collapse ▾</div>}
+        </div>;
+      })()}
+
+      {/* EARNINGS PER SHARE card - chart with consensus (dotted circle) and actual
+          (filled green dot). Vertical position encodes EPS value, so beats appear
+          as dots above center of dotted circle, misses below. Default expanded. */}
+      {data.eps_history&&data.eps_history.quarters&&data.eps_history.quarters.length>0&&(function(){
+        var eh=data.eps_history;
+        var qs=eh.quarters;
+        var n=qs.length;
+        var chartH=110; // pixels
+        var yToTop=function(v){
+          var range=eh.y_hi-eh.y_lo;
+          if(range<=0)return chartH/2;
+          return ((eh.y_hi-v)/range)*chartH;
+        };
+        // Beat/miss calculation for the most-recent reported quarter
+        var lastReported=null;
+        for(var li=qs.length-1;li>=0;li--){if(qs[li].eps_actual!=null){lastReported=qs[li];break;}}
+        var beatPct=null;
+        if(lastReported&&lastReported.eps_estimate!=null&&lastReported.eps_estimate!==0){
+          beatPct=((lastReported.eps_actual-lastReported.eps_estimate)/Math.abs(lastReported.eps_estimate))*100;
+        }
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header with collapse chip */}
+          <div onClick={function(){setEpsExpanded(!epsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:epsExpanded?8:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>EARNINGS PER SHARE</span>
+              {beatPct!=null&&<span style={{color:beatPct>=0?C.accent:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{beatPct>=0?'BEAT +':'MISS '}{beatPct.toFixed(1)}%</span>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{epsExpanded?'▾':'▸'}</div>
+          </div>
+          {epsExpanded&&<div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1,marginBottom:10}}>○ consensus est · ● actual reported</div>
+            {/* Chart canvas: dotted circles + green dots positioned by EPS value */}
+            <div style={{position:'relative',height:chartH,marginBottom:8}}>
+              {qs.map(function(q,i){
+                var cxPct=(i+0.5)*(100/n);
+                var estY=q.eps_estimate!=null?yToTop(q.eps_estimate):null;
+                var actY=q.eps_actual!=null?yToTop(q.eps_actual):null;
+                return <div key={i}>
+                  {estY!=null&&<div style={{position:'absolute',top:(estY-14)+'px',left:'calc('+cxPct+'% - 14px)',width:28,height:28,borderRadius:'50%',border:'2px dotted '+C.txtDim,boxSizing:'border-box'}}/>}
+                  {actY!=null&&<div style={{position:'absolute',top:(actY-7)+'px',left:'calc('+cxPct+'% - 7px)',width:14,height:14,borderRadius:'50%',background:C.accent,boxShadow:'0 0 6px rgba(0,229,160,0.5)'}}/>}
+                </div>;
+              })}
+            </div>
+            {/* Period + value labels */}
+            <div style={{display:'flex'}}>
+              {qs.map(function(q,i){
+                return <div key={i} style={{flex:1,textAlign:'center'}}>
+                  <div style={{color:q.is_future?C.txtDim:C.txt,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{q.label}</div>
+                  {q.eps_actual!=null?<div style={{color:C.accent,fontSize:9,fontFamily:F,fontWeight:700,marginTop:2}}>${q.eps_actual.toFixed(2)}</div>:q.eps_estimate!=null?<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2,fontStyle:'italic'}}>est ${q.eps_estimate.toFixed(2)}</div>:<div style={{height:14}}/>}
+                </div>;
+              })}
+            </div>
+          </div>}
+        </div>;
+      })()}
+
+      {/* REVENUE & EARNINGS card - bar chart with Annual/Quarterly toggle.
+          Blue bars = revenue, gold bars = net income. Default expanded. */}
+      {data.financials&&((data.financials.quarterly&&data.financials.quarterly.length>0)||(data.financials.annual&&data.financials.annual.length>0))&&(function(){
+        var f=data.financials;
+        // Choose periods based on mode; fall back to whichever has data
+        var periods=revMode==='annual'?f.annual:f.quarterly;
+        if(!periods||periods.length===0)periods=revMode==='annual'?f.quarterly:f.annual;
+        var hasQ=f.quarterly&&f.quarterly.length>0;
+        var hasA=f.annual&&f.annual.length>0;
+        // Y-axis range: max of revenue + earnings (positives only). Negatives clamp to 0.
+        var allVals=[];
+        periods.forEach(function(p){
+          if(p.revenue!=null&&p.revenue>0)allVals.push(p.revenue);
+          if(p.earnings!=null&&p.earnings>0)allVals.push(p.earnings);
+        });
+        if(allVals.length===0)return null;
+        var yMax=Math.max.apply(null,allVals);
+        var chartH=130;
+        var fmtMoney=function(v){
+          if(v==null)return '-';
+          var abs=Math.abs(v);
+          if(abs>=1e12)return '$'+(v/1e12).toFixed(2)+'T';
+          if(abs>=1e9)return '$'+(v/1e9).toFixed(2)+'B';
+          if(abs>=1e6)return '$'+(v/1e6).toFixed(1)+'M';
+          return '$'+v.toLocaleString();
+        };
+        // Latest period summary for the collapsed preview
+        var latest=periods[periods.length-1];
+        var revColor='#3b82f6';
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+          {/* Header */}
+          <div onClick={function(){setRevExpanded(!revExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:revExpanded?10:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:2,fontWeight:700}}>REVENUE &amp; EARNINGS</span>
+              {latest&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{latest.label}: {fmtMoney(latest.revenue)} rev</span>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{revExpanded?'▾':'▸'}</div>
+          </div>
+          {revExpanded&&<div>
+            {/* Mode toggle */}
+            {hasQ&&hasA&&<div style={{display:'flex',gap:6,marginBottom:12}}>
+              <div onClick={function(){setRevMode('quarterly');}} style={{cursor:'pointer',flex:1,padding:'6px 10px',background:revMode==='quarterly'?C.purple:'transparent',color:revMode==='quarterly'?'#fff':C.txt,border:'1px solid '+(revMode==='quarterly'?C.purple:C.border),borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textAlign:'center'}}>QUARTERLY</div>
+              <div onClick={function(){setRevMode('annual');}} style={{cursor:'pointer',flex:1,padding:'6px 10px',background:revMode==='annual'?C.purple:'transparent',color:revMode==='annual'?'#fff':C.txt,border:'1px solid '+(revMode==='annual'?C.purple:C.border),borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textAlign:'center'}}>ANNUAL</div>
+            </div>}
+            {/* Chart: side-by-side bars per period */}
+            <div style={{display:'flex',height:chartH,alignItems:'flex-end',marginBottom:8,paddingTop:4}}>
+              {periods.map(function(p,i){
+                var revH=p.revenue!=null&&p.revenue>0?(p.revenue/yMax)*chartH:0;
+                var earnH=p.earnings!=null&&p.earnings>0?(p.earnings/yMax)*chartH:0;
+                return <div key={i} style={{flex:1,display:'flex',justifyContent:'center',alignItems:'flex-end',gap:3,minHeight:1}}>
+                  <div style={{width:'38%',height:Math.max(revH,1),background:revColor,borderRadius:'2px 2px 0 0'}}/>
+                  <div style={{width:'38%',height:Math.max(earnH,1),background:C.gold,borderRadius:'2px 2px 0 0'}}/>
+                </div>;
+              })}
+            </div>
+            {/* Period labels */}
+            <div style={{display:'flex',marginBottom:8,borderTop:'1px solid '+C.border,paddingTop:6}}>
+              {periods.map(function(p,i){
+                return <div key={i} style={{flex:1,textAlign:'center',fontSize:8,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{p.label}</div>;
+              })}
+            </div>
+            {/* Per-period values - small grid */}
+            <div style={{display:'flex',marginBottom:10}}>
+              {periods.map(function(p,i){
+                return <div key={i} style={{flex:1,textAlign:'center'}}>
+                  <div style={{color:revColor,fontSize:8,fontFamily:F,fontWeight:700}}>{fmtMoney(p.revenue)}</div>
+                  <div style={{color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,marginTop:1}}>{fmtMoney(p.earnings)}</div>
+                </div>;
+              })}
+            </div>
+            {/* Legend */}
+            <div style={{display:'flex',justifyContent:'center',gap:18,fontSize:8,fontFamily:F,color:C.txt,letterSpacing:1,paddingTop:6,borderTop:'1px solid '+C.border}}>
+              <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,background:revColor,borderRadius:2}}/>REVENUE</div>
+              <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,background:C.gold,borderRadius:2}}/>NET INCOME</div>
+            </div>
+          </div>}
         </div>;
       })()}
 
