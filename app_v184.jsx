@@ -1466,6 +1466,10 @@ function StockProfileCheatSheetPage(p){
 
           if(valid.length>0){
             var ev=valid[0];
+            // Polygon Benzinga earnings actual API fields are 'estimated_eps' /
+            // 'estimated_revenue' (NOT 'eps_estimate' / 'revenue_estimate' as I
+            // previously assumed). The internal data structure keys remain the
+            // same for backward compat with render code.
             earnings={
               date: ev.date,
               source: 'benzinga',
@@ -1473,8 +1477,8 @@ function StockProfileCheatSheetPage(p){
               fiscal_period: ev.fiscal_period||null,
               fiscal_year: ev.fiscal_year||null,
               time: ev.time||null,
-              eps_estimate: ev.eps_estimate!=null?ev.eps_estimate:null,
-              revenue_estimate: ev.revenue_estimate!=null?ev.revenue_estimate:null
+              eps_estimate: ev.estimated_eps!=null?ev.estimated_eps:null,
+              revenue_estimate: ev.estimated_revenue!=null?ev.estimated_revenue:null
             };
           }
         }
@@ -1707,25 +1711,28 @@ function StockProfileCheatSheetPage(p){
       // (with eps actual present), then we'll combine with future estimate (existing
       // 'earnings' object) to make a 4-quarter chart: 3 past + 1 next.
       // Benzinga earnings fields used:
-      //   eps (actual, populated only AFTER the company reports)
-      //   eps_estimate (consensus)
+      // Process past earnings into EPS history.
+      // Polygon Benzinga earnings actual API field names (verified vs docs):
+      //   actual_eps (number, populated only AFTER the company reports)
+      //   estimated_eps (consensus estimate, present before AND after report)
       //   eps_surprise_percent (% diff)
+      //   actual_revenue, estimated_revenue
       //   fiscal_period ('Q1'/'Q2'/'Q3'/'Q4'/'FY'/'H1')
       //   fiscal_year (integer)
       //   date (YYYY-MM-DD)
       var epsHistory=null;
       if(pastEarningsRaw.length>0||(earnings&&earnings.source==='benzinga'&&earnings.eps_estimate!=null)){
-        // Reported = past records that actually have eps present (number, not empty string)
+        // Reported = past records that actually have actual_eps present (number, not empty string)
         var reported=pastEarningsRaw.filter(function(r){
-          var e=r.eps;
+          var e=r.actual_eps;
           if(e==null||e==='')return false;
           var n=typeof e==='number'?e:parseFloat(e);
           return !isNaN(n)&&r.fiscal_period&&r.fiscal_year;
         }).map(function(r){
-          var act=typeof r.eps==='number'?r.eps:parseFloat(r.eps);
+          var act=typeof r.actual_eps==='number'?r.actual_eps:parseFloat(r.actual_eps);
           var est=null;
-          if(r.eps_estimate!=null&&r.eps_estimate!==''){
-            var e2=typeof r.eps_estimate==='number'?r.eps_estimate:parseFloat(r.eps_estimate);
+          if(r.estimated_eps!=null&&r.estimated_eps!==''){
+            var e2=typeof r.estimated_eps==='number'?r.estimated_eps:parseFloat(r.estimated_eps);
             if(!isNaN(e2))est=e2;
           }
           return {
