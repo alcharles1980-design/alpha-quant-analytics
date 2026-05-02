@@ -1362,21 +1362,47 @@ function StockProfileCheatSheetPage(p){
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),data=s4[0],setData=s4[1];
   var s5=useState(''),progMsg=s5[0],setProgMsg=s5[1];
+  var abortRef=useRef(null);
+
+  // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
+  // Uses en-CA locale which formats as ISO-style YYYY-MM-DD.
+  var _etDateFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+  var getETDateStr=function(d){
+    var dt=d||new Date();
+    return _etDateFmt.format(dt);
+  };
+  // Get day-of-week in ET (0=Sun..6=Sat). Uses 'short' weekday and maps.
+  var _etWeekdayFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short'});
+  var _dowMap={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+  var getETDayOfWeek=function(d){
+    var name=_etWeekdayFmt.format(d||new Date());
+    return _dowMap[name];
+  };
 
   var fetchProfile=async function(){
     var tk=ticker.trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+
+    // Cancel any in-flight prior request before starting a new one
+    if(abortRef.current){try{abortRef.current.abort();}catch(_){}}
+    var aborter=new AbortController();
+    abortRef.current=aborter;
+    var aborted=false;
+    var checkAbort=function(){if(aborter.signal.aborted){aborted=true;throw new Error('aborted');}};
+
     setLoading(true);setErr(null);setData(null);setProgMsg('Fetching daily bars...');
     try{
       var today=new Date();
-      var todayStr=today.toISOString().slice(0,10);
-      var fromDt=new Date(today.getTime()-371*86400000);
-      var fromStr=fromDt.toISOString().slice(0,10);
+      var todayStr=getETDateStr(today);
+      // From-date: 371 calendar days ago, also computed in ET to avoid edge skew.
+      var fromStr=getETDateStr(new Date(today.getTime()-371*86400000));
+      var tkEnc=encodeURIComponent(tk);
 
       // FETCH 1: 52w of daily bars (covers all multi-day windows)
-      var dailyUrl='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/day/'+fromStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=400&apiKey='+p.apiKey;
-      var dr=await fetch(dailyUrl);
+      var dailyUrl='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/day/'+fromStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=400&apiKey='+p.apiKey;
+      var dr=await fetch(dailyUrl,{signal:aborter.signal});
+      checkAbort();
       if(!dr.ok){
         var errBody=await dr.text();
         setErr('Polygon HTTP '+dr.status+': '+errBody.slice(0,200));
@@ -1388,8 +1414,9 @@ function StockProfileCheatSheetPage(p){
 
       setProgMsg('Fetching today\'s minute bars...');
       // FETCH 2: today's minute bars (for accurate intraday today H/L)
-      var minuteUrl='https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/minute/'+todayStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-      var mr=await fetch(minuteUrl);
+      var minuteUrl='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/minute/'+todayStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var mr=await fetch(minuteUrl,{signal:aborter.signal});
+      checkAbort();
       var minuteBars=[];
       if(mr.ok){
         var minuteBody=await mr.json();
@@ -1399,38 +1426,33 @@ function StockProfileCheatSheetPage(p){
 
       setProgMsg('Fetching ticker reference...');
       // FETCH 3: ticker reference (for shares outstanding + name)
-      var refUrl='https://api.polygon.io/v3/reference/tickers/'+tk+'?apiKey='+p.apiKey;
+      var refUrl='https://api.polygon.io/v3/reference/tickers/'+tkEnc+'?apiKey='+p.apiKey;
       var refData=null;
       try{
-        var refR=await fetch(refUrl);
+        var refR=await fetch(refUrl,{signal:aborter.signal});
         if(refR.ok){var refBody=await refR.json();refData=refBody.results||null;}
-      }catch(refErr){}
+      }catch(refErr){if(refErr.name==='AbortError')throw refErr;}
+      checkAbort();
       // Don't fail if reference fetch fails - market cap will show as null
 
       setProgMsg('Fetching upcoming earnings...');
       // FETCH 4a: Benzinga earnings (primary source - exact dates with confirmation status)
-      // Pull a bunch of upcoming records, filter out invalid dates, take the soonest.
-      // The single-result query was unreliable - some records have date set to a
-      // far-future placeholder when the actual report hasn't been scheduled yet.
+      // Pull multiple upcoming records, filter out invalid dates, take the soonest.
       var earnings=null;
-      var earningsDebug=null;
       var todayDateStr=todayStr;
       try{
-        var bzUrl='https://api.polygon.io/benzinga/v1/earnings?ticker='+tk+'&date.gte='+todayDateStr+'&order=asc&sort=date&limit=20&apiKey='+p.apiKey;
-        var bzR=await fetch(bzUrl);
+        var bzUrl='https://api.polygon.io/benzinga/v1/earnings?ticker='+tkEnc+'&date.gte='+todayDateStr+'&order=asc&sort=date&limit=20&apiKey='+p.apiKey;
+        var bzR=await fetch(bzUrl,{signal:aborter.signal});
         if(bzR.ok){
           var bzBody=await bzR.json();
           var bzResults=bzBody.results||[];
-          earningsDebug={count:bzResults.length, raw:bzResults.slice(0,5).map(function(r){return {date:r.date,fp:r.fiscal_period,fy:r.fiscal_year,status:r.date_status,updated:r.last_updated};})};
-          // Filter for valid dates (must be a parseable YYYY-MM-DD string) and take first.
-          // Sort by date ascending (the API may not always return them sorted as expected).
+          // Filter for valid dates within 220 days (covers semi-annual ADR reporters too)
           var valid=bzResults.filter(function(r){
             if(!r.date)return false;
-            // Date must be reasonable - not more than 200 days out (we want NEXT earnings, not far future projections)
             var d=new Date(r.date+'T00:00:00Z').getTime();
             var t=new Date(todayDateStr+'T00:00:00Z').getTime();
             var daysAway=(d-t)/86400000;
-            return daysAway>=0 && daysAway<=200;
+            return daysAway>=0 && daysAway<=220;
           }).sort(function(a,b){return (a.date<b.date?-1:a.date>b.date?1:0);});
 
           if(valid.length>0){
@@ -1447,13 +1469,14 @@ function StockProfileCheatSheetPage(p){
             };
           }
         }
-      }catch(bzErr){earningsDebug={error:String(bzErr)};}
+      }catch(bzErr){if(bzErr.name==='AbortError')throw bzErr;}
+      checkAbort();
 
       // FETCH 4b: Financials fallback - if Benzinga returned nothing, infer from most recent filing
       if(!earnings){
         try{
-          var finUrl='https://api.polygon.io/vX/reference/financials?ticker='+tk+'&order=desc&sort=period_of_report_date&limit=1&apiKey='+p.apiKey;
-          var finR=await fetch(finUrl);
+          var finUrl='https://api.polygon.io/vX/reference/financials?ticker='+tkEnc+'&order=desc&sort=period_of_report_date&limit=1&apiKey='+p.apiKey;
+          var finR=await fetch(finUrl,{signal:aborter.signal});
           if(finR.ok){
             var finBody=await finR.json();
             var finResults=finBody.results||[];
@@ -1482,7 +1505,8 @@ function StockProfileCheatSheetPage(p){
               }
             }
           }
-        }catch(finErr){}
+        }catch(finErr){if(finErr.name==='AbortError')throw finErr;}
+        checkAbort();
       }
 
       // Helper: scan a sub-range of daily bars for hi/lo
@@ -1500,8 +1524,8 @@ function StockProfileCheatSheetPage(p){
         var sumTrades=0,tradeBarCount=0;
         for(var i=0;i<barsArr.length;i++){
           var b=barsArr[i];
-          if(b.h>hi){hi=b.h;hiDate=new Date(b.t).toISOString().slice(0,10);}
-          if(b.l<lo){lo=b.l;loDate=new Date(b.t).toISOString().slice(0,10);}
+          if(b.h>hi){hi=b.h;hiDate=getETDateStr(new Date(b.t));}
+          if(b.l<lo){lo=b.l;loDate=getETDateStr(new Date(b.t));}
           // True Range: max(H-L, |H-prevC|, |L-prevC|). Need previous bar's close.
           // Look up b's index in dailyBars to find the bar before it.
           var globalIdx=barIndexByT[b.t];
@@ -1559,14 +1583,21 @@ function StockProfileCheatSheetPage(p){
         return dailyBars.filter(function(b){return b.t>=cutoff;});
       };
 
-      // Current week: from Monday this week (US convention: Monday=1, Sunday=0->treat as last day)
-      var dow=today.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+      // Current week: from Monday this week IN ET (US trading week convention).
+      // Use ET day-of-week so users in non-US timezones still get the trading week boundary right.
+      var dow=getETDayOfWeek(today); // 0=Sun..6=Sat in ET
       var daysFromMon=dow===0?6:dow-1; // Sun is 6 days from Monday
-      var weekStart=new Date(today);
-      weekStart.setHours(0,0,0,0);
-      weekStart.setDate(weekStart.getDate()-daysFromMon);
-      var weekStartMs=weekStart.getTime();
-      var weekBars=dailyBars.filter(function(b){return b.t>=weekStartMs;});
+      // Compute Monday's date in ET by parsing today's ET YYYY-MM-DD and rolling back.
+      var etTodayStr=todayStr; // already ET
+      var etTodayParts=etTodayStr.split('-');
+      var etMidnightUTC=new Date(Date.UTC(parseInt(etTodayParts[0],10),parseInt(etTodayParts[1],10)-1,parseInt(etTodayParts[2],10)));
+      etMidnightUTC.setUTCDate(etMidnightUTC.getUTCDate()-daysFromMon);
+      var weekStartStr=etMidnightUTC.toISOString().slice(0,10);
+      // Filter daily bars by their ET trade date (compare YYYY-MM-DD strings, lexicographic).
+      var weekBars=dailyBars.filter(function(b){
+        var bDate=getETDateStr(new Date(b.t));
+        return bDate>=weekStartStr;
+      });
 
       // Compute all windows
       var w52=scanBars(dailyBars);
@@ -1596,7 +1627,7 @@ function StockProfileCheatSheetPage(p){
         // bar that's NOT today (since today's daily bar may not exist in feed yet).
         var yClose=null;
         for(var di=dailyBars.length-1;di>=0;di--){
-          var ddate=new Date(dailyBars[di].t).toISOString().slice(0,10);
+          var ddate=getETDateStr(new Date(dailyBars[di].t));
           if(ddate!==todayStr){yClose=dailyBars[di].c;break;}
         }
         var todayTR = yClose!=null ? Math.max(todayRange, Math.abs(thi-yClose), Math.abs(tlo-yClose)) : todayRange;
@@ -1612,7 +1643,7 @@ function StockProfileCheatSheetPage(p){
       } else {
         // Check if last daily bar is from today
         var lastDaily=dailyBars[dailyBars.length-1];
-        var lastDailyDate=new Date(lastDaily.t).toISOString().slice(0,10);
+        var lastDailyDate=getETDateStr(new Date(lastDaily.t));
         if(lastDailyDate===todayStr){
           var lastRange=lastDaily.h-lastDaily.l;
           // True Range for today (daily fallback): use prev day's close
@@ -1632,8 +1663,18 @@ function StockProfileCheatSheetPage(p){
       }
 
       var last=dailyBars[dailyBars.length-1];
-      var lastDate=new Date(last.t).toISOString().slice(0,10);
-      var lastClose=last.c;
+      var lastDate=getETDateStr(new Date(last.t));
+      // LIVE last close: prefer the most recent minute bar's close if minute bars exist
+      // (during RTH the minute feed is live, daily bar may not be published yet).
+      // This is what range-position indicators and price labels use throughout the page.
+      var lastClose;
+      var lastCloseLive=false;
+      if(minuteBars.length>0){
+        lastClose=minuteBars[minuteBars.length-1].c;
+        lastCloseLive=true;
+      } else {
+        lastClose=last.c;
+      }
 
       // Previous trading day: most recent COMPLETED daily bar that isn't today.
       // If last bar is today, use second-to-last. Otherwise the last bar IS the previous day.
@@ -1645,7 +1686,7 @@ function StockProfileCheatSheetPage(p){
       }
       var wPrev=null;
       if(prevBar){
-        var prevDate=new Date(prevBar.t).toISOString().slice(0,10);
+        var prevDate=getETDateStr(new Date(prevBar.t));
         var prevRange=prevBar.h-prevBar.l;
         // True Range for prev day: use day-before-prev's close
         var prevPrevC=prevBarIdx>=1?dailyBars[prevBarIdx-1].c:null;
@@ -1771,6 +1812,7 @@ function StockProfileCheatSheetPage(p){
         ticker:tk,
         bars_count:dailyBars.length,
         last_close:lastClose,
+        last_close_live:lastCloseLive,
         last_date:lastDate,
         today_str:todayStr,
         market_cap: marketCap,
@@ -1790,7 +1832,6 @@ function StockProfileCheatSheetPage(p){
         session_vwap: sessionVwap,
         prev_day_vwap: prevDayVwap,
         earnings: earnings,
-        earnings_debug: earningsDebug,
         windows:{
           today:enrichWin(wToday),
           prev:enrichWin(wPrev),
@@ -1802,9 +1843,20 @@ function StockProfileCheatSheetPage(p){
         }
       });
       setProgMsg('');
-    }catch(e){setErr('Fetch error: '+e.message);setProgMsg('');}
-    setLoading(false);
+    }catch(e){
+      // Don't surface aborts as errors - the user just clicked Fetch again or navigated away.
+      if(e&&(e.message==='aborted'||e.name==='AbortError')){
+        aborted=true; // ensure we don't toggle setLoading(false) and stomp the new in-flight request
+      } else {
+        setErr('Fetch error: '+e.message);
+        setProgMsg('');
+      }
+    }
+    if(!aborted)setLoading(false);
   };
+
+  // Cleanup: abort in-flight fetch when component unmounts
+  useEffect(function(){return function(){if(abortRef.current){try{abortRef.current.abort();}catch(_){}}};},[]);
 
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:13,fontWeight:700,padding:'10px 12px',outline:'none',letterSpacing:1,textTransform:'uppercase'};
   var bS={width:'100%',padding:'12px',border:'none',borderRadius:8,background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:loading?'default':'pointer',marginTop:10};
@@ -1908,7 +1960,7 @@ function StockProfileCheatSheetPage(p){
 
       {/* Hero: big last close */}
       <div style={{marginTop:12,marginBottom:14,padding:'14px 16px',background:C.bg,borderRadius:10,border:'1px solid '+C.accent,textAlign:'center'}}>
-        <div style={{color:C.txt,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>LAST CLOSE</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>{data.last_close_live?'LATEST PRICE':'LAST CLOSE'}{data.last_close_live&&<span style={{color:C.accent,marginLeft:6,fontSize:7,letterSpacing:1}}>\u2022 LIVE</span>}</div>
         <div style={{color:C.txtBright,fontSize:32,fontFamily:F,fontWeight:700,marginTop:4,letterSpacing:1}}>${data.last_close.toFixed(2)}</div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.last_date}</div>
         {data.market_cap!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
@@ -1966,10 +2018,6 @@ function StockProfileCheatSheetPage(p){
           </div>}
           <div style={{padding:6,background:'rgba(0,0,0,0.25)',borderRadius:4,fontSize:8,fontFamily:F,color:labelColor,fontWeight:700,letterSpacing:1,textAlign:'center'}}>{risk==='HIGH'?'\u26A0 ':''}{riskMsg.toUpperCase()}</div>
           {ev.source==='inferred'&&<div style={{marginTop:6,color:C.txtDim,fontSize:7,fontFamily:F,fontStyle:'italic'}}>Estimated from last filing ({ev.last_filing_period}, period {ev.last_filing_report_date}). Actual date may vary by ~2 weeks.</div>}
-          {data.earnings_debug&&<details style={{marginTop:6}}>
-            <summary style={{color:C.txtDim,fontSize:7,fontFamily:F,cursor:'pointer'}}>debug: raw earnings records</summary>
-            <pre style={{fontSize:7,fontFamily:F,color:C.txtDim,overflow:'auto',background:'rgba(0,0,0,0.3)',padding:6,borderRadius:4,marginTop:4}}>{JSON.stringify(data.earnings_debug,null,2)}</pre>
-          </details>}
           {(ev.eps_estimate!=null||ev.revenue_estimate!=null)&&<div style={{marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border,display:'flex',gap:12,fontSize:9,fontFamily:F}}>
             {ev.eps_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>EPS EST</span> <span style={{color:C.txtBright,fontWeight:700}}>${ev.eps_estimate.toFixed(2)}</span></div>}
             {ev.revenue_estimate!=null&&<div><span style={{color:C.txt,letterSpacing:1,fontWeight:700,fontSize:8}}>REV EST</span> <span style={{color:C.txtBright,fontWeight:700}}>{(function(v){if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(2)+'M';return '$'+v.toLocaleString();})(ev.revenue_estimate)}</span></div>}
@@ -2039,7 +2087,7 @@ function StockProfileCheatSheetPage(p){
       </div>}
 
       <div style={{marginTop:10}}>
-        {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars':'daily bar'):'no session yet',data.windows.today,C.accent,data.last_close)}
+        {renderWindow('Today',data.windows.today?(data.windows.today.source==='minute'?data.windows.today.bars+' min bars \u00B7 incl ext hours':'daily bar'):'no session yet',data.windows.today,C.accent,data.last_close)}
         {renderWindow('Previous Day',data.windows.prev?data.windows.prev.hi_date:'',data.windows.prev,C.blue,data.last_close)}
         {renderWindow('This Week','Mon-now',data.windows.week,C.gold,data.last_close)}
         {renderWindow('2 Weeks','last 14 days',data.windows.wk2,C.gold,data.last_close)}
