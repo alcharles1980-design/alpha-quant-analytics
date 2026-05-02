@@ -1580,9 +1580,12 @@ function StockProfileCheatSheetPage(p){
       });
 
       // Process analyst ratings. Polygon's Benzinga ratings endpoint returns:
-      //   date, firm, analyst, action_company (Maintains/Upgrades/Downgrades/Initiates/Reiterates),
-      //   action_pt (Raises/Lowers/Maintains/Announces), rating_current, rating_prior,
-      //   adjusted_pt_current (number USD), adjusted_pt_prior, importance.
+      //   date, time, firm, analyst, rating_action (downgrades/maintains/reinstates/
+      //   reiterates/upgrades/assumes/initiates_coverage_on/terminates_coverage_on/etc.,
+      //   lowercase snake_case), price_target_action (raises/lowers/maintains/announces/sets),
+      //   rating (current rating string), previous_rating, adjusted_price_target,
+      //   previous_adjusted_price_target, price_target (unadjusted), previous_price_target,
+      //   importance.
       // We compute: aggregated consensus + range + buy/hold/sell distribution from
       // the last ~90 days, plus a chronological list of recent changes for display.
       var analyst=null;
@@ -1605,15 +1608,27 @@ function StockProfileCheatSheetPage(p){
         var firmKeys=Object.keys(perFirm);
         var validTargets=[];
         var dist={buy:0,hold:0,sell:0};
+        // Helper: get current price target, prefer adjusted, fallback to unadjusted
+        var ptCurrent=function(r){
+          var p=r.adjusted_price_target!=null?r.adjusted_price_target:r.price_target;
+          if(p==null)return null;
+          var n=typeof p==='number'?p:parseFloat(p);
+          return (!isNaN(n)&&n>0)?n:null;
+        };
+        var ptPrevious=function(r){
+          var p=r.previous_adjusted_price_target!=null?r.previous_adjusted_price_target:r.previous_price_target;
+          if(p==null)return null;
+          var n=typeof p==='number'?p:parseFloat(p);
+          return (!isNaN(n)&&n>0)?n:null;
+        };
         firmKeys.forEach(function(k){
           var r=perFirm[k];
-          // Parse target price (Polygon returns as string)
-          var pt=r.adjusted_pt_current!=null?parseFloat(r.adjusted_pt_current):null;
-          if(pt&&!isNaN(pt)&&pt>0)validTargets.push(pt);
+          var pt=ptCurrent(r);
+          if(pt!=null)validTargets.push(pt);
           // Bucket the rating
-          var rt=(r.rating_current||'').toLowerCase();
-          if(/(strong\s*buy|buy|outperform|overweight|positive|accumulate)/.test(rt))dist.buy++;
-          else if(/(strong\s*sell|sell|underperform|underweight|negative|reduce)/.test(rt))dist.sell++;
+          var rt=(r.rating||'').toLowerCase();
+          if(/(strong\s*buy|^buy|outperform|overweight|positive|accumulate)/.test(rt))dist.buy++;
+          else if(/(strong\s*sell|^sell|underperform|underweight|negative|reduce)/.test(rt))dist.sell++;
           else if(/(hold|neutral|equal[\s-]?weight|market\s*perform|sector\s*perform|in[\s-]?line|peer\s*perform)/.test(rt))dist.hold++;
         });
         var consensus=validTargets.length>0?validTargets.reduce(function(a,b){return a+b;},0)/validTargets.length:null;
@@ -1622,20 +1637,22 @@ function StockProfileCheatSheetPage(p){
         // Build "recent changes" list - all returned ratings, with sentiment derived
         // from action+target movement. Filter out pure no-op maintains for clarity.
         var changes=ratingsRaw.map(function(r){
-          var act=(r.action_company||'').toLowerCase();
-          var actPT=(r.action_pt||'').toLowerCase();
-          var ptNow=r.adjusted_pt_current!=null?parseFloat(r.adjusted_pt_current):null;
-          var ptPrev=r.adjusted_pt_prior!=null?parseFloat(r.adjusted_pt_prior):null;
+          var act=(r.rating_action||'').toLowerCase();
+          var actPT=(r.price_target_action||'').toLowerCase();
+          var ptNow=ptCurrent(r);
+          var ptPrev=ptPrevious(r);
           var sent='neutral';
           var verb='';
           if(act.indexOf('upgrade')>=0){sent='positive';verb='upgraded';}
           else if(act.indexOf('downgrade')>=0){sent='negative';verb='downgraded';}
-          else if(act.indexOf('initiate')>=0){sent='neutral';verb='initiated';}
+          else if(act.indexOf('initiate')>=0){sent='neutral';verb='initiated coverage';}
+          else if(act.indexOf('reinstate')>=0){sent='neutral';verb='reinstated';}
+          else if(act.indexOf('assume')>=0){sent='neutral';verb='assumed coverage';}
           else if(actPT.indexOf('raise')>=0){sent='positive';verb='target raised';}
           else if(actPT.indexOf('lower')>=0){sent='negative';verb='target lowered';}
           else if(act.indexOf('maintain')>=0||act.indexOf('reiterate')>=0){sent='neutral';verb='maintained';}
           // Target delta override (strongest signal)
-          if(ptNow&&ptPrev&&!isNaN(ptNow)&&!isNaN(ptPrev)){
+          if(ptNow&&ptPrev){
             if(ptNow>ptPrev*1.001)sent='positive';
             else if(ptNow<ptPrev*0.999)sent='negative';
           }
@@ -1643,17 +1660,18 @@ function StockProfileCheatSheetPage(p){
             date: r.date||'',
             firm: r.firm||'',
             analyst: r.analyst||'',
-            action: r.action_company||'',
-            action_pt: r.action_pt||'',
-            rating_now: r.rating_current||'',
-            rating_prev: r.rating_prior||'',
-            pt_now: (ptNow&&!isNaN(ptNow))?ptNow:null,
-            pt_prev: (ptPrev&&!isNaN(ptPrev))?ptPrev:null,
+            action: r.rating_action||'',
+            action_pt: r.price_target_action||'',
+            rating_now: r.rating||'',
+            rating_prev: r.previous_rating||'',
+            pt_now: ptNow,
+            pt_prev: ptPrev,
             sentiment: sent,
             verb: verb,
             // Filter flag: skip pure maintains where rating + target both unchanged
-            is_change: (act.indexOf('upgrade')>=0||act.indexOf('downgrade')>=0||act.indexOf('initiate')>=0
-                      ||actPT.indexOf('raise')>=0||actPT.indexOf('lower')>=0
+            is_change: (act.indexOf('upgrade')>=0||act.indexOf('downgrade')>=0
+                      ||act.indexOf('initiate')>=0||act.indexOf('reinstate')>=0||act.indexOf('assume')>=0
+                      ||actPT.indexOf('raise')>=0||actPT.indexOf('lower')>=0||actPT.indexOf('set')>=0
                       ||(ptNow&&ptPrev&&Math.abs(ptNow-ptPrev)>0.001))
           };
         }).filter(function(r){return r.is_change&&r.firm;});
@@ -2445,7 +2463,7 @@ function StockProfileCheatSheetPage(p){
 
       {/* ANALYST CONSENSUS card - collapsed by default. Tap header to expand.
           Shows consensus + range bar + distribution + recent rating changes. */}
-      {data.analyst&&data.analyst.changes&&data.analyst.changes.length>0&&(function(){
+      {data.analyst&&(data.analyst.total_active>0||(data.analyst.changes&&data.analyst.changes.length>0))&&(function(){
         var a=data.analyst;
         var px=data.last_close;
         // Time-ago helper (reuses local pattern)
@@ -2541,9 +2559,9 @@ function StockProfileCheatSheetPage(p){
               <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1}}>SELL</div>
             </div>
           </div>}
-          {/* Recent changes list */}
-          <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:6,marginTop:4}}>RECENT CHANGES</div>
-          {visibleChanges.map(function(r,i){
+          {/* Recent changes list - only render if there are interesting changes */}
+          {a.changes&&a.changes.length>0&&<div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:2,fontWeight:700,marginBottom:6,marginTop:4}}>RECENT CHANGES</div>}
+          {a.changes&&a.changes.length>0&&visibleChanges.map(function(r,i){
             return <div key={i} style={{padding:'6px 0',borderTop:i>0?'1px solid '+C.border:'none',display:'flex',alignItems:'flex-start',gap:8}}>
               {/* Sentiment dot */}
               <div style={{width:8,height:8,borderRadius:'50%',background:sentColor(r.sentiment),flexShrink:0,marginTop:4}}/>
