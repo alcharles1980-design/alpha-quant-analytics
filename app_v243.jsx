@@ -4931,6 +4931,28 @@ function StockProfileCheatSheetPage(p){
           return {tp:tp,cycles:cycles,profit:profit,tpTooHigh:false};
         };
         var rows=sweepTpList.map(computeRow);
+        // 4th column: "TO MATCH 1%" — at lower TP%s, how many cycles would
+        // you need to match the 1% row's total profit? Math:
+        //   match_cycles = ceil(baseline_profit / (capital × tp/100))
+        // Shows the "activity multiplier" required to make tighter TP% rungs
+        // hit the same dollar profit as the 1% baseline. At 0.05% TP that's
+        // typically 20x the 1% cycle count — useful for seeing whether the
+        // stock realistically produces that many cycles in a session/week.
+        // Math.ceil ensures the displayed count actually MATCHES (not just
+        // gets close to) the baseline. NaN when no baseline (1% row itself,
+        // or 1% is tpTooHigh / inputs missing).
+        var baselineRow=rows.filter(function(r){return Math.abs(r.tp-1)<0.001;})[0];
+        var baselineProfit=(baselineRow&&isFinite(baselineRow.profit)&&baselineRow.profit>0)?baselineRow.profit:NaN;
+        rows=rows.map(function(r){
+          var isBaseline=Math.abs(r.tp-1)<0.001;
+          if(isBaseline)return Object.assign({},r,{matchCycles:NaN,isBaseline:true});
+          if(!isFinite(baselineProfit)||!isFinite(capital)||capital<=0||!isFinite(r.tp)||r.tp<=0){
+            return Object.assign({},r,{matchCycles:NaN,isBaseline:false});
+          }
+          var profitPer=capital*r.tp/100;
+          var matchCycles=Math.ceil(baselineProfit/profitPer);
+          return Object.assign({},r,{matchCycles:matchCycles,isBaseline:false});
+        });
         // Find max profit across rows for relative-bar visualization. Skips
         // tpTooHigh rows (profit=0) and NaN rows. If everything's blank,
         // maxProfit=0 and bars don't render.
@@ -4960,6 +4982,7 @@ function StockProfileCheatSheetPage(p){
                   'maxBuy = top / (1 + TP%/100). Rungs above this can\u2019t fire on a swing-to-top.',
                   'cycles = round((maxBuy − bottom) / increment) + 1. Same RANGES CLOSED math as the parent card.',
                   'profit = cycles \u00D7 capital \u00D7 TP%/100',
+                  'TO MATCH 1% = ceil(profit_at_1% / (capital \u00D7 TP%/100)). The number of cycles you\u2019d need at this TP% to make the same dollar profit as the 1% baseline. The 1% row shows "baseline"; rows above 1% (none in this sweep) would show "—".',
                   'When TP% > spread%, no rung closes. Row shows 0 cycles, $0 profit, with a "tp too high" tag.'
                 ]},
                 {h:'Reading the table'},
@@ -4967,6 +4990,7 @@ function StockProfileCheatSheetPage(p){
                   'Tighter TP% (toward 0.05%) = more cycles closed but smaller profit per cycle. The total can go up OR down depending on how cycles scale vs the per-cycle drop.',
                   'Looser TP% (toward 1%) = fewer cycles, bigger per-cycle profit, larger idle count.',
                   'The bar to the right of profit shows relative magnitude across all rows \u2014 visual sweet-spot finder.',
+                  'TO MATCH 1% is the activity multiplier needed at lower TP%s. If the stock realistically can\u2019t produce that many cycles in your holding window, the lower TP% is structurally inferior \u2014 not just slower.',
                   'The row matching your active PROFIT TAKER % in the card above is highlighted.'
                 ]},
                 {h:'Limitations'},
@@ -4984,35 +5008,44 @@ function StockProfileCheatSheetPage(p){
           {ptcExpanded&&<div>
             {!hasInputs?<div style={{color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic',padding:'12px 4px'}}>Fill in BOTTOM, TOP, INCREMENT, and CAPITAL/RANGE in the card above to populate this table.</div>:<div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
               {/* Column headers */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1.6fr',gap:8,padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
-                <div style={{color:C.gold,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>PROFIT TAKER %</div>
-                <div style={{color:C.purple,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700,textAlign:'right'}}>CYCLES</div>
-                <div style={{color:C.accent,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700,textAlign:'right'}}>PROFIT</div>
+              <div style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.3fr 1fr',gap:6,padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
+                <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700}}>PROFIT TAKER %</div>
+                <div style={{color:C.purple,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>CYCLES</div>
+                <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>PROFIT</div>
+                <div style={{color:C.blue,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>TO MATCH 1%</div>
               </div>
               {/* Rows */}
               {rows.map(function(r,i){
                 var isActive=isFinite(activeTp)&&Math.abs(r.tp-activeTp)<0.001;
                 var barPct=(maxProfit>0&&isFinite(r.profit)&&r.profit>0)?(r.profit/maxProfit)*100:0;
-                return <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1.6fr',gap:8,padding:'8px 6px',borderBottom:i<rows.length-1?'1px solid '+C.border:'none',background:isActive?'rgba(110,86,207,0.12)':'transparent',borderRadius:isActive?4:0,alignItems:'center'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    {isActive&&<span style={{color:C.purple,fontSize:9,fontWeight:700}}>▶</span>}
-                    <span style={{color:isActive?C.txtBright:C.txt,fontSize:12,fontFamily:F,fontWeight:700}}>{r.tp.toFixed(2)}%</span>
+                return <div key={i} style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.3fr 1fr',gap:6,padding:'8px 6px',borderBottom:i<rows.length-1?'1px solid '+C.border:'none',background:isActive?'rgba(110,86,207,0.12)':'transparent',borderRadius:isActive?4:0,alignItems:'center'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    {isActive&&<span style={{color:C.purple,fontSize:8,fontWeight:700}}>▶</span>}
+                    <span style={{color:isActive?C.txtBright:C.txt,fontSize:11,fontFamily:F,fontWeight:700}}>{r.tp.toFixed(2)}%</span>
                   </div>
-                  <div style={{textAlign:'right',color:r.tpTooHigh?C.warn:(isFinite(r.cycles)?C.txtBright:C.txtDim),fontSize:12,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'0':fmtInt(r.cycles)}</div>
+                  <div style={{textAlign:'right',color:r.tpTooHigh?C.warn:(isFinite(r.cycles)?C.txtBright:C.txtDim),fontSize:11,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'0':fmtInt(r.cycles)}</div>
                   <div style={{textAlign:'right',position:'relative'}}>
                     {/* Relative magnitude bar (background) */}
                     {barPct>0&&<div style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',height:18,width:barPct+'%',background:'rgba(0,231,179,0.10)',borderRight:'2px solid '+C.accent,borderRadius:'2px 0 0 2px',pointerEvents:'none'}}/>}
-                    <div style={{position:'relative',display:'flex',justifyContent:'flex-end',alignItems:'baseline',gap:6}}>
-                      {r.tpTooHigh&&<span style={{color:C.warn,fontSize:7,fontFamily:F,fontStyle:'italic',fontWeight:700}}>tp too high</span>}
-                      <span style={{color:r.tpTooHigh?C.txtDim:(isFinite(r.profit)&&r.profit>0?C.accent:C.txtDim),fontSize:13,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'$0.00':fmtMoney(r.profit)}</span>
+                    <div style={{position:'relative',display:'flex',justifyContent:'flex-end',alignItems:'baseline',gap:4}}>
+                      {r.tpTooHigh&&<span style={{color:C.warn,fontSize:6,fontFamily:F,fontStyle:'italic',fontWeight:700}}>tp too high</span>}
+                      <span style={{color:r.tpTooHigh?C.txtDim:(isFinite(r.profit)&&r.profit>0?C.accent:C.txtDim),fontSize:12,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'$0.00':fmtMoney(r.profit)}</span>
                     </div>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    {r.isBaseline?<span style={{color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic'}}>baseline</span>
+                     :isFinite(r.matchCycles)?<div>
+                       <div style={{color:C.blue,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(r.matchCycles)}</div>
+                       {isFinite(r.cycles)&&r.cycles>0&&<div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,marginTop:1}}>{(r.matchCycles/r.cycles).toFixed(1)}× actual</div>}
+                     </div>
+                     :<span style={{color:C.txtDim,fontSize:11}}>—</span>}
                   </div>
                 </div>;
               })}
             </div>}
             {/* Footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              Each row uses the same math chain as the card above with TP% swapped. The active row (matching your current PROFIT TAKER %) is highlighted. Profit bar = relative magnitude across rows. No fees / slippage modeled.
+              Each row uses the same math chain as the card above with TP% swapped. The active row is highlighted. Profit bar = relative magnitude across rows. TO MATCH 1% = cycles needed at this TP% to equal the 1% row's profit (×N actual = multiplier vs the row's geometric cycle count). No fees / slippage modeled.
             </div>
           </div>}
         </div>;
