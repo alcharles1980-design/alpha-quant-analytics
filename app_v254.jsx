@@ -16919,6 +16919,11 @@ function HourlyDataPage(p){
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState(null),rows=s5[0],setRows=s5[1];
   var s6=useState(null),meta=s6[0],setMeta=s6[1];
+  // Progress text shown during overnight (BOATS) trades fetch. Daytime aggs
+  // come back in one call so they're "instant"; the per-day overnight pull
+  // can take 30s+ on heavy-volume tickers (AMZN, SPY) over 90 days. Surface
+  // progress so the user knows it's working, not hung.
+  var s7=useState(''),progress=s7[0],setProgress=s7[1];
 
   var presets=[
     {key:'previous',label:'Previous Day',days:1},
@@ -17093,6 +17098,199 @@ function HourlyDataPage(p){
       }
 
       var dayList=Object.keys(dayCounts).sort();
+
+      // OVERNIGHT (BOATS) FILL — Polygon's /v2/aggs/hour endpoint covers
+      // pre-market (04:00-09:30), regular (09:30-16:00), and after-hours
+      // (16:00-20:00) but does NOT include the overnight session (20:00-04:00
+      // next day). To populate hours 20-23 and 00-03 we pull individual trades
+      // from /v3/trades and aggregate ourselves. Overnight prints route to
+      // NYSE TRF (BOATS); since regular/post-market prints stop at 20:00 ET,
+      // a participant_timestamp window of 20:00 today \u2192 04:00 tomorrow
+      // captures only BOATS prints \u2014 no separate trf_id filter needed.
+      //
+      // We iterate per ET trading day in dayList. For each day we fetch the
+      // overnight window starting at that day's 20:00 ET and ending at the
+      // following day's 04:00 ET. Pages of 50,000 trades; loop via next_url.
+      // Aggregate into hour-of-day buckets, also tracking per-day-hour
+      // synthetic bars (high, low, close) for ATR.
+      //
+      // Scoping: hours 20-23 are bucketed under TODAY's date in dayCounts;
+      // hours 00-03 of the wrap-over period belong to TOMORROW's date. So a
+      // 30-day query gets ~30 nights' worth of overnight data. The wrap-over
+      // hours 00-03 of dayList[0] are NOT fetched (we'd need the prior day's
+      // 20:00 onwards, which falls outside the user-requested range). This
+      // means hours 00-03 of dayList[0] stay 'closed' \u2014 acceptable given
+      // 30/90-day queries the boundary is one day of seven.
+      //
+      // ATR FOR OVERNIGHT: each ET hour-of-day on each ET-day forms one
+      // synthetic bar. high = max(price), low = min(price), close = last
+      // price by participant_timestamp ascending. TR walks chronologically
+      // across these bars (same gap-aware formula as daytime), but in a
+      // separate stream so the daytime ATR isn't disturbed by overnight
+      // gaps that would otherwise contaminate 04:00.
+
+      // Day-hour bar accumulator: key = "YYYY-MM-DD-H" (where H is 0-23).
+      // Each entry: {ts, high, low, lastT, close, trades, volume, notional}
+      var dhBars=new Map();
+      var fetchOvernight=async function(dayStr){
+        // Day boundaries in ET. Use the en-CA day-format to convert dayStr
+        // ('YYYY-MM-DD') back to a UTC ms by interpreting it as 00:00 ET.
+        // ET = UTC-5 (EST) or UTC-4 (EDT). We can't hardcode; instead build
+        // a Date from 'dayStrT00:00:00' parsed in UTC, then add the offset
+        // by inspecting the formatted timezone offset.
+        // SIMPLER: use an actual Date for that ET noon (so the date string
+        // is unambiguous regardless of DST), then subtract 12 hours to get
+        // 00:00 ET. From there, 20:00 ET = +20 hrs, next day 04:00 ET = +28.
+        var noonStr=dayStr+'T12:00:00';
+        // Parse as UTC then offset by ET offset. Best approach: format
+        // {timeZone:'UTC', timeZoneName:'longOffset'} of the noon date
+        // assumed in ET. Fallback hack: walk hours.
+        // Pragmatic: find the UTC ms where formatting in ET gives this day
+        // and 20:00 hour. Loop scan within a ~36-hour window centered on
+        // dayStr.
+        var probe=new Date(noonStr+'Z'); // ET noon as if UTC
+        // probe is roughly ET noon \u00B14 hours. Walk back/forward to find
+        // exact 20:00 ET.
+        var find=function(targetDay,targetHour){
+          var fmtDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+          var fmtHr=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,hour:'numeric'});
+          var fmtMin=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,minute:'2-digit'});
+          for(var dh=-12;dh<=36;dh++){
+            var t=probe.getTime()+dh*3600*1000;
+            var dt=new Date(t);
+            if(fmtDay.format(dt)===targetDay){
+              var hh=parseInt(fmtHr.format(dt),10);if(hh===24)hh=0;
+              if(hh===targetHour){
+                // Snap to top of hour: subtract minutes/seconds.
+                var mm=parseInt(fmtMin.format(dt),10);
+                return t-mm*60*1000-dt.getSeconds()*1000-dt.getMilliseconds();
+              }
+            }
+          }
+          return null;
+        };
+        var startMs=find(dayStr,20);
+        if(startMs==null)return;
+        // End = next day's 04:00 ET. Compute next day string.
+        var nextDay=new Date(probe.getTime()+24*3600*1000);
+        var nextDayStr=etDayFmt.format(nextDay);
+        // Recenter probe on next-day for find().
+        probe=new Date(nextDayStr+'T12:00:00Z');
+        var endMs=find(nextDayStr,4);
+        if(endMs==null)return;
+
+        var startNs=BigInt(startMs)*1000000n;
+        var endNs=BigInt(endMs)*1000000n;
+        var cursor='https://api.polygon.io/v3/trades/'+tk+
+                   '?timestamp.gte='+startNs.toString()+
+                   '&timestamp.lt='+endNs.toString()+
+                   '&order=asc&limit=50000&apiKey='+p.apiKey;
+        var pageCount=0;
+        while(cursor){
+          var tr=await fetch(cursor);
+          if(!tr.ok)break;
+          var td=await tr.json();
+          var trades=td.results||[];
+          for(var k=0;k<trades.length;k++){
+            var trd=trades[k];
+            // participant_timestamp is ns since epoch. Convert to ms.
+            var tsNs=trd.participant_timestamp;
+            if(tsNs==null)continue;
+            var tsMs=Number(BigInt(tsNs)/1000000n);
+            var dt=new Date(tsMs);
+            var hh=parseInt(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,hour:'numeric'}).format(dt),10);
+            if(hh===24)hh=0;
+            if(!isFinite(hh))continue;
+            // Only count overnight hours (20-23 + 0-3) as a defensive guard;
+            // the time window already restricts this, but a trade timestamped
+            // at exactly 04:00:00 could land in hour 4 due to rounding.
+            if(!(hh>=20||hh<=3))continue;
+            var dayKey=etDayFmt.format(dt);
+            var px=trd.price,sz=trd.size;
+            if(!isFinite(px)||!isFinite(sz)||sz<=0)continue;
+            buckets[hh].trades+=1;
+            buckets[hh].volume+=sz;
+            buckets[hh].notional+=px*sz;
+            buckets[hh].bars+=1; // bars = trade count for overnight (treated like atom prints)
+            dayCounts[dayKey]=true;
+            // Per-day-hour synthetic bar accumulation
+            var dhKey=dayKey+'-'+hh;
+            var entry=dhBars.get(dhKey);
+            if(!entry){
+              entry={ts:tsMs,high:px,low:px,lastT:tsMs,close:px};
+              dhBars.set(dhKey,entry);
+            } else {
+              if(px>entry.high)entry.high=px;
+              if(px<entry.low)entry.low=px;
+              if(tsMs>=entry.lastT){entry.lastT=tsMs;entry.close=px;}
+            }
+          }
+          pageCount++;
+          // Continue pagination via next_url. Polygon includes apiKey only
+          // if the original URL had it; safer to re-append.
+          if(td.next_url){
+            cursor=td.next_url+(td.next_url.indexOf('apiKey=')<0?'&apiKey='+p.apiKey:'');
+          } else {
+            cursor=null;
+          }
+          // Yield progress every page so the UI updates.
+          if(pageCount%2===0)setProgress('Fetching overnight trades for '+dayStr+'… page '+pageCount);
+        }
+      };
+
+      setProgress('Fetching overnight trades…');
+      for(var dlIdx=0;dlIdx<dayList.length;dlIdx++){
+        var dayStr=dayList[dlIdx];
+        setProgress('Overnight: day '+(dlIdx+1)+' of '+dayList.length+' ('+dayStr+')');
+        try{await fetchOvernight(dayStr);}catch(eOv){/* swallow per-day errors so partial data still shows */}
+      }
+      setProgress('');
+
+      // Recompute ATR on synthetic overnight bars. Walk dhBars chronologically
+      // by ts; for each bar compute TR using prev synthetic bar's close. The
+      // overnight TR stream is independent of the daytime TR stream because
+      // the daytime aggs already gave us 04:00 onwards with their own gap-
+      // aware computation. Mixing the two streams would double-count the
+      // gap from 03:00 \u2192 04:00.
+      var dhKeys=Array.from(dhBars.keys());
+      dhKeys.sort(function(a,b){return dhBars.get(a).ts-dhBars.get(b).ts;});
+      var prevOvernightClose=null;
+      for(var dki=0;dki<dhKeys.length;dki++){
+        var dhEntry=dhBars.get(dhKeys[dki]);
+        var hi2=dhEntry.high,lo2=dhEntry.low,cl2=dhEntry.close;
+        var trVal2=0;
+        if(isFinite(hi2)&&isFinite(lo2)){
+          var hl2=hi2-lo2;
+          if(prevOvernightClose!=null&&isFinite(prevOvernightClose)){
+            var hc2=Math.abs(hi2-prevOvernightClose);
+            var lc2=Math.abs(lo2-prevOvernightClose);
+            trVal2=Math.max(hl2,hc2,lc2);
+          } else {
+            trVal2=hl2;
+          }
+        }
+        var trPct2=(isFinite(cl2)&&cl2>0)?(trVal2/cl2)*100:0;
+        // Bucket the synthetic bar into its hour. Parse hour from the key
+        // suffix (after the last '-').
+        var dashIdx=dhKeys[dki].lastIndexOf('-');
+        var hourPart=parseInt(dhKeys[dki].substring(dashIdx+1),10);
+        if(isFinite(hourPart)&&hourPart>=0&&hourPart<24){
+          buckets[hourPart].trSum+=trVal2;
+          buckets[hourPart].trPctSum+=trPct2;
+          buckets[hourPart].trCount+=1;
+        }
+        if(isFinite(cl2))prevOvernightClose=cl2;
+      }
+      // Re-finalize ATR for overnight buckets (mean over trCount).
+      for(var bi2=0;bi2<buckets.length;bi2++){
+        var bk2=buckets[bi2];
+        if(bk2.hour>=20||bk2.hour<=3){
+          bk2.atr=bk2.trCount>0?bk2.trSum/bk2.trCount:0;
+          bk2.atrPct=bk2.trCount>0?bk2.trPctSum/bk2.trCount:0;
+        }
+      }
+
+      dayList=Object.keys(dayCounts).sort();
       setRows(buckets);
       setMeta({
         ticker:tk,
@@ -17106,6 +17304,7 @@ function HourlyDataPage(p){
       setErr('Fetch failed: '+(e.message||e));
     }finally{
       setLoading(false);
+      setProgress('');
     }
   };
 
@@ -17126,7 +17325,7 @@ function HourlyDataPage(p){
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Hourly Data</div>
     </div>
     <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.6,marginBottom:14,fontStyle:'italic'}}>
-      Per-ticker breakdown of trades, volume, and dollar notional bucketed into 24 ET hours over the selected date range. Sources Polygon hourly aggregates; dollar notional = vwap × volume per bar.
+      Per-ticker breakdown of trades, volume, and dollar notional bucketed into 24 ET hours over the selected date range. Daytime hours (04:00–19:59) source Polygon hourly aggregates; overnight hours (20:00–03:59) source individual trades from the BOATS / NYSE TRF session and aggregate to 1-hour bars. Dollar notional = vwap × volume (daytime) or sum(price × size) (overnight).
     </div>
 
     {/* Inputs */}
@@ -17145,6 +17344,7 @@ function HourlyDataPage(p){
       <button onClick={run} disabled={loading} style={{marginTop:12,width:'100%',padding:'10px',background:loading?C.bgInput:C.accent,border:'none',borderRadius:6,color:loading?C.txtDim:C.bg,fontSize:11,fontFamily:F,fontWeight:700,letterSpacing:1.5,cursor:loading?'default':'pointer'}}>
         {loading?'FETCHING...':'RUN'}
       </button>
+      {loading&&progress&&<div style={{marginTop:8,padding:'6px 10px',background:C.bgInput,borderRadius:5,color:C.txt,fontSize:9,fontFamily:F,fontStyle:'italic',textAlign:'center'}}>{progress}</div>}
     </div>
 
     {err&&<div style={{padding:'10px 12px',background:'rgba(255,92,58,0.10)',border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:14}}>{err}</div>}
