@@ -4684,6 +4684,11 @@ function StockProfileCheatSheetPage(p){
         // GROSS spread / count = the raw bottom→top span. Informational only;
         // it's the user's input window, not the actual ladder size.
         var spread=(isFinite(bottom)&&isFinite(top)&&top>bottom)?(top-bottom):NaN;
+        // Spread as % of bottom price - the relative ladder size. \$0.24 on a
+        // \$5.66 stock is 4.24% (meaningful); the same \$0.24 on a \$500 stock
+        // is 0.05% (tiny). Surfaced so the user can size the ladder relative
+        // to the price level, not just in absolute dollars.
+        var spreadPct=(isFinite(spread)&&isFinite(bottom)&&bottom>0)?(spread/bottom)*100:NaN;
         var rangesCount=(isFinite(spread)&&isFinite(increment)&&increment>0)?Math.round(spread/increment)+1:NaN;
         // NET / actual ladder. TOP is the highest EXIT price, not the highest
         // buy. For a buy at price P, exit = P × (1 + tp%/100). For the exit to
@@ -4747,7 +4752,7 @@ function StockProfileCheatSheetPage(p){
                 ]},
                 {h:'Math chain (top to bottom)'},
                 {b:[
-                  'SPREAD = top \u2212 bottom. The raw price gap; independent of increment and TP%.',
+                  'SPREAD = top \u2212 bottom. The raw price gap; independent of increment and TP%. Also shown as a % of bottom price so the user can size the ladder relative to the price level (e.g. a \$0.24 spread is 4.24% on a \$5.66 stock but 0.05% on a \$500 stock).',
                   'GROSS RANGES = round(spread / increment) + 1. The raw input span in rung units.',
                   'HIGHEST RANGE CLOSED \u2014 the topmost rung whose TP fires. Buys at bottom + (ranges_closed \u2212 1) \u00D7 increment; exits at buy \u00D7 (1 + TP%/100). The exit lands at-or-just-below TOP by construction \u2014 that\u2019s why TOP is the highest exit price the user expects.',
                   'RANGES CLOSED = round((max_buy \u2212 bottom) / increment) + 1, where max_buy = top / (1 + TP%). Total count of rungs whose TP fires at-or-below top.',
@@ -4793,8 +4798,11 @@ function StockProfileCheatSheetPage(p){
               </div>
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>SPREAD $</div>
-                <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(spread)?C.txtBright:C.txtDim,letterSpacing:0.5})}>{isFinite(spread)?'$'+spread.toFixed(2):'-'}</div>
-                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>top − bottom</div>
+                <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(spread)?C.txtBright:C.txtDim,letterSpacing:0.5,display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:4})}>
+                  <span>{isFinite(spread)?'$'+spread.toFixed(2):'-'}</span>
+                  {isFinite(spreadPct)&&<span style={{color:C.gold,fontSize:10,fontWeight:700}}>{spreadPct.toFixed(2)}%</span>}
+                </div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>top − bottom · % of bottom</div>
               </div>
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>CAPITAL / RANGE $</div>
