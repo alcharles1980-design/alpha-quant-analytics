@@ -1432,20 +1432,36 @@ function StockProfileCheatSheetPage(p){
   // same as data.swing_targets but with the picked window's avg cl/lh:
   //   low_swing = base_close × (1 + cl%/100)
   //   top_end   = low_swing × (1 + lh%/100)
-  // Fires on data refresh AND on dropdown change. Skips if rolling_stats is
-  // missing or the selected row has null cl/lh (e.g. Today on a weekend, or
-  // 30d on a freshly-listed ticker) — preserves the previous values rather
-  // than clobbering with NaN. swing_targets.base_close is the most recent
-  // COMPLETED daily close, shared across all windows for consistency.
+  // Fires on data refresh AND on dropdown change.
+  // CROSS-TICKER FALLBACK: if the selected period has no data on the new
+  // ticker (e.g. user picked '5 days' on AAPL then searched a freshly-listed
+  // ticker that only has Prev Day + 3d data), auto-shift the dropdown to the
+  // first valid period in the rolling-stats list. Avoids stale prior-ticker
+  // values bleeding through. The setRcPeriod call schedules a re-render; this
+  // effect re-fires with the new rcPeriod and computes bottom/top on that
+  // second pass. swing_targets.base_close is the most recent COMPLETED daily
+  // close, shared across all windows for consistency.
   useEffect(function(){
     if(!data||!data.rolling_stats||!data.rolling_stats.rows||!data.swing_targets)return;
     var baseClose=data.swing_targets.base_close;
     if(baseClose==null||!isFinite(baseClose)||baseClose<=0)return;
+    var rows=data.rolling_stats.rows;
     var row=null;
-    for(var i=0;i<data.rolling_stats.rows.length;i++){
-      if(data.rolling_stats.rows[i].label===rcPeriod){row=data.rolling_stats.rows[i];break;}
+    for(var i=0;i<rows.length;i++){
+      if(rows[i].label===rcPeriod){row=rows[i];break;}
     }
-    if(!row||row.cl==null||row.lh==null||!isFinite(row.cl)||!isFinite(row.lh))return;
+    // Selected period missing or no data on this ticker: find first usable
+    // period and shift the dropdown to it. Effect re-runs with the new value.
+    if(!row||row.cl==null||row.lh==null||!isFinite(row.cl)||!isFinite(row.lh)){
+      var fallback=null;
+      for(var j=0;j<rows.length;j++){
+        if(rows[j].cl!=null&&rows[j].lh!=null&&isFinite(rows[j].cl)&&isFinite(rows[j].lh)){
+          fallback=rows[j];break;
+        }
+      }
+      if(fallback&&fallback.label!==rcPeriod)setRcPeriod(fallback.label);
+      return;
+    }
     var lowSwing=baseClose*(1+row.cl/100);
     var topEnd=lowSwing*(1+row.lh/100);
     if(isFinite(lowSwing)&&lowSwing>0)setRcBottom(lowSwing.toFixed(2));
@@ -4674,24 +4690,28 @@ function StockProfileCheatSheetPage(p){
           on a one-way swing-to-top, so they're excluded from net count.
           
           Inputs:
-            BOTTOM PRICE   - lowest buy rung. Pre-populated to swing_targets
-                             .low_swing (= base_close x (1 + avg 3d C->L%))
-            TOP PRICE      - highest exit price (not highest buy). Pre-populated
-                             to swing_targets.top_end (= low_swing x (1 + avg
-                             3d L->H%))
+            PERIOD SOURCE  - dropdown that selects which Rolling Stats window
+                             (Today / Prev Day / 3d / 5d / 10d / 30d) supplies
+                             the avg C->L and L->H percentages used for auto-fill
+            BOTTOM PRICE   - lowest buy rung. Auto = base_close x (1 + selected
+                             period avg C->L%)
+            TOP PRICE      - highest exit price (not highest buy). Auto = bottom
+                             x (1 + selected period avg L->H%)
             INCREMENT      - rung spacing in $ (default $0.01)
             CAPITAL/RANGE  - $ deployed at each rung
             PROFIT TAKER % - take-profit % on each filled rung
           
           Derived:
-            GROSS RANGES          = round((top - bottom) / inc) + 1
-            HIGHEST BUY PRICE     = top / (1 + tp%/100)
-            NET RANGES            = round((highest_buy - bottom) / inc) + 1
-            IDLE                  = gross - net
-            PROFIT PER RANGE      = capital x tp% / 100  (level-invariant)
-            TOTAL CAPITAL         = net_ranges x capital
-            SWING-UP PROFIT       = net_ranges x profit_per_range
-            RETURN %              = profit / total_capital  (= tp% when
+            GROSS RANGES         = round((top - bottom) / inc) + 1
+            HIGHEST RANGE CLOSED = bottom + (ranges_closed - 1) x increment;
+                                   exit = buy x (1 + tp%/100). The exit lands
+                                   at-or-just-below TOP by construction.
+            RANGES CLOSED        = round((top/(1+tp%) - bottom) / inc) + 1
+            IDLE                 = gross - closed
+            PROFIT PER RANGE     = capital x tp% / 100  (level-invariant)
+            TOTAL CAPITAL        = ranges_closed x capital
+            SWING-UP PROFIT      = ranges_closed x profit_per_range
+            RETURN %             = profit / total_capital  (= tp% when
                                     capital is uniform across rungs)
           
           Default expanded. */}
@@ -4858,12 +4878,12 @@ function StockProfileCheatSheetPage(p){
               <div>
                 <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>BOTTOM PRICE $</div>
                 <input type="text" inputMode="decimal" value={rcBottom} onChange={function(e){setRcBottom(e.target.value);}} placeholder="0.00" style={Object.assign({},inpStyle,{borderColor:C.warn+'66'})}/>
-                {selAutoLow!=null?<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto ({rcPeriod}): ${selAutoLow.toFixed(2)}</div>:hasSwingPrePop&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto: ${data.swing_targets.low_swing.toFixed(2)}</div>}
+                {selAutoLow!=null&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto ({rcPeriod}): ${selAutoLow.toFixed(2)}</div>}
               </div>
               <div>
                 <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>TOP PRICE $</div>
                 <input type="text" inputMode="decimal" value={rcTop} onChange={function(e){setRcTop(e.target.value);}} placeholder="0.00" style={Object.assign({},inpStyle,{borderColor:C.accent+'66'})}/>
-                {selAutoTop!=null?<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto ({rcPeriod}): ${selAutoTop.toFixed(2)}</div>:hasSwingPrePop&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto: ${data.swing_targets.top_end.toFixed(2)}</div>}
+                {selAutoTop!=null&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto ({rcPeriod}): ${selAutoTop.toFixed(2)}</div>}
               </div>
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>INCREMENT $</div>
