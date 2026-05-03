@@ -17006,6 +17006,46 @@ function HourlyDataPage(p){
 
       // Filter to most recent trading day for 'previous'. Group bars by ET day,
       // keep only the latest day's bars.
+      // ORDER MATTERS: TR pre-compute MUST run BEFORE this filter so the
+      // first bar of the latest day still sees the prior day's last close
+      // and captures the overnight gap. If we computed TR after filtering,
+      // the latest day's first bar would have prevClose=null and fall back
+      // to (high−low), systematically under-reporting open-of-day volatility
+      // in Previous Day mode.
+      // Pre-compute true range per bar for ATR aggregation. TR = max of:
+      //   bar high − bar low
+      //   |bar high − prev close|
+      //   |bar low  − prev close|
+      // The prev-close form captures gap-driven moves (matters for the first
+      // bar of each trading day when there's an overnight gap from yesterday's
+      // close to today's pre-market open). For the very first bar in the
+      // dataset there's no prior close — fall back to (high − low). Bars are
+      // already sort=asc from Polygon so chronological order is correct.
+      // TR% = TR / bar.close × 100; uses the bar's own close as the price
+      // reference so a 0.20% hourly TR means the same thing across price
+      // levels regardless of the stock's nominal price.
+      var trMap=new Map();
+      var prevClose=null;
+      for(var ti=0;ti<bars.length;ti++){
+        var bb=bars[ti];
+        var hi=bb.h,lo=bb.l,cl=bb.c;
+        var trVal=0;
+        if(isFinite(hi)&&isFinite(lo)){
+          var hl=hi-lo;
+          if(prevClose!=null&&isFinite(prevClose)){
+            var hc=Math.abs(hi-prevClose);
+            var lc=Math.abs(lo-prevClose);
+            trVal=Math.max(hl,hc,lc);
+          } else {
+            trVal=hl;
+          }
+        }
+        var trPct=(isFinite(cl)&&cl>0)?(trVal/cl)*100:0;
+        // Key by bar timestamp; survives the subsequent Previous-Day filter.
+        trMap.set(bb.t,{tr:trVal,trPct:trPct});
+        if(isFinite(cl))prevClose=cl;
+      }
+
       if(preset==='previous'){
         var byDay={};
         for(var bi=0;bi<bars.length;bi++){
@@ -17023,40 +17063,6 @@ function HourlyDataPage(p){
       var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,hour:'numeric'});
       var buckets=[];for(var h=0;h<24;h++)buckets.push({hour:h,trades:0,volume:0,notional:0,bars:0,trSum:0,trPctSum:0,trCount:0});
 
-      // Pre-compute true range per bar for ATR aggregation. TR = max of:
-      //   bar high − bar low
-      //   |bar high − prev close|
-      //   |bar low  − prev close|
-      // The prev-close form captures gap-driven moves (matters for the first
-      // bar of each trading day when there's an overnight gap from yesterday's
-      // close to today's pre-market open). For the very first bar in the
-      // dataset there's no prior close — fall back to (high − low). Bars are
-      // already sort=asc from Polygon so chronological order is correct.
-      // TR% = TR / bar.close × 100; uses the bar's own close as the price
-      // reference so a 0.20% hourly TR means the same thing across price
-      // levels regardless of the stock's nominal price.
-      var trArr=new Array(bars.length);
-      var trPctArr=new Array(bars.length);
-      var prevClose=null;
-      for(var ti=0;ti<bars.length;ti++){
-        var bb=bars[ti];
-        var hi=bb.h,lo=bb.l,cl=bb.c;
-        var trVal=0;
-        if(isFinite(hi)&&isFinite(lo)){
-          var hl=hi-lo;
-          if(prevClose!=null&&isFinite(prevClose)){
-            var hc=Math.abs(hi-prevClose);
-            var lc=Math.abs(lo-prevClose);
-            trVal=Math.max(hl,hc,lc);
-          } else {
-            trVal=hl;
-          }
-        }
-        trArr[ti]=trVal;
-        trPctArr[ti]=(isFinite(cl)&&cl>0)?(trVal/cl)*100:0;
-        if(isFinite(cl))prevClose=cl;
-      }
-
       var dayCounts={};
       for(var i=0;i<bars.length;i++){
         var b=bars[i];
@@ -17068,12 +17074,12 @@ function HourlyDataPage(p){
         buckets[hVal].volume+=(b.v||0);
         if(b.vw!=null&&isFinite(b.vw)&&b.v!=null&&isFinite(b.v))buckets[hVal].notional+=b.vw*b.v;
         buckets[hVal].bars+=1;
-        // ATR aggregation. Only count bars where TR could be computed
-        // (needs finite h,l). trCount may be < bars[].length on rare days
-        // with corrupted bars; bucket ATR uses trCount as denominator.
-        if(trArr[i]>0||(isFinite(b.h)&&isFinite(b.l))){
-          buckets[hVal].trSum+=trArr[i];
-          buckets[hVal].trPctSum+=trPctArr[i];
+        // ATR aggregation. Pull pre-computed TR keyed by timestamp (works for
+        // both filtered Previous-Day mode and full multi-day mode).
+        var trEntry=trMap.get(b.t);
+        if(trEntry&&(trEntry.tr>0||(isFinite(b.h)&&isFinite(b.l)))){
+          buckets[hVal].trSum+=trEntry.tr;
+          buckets[hVal].trPctSum+=trEntry.trPct;
           buckets[hVal].trCount+=1;
         }
         dayCounts[etDayFmt.format(new Date(b.t))]=true;
@@ -17246,7 +17252,7 @@ function HourlyDataPage(p){
       })()}
 
       <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.3,marginTop:10,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic',lineHeight:1.5}}>
-        Hour bucket = top-of-hour ET (e.g. 09:00 covers 09:00:00\u201309:59:59). Trades and volume summed across bars in each bucket; dollar notional = sum of (vwap \u00D7 volume) per bar = total $ traded in that hour. ATR ($/%) = average per-bar true range in that hour bucket, computed as max(high\u2212low, |high\u2212prev_close|, |low\u2212prev_close|) so overnight gaps are captured at the first bar of each day; ATR% = TR \u00F7 bar.close. Primary value (large) = avg per trading day for trades/volume/$; sub-line "total" = sum across all trading days. Single-day queries show just the total. Hours with no Polygon-reported activity show "-" and are dimmed.
+        Hour bucket = top-of-hour ET (e.g. 09:00 covers 09:00:00\u201309:59:59). Trades and volume summed across bars in each bucket; dollar notional = sum of (vwap \u00D7 volume) per bar = total $ traded in that hour. ATR ($/%) = average per-bar true range in that hour bucket, computed as max(high\u2212low, |high\u2212prev_close|, |low\u2212prev_close|) so overnight and inter-session gaps are captured at the first bar after a quiet period (this means open-of-session hours like 04:00 and 09:00 typically read higher than mid-session hours, reflecting real gap risk). ATR% = TR \u00F7 bar.close. Primary value (large) = avg per trading day for trades/volume/$; sub-line "total" = sum across all trading days. Single-day queries show just the total. Hours with no Polygon-reported activity show "-" and are dimmed.
       </div>
     </div>}
   </div>;
