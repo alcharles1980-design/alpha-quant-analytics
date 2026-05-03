@@ -3069,9 +3069,17 @@ function StockProfileCheatSheetPage(p){
         }
         if(!isFinite(minP)||!isFinite(maxP)||maxP<=minP)return null;
 
-        // Pad the price range slightly so the chart isn't flush against edges
-        var pricePad=(maxP-minP)*0.05;
-        var pMin=minP-pricePad,pMax=maxP+pricePad;
+        // Pad the price range slightly so the chart isn't flush against edges.
+        // ASYMMETRIC: top pad is always 5%% of range (safe, no zero-floor concern).
+        // Bottom pad is capped at 5%% of minP - prevents the bottom y-axis label
+        // from drifting toward zero on multi-year charts where the range
+        // dwarfs the lower price (e.g. NVDA 5Y: range $206 from a $10.81 floor;
+        // a flat 5%%-of-range pad would push pMin to $0.51, making it look like
+        // the stock once traded near zero).
+        var rangeSpan=maxP-minP;
+        var pricePadTop=rangeSpan*0.05;
+        var pricePadBot=Math.min(rangeSpan*0.05,Math.max(0,minP)*0.05);
+        var pMin=minP-pricePadBot,pMax=maxP+pricePadTop;
         var pSpan=pMax-pMin;
 
         // Returns calc for header
@@ -3131,11 +3139,38 @@ function StockProfileCheatSheetPage(p){
           ma50Path+=(ma50Path?'L':'M')+xAt(i).toFixed(2)+','+yPriceAt(series[i].ma50).toFixed(2)+' ';
         }
 
-        // Y-axis tick marks (5 evenly spaced)
+        // Y-axis tick marks at nice rounded step values (1/2/5 * 10^n). Targets
+        // ~4 ticks; actual count varies with how the step lands inside the range.
+        // Avoids ugly fractional labels like "$10.27 / $64.48 / $118.69" that the
+        // old (5 evenly-spaced) approach produced on multi-year charts.
+        var niceStep=function(span,target){
+          if(!isFinite(span)||span<=0)return 1;
+          var raw=span/target;
+          var pow10=Math.pow(10,Math.floor(Math.log10(raw)));
+          var rel=raw/pow10;
+          var nice=rel<1.5?1:rel<3?2:rel<7?5:10;
+          return nice*pow10;
+        };
+        var step=niceStep(pSpan,4);
+        // Decimals = exactly enough to render the step. step=50 -> 0 decimals,
+        // step=5 -> 0 decimals (whole), step=0.5 -> 1, step=0.05 -> 2. Avoids
+        // both ugly "$200.0" trailing zeros AND duplicate "$201/$201" rounding.
+        var stepDecimals=Math.max(0,Math.min(4,-Math.floor(Math.log10(step))));
+        var fmtPriceLbl=function(p){
+          if(p===0)return '$0';
+          return '$'+p.toFixed(stepDecimals);
+        };
         var yTicks=[];
-        for(var k=0;k<=4;k++){
-          var p=pMin+(pSpan*k/4);
-          yTicks.push({y:yPriceAt(p),label:'$'+p.toFixed(2)});
+        for(var p=Math.ceil(pMin/step)*step;p<=pMax+step*0.001;p+=step){
+          if(p<pMin-step*0.001)continue;
+          yTicks.push({y:yPriceAt(p),label:fmtPriceLbl(p)});
+        }
+        if(yTicks.length<2){
+          yTicks=[];
+          for(var k=0;k<=4;k++){
+            var pp=pMin+(pSpan*k/4);
+            yTicks.push({y:yPriceAt(pp),label:fmtPriceLbl(pp)});
+          }
         }
         // X-axis tick marks (4 evenly distributed labels). Format depends on period:
         //   today / prev   -> ET clock time (e.g. '10:30 AM')
