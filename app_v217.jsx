@@ -1396,7 +1396,7 @@ function StockProfileCheatSheetPage(p){
   var s12=useState(true),rpcExpanded=s12[0],setRpcExpanded=s12[1];
   var s13=useState(true),swingExpanded=s13[0],setSwingExpanded=s13[1];
   var s14=useState(true),chartExpanded=s14[0],setChartExpanded=s14[1];
-  var s15=useState(90),chartPeriod=s15[0],setChartPeriod=s15[1]; // 30 / 90 / 365 days
+  var s15=useState('90d'),chartPeriod=s15[0],setChartPeriod=s15[1]; // 'today' / 'prev' / '2w' / '30d' / '90d' / '1y'
   // Chart overlay toggles (v216): Close line, SMA20, SMA50 are individually
   // dismissible. Default: candles always visible, MAs visible, close line OFF
   // (since candles already show closes - line is redundant for most users).
@@ -2734,6 +2734,25 @@ function StockProfileCheatSheetPage(p){
         chart_series: dailyBars.map(function(b,i){
           return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c,v:b.v,ma20:ma20Series[i],ma50:ma50Series[i]};
         }),
+        // Intraday chart series for shorter timeframes (Today / Prev Day / 2 Weeks).
+        // Each is pre-filtered to the relevant period - render selects by chartPeriod.
+        // ma20/ma50 not included - daily-derived SMAs aren't meaningful on intraday bars.
+        // Today : minute bars (~390 RTH + ext hours)
+        // Prev  : 5m bars filtered to prev trade date (~78 RTH bars)
+        // 2W    : 30m bars over last 14 calendar days (~150 bars; lighter than 5m × 10 days = 780)
+        chart_series_today: minuteBars.map(function(b){
+          return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c,v:b.v};
+        }),
+        chart_series_prev: prevDayBars.map(function(b){
+          return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c,v:b.v};
+        }),
+        chart_series_2w: (function(){
+          // 14 calendar days back from today; use 30m bars to keep candle count reasonable.
+          var cutoff=today.getTime()-14*msPerDay;
+          return bars30m.filter(function(b){return b.t>=cutoff;}).map(function(b){
+            return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c,v:b.v};
+          });
+        })(),
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -2940,17 +2959,52 @@ function StockProfileCheatSheetPage(p){
 
       {/* ============== PRICE CHART card ==============
           Mobile-first SVG price chart. Default expanded, ~400px tall total.
-          Period toggle: 30D / 90D / 1Y (all from existing 1-year dailyBars fetch).
+          Period toggle: Today / Prev / 2W (intraday) + 30D / 90D / 1Y (daily).
           Layout: header (title + info + caret) -> stats summary -> period toggle ->
-                  main price area (close line + range bars + SMA20 + SMA50) ->
+                  main price area (candles + range bars + SMA20 + SMA50) ->
                   volume sub-chart (up-day green / down-day red).
-          No new API calls - reuses dailyBars + pre-computed ma20/ma50 series. */}
+          No new API calls - reuses dailyBars + minuteBars + bars5m + bars30m
+          + pre-computed ma20/ma50 series. */}
       {data.chart_series&&data.chart_series.length>0&&(function(){
-        var fullSeries=data.chart_series;
-        // Slice to the selected period (most recent N bars)
-        var periodLen=chartPeriod>=fullSeries.length?fullSeries.length:chartPeriod;
-        var series=fullSeries.slice(-periodLen);
-        if(series.length<2)return null;
+        // Select which series to render based on the chosen period.
+        // Intraday periods (Today / Prev / 2W) come from pre-filtered intraday
+        // arrays; daily periods (30D / 90D / 1Y) slice from the daily series.
+        var isIntraday=(chartPeriod==='today'||chartPeriod==='prev'||chartPeriod==='2w');
+        var series;
+        if(chartPeriod==='today')series=data.chart_series_today||[];
+        else if(chartPeriod==='prev')series=data.chart_series_prev||[];
+        else if(chartPeriod==='2w')series=data.chart_series_2w||[];
+        else {
+          var fullSeries=data.chart_series;
+          var periodLen;
+          if(chartPeriod==='30d')periodLen=30;
+          else if(chartPeriod==='1y')periodLen=365;
+          else periodLen=90; // default '90d'
+          if(periodLen>=fullSeries.length)periodLen=fullSeries.length;
+          series=fullSeries.slice(-periodLen);
+        }
+        if(series.length<2){
+          // Insufficient data for the chosen period - render the card shell with
+          // a message instead of blank space. Keeps the period toggle interactive
+          // so user can switch back to a populated view.
+          return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
+            <div onClick={function(){setChartExpanded(!chartExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:chartExpanded?10:0}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PRICE CHART</span>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{chartExpanded?'\u25BE':'\u25B8'}</div>
+            </div>
+            {chartExpanded&&<div>
+              <div style={{display:'flex',gap:4,marginBottom:10,flexWrap:'wrap'}}>
+                {[{k:'today',l:'Today'},{k:'prev',l:'Prev'},{k:'2w',l:'2W'},{k:'30d',l:'30D'},{k:'90d',l:'90D'},{k:'1y',l:'1Y'}].map(function(opt){
+                  var sel=chartPeriod===opt.k;
+                  return <div key={opt.k} onClick={function(){setChartPeriod(opt.k);}} style={{flex:'1 1 30%',minWidth:54,padding:'7px 0',textAlign:'center',background:sel?C.accentDim:C.bgInput,border:'1px solid '+(sel?C.accent:C.border),borderRadius:5,color:sel?C.accent:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>{opt.l}</div>;
+                })}
+              </div>
+              <div style={{padding:'30px 10px',textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic'}}>
+                Insufficient data for this timeframe. Try another period.
+              </div>
+            </div>}
+          </div>;
+        }
 
         // Compute price + volume bounds for the visible window
         var minP=Infinity,maxP=-Infinity,maxV=0;
@@ -3015,11 +3069,23 @@ function StockProfileCheatSheetPage(p){
           var p=pMin+(pSpan*k/4);
           yTicks.push({y:yPriceAt(p),label:'$'+p.toFixed(2)});
         }
-        // X-axis tick marks (4 evenly distributed dates)
-        var monthAbbrChart=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        // X-axis tick marks (4 evenly distributed labels). Format depends on period:
+        //   today / prev   -> ET clock time (e.g. '10:30 AM')
+        //   2w             -> ET short date (e.g. 'Apr 17')
+        //   30d / 90d / 1y -> ET short date (e.g. 'Apr 1')
+        // Uses Intl.DateTimeFormat with America/New_York timezone for accuracy
+        // - the same pattern used elsewhere in the app since the v94-v97 timezone fix.
+        var fmtETTime=function(t){
+          try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(t));}
+          catch(e){var d=new Date(t);return d.getUTCHours()+':'+('0'+d.getUTCMinutes()).slice(-2);}
+        };
+        var fmtETShortDate=function(t){
+          try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric'}).format(new Date(t));}
+          catch(e){var monthAbbrFallback=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d=new Date(t);return monthAbbrFallback[d.getUTCMonth()]+' '+d.getUTCDate();}
+        };
         var fmtBarDate=function(t){
-          var d=new Date(t);
-          return monthAbbrChart[d.getUTCMonth()]+' '+d.getUTCDate();
+          if(chartPeriod==='today'||chartPeriod==='prev')return fmtETTime(t);
+          return fmtETShortDate(t);
         };
         var xTickIndices=[0,Math.floor(series.length/3),Math.floor(2*series.length/3),series.length-1];
 
@@ -3070,11 +3136,14 @@ function StockProfileCheatSheetPage(p){
               </div>
             </div>
 
-            {/* Period toggle */}
-            <div style={{display:'flex',gap:4,marginBottom:10}}>
-              {[{n:30,l:'30D'},{n:90,l:'90D'},{n:365,l:'1Y'}].map(function(opt){
-                var sel=chartPeriod===opt.n;
-                return <div key={opt.n} onClick={function(){setChartPeriod(opt.n);}} style={{flex:1,padding:'7px 0',textAlign:'center',background:sel?C.accentDim:C.bgInput,border:'1px solid '+(sel?C.accent:C.border),borderRadius:5,color:sel?C.accent:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>{opt.l}</div>;
+            {/* Period toggle - 6 options. Mobile-first wrap so on narrow screens
+                the buttons reflow to two rows of 3. flex:1 1 30%% with minWidth
+                ensures touch-friendly sizing while preserving the row layout
+                on wider phones. */}
+            <div style={{display:'flex',gap:4,marginBottom:10,flexWrap:'wrap'}}>
+              {[{k:'today',l:'Today'},{k:'prev',l:'Prev'},{k:'2w',l:'2W'},{k:'30d',l:'30D'},{k:'90d',l:'90D'},{k:'1y',l:'1Y'}].map(function(opt){
+                var sel=chartPeriod===opt.k;
+                return <div key={opt.k} onClick={function(){setChartPeriod(opt.k);}} style={{flex:'1 1 30%',minWidth:54,padding:'7px 0',textAlign:'center',background:sel?C.accentDim:C.bgInput,border:'1px solid '+(sel?C.accent:C.border),borderRadius:5,color:sel?C.accent:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>{opt.l}</div>;
               })}
             </div>
 
