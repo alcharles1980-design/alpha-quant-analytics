@@ -2847,12 +2847,31 @@ function StockProfileCheatSheetPage(p){
           <Info>{[
             {h:'What this shows'},
             {p:'Price action statistics for the '+label.toLowerCase()+' lookback window.'},
-            {b:['HIGH / LOW: extremes of the period with the dates they occurred','POSITION %: where current price sits inside the range (0% at low, 100% at high)','AVG TRUE RANGE: average TR across bars in window; % normalized by today\'s last close (consistent with hero ATR)','LOW to NEXT DAY HIGH: average swing magnitude useful for profit targets','AVG DAILY VOLUME / DOLLAR VOLUME / TRADES: liquidity gauges','PERIOD VWAP: volume-weighted price for the window','VOLUME PROFILE: histogram with POC, VAL, VAH (where most trading happened)']},
+            {b:[
+              'HIGH / LOW: extremes of the period with the dates they occurred',
+              'POSITION %: where current price sits inside the range (0% at low, 100% at high)',
+              'MINI VOLUME PROFILE (top): horizontal histogram of bucketed volume; bright purple = POC, medium purple = Value Area buckets, dim = outside-VA. Two purple lines mark VAL/VAH boundaries.',
+              'AVG TRUE RANGE: average TR across bars in window; % normalized by today\'s last close (consistent with hero ATR)',
+              'LOW → NEXT DAY HIGH: average swing magnitude useful for profit targets',
+              'AVG VOLUME / $ VOLUME / TRADES: liquidity gauges at this timeframe',
+              'PERIOD VWAP: volume-weighted price for the window with arrow showing where current price sits vs that average',
+              'VOLUME PROFILE (bottom block): exact $ values for POC, VAL, VAH'
+            ]},
             {h:'Why it matters'},
             {p:'Each window targets a different decision in the swing trade lifecycle.'},
-            {b:['SHORT (today/prev/week): entry timing and intraday bias','MEDIUM (2wk/1mo): primary swing trade range - where stops, targets, and entry retests anchor','LONG (3mo/52w): regime context - are you trading inside or against the bigger structure?']},
+            {b:[
+              'SHORT (today / prev / week): entry timing and intraday bias',
+              'MEDIUM (2wk / 1mo): primary swing trade range — where stops, targets, and entry retests anchor',
+              'LONG (3mo / 52w): regime context — are you trading inside or against the bigger structure?'
+            ]},
             {h:'How to use it'},
-            {b:['POC (Point of Control) is often a magnet price - prices retest it','VAL / VAH (Value Area Low / High) are common reversal zones','Use ATR x 2 for typical stop distance','Position % near 0 = near support (potential bounce); near 100 = near resistance (potential reject)']}
+            {b:[
+              'POC (Point of Control) is often a magnet price — prices retest it',
+              'VAL / VAH (Value Area Low / High) are common reversal zones',
+              'Use ATR × 2 for typical stop distance',
+              'Position % near 0 = near support (potential bounce); near 100 = near resistance (potential reject)',
+              'Period VWAP arrow: ↑ above (bulls in control), ↓ below (bears), → flat (balanced)'
+            ]}
           ]}</Info>
         </div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{sub}</div>
@@ -3236,7 +3255,7 @@ function StockProfileCheatSheetPage(p){
                   'Price above both SMAs = uptrend regime; below both = downtrend',
                   '20-day crossing 50-day from below = bullish momentum shift',
                   'Volume spike on up-bar = institutional buying; on down-bar = distribution',
-                  'Switch to Today/Prev for intraday context; 1Y for regime view',
+                  'Switch to Today / Prev for intraday context; 1Y for swing-trade regime; 3Y / 5Y for secular regime view',
                   'Toggle vol profile off for pure price-action read'
                 ]}
               ]}</Info>
@@ -3469,12 +3488,41 @@ function StockProfileCheatSheetPage(p){
               <div style={{color:labelColor,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>NEXT EARNINGS</div>
               <Info>{[
                 {h:'What this shows'},
-                {p:'The next confirmed or projected earnings report date for this stock, sourced from Benzinga.'},
-                {b:['RED pill: within 14 days','GOLD pill: 15-30 days','GREEN pill: more than 30 days','BMO/AMC = before market open / after market close','EPS EST and REV EST = Wall Street consensus expectations']},
+                {p:'The next confirmed or projected earnings report date for this stock. Sourced from Benzinga\'s earnings calendar where available, falling back to a date inferred from the most recent SEC filing if Benzinga has nothing scheduled.'},
+                {h:'Risk pill (large date)'},
+                {b:[
+                  'GRAY pill: PAST — date already passed, feed may be stale',
+                  'RED pill: HIGH — within 14 days, swing-trade exit zone',
+                  'GOLD pill: MED — 15-30 days, position sizing caution',
+                  'GREEN pill: LOW — more than 30 days, clear runway'
+                ]},
+                {h:'Source badge (top-right)'},
+                {b:[
+                  'BENZINGA — date confirmed by Benzinga\'s earnings feed',
+                  'ESTIMATED — inferred from last filing date (~3 months out from prior period). Actual date may vary by ±2 weeks.'
+                ]},
+                {h:'Status / time pills (below date)'},
+                {b:[
+                  'CONFIRMED (green) — Benzinga has confirmed the report date',
+                  'UNCONFIRMED (gold) — date is tentative, can shift',
+                  'Q1 / Q2 / Q3 / Q4 + FY label — fiscal period being reported',
+                  'BMO — before market open (volatility hits at the open)',
+                  'AMC — after market close (volatility hits next day)',
+                  'During market hours — rare; intraday print'
+                ]},
+                {h:'Estimates'},
+                {p:'EPS EST and REV EST show Wall Street consensus expectations — the beat/miss baseline for the report.'},
                 {h:'Why it matters'},
                 {p:'Earnings are the single biggest scheduled volatility event for any stock. Holding through the report is essentially a coin flip on a 5-15% gap in either direction.'},
                 {h:'How to use it'},
-                {b:['Most swing traders flatten positions 1-3 days before the report','Re-enter post-print once the dust settles','Use the EPS / Revenue estimates as the beat/miss baseline','A confirmed BMO release means volatility hits at the open']}
+                {b:[
+                  'Most swing traders flatten positions 1-3 days before the report',
+                  'Re-enter post-print once the dust settles',
+                  'Use the EPS / Revenue estimates as the beat/miss baseline',
+                  'A confirmed BMO release means volatility hits at the open; AMC = next-day open',
+                  'ESTIMATED dates are approximate — re-check Benzinga as the date approaches',
+                  'PAST pill = company just reported — check the EPS card for actual numbers'
+                ]}
               ]}</Info>
             </div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>{ev.source==='benzinga'?'BENZINGA':'ESTIMATED'}</div>
@@ -3533,12 +3581,33 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>RECENT NEWS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'The most recent news articles tagged to this ticker, with AI-generated sentiment per article.'},
-                {b:['Green dot: positive sentiment','Gold dot: neutral sentiment','Red dot: negative sentiment','Header summary (e.g. 4+ 5o 1-) shows the sentiment skew at a glance','Reasoning quote sits below each top headline']},
+                {p:'The most recent news articles tagged to this ticker, with AI-generated sentiment per article (sourced from Polygon\'s Benzinga news feed). Up to 15 articles are pulled; the card defaults to collapsed showing 1 headline. Tap the header to expand for up to 5 articles with reasoning quotes for the top 3.'},
+                {h:'Per-article display'},
+                {b:[
+                  'Green dot (●): positive sentiment',
+                  'Gold dot (●): neutral sentiment',
+                  'Red dot (●): negative sentiment',
+                  'Time + publisher above each headline (e.g. "2h ago · Reuters")',
+                  'Reasoning quote below the top 3 headlines (only when expanded)',
+                  'Tap any headline to open the full article in a new tab'
+                ]},
+                {h:'Header summary (right side)'},
+                {b:[
+                  'N+ (green) = count of positive articles',
+                  'N○ (gold) = count of neutral articles',
+                  'N- (red) = count of negative articles',
+                  'Quick visual gauge of sentiment skew across all returned articles'
+                ]},
                 {h:'Why it matters'},
                 {p:'News flow drives short-term direction. A stock breaking out on bullish news has tailwind; one breaking out into bearish headlines may be a trap.'},
                 {h:'How to use it'},
-                {b:['Quick gut-check before sizing into a setup','Tap any article to read the full piece','Watch for sentiment skew vs. price action - divergence is informative','Multiple negative articles + green price = momentum may fade']}
+                {b:[
+                  'Quick gut-check before sizing into a setup',
+                  'Tap the header to expand if a single headline isn\'t enough context',
+                  'Watch for sentiment skew vs. price action — divergence is informative',
+                  'Multiple negative articles + green price = momentum may fade',
+                  'Multiple positive articles + flat price = catalyst priced in'
+                ]}
               ]}</Info>
               <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{data.news.length} · last {mostRecentTime}</span>
             </div>
@@ -3631,12 +3700,48 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>ANALYST CONSENSUS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Wall Street firms\' price targets and ratings, sourced from Benzinga. Aggregated across the last 90 days, deduped to one rating per firm.'},
-                {b:['Big number: AVERAGE target across active analysts','Range bar: lowest to highest target','Purple marker: consensus position on the range','White marker: current price position','BUY / HOLD / SELL pills: distribution of ratings','RECENT CHANGES: chronological list of recent updates']},
+                {p:'Wall Street firms\' price targets and ratings, sourced from Polygon\'s Benzinga ratings feed. Aggregated across the last 90 days, deduped to one rating per firm (most recent kept).'},
+                {h:'Top section'},
+                {b:[
+                  'Big number = AVERAGE target across active analysts',
+                  '"% upside" (right of consensus) = signed distance from current price to consensus',
+                  'N targets = how many distinct firms are in the average',
+                  'N active = total firms with a rating (some may have no $ target)'
+                ]},
+                {h:'Range bar'},
+                {b:[
+                  'Lowest target ($) on the left, highest on the right',
+                  'Purple marker = consensus position on the range',
+                  'White marker = current price position on the range',
+                  'Gradient: red (low target zone) → gold (mid) → green (high target zone)'
+                ]},
+                {h:'Distribution pills'},
+                {b:[
+                  'BUY (green) = buy / strong buy / outperform / overweight / accumulate',
+                  'HOLD (gold) = hold / neutral / equal-weight / market perform / in-line',
+                  'SELL (red) = sell / strong sell / underperform / underweight / reduce',
+                  'Pills dim to 40% opacity when count is zero',
+                  'Number = active firms in that rating bucket'
+                ]},
+                {h:'Recent changes'},
+                {b:[
+                  'Default shows 3 most recent changes; tap to expand for the full list',
+                  'Time-ago format: today, yesterday, Nd, Nw, Nmo (else absolute date)',
+                  'Sentiment dot left: ● green = bullish change, ● gold = neutral, ● red = bearish',
+                  '▲ target raised  ▼ target lowered  ▲▲ upgrade  ▼▼ downgrade  ★ initiated',
+                  'Price target shown with "(was $X)" if previous target available',
+                  'Rating shown with "(from X)" if rating changed',
+                  'Italic verb below: upgraded, downgraded, target raised, etc.'
+                ]},
                 {h:'Why it matters'},
                 {p:'Consensus is a measure of where the institutional crowd thinks fair value sits. Distance between current price and consensus is a tradable signal.'},
                 {h:'How to use it'},
-                {b:['Trading 20% below consensus = mean-revert tailwind','Trading above consensus = fading the crowd, needs a catalyst','Flurry of recent upgrades often precedes institutional buying flow','A target raise from a top firm (Goldman, Morgan Stanley, JPM) typically moves the stock more than smaller firms']}
+                {b:[
+                  'Trading 20% below consensus = mean-revert tailwind',
+                  'Trading above consensus = fading the crowd, needs a catalyst',
+                  'Flurry of recent upgrades often precedes institutional buying flow',
+                  'A target raise from a top firm (Goldman, Morgan Stanley, JPM) typically moves the stock more than smaller firms'
+                ]}
               ]}</Info>
               {a.total_active>0&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{a.total_active} active</span>}
             </div>
@@ -3757,11 +3862,29 @@ function StockProfileCheatSheetPage(p){
               <Info>{[
                 {h:'What this shows'},
                 {p:'Last 3 reported quarters plus the next expected quarter. Two markers per quarter encode beat or miss.'},
-                {b:['DOTTED CIRCLE: what analysts EXPECTED (consensus est)','SOLID GREEN DOT: what the company actually REPORTED','Vertical separation = the size of the beat or miss','Dot above circle = beat, dot below circle = miss','Future quarter shows only the dotted circle (no actual yet)','BEAT / MISS percentage in the header is for the most recent quarter']},
+                {b:[
+                  'DOTTED CIRCLE: what analysts EXPECTED (consensus est)',
+                  'SOLID GREEN DOT: what the company actually REPORTED',
+                  'Vertical separation = the size of the beat or miss',
+                  'Dot above circle = beat, dot below circle = miss',
+                  'Future quarter shows only the dotted circle (no actual yet)',
+                  'BEAT / MISS percentage in the header is for the most recent quarter'
+                ]},
+                {h:'Period labels (under chart)'},
+                {b:[
+                  'Top line: fiscal label (e.g. Q4 FY26)',
+                  'Sub-label: calendar end-of-quarter date (e.g. "Jan \'26") — disambiguates fiscal-year quirks like NVIDIA\'s Jan-ending FY where Q4 FY26 actually ends Jan 2026',
+                  'Bottom: $ value — green if actual reported, dim italic "est $X.XX" if future estimate'
+                ]},
                 {h:'Why it matters'},
                 {p:'Earnings consistency is a strong signal. Companies with consecutive beats trade with bullish bias going into the next print; algos and analysts extrapolate the trend.'},
                 {h:'How to use it'},
-                {b:['Streak of 4+ beats: bullish bias into next earnings','Surprise miss after a beat streak: often triggers sharp selloffs','Future-quarter dotted circle position shows what the market is pricing in','Compare actual EPS trajectory to revenue trajectory in the next card']}
+                {b:[
+                  'Streak of 4+ beats: bullish bias into next earnings',
+                  'Surprise miss after a beat streak: often triggers sharp selloffs',
+                  'Future-quarter dotted circle position shows what the market is pricing in',
+                  'Compare actual EPS trajectory to revenue trajectory in the next card'
+                ]}
               ]}</Info>
               {beatPct!=null&&<span style={{color:beatPct>=0?C.accent:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{beatPct>=0?'BEAT +':'MISS '}{beatPct.toFixed(1)}%</span>}
             </div>
@@ -3889,12 +4012,32 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>REVENUE &amp; EARNINGS</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Revenue and net income for the last 4 reporting periods. Two view modes via the toggle.'},
-                {b:['BLUE bars: revenue (top line)','GOLD bars: net income (bottom line)','QUARTERLY: last 4 quarters - catches recent inflections','ANNUAL: last 4 fiscal years - shows secular trend','Bars below the $0 line indicate net losses']},
+                {p:'Revenue and net income for up to the last 4 reporting periods, with a Quarterly / Annual toggle when both datasets are available.'},
+                {b:[
+                  'BLUE bars: revenue',
+                  'GOLD bars: net income',
+                  'QUARTERLY: up to 4 most recent quarters — catches recent inflections',
+                  'ANNUAL: up to 4 most recent fiscal years — shows secular trend',
+                  'Bars below the $0 line indicate net losses (gridline at zero shown bolder)',
+                  'Y-axis ticks auto-scale with "nice" rounding (1 / 2 / 5 × 10^N steps)'
+                ]},
+                {h:'Period labels (under bars)'},
+                {b:[
+                  'Top: fiscal label (e.g. Q4 FY26 or FY 2025)',
+                  'Sub-label: calendar end-of-period date (e.g. "Jan \'26") — same disambiguation as the EPS card for off-calendar fiscal years',
+                  'Bottom values: revenue (blue) above, net income (gold) below'
+                ]},
                 {h:'Why it matters'},
                 {p:'This is the fastest way to see business trajectory. The relationship between revenue and earnings tells you whether margins are expanding, holding, or under pressure.'},
                 {h:'How to use it'},
-                {b:['Both growing = healthy momentum, easier swing setups','Revenue growing while earnings shrink = margin pressure (often bearish)','Both shrinking = wind-down, riskier longs','Profitable companies with growing revenue absorb bad news better','Loss-makers (negative bars) need tighter stops - more sentiment-sensitive']}
+                {b:[
+                  'Both growing = healthy momentum, easier swing setups',
+                  'Revenue growing while earnings shrink = margin pressure (often bearish)',
+                  'Both shrinking = wind-down, riskier longs',
+                  'Profitable companies with growing revenue absorb bad news better',
+                  'Loss-makers (negative bars) need tighter stops — more sentiment-sensitive',
+                  'Compare to EPS card above: revenue trajectory should support EPS direction'
+                ]}
               ]}</Info>
               {latest&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{latest.label}: {fmtMoney(latest.revenue)} rev</span>}
             </div>
@@ -3984,12 +4127,33 @@ function StockProfileCheatSheetPage(p){
           <div style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>TRENDS</div>
           <Info>{[
             {h:'What this shows'},
-            {p:'Moving averages and VWAP across 7 time horizons - from short-term swing-trade references to long-term regime markers.'},
-            {b:['SMA = arithmetic mean of last N daily closes','VWAP = same average weighted by trading volume','Windows: 3, 5, 10, 20, 50, 100, 200-day','Percentage shows distance of current price from each level','INTRADAY VWAP: today\'s session + previous session for short-term reference']},
-                {h:'Why it matters'},
-                {p:'These are the lines institutions and algos use as decision boundaries. They become self-fulfilling support and resistance because so many systems trade off them. Short windows (3/5/10) capture micro-trend; mid (20/50) anchor swing trades; long (100/200) define regime.'},
-                {h:'How to use it'},
-                {b:['3/5/10-day = micro-trend - whipsaws fast but signals fastest','20/50-day = primary swing references for stop placement and pullback entries','Price above all 7 = strong uptrend, low-resistance buy regime','Price flipping below 50-day from above = early trend break warning','200-day = textbook bull/bear bias divider for long-term holds','Above today\'s session VWAP = bulls in control intraday']}
+            {p:'Moving averages and VWAP across 7 time horizons — from short-term swing-trade references to long-term regime markers — plus today\'s session VWAP and the previous session\'s VWAP for intraday context.'},
+            {b:[
+              'SMA = arithmetic mean of last N daily closes',
+              'VWAP = same average weighted by trading volume',
+              'Windows: 3, 5, 10, 20, 50, 100, 200-day',
+              'INTRADAY VWAP: today\'s session + previous session for short-term reference'
+            ]},
+            {h:'Per-row display'},
+            {b:[
+              '$X.XX = the SMA or VWAP value at that horizon',
+              '↑ +N.NN% = current price more than 0.5% above the level (green)',
+              '↓ -N.NN% = current price more than 0.5% below the level (red)',
+              '→ flat = within ±0.5% (gold) — price sitting right on the line',
+              '"insufficient data" = ticker hasn\'t accumulated enough bars for that window'
+            ]},
+            {h:'Why it matters'},
+            {p:'These are the lines institutions and algos use as decision boundaries. They become self-fulfilling support and resistance because so many systems trade off them. Short windows (3 / 5 / 10) capture micro-trend; mid (20 / 50) anchor swing trades; long (100 / 200) define regime.'},
+            {h:'How to use it'},
+            {b:[
+              '3 / 5 / 10-day = micro-trend — whipsaws fast but signals fastest',
+              '20 / 50-day = primary swing references for stop placement and pullback entries',
+              'Price above all 7 = strong uptrend, low-resistance buy regime',
+              'Price flipping below 50-day from above = early trend break warning',
+              '200-day = textbook bull/bear bias divider for long-term holds',
+              'Above today\'s session VWAP = bulls in control intraday',
+              'SMA vs VWAP gap = volume-weighted skew — if VWAP > SMA, recent volume bought higher prices'
+            ]}
           ]}</Info>
         </div>
 
@@ -4122,25 +4286,33 @@ function StockProfileCheatSheetPage(p){
               <Info>{[
                 {h:'What this shows'},
                 {p:'Average True Range (volatility), Low-to-Next-Day-High (upside reach), and Close-to-Next-Day-Low (downside drop) across 6 windows: Today (in-progress), Prev Day (last completed session), and 3, 5, 10, 30-day rolling.'},
+                {h:'Volatility regime pill (header)'},
                 {b:[
-                  'ATR ($/%) = average dollar move per bar - direct stop sizing input',
-                  'L→H ($/%) = avg next-day reach above today\'s low - upside swing magnitude',
-                  'C→L ($/%) = avg next-day drop below prior close - downside drawdown from close',
-                  'For Today: L→H = today.high vs prev.low (today\'s reach above prev day\'s low); C→L = today.low vs prev.close (today\'s drawdown from prev close)',
-                  'L→H typically positive (green) - stocks usually rally above prior low',
-                  'C→L typically negative (red) - next day usually pierces prior close to the downside',
-                  'Rolling rows use simple mean over the last N completed values - responsive to recent regime'
+                  'VOL EXPANDING (red) — max(Today, Prev Day) ATR% ≥ 1.3× the 30d ATR%',
+                  'VOL CONTRACTING (green) — max(Today, Prev Day) ATR% ≤ 0.7× the 30d ATR%',
+                  'VOL STABLE (gold) — between 0.7× and 1.3×',
+                  'Uses MAX of Today / Prev Day as the short-term reading so an undeveloped early-session range doesn\'t fake a contracting signal'
+                ]},
+                {h:'Per-row columns'},
+                {b:[
+                  'ATR ($ / %) = average dollar move per bar — direct stop sizing input',
+                  'L→H ($ / %) = avg next-day reach above today\'s low — upside swing magnitude',
+                  'C→L ($ / %) = avg next-day drop below prior close — downside drawdown from close',
+                  'For Today: L→H = today.high vs prev.low; C→L = today.low vs prev.close',
+                  'L→H typically positive (green) — stocks usually rally above prior low',
+                  'C→L typically negative (red) — next day usually pierces prior close to the downside',
+                  'Rolling rows use simple mean over the last N completed values — responsive to recent regime'
                 ]},
                 {h:'Why it matters'},
                 {p:'L→H and C→L bracket the typical NEXT-DAY range: upside reach above today\'s low + downside drop below today\'s close. Today vs Prev Day vs rolling averages reveals whether the current session is unusual relative to recent history.'},
                 {h:'How to use it'},
                 {b:[
-                  'VOL EXPANDING (max of Today / Prev Day ATR% ≥ 1.3× 30d) - widen stops, expect bigger swings',
-                  'VOL CONTRACTING (max of Today / Prev Day ATR% ≤ 0.7× 30d) - tighten stops, expect smaller moves',
-                  'Use 5d ATR ($) × 1.5-2x as a default stop distance',
+                  'EXPANDING regime — widen stops, expect bigger swings',
+                  'CONTRACTING regime — tighten stops, expect smaller moves',
+                  'Use 5d ATR ($) × 1.5-2× as a default stop distance',
                   'Use 5d L→H ($) as a realistic next-day profit target above today\'s low',
                   'Use 5d C→L ($) as a stop placement reference below prior close',
-                  'Reward:Risk = L→H ($) / |C→L ($)| - want > 1.5 for clean longs',
+                  'Reward:Risk = L→H ($) / |C→L ($)| — want > 1.5 for clean longs',
                   'C→L close to zero = tight overnight holds; large negative = gap-down risk',
                   'Today\'s row is in-progress and updates as the session continues'
                 ]}
