@@ -17102,29 +17102,32 @@ function HourlyDataPage(p){
       {rows.map(function(r,i){
         var sess=sessionFor(r.hour);
         var hasData=r.trades>0||r.volume>0;
-        // Avg per day: only meaningful when range covers >1 trading day. For
-        // 'Previous Day' (single-day) the avg equals the total, so skip the
-        // sub-line entirely to avoid redundant noise.
-        var showAvg=hasData&&meta&&meta.tradingDays>1;
-        var avgTrades=showAvg?r.trades/meta.tradingDays:0;
-        var avgVolume=showAvg?r.volume/meta.tradingDays:0;
-        var avgNotional=showAvg?r.notional/meta.tradingDays:0;
+        // Avg per trading day is the PRIMARY display value (more actionable
+        // than raw totals for trading decisions: "what does a typical hour
+        // look like?"). Totals shown as a smaller sub-line for context.
+        // For single-day queries (Previous Day preset, tradingDays=1) avg
+        // equals total, so we just show the total once with no sub-line.
+        var multiDay=meta&&meta.tradingDays>1;
+        var showSplit=hasData&&multiDay;
+        var avgTrades=multiDay?r.trades/meta.tradingDays:0;
+        var avgVolume=multiDay?r.volume/meta.tradingDays:0;
+        var avgNotional=multiDay?r.notional/meta.tradingDays:0;
         return <div key={r.hour} style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.1fr 1.1fr',gap:6,padding:'7px 6px',borderBottom:i<23?'1px solid '+C.border:'none',alignItems:'center',opacity:hasData?1:0.45}}>
           <div style={{display:'flex',alignItems:'center',gap:5}}>
             <span style={{color:hasData?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtHr(r.hour)}</span>
             <span style={{color:sess.color,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:0.5,padding:'1px 4px',background:sess.color+'22',borderRadius:3}}>{sess.label}</span>
           </div>
           <div style={{textAlign:'right'}}>
-            <div style={{color:hasData?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(r.trades)}</div>
-            {showAvg&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(Math.round(avgTrades))}/day</div>}
+            <div style={{color:hasData?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{showSplit?fmtInt(Math.round(avgTrades))+'/day':fmtInt(r.trades)}</div>
+            {showSplit&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(r.trades)} total</div>}
           </div>
           <div style={{textAlign:'right'}}>
-            <div style={{color:hasData?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(r.volume)}</div>
-            {showAvg&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(Math.round(avgVolume))}/day</div>}
+            <div style={{color:hasData?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{showSplit?fmtInt(Math.round(avgVolume))+'/day':fmtInt(r.volume)}</div>
+            {showSplit&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(r.volume)} total</div>}
           </div>
           <div style={{textAlign:'right'}}>
-            <div style={{color:hasData?C.accent:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{r.notional>0?fmtMoney(r.notional):'-'}</div>
-            {showAvg&&avgNotional>0&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtMoney(avgNotional)}/day</div>}
+            <div style={{color:hasData?C.accent:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{showSplit&&avgNotional>0?fmtMoney(avgNotional)+'/day':(r.notional>0?fmtMoney(r.notional):'-')}</div>
+            {showSplit&&avgNotional>0&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtMoney(r.notional)} total</div>}
           </div>
         </div>;
       })}
@@ -17136,24 +17139,27 @@ function HourlyDataPage(p){
         var avgV=multiDay?totals.volume/meta.tradingDays:0;
         var avgN=multiDay?totals.notional/meta.tradingDays:0;
         return <div style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.1fr 1.1fr',gap:6,padding:'9px 6px',borderTop:'2px solid '+C.border,marginTop:4,alignItems:'center'}}>
-          <div style={{color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1}}>TOTAL</div>
-          <div style={{textAlign:'right'}}>
-            <div style={{color:C.purple,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(totals.trades)}</div>
-            {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(Math.round(avgT))}/day</div>}
+          <div>
+            <div style={{color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1}}>ALL HOURS</div>
+            {multiDay&&<div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3,fontStyle:'italic'}}>/ trading day</div>}
           </div>
           <div style={{textAlign:'right'}}>
-            <div style={{color:C.blue,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(totals.volume)}</div>
-            {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(Math.round(avgV))}/day</div>}
+            <div style={{color:C.purple,fontSize:11,fontFamily:F,fontWeight:700}}>{multiDay?fmtInt(Math.round(avgT))+'/day':fmtInt(totals.trades)}</div>
+            {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(totals.trades)} total</div>}
           </div>
           <div style={{textAlign:'right'}}>
-            <div style={{color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtMoney(totals.notional)}</div>
-            {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtMoney(avgN)}/day</div>}
+            <div style={{color:C.blue,fontSize:11,fontFamily:F,fontWeight:700}}>{multiDay?fmtInt(Math.round(avgV))+'/day':fmtInt(totals.volume)}</div>
+            {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtInt(totals.volume)} total</div>}
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{multiDay?fmtMoney(avgN)+'/day':fmtMoney(totals.notional)}</div>
+            {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtMoney(totals.notional)} total</div>}
           </div>
         </div>;
       })()}
 
       <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.3,marginTop:10,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic',lineHeight:1.5}}>
-        Hour bucket = top-of-hour ET (e.g. 09:00 covers 09:00:00\u201309:59:59). Trades and volume summed across all bars in each bucket. Dollar notional = sum of (vwap \u00D7 volume) per bar = total $ traded in that hour. Sub-line "/day" = total \u00F7 trading-day count, hidden when range covers a single day. Hours with no Polygon-reported activity show "-" and are dimmed.
+        Hour bucket = top-of-hour ET (e.g. 09:00 covers 09:00:00\u201309:59:59). Trades and volume summed across bars in each bucket; dollar notional = sum of (vwap \u00D7 volume) per bar = total $ traded in that hour. Primary value (large) = average per trading day; sub-line "total" = sum across all trading days in the range. Single-day queries show just the total. Hours with no Polygon-reported activity show "-" and are dimmed.
       </div>
     </div>}
   </div>;
