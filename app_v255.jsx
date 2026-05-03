@@ -16924,6 +16924,12 @@ function HourlyDataPage(p){
   // can take 30s+ on heavy-volume tickers (AMZN, SPY) over 90 days. Surface
   // progress so the user knows it's working, not hung.
   var s7=useState(''),progress=s7[0],setProgress=s7[1];
+  // Overnight fetch diagnostics. Captures what went wrong (or right) so when
+  // hours 20-3 stay empty the user can tell whether (a) the /v3/trades
+  // endpoint is gated behind a higher Polygon tier, (b) the ticker simply
+  // doesn't trade overnight, or (c) something else broke. Without this the
+  // empty state was indistinguishable from 'no overnight activity'.
+  var s8=useState(null),overnightDiag=s8[0],setOvernightDiag=s8[1];
 
   var presets=[
     {key:'previous',label:'Previous Day',days:1},
@@ -16977,7 +16983,7 @@ function HourlyDataPage(p){
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
     var tk=(ticker||'').trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
-    setLoading(true);setErr(null);setRows(null);setMeta(null);
+    setLoading(true);setErr(null);setRows(null);setMeta(null);setOvernightDiag(null);
 
     try{
       var presetObj=null;
@@ -17132,7 +17138,10 @@ function HourlyDataPage(p){
       // Day-hour bar accumulator: key = "YYYY-MM-DD-H" (where H is 0-23).
       // Each entry: {ts, high, low, lastT, close, trades, volume, notional}
       var dhBars=new Map();
+      // Diagnostics aggregator. Populated by fetchOvernight per page.
+      var diag={pages:0,trades:0,daysAttempted:0,daysWithData:0,firstError:null,sampleStatus:null};
       var fetchOvernight=async function(dayStr){
+        diag.daysAttempted+=1;
         // Day boundaries in ET. Use the en-CA day-format to convert dayStr
         // ('YYYY-MM-DD') back to a UTC ms by interpreting it as 00:00 ET.
         // ET = UTC-5 (EST) or UTC-4 (EDT). We can't hardcode; instead build
@@ -17186,11 +17195,26 @@ function HourlyDataPage(p){
                    '&timestamp.lt='+endNs.toString()+
                    '&order=asc&limit=50000&apiKey='+p.apiKey;
         var pageCount=0;
+        var tradesThisDay=0;
         while(cursor){
           var tr=await fetch(cursor);
-          if(!tr.ok)break;
+          if(!tr.ok){
+            // Capture the first failure so we can show it to the user. 401/403
+            // = endpoint not on plan, 429 = rate limited, 404 = bad ticker
+            // (caught earlier by aggs, but defensive).
+            if(diag.firstError==null){
+              var bodyText='';
+              try{bodyText=await tr.text();bodyText=bodyText.substring(0,200);}catch(e){}
+              diag.firstError={status:tr.status,statusText:tr.statusText,day:dayStr,body:bodyText};
+            }
+            diag.sampleStatus=tr.status;
+            break;
+          }
           var td=await tr.json();
           var trades=td.results||[];
+          diag.pages+=1;
+          diag.trades+=trades.length;
+          tradesThisDay+=trades.length;
           for(var k=0;k<trades.length;k++){
             var trd=trades[k];
             // participant_timestamp is ns since epoch. Convert to ms.
@@ -17236,15 +17260,26 @@ function HourlyDataPage(p){
           // Yield progress every page so the UI updates.
           if(pageCount%2===0)setProgress('Fetching overnight trades for '+dayStr+'… page '+pageCount);
         }
+        if(tradesThisDay>0)diag.daysWithData+=1;
       };
 
       setProgress('Fetching overnight trades…');
       for(var dlIdx=0;dlIdx<dayList.length;dlIdx++){
         var dayStr=dayList[dlIdx];
         setProgress('Overnight: day '+(dlIdx+1)+' of '+dayList.length+' ('+dayStr+')');
-        try{await fetchOvernight(dayStr);}catch(eOv){/* swallow per-day errors so partial data still shows */}
+        try{
+          await fetchOvernight(dayStr);
+        }catch(eOv){
+          if(diag.firstError==null){
+            diag.firstError={status:'exception',statusText:String(eOv&&eOv.message||eOv),day:dayStr,body:''};
+          }
+        }
+        // If we got an HTTP error (e.g. 403 from plan-gating), no point hammering
+        // the API for every other day in the range. Bail out of the loop.
+        if(diag.firstError&&typeof diag.firstError.status==='number'&&[401,403,404].indexOf(diag.firstError.status)>=0)break;
       }
       setProgress('');
+      setOvernightDiag(diag);
 
       // Recompute ATR on synthetic overnight bars. Walk dhBars chronologically
       // by ts; for each bar compute TR using prev synthetic bar's close. The
@@ -17361,6 +17396,30 @@ function HourlyDataPage(p){
           <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1}}>{meta.tradingDays} trading day{meta.tradingDays!==1?'s':''} · {meta.totalBars} bars</div>
         </div>
       </div>
+
+      {/* Overnight diagnostics. Always shown when overnightDiag has a value
+          so the user can see what the BOATS pull actually did, especially
+          useful when the 20-3 hours come back empty (plan-gating on
+          /v3/trades is the most common cause; ticker not trading overnight
+          is the second). */}
+      {overnightDiag&&(function(){
+        var d=overnightDiag;
+        var hasErr=d.firstError!=null;
+        var planGated=hasErr&&(d.firstError.status===401||d.firstError.status===403);
+        var notFound=hasErr&&d.firstError.status===404;
+        var rateLimit=hasErr&&d.firstError.status===429;
+        var bg='rgba(0,231,179,0.08)',bd=C.accent,col=C.accent,label='OVERNIGHT (BOATS)';
+        if(hasErr){bg='rgba(255,92,58,0.10)';bd=C.warn;col=C.warn;label='OVERNIGHT FETCH BLOCKED';}
+        else if(d.trades===0){bg='rgba(255,176,32,0.08)';bd=C.gold;col=C.gold;label='OVERNIGHT — NO ACTIVITY';}
+        return <div style={{padding:'8px 10px',marginBottom:10,background:bg,border:'1px solid '+bd,borderRadius:5}}>
+          <div style={{color:col,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:3}}>{label}</div>
+          {!hasErr&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.daysWithData} of {d.daysAttempted} day{d.daysAttempted!==1?'s':''} returned overnight prints · {d.trades.toLocaleString()} trades over {d.pages} page{d.pages!==1?'s':''}.</div>}
+          {planGated&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned {d.firstError.status} ({d.firstError.statusText||'forbidden'}) on /v3/trades. This endpoint requires the Stocks <b>Developer</b> tier or higher (Stocks Starter does not include it). Daytime hours render normally; hours 20:00–03:59 will stay 'closed' until the plan is upgraded.</div>}
+          {notFound&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned 404 on /v3/trades for this ticker. Trades endpoint may not cover this symbol type.</div>}
+          {rateLimit&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon rate-limited the trades endpoint (429). Try again in a moment, or use a shorter date range.</div>}
+          {hasErr&&!planGated&&!notFound&&!rateLimit&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.firstError.status==='exception'?'Exception: ':'HTTP '+d.firstError.status+': '}{d.firstError.statusText} (day {d.firstError.day}).{d.firstError.body?<div style={{color:C.txtDim,fontSize:7,fontFamily:'monospace',marginTop:3,padding:'4px 6px',background:C.bg,borderRadius:3,wordBreak:'break-all'}}>{d.firstError.body}</div>:null}</div>}
+        </div>;
+      })()}
 
       {/* Column headers */}
       <div style={{display:'grid',gridTemplateColumns:'0.7fr 0.85fr 1.1fr 1fr 0.75fr',gap:6,padding:'4px 6px',borderBottom:'1px solid '+C.border,marginBottom:2}}>
