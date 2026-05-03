@@ -1403,6 +1403,7 @@ function StockProfileCheatSheetPage(p){
   var s16=useState(false),showCloseLine=s16[0],setShowCloseLine=s16[1];
   var s17=useState(true),showMA20=s17[0],setShowMA20=s17[1];
   var s18=useState(true),showMA50=s18[0],setShowMA50=s18[1];
+  var s19=useState(true),showVolProfile=s19[0],setShowVolProfile=s19[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -3037,7 +3038,24 @@ function StockProfileCheatSheetPage(p){
         var gap=8;
         var totalH=priceH+gap+volH+18; // +18 for x-axis labels
         var yAxisW=44; // reserved on right for y-axis labels
-        var plotW=chartW-yAxisW;
+
+        // ====== VOLUME PROFILE for visible window ======
+        // Reuses the same buildProfile helper that powers the rolling-vol-profile card.
+        // 'point' mode for intraday (treats each bar as a single price+volume tick);
+        // 'uniform' mode for daily (distributes each bar's volume across its h-l range).
+        // forceLo/forceHi = chart's padded price range (pMin/pMax) so the histogram
+        // aligns vertically to the same y-axis as the price chart.
+        // Skipped when toggle is OFF or when series is too small for a meaningful profile.
+        var vpProfile=null;
+        if(showVolProfile&&series.length>=5){
+          var profMode=isIntraday?'point':'uniform';
+          try{vpProfile=buildProfile(series,profMode,pMin,pMax);}catch(e){vpProfile=null;}
+        }
+        var hasVP=vpProfile!=null;
+        var vpW=hasVP?54:0; // histogram column width when VP is on
+
+        // plotW depends on whether VP is shown (price area shrinks slightly to make room)
+        var plotW=chartW-yAxisW-vpW;
 
         // Coordinate helpers
         var xAt=function(idx){return (idx/(series.length-1))*plotW;};
@@ -3096,27 +3114,33 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PRICE CHART</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Daily candlestick chart with toggleable 20-day SMA, 50-day SMA, and close-price line overlays. Volume bars below. Period: 30 days / 90 days / 1 year.'},
+                {p:'Candlestick chart with toggleable Volume Profile, 20-day SMA, 50-day SMA, and close-price line overlays. Volume bars below. Six timeframes: Today / Prev / 2W (intraday) and 30D / 90D / 1Y (daily).'},
                 {b:[
-                  'Candlesticks: green if close ≥ open (up day), red if close < open (down day). Body = open-to-close. Wick = high-to-low.',
-                  'Blue line: 20-day SMA (short-term trend) - tap to hide/show',
-                  'Gold line: 50-day SMA (medium-term trend) - tap to hide/show',
-                  'White line: daily close (off by default since candles already show closes) - tap to enable',
-                  'Volume sub-chart: green = up-day, red = down-day, height = volume',
-                  'Header stats: visible-window low/high + period return %'
+                  'Candlesticks: green if close ≥ open (up bar), red if close < open. Body = open-to-close, wick = high-to-low.',
+                  'Volume Profile (right-side histogram): horizontal bars showing volume traded at each price level over the visible window. POC bucket = bright white (most-traded price). Value Area buckets = purple (70% of volume). Outside-VA = dim.',
+                  'Faint purple band on chart = Value Area zone (between VAL and VAH)',
+                  'Bright white horizontal line = POC (Point of Control - volume magnet)',
+                  'Red dashed line = VAL (Value Area Low - lower 70% boundary)',
+                  'Green dashed line = VAH (Value Area High - upper 70% boundary)',
+                  'Blue line = 20-day SMA (daily timeframes only)',
+                  'Gold line = 50-day SMA (daily timeframes only)',
+                  'White line = daily close (off by default - candles show this)',
+                  'Volume sub-chart: bars colored by close-vs-prev-close direction'
                 ]},
                 {h:'Why it matters'},
-                {p:'Candlesticks reveal the open-close range AND the high-low range simultaneously - a single candle tells you whether buyers or sellers won the session and by how much. Toggleable overlays let you focus: clean candles only, or add reference levels as needed.'},
+                {p:'Candles + volume profile together = the complete picture. Candles show what happened bar-by-bar; vol profile shows where price spent the most time. POC/VAL/VAH are powerful reversal and continuation reference points. SMAs add daily-horizon trend context.'},
                 {h:'How to use it'},
                 {b:[
                   'Long upper wicks = sellers rejected higher prices (resistance)',
                   'Long lower wicks = buyers rejected lower prices (support)',
+                  'Price magnetizes to POC - dips toward POC from above are common pullback entries',
+                  'VAL/VAH = natural support/resistance for stop placement',
+                  'Price ABOVE VA = stretched up (mean-revert risk); BELOW VA = oversold',
                   'Price above both SMAs = uptrend regime; below both = downtrend',
                   '20-day crossing 50-day from below = bullish momentum shift',
-                  'Volume spike on up-day = institutional buying interest',
-                  'Volume spike on down-day = distribution / selling pressure',
-                  'Toggle off SMAs for clean price-action read; toggle on for trend context',
-                  'Switch to 1Y for regime view; 30D for current swing context'
+                  'Volume spike on up-bar = institutional buying; on down-bar = distribution',
+                  'Switch to Today/Prev for intraday context; 1Y for regime view',
+                  'Toggle vol profile off for pure price-action read'
                 ]}
               ]}</Info>
             </div>
@@ -3154,6 +3178,11 @@ function StockProfileCheatSheetPage(p){
                 return <line key={'g'+i} x1="0" y1={t.y} x2={plotW} y2={t.y} stroke={C.border} strokeWidth="0.5" strokeDasharray="2,3" opacity="0.5"/>;
               })}
 
+              {/* VOL PROFILE - VALUE AREA SHADED BAND (behind candles). Faint purple
+                  fill between VAL and VAH so the 70%% volume zone is visible without
+                  competing with candle colors. */}
+              {hasVP&&<rect x="0" y={yPriceAt(vpProfile.vah)} width={plotW} height={Math.max(0,yPriceAt(vpProfile.val)-yPriceAt(vpProfile.vah))} fill={C.purple} opacity="0.07"/>}
+
               {/* CANDLESTICKS - always visible. Each candle = wick (h-l line) + body
                   (rect from open to close). Color: green if close >= open (up day),
                   red if close < open (down day). Body width auto-scales by bar density:
@@ -3185,9 +3214,40 @@ function StockProfileCheatSheetPage(p){
               {/* Close-price line (bright white), default OFF - candles already show closes */}
               {showCloseLine&&closePath&&<path d={closePath} fill="none" stroke={C.txtBright} strokeWidth="1.4" opacity="0.85"/>}
 
-              {/* Y-axis labels on the right side */}
+              {/* VOL PROFILE - POC line (bright, on top of everything price-related).
+                  Single horizontal line at the highest-traded price level. */}
+              {hasVP&&<line x1="0" y1={yPriceAt(vpProfile.poc)} x2={plotW} y2={yPriceAt(vpProfile.poc)} stroke={C.txtBright} strokeWidth="1" opacity="0.7"/>}
+              {/* VOL PROFILE - VAL line (red dashed) at lower 70%% volume boundary */}
+              {hasVP&&<line x1="0" y1={yPriceAt(vpProfile.val)} x2={plotW} y2={yPriceAt(vpProfile.val)} stroke={C.warn} strokeWidth="0.7" strokeDasharray="3,3" opacity="0.6"/>}
+              {/* VOL PROFILE - VAH line (green dashed) at upper 70%% volume boundary */}
+              {hasVP&&<line x1="0" y1={yPriceAt(vpProfile.vah)} x2={plotW} y2={yPriceAt(vpProfile.vah)} stroke={C.accent} strokeWidth="0.7" strokeDasharray="3,3" opacity="0.6"/>}
+
+              {/* VOL PROFILE - HISTOGRAM (right side, before y-axis labels).
+                  Each bucket = horizontal bar from the right edge of price area extending
+                  leftward by volume scale. POC bucket highlighted bright; VA buckets in
+                  purple; out-of-VA buckets dim. Read like a sideways histogram - tallest
+                  bars are the most-traded prices. */}
+              {hasVP&&<g transform={'translate('+plotW+',0)'}>
+                {vpProfile.buckets.map(function(volume,bi){
+                  if(volume<=0||vpProfile.max_bucket_vol<=0)return null;
+                  var bSize=pSpan/vpProfile.n_buckets;
+                  var bucketLow=pMin+bi*bSize;
+                  var bucketHigh=bucketLow+bSize;
+                  var yTop=yPriceAt(bucketHigh);
+                  var yBot=yPriceAt(bucketLow);
+                  var barW=(volume/vpProfile.max_bucket_vol)*(vpW-3);
+                  var inVA=(bi>=vpProfile.va_lo_idx&&bi<=vpProfile.va_hi_idx);
+                  var isPOC=(bi===vpProfile.poc_idx);
+                  var fillColor=isPOC?C.txtBright:inVA?C.purple:C.txtDim;
+                  var fillOp=isPOC?0.85:inVA?0.55:0.32;
+                  return <rect key={'vph'+bi} x="0" y={yTop} width={barW} height={Math.max(0.5,yBot-yTop)} fill={fillColor} opacity={fillOp}/>;
+                })}
+              </g>}
+
+              {/* Y-axis labels on the right side. Position depends on whether the
+                  vol-profile histogram is taking up space (vpW>0 shifts labels right). */}
               {yTicks.map(function(t,i){
-                return <text key={'y'+i} x={plotW+4} y={t.y+3} fill={C.txtDim} fontSize="8" fontFamily={F}>{t.label}</text>;
+                return <text key={'y'+i} x={plotW+vpW+4} y={t.y+3} fill={C.txtDim} fontSize="8" fontFamily={F}>{t.label}</text>;
               })}
 
               {/* Volume sub-chart */}
@@ -3203,8 +3263,8 @@ function StockProfileCheatSheetPage(p){
                   var color=isUp?C.accent:C.warn;
                   return <rect key={'v'+i} x={xAt(i)-barW/2} y={yVolAt(b.v)} width={barW} height={volH-yVolAt(b.v)} fill={color} opacity="0.5"/>;
                 })}
-                {/* VOL label */}
-                <text x={plotW+4} y={volH/2+3} fill={C.txtDim} fontSize="7" fontFamily={F} letterSpacing="1">VOL</text>
+                {/* VOL label - placed past the histogram column when VP is on */}
+                <text x={plotW+vpW+4} y={volH/2+3} fill={C.txtDim} fontSize="7" fontFamily={F} letterSpacing="1">VOL</text>
               </g>
 
               {/* X-axis labels */}
@@ -3221,6 +3281,11 @@ function StockProfileCheatSheetPage(p){
                 on/off. Visual state: full color when ON, dimmed when OFF. Replaces
                 the previous static legend - same color cues + tappable functionality. */}
             <div style={{display:'flex',gap:6,marginTop:10,fontSize:8,fontFamily:F,flexWrap:'wrap'}}>
+              {/* Vol Profile toggle - appears first since it's the most impactful overlay */}
+              <div onClick={function(){setShowVolProfile(!showVolProfile);}} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:14,border:'1px solid '+(showVolProfile?C.purple:C.border),background:showVolProfile?C.bgInput:'transparent',cursor:'pointer',opacity:showVolProfile?1:0.55}}>
+                <span style={{width:10,height:10,borderRadius:5,border:'1.5px solid '+C.purple,background:showVolProfile?C.purple:'transparent',display:'inline-block'}}></span>
+                <span style={{color:showVolProfile?C.purple:C.txtDim,fontWeight:700}}>Vol Profile</span>
+              </div>
               {/* Close line toggle */}
               <div onClick={function(){setShowCloseLine(!showCloseLine);}} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:14,border:'1px solid '+(showCloseLine?C.txtBright:C.border),background:showCloseLine?C.bgInput:'transparent',cursor:'pointer',opacity:showCloseLine?1:0.55}}>
                 <span style={{width:10,height:10,borderRadius:5,border:'1.5px solid '+C.txtBright,background:showCloseLine?C.txtBright:'transparent',display:'inline-block'}}></span>
