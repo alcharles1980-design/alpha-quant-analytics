@@ -1396,7 +1396,7 @@ function StockProfileCheatSheetPage(p){
   var s12=useState(true),rpcExpanded=s12[0],setRpcExpanded=s12[1];
   var s13=useState(true),swingExpanded=s13[0],setSwingExpanded=s13[1];
   var s14=useState(true),chartExpanded=s14[0],setChartExpanded=s14[1];
-  var s15=useState('90d'),chartPeriod=s15[0],setChartPeriod=s15[1]; // 'today' / 'prev' / '2w' / '30d' / '90d' / '1y' / '3y' / '5y'
+  var s15=useState('2w'),chartPeriod=s15[0],setChartPeriod=s15[1]; // 'today' / 'prev' / '2w' / '30d' / '90d' / '1y' / '3y' / '5y'
   // Chart overlay toggles (v216): Close line, SMA20, SMA50 are individually
   // dismissible. Default: candles always visible, MAs visible, close line OFF
   // (since candles already show closes - line is redundant for most users).
