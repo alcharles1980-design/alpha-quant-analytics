@@ -17139,7 +17139,7 @@ function HourlyDataPage(p){
       // Each entry: {ts, high, low, lastT, close, trades, volume, notional}
       var dhBars=new Map();
       // Diagnostics aggregator. Populated by fetchOvernight per page.
-      var diag={pages:0,trades:0,daysAttempted:0,daysWithData:0,firstError:null,sampleStatus:null};
+      var diag={pages:0,trades:0,daysAttempted:0,daysWithData:0,firstError:null,sampleStatus:null,bucketed:0,filteredOutByHour:0,firstTradeSample:null};
       var fetchOvernight=async function(dayStr){
         diag.daysAttempted+=1;
         // Day boundaries in ET. Use the en-CA day-format to convert dayStr
@@ -17215,6 +17215,26 @@ function HourlyDataPage(p){
           diag.pages+=1;
           diag.trades+=trades.length;
           tradesThisDay+=trades.length;
+          // Capture first trade in the very first response with data, so we
+          // can sanity-check that participant_timestamp actually falls in our
+          // requested window. If trades come back BUT we're filtering them
+          // out via the hh>=20||hh<=3 guard, this surfaces the mismatch.
+          if(diag.firstTradeSample==null&&trades.length>0){
+            var ft=trades[0];
+            diag.firstTradeSample={
+              ticker:tk,
+              day:dayStr,
+              priceFromTrade:ft.price,
+              sizeFromTrade:ft.size,
+              participantTs:ft.participant_timestamp,
+              sipTs:ft.sip_timestamp,
+              trfTs:ft.trf_timestamp,
+              trfId:ft.trf_id,
+              exchange:ft.exchange,
+              windowStartNs:startNs.toString(),
+              windowEndNs:endNs.toString()
+            };
+          }
           for(var k=0;k<trades.length;k++){
             var trd=trades[k];
             // participant_timestamp is ns since epoch. Convert to ms.
@@ -17228,10 +17248,11 @@ function HourlyDataPage(p){
             // Only count overnight hours (20-23 + 0-3) as a defensive guard;
             // the time window already restricts this, but a trade timestamped
             // at exactly 04:00:00 could land in hour 4 due to rounding.
-            if(!(hh>=20||hh<=3))continue;
+            if(!(hh>=20||hh<=3)){diag.filteredOutByHour+=1;continue;}
             var dayKey=etDayFmt.format(dt);
             var px=trd.price,sz=trd.size;
             if(!isFinite(px)||!isFinite(sz)||sz<=0)continue;
+            diag.bucketed+=1;
             buckets[hh].trades+=1;
             buckets[hh].volume+=sz;
             buckets[hh].notional+=px*sz;
@@ -17413,11 +17434,22 @@ function HourlyDataPage(p){
         else if(d.trades===0){bg='rgba(255,176,32,0.08)';bd=C.gold;col=C.gold;label='OVERNIGHT — NO ACTIVITY';}
         return <div style={{padding:'8px 10px',marginBottom:10,background:bg,border:'1px solid '+bd,borderRadius:5}}>
           <div style={{color:col,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:3}}>{label}</div>
-          {!hasErr&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.daysWithData} of {d.daysAttempted} day{d.daysAttempted!==1?'s':''} returned overnight prints · {d.trades.toLocaleString()} trades over {d.pages} page{d.pages!==1?'s':''}.</div>}
-          {planGated&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned {d.firstError.status} ({d.firstError.statusText||'forbidden'}) on /v3/trades. This endpoint requires the Stocks <b>Developer</b> tier or higher (Stocks Starter does not include it). Daytime hours render normally; hours 20:00–03:59 will stay 'closed' until the plan is upgraded.</div>}
+          {!hasErr&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.daysWithData} of {d.daysAttempted} day{d.daysAttempted!==1?'s':''} returned overnight prints \u00B7 {d.trades.toLocaleString()} trades over {d.pages} page{d.pages!==1?'s':''} \u00B7 {d.bucketed.toLocaleString()} bucketed{d.filteredOutByHour>0?' \u00B7 '+d.filteredOutByHour.toLocaleString()+' rejected by hour-guard':''}.</div>}
+          {planGated&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned {d.firstError.status} ({d.firstError.statusText||'forbidden'}) on /v3/trades. The endpoint refused the request. Common causes: API key doesn't include /v3/trades scope, plan tier doesn't cover trades, or the key is malformed. Check Polygon dashboard.</div>}
           {notFound&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned 404 on /v3/trades for this ticker. Trades endpoint may not cover this symbol type.</div>}
           {rateLimit&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon rate-limited the trades endpoint (429). Try again in a moment, or use a shorter date range.</div>}
           {hasErr&&!planGated&&!notFound&&!rateLimit&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.firstError.status==='exception'?'Exception: ':'HTTP '+d.firstError.status+': '}{d.firstError.statusText} (day {d.firstError.day}).{d.firstError.body?<div style={{color:C.txtDim,fontSize:7,fontFamily:'monospace',marginTop:3,padding:'4px 6px',background:C.bg,borderRadius:3,wordBreak:'break-all'}}>{d.firstError.body}</div>:null}</div>}
+          {d.firstTradeSample&&<div style={{marginTop:6,padding:'6px 8px',background:C.bg,borderRadius:3,border:'1px solid '+C.border}}>
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:2}}>FIRST TRADE SAMPLE (day {d.firstTradeSample.day})</div>
+            <div style={{color:C.txt,fontSize:7,fontFamily:'monospace',lineHeight:1.5,wordBreak:'break-all'}}>
+              <div>price={d.firstTradeSample.priceFromTrade} \u00B7 size={d.firstTradeSample.sizeFromTrade} \u00B7 exchange={d.firstTradeSample.exchange}</div>
+              <div>participant_ts={String(d.firstTradeSample.participantTs)}</div>
+              <div>sip_ts={String(d.firstTradeSample.sipTs)} \u00B7 trf_ts={String(d.firstTradeSample.trfTs||'(none)')}</div>
+              <div>trf_id={String(d.firstTradeSample.trfId||'(none)')}</div>
+              <div style={{color:C.txtDim,marginTop:2}}>window: gte={d.firstTradeSample.windowStartNs}</div>
+              <div style={{color:C.txtDim}}>window: lt= {d.firstTradeSample.windowEndNs}</div>
+            </div>
+          </div>}
         </div>;
       })()}
 
