@@ -3014,7 +3014,7 @@ function StockProfileCheatSheetPage(p){
 
       {/* Hero: big last close */}
       <div style={{marginTop:12,marginBottom:14,padding:'14px 16px',background:C.bg,borderRadius:10,border:'1px solid '+C.accent,textAlign:'center'}}>
-        <div style={{color:C.txt,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>{data.last_close_live?'LATEST PRICE':'LAST CLOSE'}{data.last_close_live&&<span style={{color:C.accent,marginLeft:6,fontSize:7,letterSpacing:1}}>\u2022 LIVE</span>}</div>
+        <div style={{color:C.txt,fontSize:9,fontFamily:F,letterSpacing:2,fontWeight:700}}>{data.last_close_live?'LATEST PRICE':'LAST CLOSE'}{data.last_close_live&&<span style={{color:C.accent,marginLeft:6,fontSize:7,letterSpacing:1}}>• LIVE</span>}</div>
         <div style={{color:C.txtBright,fontSize:32,fontFamily:F,fontWeight:700,marginTop:4,letterSpacing:1}}>${data.last_close.toFixed(2)}</div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.last_date}</div>
         {data.market_cap!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
@@ -4699,8 +4699,14 @@ function StockProfileCheatSheetPage(p){
         // they're excluded from the closeable count.
         // When tp% is missing or zero, max buy = top and net = gross.
         var maxBuyPrice=(isFinite(top)&&isFinite(tpPct)&&tpPct>0)?(top/(1+tpPct/100)):top;
-        var netSpread=(isFinite(bottom)&&isFinite(maxBuyPrice)&&maxBuyPrice>=bottom)?(maxBuyPrice-bottom):NaN;
-        var netRangesCount=(isFinite(netSpread)&&isFinite(increment)&&increment>0)?Math.max(1,Math.round(netSpread/increment)+1):NaN;
+        // Detect "TP% too high" state: when tp% > spread%, the highest theoretical
+        // buy whose exit lands at-or-below top is < bottom, so NO rungs in the
+        // bottom→top span can close. Without this explicit check, netSpread
+        // silently goes NaN and the entire output stack blanks with no
+        // explanation. Surface the threshold so the user knows what to fix.
+        var tpTooHigh=(isFinite(bottom)&&isFinite(maxBuyPrice)&&maxBuyPrice<bottom);
+        var netSpread=(isFinite(bottom)&&isFinite(maxBuyPrice)&&maxBuyPrice>=bottom)?(maxBuyPrice-bottom):(tpTooHigh?-1:NaN);
+        var netRangesCount=tpTooHigh?0:((isFinite(netSpread)&&isFinite(increment)&&increment>0)?Math.max(1,Math.round(netSpread/increment)+1):NaN);
         // Highest range that actually closes. The theoretical maxBuyPrice above
         // is top/(1+tp%) which is rarely a clean penny boundary. The actual
         // topmost rung sits at bottom + (netRangesCount−1) × increment, which
@@ -4708,8 +4714,9 @@ function StockProfileCheatSheetPage(p){
         // exit = highestActualBuy × (1 + tp%/100), which by construction lands
         // at-or-just-below the user-entered TOP (rounding to the nearest cent
         // can leave it within ±$0.01 of TOP). Used to show the user exactly
-        // where the topmost closing range buys and exits.
-        var highestActualBuy=(isFinite(bottom)&&isFinite(netRangesCount)&&isFinite(increment))?(bottom+(netRangesCount-1)*increment):NaN;
+        // where the topmost closing range buys and exits. NaN when 0 ranges
+        // close (tpTooHigh case) — there's no closing rung to display.
+        var highestActualBuy=(isFinite(bottom)&&isFinite(netRangesCount)&&netRangesCount>0&&isFinite(increment))?(bottom+(netRangesCount-1)*increment):NaN;
         var highestExitPrice=(isFinite(highestActualBuy)&&isFinite(tpPct))?(highestActualBuy*(1+tpPct/100)):NaN;
         // Per-range profit (level-invariant: at price P you buy capital/P
         // shares; exit value = (capital/P) × P × (1+tp%) = capital × (1+tp%);
@@ -4824,6 +4831,11 @@ function StockProfileCheatSheetPage(p){
                   capital \u00D7 tp%          \u2192 PROFIT / RANGE
                   net \u00D7 profit/range     \u2192 SWING-UP PROFIT */}
             <div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
+              {tpTooHigh&&<div style={{padding:'8px 10px',marginBottom:8,background:'rgba(255,176,32,0.10)',border:'1px solid '+C.warn,borderRadius:5}}>
+                <div style={{color:C.warn,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:3}}>⚠ TP% TOO HIGH — 0 RANGES CLOSE</div>
+                <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>The take-profit % ({isFinite(tpPct)?tpPct.toFixed(2):'-'}%) exceeds the spread % ({isFinite(spreadPct)?spreadPct.toFixed(2):'-'}%). Every rung\u2019s exit price would land above TOP, so none can fire.</div>
+                <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,fontStyle:'italic'}}>Fix: lower TP% below {isFinite(spreadPct)?spreadPct.toFixed(2)+'%':'spread%'}, raise TOP, or lower BOTTOM.</div>
+              </div>}
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0',borderBottom:'1px solid '+C.border}}>
                 <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>GROSS RANGES</span>
                 <span style={{color:isFinite(rangesCount)?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(rangesCount)}{isFinite(spread)&&isFinite(increment)&&increment>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= ${spread.toFixed(2)} ÷ ${increment.toFixed(2)} + 1</span>}</span>
@@ -4875,7 +4887,7 @@ function StockProfileCheatSheetPage(p){
             </div>
             {/* Methodology footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              TOP is treated as the highest exit price. Highest buy = top / (1 + TP%); rungs above that have exits beyond top and don't close on a swing-to-top — they show as "idle". Bottom / top auto-populate from the swing card (3-day C→L and L→H averages) on each fetch; edits persist until the next ticker switch. No fees / slippage modeled.
+              TOP is treated as the highest exit price. Highest buy = top / (1 + TP%); rungs above that have exits beyond top and don't close on a swing-to-top — they show as "idle". Bottom / top auto-populate from the swing card (3-day C→L and L→H averages) on each fetch; edits persist until the next fetch (re-searching the same ticker resets too). No fees / slippage modeled.
             </div>
           </div>}
         </div>;
@@ -11438,7 +11450,7 @@ function OptimalTpMinutePage(p){
         <div><span style={{color:C.purple,fontWeight:700}}>M-cols (purple)</span> = multi-level oscillation simulation: $0.01% spacing rounded to penny, $1/level, full 30d range. <span style={{color:C.accent,fontWeight:700}}>M-%ret/d</span> is the headline metric (return on total deployed capital).</div>
         <div><span style={{color:C.txtDim,fontWeight:700}}>S-cols (gray)</span> = single-level walk-forward (legacy, useful sanity check).</div>
         <div><span style={{color:C.txt}}>Pennies/d</span> = realized path divided by $0.01 = upper-bound proxy on penny ladder fill density.</div>
-        <div><span style={{color:C.warn}}>\u26A0 on Levels</span> = ladder too wide (>5,000 levels), simulation skipped. Use single-level result instead.</div>
+        <div><span style={{color:C.warn}}>⚠ on Levels</span> = ladder too wide (>5,000 levels), simulation skipped. Use single-level result instead.</div>
       </div>
       <div style={{overflowX:'auto',marginTop:8}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:9}}>
@@ -11912,24 +11924,24 @@ function StockClassificationPage(p){
       <SectionHead title="How This Works" sub="Methodology summary"/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.7,marginTop:8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>VOLATILITY AXIS \u2014 per-ticker historical</p>
+          <p style={{marginBottom:6,color:C.gold,fontWeight:700}}>VOLATILITY AXIS — per-ticker historical</p>
           <p style={{marginBottom:4}}>Today's 21-day Yang-Zhang annualized vol is ranked against the same ticker's trailing 252 days of rolling 21-day vol values.</p>
           <p style={{paddingLeft:8,color:C.txtDim}}>Low: percentile &lt; 33%</p>
           <p style={{paddingLeft:8,color:C.txtDim}}>Normal: 33% to 67%</p>
           <p style={{paddingLeft:8,color:C.txtDim}}>High: percentile &gt; 67%</p>
-          <p style={{marginTop:4,fontSize:8,color:C.txtDim}}>This is per-ticker relative \u2014 a stably-volatile stock at its own median sits in Normal, not High.</p>
+          <p style={{marginTop:4,fontSize:8,color:C.txtDim}}>This is per-ticker relative — a stably-volatile stock at its own median sits in Normal, not High.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>TREND AXIS \u2014 ensemble vote of three indicators</p>
+          <p style={{marginBottom:6,color:C.blue,fontWeight:700}}>TREND AXIS — ensemble vote of three indicators</p>
           <p style={{marginBottom:4}}>Hurst exponent (R/S, last 60 daily returns), lag-1 autocorrelation (60d), and ADX-14d each cast a vote.</p>
-          <p style={{paddingLeft:8,color:C.txtDim}}>Hurst &lt; 0.45 \u2192 MR | Hurst &gt; 0.55 \u2192 Trend | else Random</p>
-          <p style={{paddingLeft:8,color:C.txtDim}}>AC1 &lt; -0.05 \u2192 MR | AC1 &gt; 0.05 \u2192 Trend | else Random</p>
-          <p style={{paddingLeft:8,color:C.txtDim}}>ADX &gt; 25 \u2192 Trend | ADX &lt;= 25 \u2192 Random</p>
-          <p style={{marginTop:4}}>Final state = majority vote. If all 3 agree \u2192 Confidence=High. If 2/3 agree \u2192 Med. If split \u2192 Mixed (no majority).</p>
+          <p style={{paddingLeft:8,color:C.txtDim}}>Hurst &lt; 0.45 → MR | Hurst &gt; 0.55 → Trend | else Random</p>
+          <p style={{paddingLeft:8,color:C.txtDim}}>AC1 &lt; -0.05 → MR | AC1 &gt; 0.05 → Trend | else Random</p>
+          <p style={{paddingLeft:8,color:C.txtDim}}>ADX &gt; 25 → Trend | ADX &lt;= 25 → Random</p>
+          <p style={{marginTop:4}}>Final state = majority vote. If all 3 agree → Confidence=High. If 2/3 agree → Med. If split → Mixed (no majority).</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
           <p style={{marginBottom:6,color:C.purple,fontWeight:700}}>FOR OSCILLATION BOTS</p>
-          <p style={{marginBottom:4}}>Look for cells with green semantic colors. The single best cell is <span style={{color:C.accent,fontWeight:700}}>Normal_MeanRevert</span> \u2014 active enough to produce cycles, mean-reverting enough to make oscillation TP%s fill repeatedly.</p>
+          <p style={{marginBottom:4}}>Look for cells with green semantic colors. The single best cell is <span style={{color:C.accent,fontWeight:700}}>Normal_MeanRevert</span> — active enough to produce cycles, mean-reverting enough to make oscillation TP%s fill repeatedly.</p>
           <p>Avoid the High_Trend cell entirely \u2014 these stocks burn oscillation bots because price doesn't return.</p>
         </div>
       </div>
