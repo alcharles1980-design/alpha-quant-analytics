@@ -4727,30 +4727,31 @@ function StockProfileCheatSheetPage(p){
                 {p:'Interactive grid-trading calculator. Models a staggered buy ladder of N rungs spaced evenly between a bottom price and a top price. TOP is interpreted as the highest exit price the user expects price to reach on a swing, so the highest buy rung sits below it by the TP%.'},
                 {h:'Inputs'},
                 {b:[
-                  'BOTTOM PRICE — lowest buy rung. Pre-populated to base_close \u00D7 (1 + avg 3d C\u2192L%) — the LOW SWING from the swing card above',
-                  'TOP PRICE — highest EXIT price (not the highest buy). Pre-populated to bottom \u00D7 (1 + avg 3d L\u2192H%) — the TOP END from the swing card above',
-                  'INCREMENT — spacing between rungs in $ (default $0.01)',
-                  'CAPITAL / RANGE — $ deployed at each rung',
-                  'PROFIT TAKER % — take-profit on each filled rung'
+                  'BOTTOM PRICE \u2014 lowest buy rung. Pre-populated to base_close \u00D7 (1 + avg 3d C\u2192L%) \u2014 the LOW SWING from the swing card above',
+                  'TOP PRICE \u2014 highest EXIT price (not the highest buy). Pre-populated to bottom \u00D7 (1 + avg 3d L\u2192H%) \u2014 the TOP END from the swing card above',
+                  'INCREMENT \u2014 spacing between rungs in $ (default $0.01)',
+                  'CAPITAL / RANGE \u2014 $ deployed at each rung',
+                  'PROFIT TAKER % \u2014 take-profit on each filled rung'
                 ]},
-                {h:'Outputs'},
+                {h:'Math chain (top to bottom)'},
                 {b:[
-                  'GROSS RANGES — round((top \u2212 bottom) / increment) + 1. The raw input span; informational only.',
-                  'HIGHEST BUY PRICE — top / (1 + TP%). Above this price, a buy\u2019s exit would land above top and miss on a swing-to-top.',
-                  'NET RANGES — round((highest_buy \u2212 bottom) / increment) + 1. The actual closeable ladder size — every rung in this count fires its TP exactly at-or-below top.',
-                  'IDLE — gross \u2212 net. Rungs in the input span that don\u2019t close. Large idle = your top is too far above the highest fillable rung for the chosen TP%.',
-                  'TOTAL CAPITAL — net ranges \u00D7 capital per range',
-                  'PROFIT PER RANGE — capital \u00D7 TP% / 100. Level-invariant: shares = capital/P, exit = P \u00D7 (1+TP%), profit = capital \u00D7 TP%/100. P cancels.',
-                  'SWING-UP PROFIT — net ranges \u00D7 profit per range',
-                  'RETURN % — profit / total capital. Equals TP% by construction when capital is uniform across rungs.'
+                  'SPREAD = top \u2212 bottom. The raw price gap; independent of increment and TP%.',
+                  'GROSS RANGES = round(spread / increment) + 1. The raw input span in rung units.',
+                  'HIGHEST BUY PRICE = top / (1 + TP%). Above this price, a buy\u2019s exit would land above top and miss on a swing-to-top.',
+                  'NET RANGES = round((highest_buy \u2212 bottom) / increment) + 1. Closeable rungs \u2014 every one fires its TP at-or-below top.',
+                  'IDLE = gross \u2212 net. Rungs in the input span that don\u2019t close. Large idle = top is too far above the highest fillable rung for the chosen TP%.',
+                  'TOTAL CAPITAL = net ranges \u00D7 capital per range',
+                  'PROFIT PER RANGE = capital \u00D7 TP% / 100. Level-invariant: shares = capital/P, exit = P \u00D7 (1+TP%), profit = capital \u00D7 TP%/100. P cancels.',
+                  'SWING-UP PROFIT = net ranges \u00D7 profit per range',
+                  'RETURN % = profit / total capital. Equals TP% by construction when capital is uniform across rungs.'
                 ]},
                 {h:'How to use it'},
                 {b:[
                   'Edit bottom / top to test wider or tighter ranges',
-                  'Watch the IDLE count — if non-zero, you\u2019re funding rungs that won\u2019t close. Either lower top or increase TP%.',
+                  'Watch the IDLE count \u2014 if non-zero, you\u2019re funding rungs that won\u2019t close. Either lower top or increase TP%.',
                   'Increase increment to thin the ladder (fewer rungs, less capital required)',
                   'Lower TP% for faster cycles, higher TP% for fewer-but-bigger wins (and a lower highest-buy boundary)',
-                  'Compare TOTAL CAPITAL to your actual buying power — large ladders \u00D7 small increments \u00D7 big capital/range stack up fast',
+                  'Compare TOTAL CAPITAL to your actual buying power \u2014 large ladders \u00D7 small increments \u00D7 big capital/range stack up fast',
                   'Math assumes every net rung fills on the down-leg and every TP fires on the up-leg; no fees, no slippage, no partial fills'
                 ]}
               ]}</Info>
@@ -4779,9 +4780,9 @@ function StockProfileCheatSheetPage(p){
                 <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>rung spacing</div>
               </div>
               <div>
-                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>GROSS RANGES</div>
-                <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(rangesCount)?C.txtBright:C.txtDim,letterSpacing:0.5})}>{fmtInt(rangesCount)}</div>
-                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>full bottom\u2192top span</div>
+                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>SPREAD $</div>
+                <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(spread)?C.txtBright:C.txtDim,letterSpacing:0.5})}>{isFinite(spread)?'$'+spread.toFixed(2):'-'}</div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>top \u2212 bottom</div>
               </div>
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>CAPITAL / RANGE $</div>
@@ -4794,12 +4795,24 @@ function StockProfileCheatSheetPage(p){
                 <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>take-profit</div>
               </div>
             </div>
-            {/* Output stack — NET RANGES first since it's what drives every
-                downstream calc. Highest buy + idle count surfaced beside it
-                so the user sees the cost of choosing a TP% relative to the
-                ladder span. */}
+            {/* Output stack \u2014 organised as a top-to-bottom math chain so
+                the user can follow each step:
+                  spread \u00F7 increment \u2192 GROSS RANGES
+                  top / (1 + tp%)        \u2192 HIGHEST BUY
+                  (highest_buy \u2212 bottom) \u00F7 increment \u2192 NET RANGES
+                  net \u00D7 capital          \u2192 TOTAL CAPITAL
+                  capital \u00D7 tp%          \u2192 PROFIT / RANGE
+                  net \u00D7 profit/range     \u2192 SWING-UP PROFIT */}
             <div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0',borderBottom:'1px solid '+C.border}}>
+                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>GROSS RANGES</span>
+                <span style={{color:isFinite(rangesCount)?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(rangesCount)}{isFinite(spread)&&isFinite(increment)&&increment>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= ${spread.toFixed(2)} \u00F7 ${increment.toFixed(2)} + 1</span>}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
+                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>HIGHEST BUY PRICE</span>
+                <span style={{color:isFinite(maxBuyPrice)&&isFinite(tpPct)&&tpPct>0?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{isFinite(maxBuyPrice)?'$'+maxBuyPrice.toFixed(2):'-'}{isFinite(tpPct)&&tpPct>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= top / (1 + {tpPct.toFixed(2)}%)</span>}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
                 <div>
                   <div style={{color:C.purple,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>NET RANGES</div>
                   <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>rungs whose TP fires on swing-to-top</div>
@@ -4808,10 +4821,6 @@ function StockProfileCheatSheetPage(p){
                   <div style={{color:isFinite(netRangesCount)?C.txtBright:C.txtDim,fontSize:14,fontFamily:F,fontWeight:700}}>{fmtInt(netRangesCount)}</div>
                   {isFinite(idleRanges)&&idleRanges>0&&<div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.5}}>{fmtInt(idleRanges)} idle (top-too-wide)</div>}
                 </div>
-              </div>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
-                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>HIGHEST BUY PRICE</span>
-                <span style={{color:isFinite(maxBuyPrice)&&isFinite(tpPct)&&tpPct>0?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{isFinite(maxBuyPrice)?'$'+maxBuyPrice.toFixed(2):'-'}{isFinite(tpPct)&&tpPct>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= top / (1 + {tpPct.toFixed(2)}%)</span>}</span>
               </div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
                 <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>TOTAL CAPITAL</span>
@@ -4824,7 +4833,7 @@ function StockProfileCheatSheetPage(p){
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0 4px'}}>
                 <div>
                   <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>SWING-UP PROFIT</div>
-                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>net ranges × profit per range</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>net ranges \u00D7 profit per range</div>
                 </div>
                 <div style={{textAlign:'right'}}>
                   <div style={{color:C.accent,fontSize:18,fontFamily:F,fontWeight:700}}>{fmtMoney(totalProfit)}</div>
