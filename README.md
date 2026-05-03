@@ -2,7 +2,7 @@
 
 Quantitative tick-level analysis web app for the Beta Proprietary Trading Algorithm.
 
-**Version:** v229 | **Last Updated:** May 3, 2026
+**Version:** v233 | **Last Updated:** May 3, 2026
 
 ## Features
 - Stage 1: Cycles, trends, daily optimal TP%, volume profile (with chart-overlay POC/VAH/VAL labels)
@@ -16,7 +16,7 @@ Quantitative tick-level analysis web app for the Beta Proprietary Trading Algori
 - Stage 9: Dollar Volume Time (calibration, dollar-bar builder, comparison, features, dataset, correlation)
 - Stage A: Stock classification (vol × trend regime grid)
 - Stage B: Live oscillation (minute-bar optimal TP%)
-- 64 routes, ~29 Supabase tables, single-file React 18 app (~21,500 lines), JetBrains Mono dark terminal aesthetic
+- 64 routes, ~29 Supabase tables, single-file React 18 app (~21,800 lines), JetBrains Mono dark terminal aesthetic
 
 ## Build
 ```bash
