@@ -4696,6 +4696,16 @@ function StockProfileCheatSheetPage(p){
         var maxBuyPrice=(isFinite(top)&&isFinite(tpPct)&&tpPct>0)?(top/(1+tpPct/100)):top;
         var netSpread=(isFinite(bottom)&&isFinite(maxBuyPrice)&&maxBuyPrice>=bottom)?(maxBuyPrice-bottom):NaN;
         var netRangesCount=(isFinite(netSpread)&&isFinite(increment)&&increment>0)?Math.max(1,Math.round(netSpread/increment)+1):NaN;
+        // Highest range that actually closes. The theoretical maxBuyPrice above
+        // is top/(1+tp%) which is rarely a clean penny boundary. The actual
+        // topmost rung sits at bottom + (netRangesCount−1) × increment, which
+        // is the last quantized rung that fits in the closeable spread. Its
+        // exit = highestActualBuy × (1 + tp%/100), which by construction lands
+        // at-or-just-below the user-entered TOP (rounding to the nearest cent
+        // can leave it within ±$0.01 of TOP). Used to show the user exactly
+        // where the topmost closing range buys and exits.
+        var highestActualBuy=(isFinite(bottom)&&isFinite(netRangesCount)&&isFinite(increment))?(bottom+(netRangesCount-1)*increment):NaN;
+        var highestExitPrice=(isFinite(highestActualBuy)&&isFinite(tpPct))?(highestActualBuy*(1+tpPct/100)):NaN;
         // Per-range profit (level-invariant: at price P you buy capital/P
         // shares; exit value = (capital/P) × P × (1+tp%) = capital × (1+tp%);
         // profit = capital × tp%/100). All money math uses NET count.
@@ -4739,12 +4749,12 @@ function StockProfileCheatSheetPage(p){
                 {b:[
                   'SPREAD = top \u2212 bottom. The raw price gap; independent of increment and TP%.',
                   'GROSS RANGES = round(spread / increment) + 1. The raw input span in rung units.',
-                  'HIGHEST BUY PRICE = top / (1 + TP%). Above this price, a buy\u2019s exit would land above top and miss on a swing-to-top.',
-                  'NET RANGES = round((highest_buy \u2212 bottom) / increment) + 1. Closeable rungs \u2014 every one fires its TP at-or-below top.',
-                  'IDLE = gross \u2212 net. Rungs in the input span that don\u2019t close. Large idle = top is too far above the highest fillable rung for the chosen TP%.',
-                  'TOTAL CAPITAL = net ranges \u00D7 capital per range',
+                  'HIGHEST RANGE CLOSED \u2014 the topmost rung whose TP fires. Buys at bottom + (ranges_closed \u2212 1) \u00D7 increment; exits at buy \u00D7 (1 + TP%/100). The exit lands at-or-just-below TOP by construction \u2014 that\u2019s why TOP is the highest exit price the user expects.',
+                  'RANGES CLOSED = round((max_buy \u2212 bottom) / increment) + 1, where max_buy = top / (1 + TP%). Total count of rungs whose TP fires at-or-below top.',
+                  'IDLE = gross \u2212 closed. Rungs in the input span that don\u2019t close. Large idle = top is too far above the highest fillable rung for the chosen TP%.',
+                  'TOTAL CAPITAL = ranges closed \u00D7 capital per range',
                   'PROFIT PER RANGE = capital \u00D7 TP% / 100. Level-invariant: shares = capital/P, exit = P \u00D7 (1+TP%), profit = capital \u00D7 TP%/100. P cancels.',
-                  'SWING-UP PROFIT = net ranges \u00D7 profit per range',
+                  'SWING-UP PROFIT = ranges closed \u00D7 profit per range',
                   'RETURN % = profit / total capital. Equals TP% by construction when capital is uniform across rungs.'
                 ]},
                 {h:'How to use it'},
@@ -4810,14 +4820,26 @@ function StockProfileCheatSheetPage(p){
                 <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>GROSS RANGES</span>
                 <span style={{color:isFinite(rangesCount)?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(rangesCount)}{isFinite(spread)&&isFinite(increment)&&increment>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= ${spread.toFixed(2)} ÷ ${increment.toFixed(2)} + 1</span>}</span>
               </div>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
-                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>HIGHEST BUY PRICE</span>
-                <span style={{color:isFinite(maxBuyPrice)&&isFinite(tpPct)&&tpPct>0?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{isFinite(maxBuyPrice)?'$'+maxBuyPrice.toFixed(2):'-'}{isFinite(tpPct)&&tpPct>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= top / (1 + {tpPct.toFixed(2)}%)</span>}</span>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border,gap:8}}>
+                <div>
+                  <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>HIGHEST RANGE CLOSED</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>topmost rung whose TP fires</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  {isFinite(highestActualBuy)&&isFinite(highestExitPrice)?<div>
+                    <div style={{fontSize:11,fontFamily:F,fontWeight:700}}>
+                      <span style={{color:C.warn}}>buy ${highestActualBuy.toFixed(2)}</span>
+                      <span style={{color:C.txtDim,margin:'0 5px'}}>→</span>
+                      <span style={{color:C.accent}}>exit ${highestExitPrice.toFixed(2)}</span>
+                    </div>
+                    {isFinite(tpPct)&&tpPct>0&&<div style={{color:C.txtDim,fontSize:7,fontWeight:400,marginTop:1}}>buy = top / (1 + {tpPct.toFixed(2)}%)</div>}
+                  </div>:<span style={{color:C.txtDim,fontSize:11,fontFamily:F}}>-</span>}
+                </div>
               </div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
                 <div>
-                  <div style={{color:C.purple,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>NET RANGES</div>
-                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>rungs whose TP fires on swing-to-top</div>
+                  <div style={{color:C.purple,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>RANGES CLOSED</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>total rungs whose TP fires on swing-to-top</div>
                 </div>
                 <div style={{textAlign:'right'}}>
                   <div style={{color:isFinite(netRangesCount)?C.txtBright:C.txtDim,fontSize:14,fontFamily:F,fontWeight:700}}>{fmtInt(netRangesCount)}</div>
@@ -4835,7 +4857,7 @@ function StockProfileCheatSheetPage(p){
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0 4px'}}>
                 <div>
                   <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>SWING-UP PROFIT</div>
-                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>net ranges × profit per range</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>ranges closed × profit per range</div>
                 </div>
                 <div style={{textAlign:'right'}}>
                   <div style={{color:C.accent,fontSize:18,fontFamily:F,fontWeight:700}}>{fmtMoney(totalProfit)}</div>
