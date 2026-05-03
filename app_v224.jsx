@@ -1396,7 +1396,7 @@ function StockProfileCheatSheetPage(p){
   var s12=useState(true),rpcExpanded=s12[0],setRpcExpanded=s12[1];
   var s13=useState(true),swingExpanded=s13[0],setSwingExpanded=s13[1];
   var s14=useState(true),chartExpanded=s14[0],setChartExpanded=s14[1];
-  var s15=useState('90d'),chartPeriod=s15[0],setChartPeriod=s15[1]; // 'today' / 'prev' / '2w' / '30d' / '90d' / '1y'
+  var s15=useState('90d'),chartPeriod=s15[0],setChartPeriod=s15[1]; // 'today' / 'prev' / '2w' / '30d' / '90d' / '1y' / '3y' / '5y'
   // Chart overlay toggles (v216): Close line, SMA20, SMA50 are individually
   // dismissible. Default: candles always visible, MAs visible, close line OFF
   // (since candles already show closes - line is redundant for most users).
@@ -1437,12 +1437,15 @@ function StockProfileCheatSheetPage(p){
     try{
       var today=new Date();
       var todayStr=getETDateStr(today);
-      // From-date: 371 calendar days ago, also computed in ET to avoid edge skew.
-      var fromStr=getETDateStr(new Date(today.getTime()-371*86400000));
+      // From-date: 5 years + 30 calendar days ago (1855 days), to support 3Y/5Y
+      // chart timeframes. Computed in ET to avoid edge skew. limit=2000 is safely
+      // above the ~1260 trading days in 5y. Existing 52w-based logic is preserved
+      // by slicing dailyBars down to the relevant window where needed (see w52).
+      var fromStr=getETDateStr(new Date(today.getTime()-1855*86400000));
       var tkEnc=encodeURIComponent(tk);
 
-      // FETCH 1: 52w of daily bars (covers all multi-day windows)
-      var dailyUrl='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/day/'+fromStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=400&apiKey='+p.apiKey;
+      // FETCH 1: 5y of daily bars (covers all multi-day windows incl. 3Y/5Y)
+      var dailyUrl='https://api.polygon.io/v2/aggs/ticker/'+tkEnc+'/range/1/day/'+fromStr+'/'+todayStr+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
       var dr=await fetch(dailyUrl,{signal:aborter.signal});
       checkAbort();
       if(!dr.ok){
@@ -1452,7 +1455,7 @@ function StockProfileCheatSheetPage(p){
       }
       var dailyBody=await dr.json();
       var dailyBars=dailyBody.results||[];
-      if(!dailyBars.length){setErr('No data for '+tk+' over the last 52 weeks. Check ticker symbol.');setLoading(false);setProgMsg('');return;}
+      if(!dailyBars.length){setErr('No data for '+tk+' over the last 5 years. Check ticker symbol.');setLoading(false);setProgMsg('');return;}
 
       setProgMsg('Fetching today\'s minute bars...');
       // FETCH 2: today's minute bars (for accurate intraday today H/L)
@@ -2078,8 +2081,12 @@ function StockProfileCheatSheetPage(p){
         return bDate>=weekStartStr;
       });
 
-      // Compute all windows
-      var w52=scanBars(dailyBars);
+      // Compute all windows. NOTE: dailyBars now spans 5y, so w52 must be
+      // computed from a 365-day slice rather than the full array - otherwise
+      // the "52 Weeks" hi/lo would silently turn into "5 Year" hi/lo.
+      var w52=scanBars(slicePast(365));
+      var w3y=scanBars(slicePast(3*365));
+      var w5y=scanBars(dailyBars);
       var w3mo=scanBars(slicePast(90));
       var w1mo=scanBars(slicePast(30));
       var w2wk=scanBars(slicePast(14));
@@ -2208,8 +2215,14 @@ function StockProfileCheatSheetPage(p){
       var prof1mo=(bars30m.length>0&&w1mo)?buildProfile(filterBarsByDateRange(bars30m,from30Str,todayStr),'point',w1mo.lo,w1mo.hi):null;
       // 3 Months: full 1hour set
       var prof3mo=(bars1h.length>0&&w3mo)?buildProfile(filterBarsByDateRange(bars1h,from90Str,todayStr),'point',w3mo.lo,w3mo.hi):null;
-      // 52 Weeks: daily bars approximated (uniform across H-L per bar). Marked as approx.
-      var prof52w=(dailyBars.length>0&&w52)?buildProfile(dailyBars,'uniform',w52.lo,w52.hi):null;
+      // 52 Weeks / 3Y / 5Y: daily bars approximated (uniform across H-L per bar).
+      // Each must use its own date-sliced subset so the profile's volume reflects
+      // only the bars within that window. Marked as approx.
+      var bars365=slicePast(365);
+      var bars3y=slicePast(3*365);
+      var prof52w=(bars365.length>0&&w52)?buildProfile(bars365,'uniform',w52.lo,w52.hi):null;
+      var prof3y=(bars3y.length>0&&w3y)?buildProfile(bars3y,'uniform',w3y.lo,w3y.hi):null;
+      var prof5y=(dailyBars.length>0&&w5y)?buildProfile(dailyBars,'uniform',w5y.lo,w5y.hi):null;
 
       // ===== PRICE CHART card profiles =====
       // Pre-computed at fetch-time because buildProfile is closure-scoped to
@@ -2781,7 +2794,9 @@ function StockProfileCheatSheetPage(p){
           '2w':prof2wk,
           '30d':prof30dChart,
           '90d':prof3mo,
-          '1y':prof52w
+          '1y':prof52w,
+          '3y':prof3y,
+          '5y':prof5y
         },
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
@@ -3007,8 +3022,13 @@ function StockProfileCheatSheetPage(p){
         else {
           var fullSeries=data.chart_series;
           var periodLen;
+          // periodLen is in trading-day count, ~252/year. 1y is pinned at 252 (not
+          // 365) so it shows roughly one calendar year of trading days, not 17
+          // months. Going forward, we now have 5y of dailyBars available.
           if(chartPeriod==='30d')periodLen=30;
-          else if(chartPeriod==='1y')periodLen=365;
+          else if(chartPeriod==='1y')periodLen=252;
+          else if(chartPeriod==='3y')periodLen=756;
+          else if(chartPeriod==='5y')periodLen=1260;
           else periodLen=90; // default '90d'
           if(periodLen>=fullSeries.length)periodLen=fullSeries.length;
           series=fullSeries.slice(-periodLen);
@@ -3024,7 +3044,7 @@ function StockProfileCheatSheetPage(p){
             </div>
             {chartExpanded&&<div>
               <div style={{display:'flex',gap:4,marginBottom:10,flexWrap:'wrap'}}>
-                {[{k:'today',l:'Today'},{k:'prev',l:'Prev'},{k:'2w',l:'2W'},{k:'30d',l:'30D'},{k:'90d',l:'90D'},{k:'1y',l:'1Y'}].map(function(opt){
+                {[{k:'today',l:'Today'},{k:'prev',l:'Prev'},{k:'2w',l:'2W'},{k:'30d',l:'30D'},{k:'90d',l:'90D'},{k:'1y',l:'1Y'},{k:'3y',l:'3Y'},{k:'5y',l:'5Y'}].map(function(opt){
                   var sel=chartPeriod===opt.k;
                   return <div key={opt.k} onClick={function(){setChartPeriod(opt.k);}} style={{flex:'1 1 30%',minWidth:54,padding:'7px 0',textAlign:'center',background:sel?C.accentDim:C.bgInput,border:'1px solid '+(sel?C.accent:C.border),borderRadius:5,color:sel?C.accent:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>{opt.l}</div>;
                 })}
@@ -3131,8 +3151,15 @@ function StockProfileCheatSheetPage(p){
           try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric'}).format(new Date(t));}
           catch(e){var monthAbbrFallback=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d=new Date(t);return monthAbbrFallback[d.getUTCMonth()]+' '+d.getUTCDate();}
         };
+        var fmtETShortDateYr=function(t){
+          // For multi-year charts, show "MMM 'YY" so the same month label across
+          // years is unambiguous. e.g. May 1, 2024 -> "May '24".
+          try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',year:'2-digit'}).format(new Date(t)).replace(/(\w+) (\d+)/,"$1 '$2");}
+          catch(e){var monthAbbrFb=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d=new Date(t);return monthAbbrFb[d.getUTCMonth()]+" '"+String(d.getUTCFullYear()).slice(-2);}
+        };
         var fmtBarDate=function(t){
           if(chartPeriod==='today'||chartPeriod==='prev')return fmtETTime(t);
+          if(chartPeriod==='3y'||chartPeriod==='5y')return fmtETShortDateYr(t);
           return fmtETShortDate(t);
         };
         var xTickIndices=[0,Math.floor(series.length/3),Math.floor(2*series.length/3),series.length-1];
@@ -3144,7 +3171,7 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PRICE CHART</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Candlestick chart with toggleable Volume Profile, 20-day SMA, 50-day SMA, and close-price line overlays. Volume bars below. Six timeframes: Today / Prev / 2W (intraday) and 30D / 90D / 1Y (daily).'},
+                {p:'Candlestick chart with toggleable Volume Profile, 20-day SMA, 50-day SMA, and close-price line overlays. Volume bars below. Eight timeframes: Today / Prev / 2W (intraday) and 30D / 90D / 1Y / 3Y / 5Y (daily).'},
                 {b:[
                   'Candlesticks: green if close ≥ open (up bar), red if close < open. Body = open-to-close, wick = high-to-low.',
                   'Volume Profile (right-side histogram): horizontal bars showing volume traded at each price level over the visible window. POC bucket = bright white (most-traded price). Value Area buckets = purple (70% of volume). Outside-VA = dim.',
@@ -3195,7 +3222,7 @@ function StockProfileCheatSheetPage(p){
                 ensures touch-friendly sizing while preserving the row layout
                 on wider phones. */}
             <div style={{display:'flex',gap:4,marginBottom:10,flexWrap:'wrap'}}>
-              {[{k:'today',l:'Today'},{k:'prev',l:'Prev'},{k:'2w',l:'2W'},{k:'30d',l:'30D'},{k:'90d',l:'90D'},{k:'1y',l:'1Y'}].map(function(opt){
+              {[{k:'today',l:'Today'},{k:'prev',l:'Prev'},{k:'2w',l:'2W'},{k:'30d',l:'30D'},{k:'90d',l:'90D'},{k:'1y',l:'1Y'},{k:'3y',l:'3Y'},{k:'5y',l:'5Y'}].map(function(opt){
                 var sel=chartPeriod===opt.k;
                 return <div key={opt.k} onClick={function(){setChartPeriod(opt.k);}} style={{flex:'1 1 30%',minWidth:54,padding:'7px 0',textAlign:'center',background:sel?C.accentDim:C.bgInput,border:'1px solid '+(sel?C.accent:C.border),borderRadius:5,color:sel?C.accent:C.txt,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>{opt.l}</div>;
               })}
