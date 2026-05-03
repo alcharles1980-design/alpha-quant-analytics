@@ -4638,32 +4638,36 @@ function StockProfileCheatSheetPage(p){
         </div>;
       })()}
 
-      {/* RANGES & CYCLES ESTIMATOR card (v234) - placed after SWING POTENTIAL
-          TARGETS at the very bottom of the cheat sheet. Interactive grid-trading
-          calculator: a staggered buy ladder of N rungs spaced by an increment,
-          each with the same $ capital and same TP%. Computes the one-way
-          swing-up profit if price walks the full ladder.
+      {/* RANGES & CYCLES ESTIMATOR card (v234, math corrected v235) — placed
+          after SWING POTENTIAL TARGETS at the very bottom of the cheat sheet.
+          Interactive grid-trading calculator: a staggered buy ladder spaced
+          by an increment, with TOP interpreted as the highest EXIT price
+          (not the highest buy). The highest buy rung sits at top / (1 + TP%);
+          rungs above that price would have exits beyond top and don't close
+          on a one-way swing-to-top, so they're excluded from net count.
           
           Inputs:
-            BOTTOM PRICE   - lowest rung. Pre-populated to swing_targets.low_swing
-                             (= base_close × (1 + avg 3d C→L%))
-            TOP PRICE      - highest rung. Pre-populated to swing_targets.top_end
-                             (= low_swing × (1 + avg 3d L→H%))
+            BOTTOM PRICE   - lowest buy rung. Pre-populated to swing_targets
+                             .low_swing (= base_close x (1 + avg 3d C->L%))
+            TOP PRICE      - highest exit price (not highest buy). Pre-populated
+                             to swing_targets.top_end (= low_swing x (1 + avg
+                             3d L->H%))
             INCREMENT      - rung spacing in $ (default $0.01)
             CAPITAL/RANGE  - $ deployed at each rung
             PROFIT TAKER % - take-profit % on each filled rung
           
           Derived:
-            RANGES COUNT          = floor((top - bottom) / increment) + 1
-            TOTAL CAPITAL         = ranges × capital_per_range
-            PROFIT PER RANGE      = capital × tp_pct / 100  (level-invariant:
-                                    shares = capital/P, sell = shares × P × (1+tp%),
-                                    profit = capital × tp%, P cancels out)
-            TOTAL SWING-UP PROFIT = ranges × profit_per_range
-            RETURN %              = total_profit / total_capital  (= tp_pct when
-                                    all rungs participate equally)
+            GROSS RANGES          = round((top - bottom) / inc) + 1
+            HIGHEST BUY PRICE     = top / (1 + tp%/100)
+            NET RANGES            = round((highest_buy - bottom) / inc) + 1
+            IDLE                  = gross - net
+            PROFIT PER RANGE      = capital x tp% / 100  (level-invariant)
+            TOTAL CAPITAL         = net_ranges x capital
+            SWING-UP PROFIT       = net_ranges x profit_per_range
+            RETURN %              = profit / total_capital  (= tp% when
+                                    capital is uniform across rungs)
           
-          Default expanded. Inputs gated to numeric chars + decimal point. */}
+          Default expanded. */}
       {(function(){
         var parseNum=function(s){
           if(s==null||s==='')return NaN;
@@ -4675,15 +4679,32 @@ function StockProfileCheatSheetPage(p){
         var increment=parseNum(rcIncrement);
         var capital=parseNum(rcCapital);
         var tpPct=parseNum(rcTpPct);
+        // GROSS spread / count = the raw bottom→top span. Informational only;
+        // it's the user's input window, not the actual ladder size.
         var spread=(isFinite(bottom)&&isFinite(top)&&top>bottom)?(top-bottom):NaN;
-        // floor + 1: a $1.00→$1.04 ladder at $0.01 has 5 rungs ($1.00, $1.01,
-        // $1.02, $1.03, $1.04), not 4. Math.round to absorb float-precision
-        // noise (e.g. 0.04/0.01 sometimes yielding 3.9999...).
         var rangesCount=(isFinite(spread)&&isFinite(increment)&&increment>0)?Math.round(spread/increment)+1:NaN;
-        var totalCapital=(isFinite(rangesCount)&&isFinite(capital)&&capital>0)?rangesCount*capital:NaN;
+        // NET / actual ladder. TOP is the highest EXIT price, not the highest
+        // buy. For a buy at price P, exit = P × (1 + tp%/100). For the exit to
+        // land at-or-below TOP, the buy must satisfy P × (1 + tp%/100) ≤ top
+        //   → P ≤ top / (1 + tp%/100)
+        // So the highest buy rung = top / (1 + tp%/100). Rungs above that
+        // would have exits beyond top and wouldn't fire on a swing-to-top, so
+        // they're excluded from the closeable count.
+        // When tp% is missing or zero, max buy = top and net = gross.
+        var maxBuyPrice=(isFinite(top)&&isFinite(tpPct)&&tpPct>0)?(top/(1+tpPct/100)):top;
+        var netSpread=(isFinite(bottom)&&isFinite(maxBuyPrice)&&maxBuyPrice>=bottom)?(maxBuyPrice-bottom):NaN;
+        var netRangesCount=(isFinite(netSpread)&&isFinite(increment)&&increment>0)?Math.max(1,Math.round(netSpread/increment)+1):NaN;
+        // Per-range profit (level-invariant: at price P you buy capital/P
+        // shares; exit value = (capital/P) × P × (1+tp%) = capital × (1+tp%);
+        // profit = capital × tp%/100). All money math uses NET count.
         var profitPerRange=(isFinite(capital)&&isFinite(tpPct)&&capital>0)?capital*tpPct/100:NaN;
-        var totalProfit=(isFinite(rangesCount)&&isFinite(profitPerRange))?rangesCount*profitPerRange:NaN;
+        var totalCapital=(isFinite(netRangesCount)&&isFinite(capital)&&capital>0)?netRangesCount*capital:NaN;
+        var totalProfit=(isFinite(netRangesCount)&&isFinite(profitPerRange))?netRangesCount*profitPerRange:NaN;
         var returnPct=(isFinite(totalProfit)&&isFinite(totalCapital)&&totalCapital>0)?(totalProfit/totalCapital)*100:NaN;
+        // Idle rungs = rungs in the bottom→top span that DON'T fire (their
+        // exits would be beyond top). Surface so the user sees the cost of
+        // a too-wide ladder relative to the chosen TP%.
+        var idleRanges=(isFinite(rangesCount)&&isFinite(netRangesCount)&&rangesCount>=netRangesCount)?(rangesCount-netRangesCount):NaN;
         var fmtMoney=function(v){
           if(!isFinite(v))return '-';
           var abs=Math.abs(v);
@@ -4703,35 +4724,34 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>RANGES &amp; CYCLES ESTIMATOR</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Interactive grid-trading calculator. Models a staggered buy ladder of N rungs spaced evenly between a bottom and top price. Each rung deploys the same $ capital and exits at the same TP%. Computes the one-way swing-up profit if price walks the full ladder and every rung\'s TP fires.'},
+                {p:'Interactive grid-trading calculator. Models a staggered buy ladder of N rungs spaced evenly between a bottom price and a top price. TOP is interpreted as the highest exit price the user expects price to reach on a swing, so the highest buy rung sits below it by the TP%.'},
                 {h:'Inputs'},
                 {b:[
-                  'BOTTOM PRICE — lowest rung. Pre-populated to base_close × (1 + avg 3d C→L%) — the LOW SWING from the swing card above',
-                  'TOP PRICE — highest rung. Pre-populated to bottom × (1 + avg 3d L→H%) — the TOP END from the swing card above',
+                  'BOTTOM PRICE — lowest buy rung. Pre-populated to base_close \u00D7 (1 + avg 3d C\u2192L%) — the LOW SWING from the swing card above',
+                  'TOP PRICE — highest EXIT price (not the highest buy). Pre-populated to bottom \u00D7 (1 + avg 3d L\u2192H%) — the TOP END from the swing card above',
                   'INCREMENT — spacing between rungs in $ (default $0.01)',
                   'CAPITAL / RANGE — $ deployed at each rung',
                   'PROFIT TAKER % — take-profit on each filled rung'
                 ]},
                 {h:'Outputs'},
                 {b:[
-                  'RANGES COUNT — round((top − bottom) / increment) + 1',
-                  'TOTAL CAPITAL — ranges × capital per range (full ladder filled)',
-                  'PROFIT PER RANGE — capital × TP% / 100. Level-invariant: at price P you buy capital/P shares; sell at P × (1 + TP%); profit = capital × TP%. P cancels',
-                  'SWING-UP PROFIT — ranges × profit per range. Assumes all rungs fill on the down-leg and all TPs fire on the up-leg',
-                  'RETURN % — profit / total capital. Equals TP% when all rungs participate equally (the math is by design)'
-                ]},
-                {h:'Caveats'},
-                {b:[
-                  'For the highest rungs to actually fire, price must exceed top × (1 + TP%). On a strict swing-to-top, the top few TPs miss. The number this card shows is the theoretical full-ladder figure — use it as an upper bound.',
-                  'Assumes no fees, no slippage, no partial fills',
-                  'Single one-way leg. A complete cycle (down then up) is what realistically fills the buys; the swing-up math captures only the sell leg of that cycle'
+                  'GROSS RANGES — round((top \u2212 bottom) / increment) + 1. The raw input span; informational only.',
+                  'HIGHEST BUY PRICE — top / (1 + TP%). Above this price, a buy\u2019s exit would land above top and miss on a swing-to-top.',
+                  'NET RANGES — round((highest_buy \u2212 bottom) / increment) + 1. The actual closeable ladder size — every rung in this count fires its TP exactly at-or-below top.',
+                  'IDLE — gross \u2212 net. Rungs in the input span that don\u2019t close. Large idle = your top is too far above the highest fillable rung for the chosen TP%.',
+                  'TOTAL CAPITAL — net ranges \u00D7 capital per range',
+                  'PROFIT PER RANGE — capital \u00D7 TP% / 100. Level-invariant: shares = capital/P, exit = P \u00D7 (1+TP%), profit = capital \u00D7 TP%/100. P cancels.',
+                  'SWING-UP PROFIT — net ranges \u00D7 profit per range',
+                  'RETURN % — profit / total capital. Equals TP% by construction when capital is uniform across rungs.'
                 ]},
                 {h:'How to use it'},
                 {b:[
                   'Edit bottom / top to test wider or tighter ranges',
+                  'Watch the IDLE count — if non-zero, you\u2019re funding rungs that won\u2019t close. Either lower top or increase TP%.',
                   'Increase increment to thin the ladder (fewer rungs, less capital required)',
-                  'Lower TP% for faster cycles, higher TP% for fewer-but-bigger wins',
-                  'Compare TOTAL CAPITAL to your actual buying power — large ladders × small increments × big capital/range stack up fast'
+                  'Lower TP% for faster cycles, higher TP% for fewer-but-bigger wins (and a lower highest-buy boundary)',
+                  'Compare TOTAL CAPITAL to your actual buying power — large ladders \u00D7 small increments \u00D7 big capital/range stack up fast',
+                  'Math assumes every net rung fills on the down-leg and every TP fires on the up-leg; no fees, no slippage, no partial fills'
                 ]}
               ]}</Info>
             </div>
@@ -4759,9 +4779,9 @@ function StockProfileCheatSheetPage(p){
                 <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>rung spacing</div>
               </div>
               <div>
-                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>RANGES COUNT</div>
+                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>GROSS RANGES</div>
                 <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(rangesCount)?C.txtBright:C.txtDim,letterSpacing:0.5})}>{fmtInt(rangesCount)}</div>
-                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>derived</div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>full bottom\u2192top span</div>
               </div>
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>CAPITAL / RANGE $</div>
@@ -4774,10 +4794,26 @@ function StockProfileCheatSheetPage(p){
                 <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>take-profit</div>
               </div>
             </div>
-            {/* Output stack - three rows of label/value, building visual
-                emphasis up to the swing-up profit which is the headline. */}
+            {/* Output stack — NET RANGES first since it's what drives every
+                downstream calc. Highest buy + idle count surfaced beside it
+                so the user sees the cost of choosing a TP% relative to the
+                ladder span. */}
             <div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0',borderBottom:'1px solid '+C.border}}>
+                <div>
+                  <div style={{color:C.purple,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>NET RANGES</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>rungs whose TP fires on swing-to-top</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{color:isFinite(netRangesCount)?C.txtBright:C.txtDim,fontSize:14,fontFamily:F,fontWeight:700}}>{fmtInt(netRangesCount)}</div>
+                  {isFinite(idleRanges)&&idleRanges>0&&<div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.5}}>{fmtInt(idleRanges)} idle (top-too-wide)</div>}
+                </div>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
+                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>HIGHEST BUY PRICE</span>
+                <span style={{color:isFinite(maxBuyPrice)&&isFinite(tpPct)&&tpPct>0?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{isFinite(maxBuyPrice)?'$'+maxBuyPrice.toFixed(2):'-'}{isFinite(tpPct)&&tpPct>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= top / (1 + {tpPct.toFixed(2)}%)</span>}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
                 <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>TOTAL CAPITAL</span>
                 <span style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700}}>{fmtMoney(totalCapital)}</span>
               </div>
@@ -4788,7 +4824,7 @@ function StockProfileCheatSheetPage(p){
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0 4px'}}>
                 <div>
                   <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>SWING-UP PROFIT</div>
-                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>full ladder, all TPs fire</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>net ranges × profit per range</div>
                 </div>
                 <div style={{textAlign:'right'}}>
                   <div style={{color:C.accent,fontSize:18,fontFamily:F,fontWeight:700}}>{fmtMoney(totalProfit)}</div>
@@ -4798,7 +4834,7 @@ function StockProfileCheatSheetPage(p){
             </div>
             {/* Methodology footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              Bottom / top auto-populate from the swing card (3-day C→L and L→H averages) on each fetch; edits persist until the next ticker switch. Profit assumes every rung fills and every TP fires — a theoretical upper bound, not a guaranteed result.
+              TOP is treated as the highest exit price. Highest buy = top / (1 + TP%); rungs above that have exits beyond top and don\u2019t close on a swing-to-top — they show as \u201Cidle\u201D. Bottom / top auto-populate from the swing card (3-day C\u2192L and L\u2192H averages) on each fetch; edits persist until the next ticker switch. No fees / slippage modeled.
             </div>
           </div>}
         </div>;
