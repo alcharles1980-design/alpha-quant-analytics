@@ -3161,9 +3161,13 @@ function StockProfileCheatSheetPage(p){
           return '$'+p.toFixed(stepDecimals);
         };
         var yTicks=[];
-        for(var p=Math.ceil(pMin/step)*step;p<=pMax+step*0.001;p+=step){
-          if(p<pMin-step*0.001)continue;
-          yTicks.push({y:yPriceAt(p),label:fmtPriceLbl(p)});
+        // Use tickP (not bare 'p') to avoid the same shadow pattern that caused
+        // the v97 Shannon entropy bug where 'var p' inside a callback collided
+        // with React props. Inside the chart IIFE there's no outer 'p', so the
+        // old code was technically safe, but the rename eliminates the footgun.
+        for(var tickP=Math.ceil(pMin/step)*step;tickP<=pMax+step*0.001;tickP+=step){
+          if(tickP<pMin-step*0.001)continue;
+          yTicks.push({y:yPriceAt(tickP),label:fmtPriceLbl(tickP)});
         }
         if(yTicks.length<2){
           yTicks=[];
@@ -3728,10 +3732,17 @@ function StockProfileCheatSheetPage(p){
         // NVIDIA's fiscal year ends in January - the actual calendar dates make it
         // immediately clear which quarter was reported when. Uses ET timezone for
         // consistency with the rest of the app.
+        // BUGFIX (v228): parse "YYYY-MM-DD" as noon-UTC, not midnight-UTC. Polygon
+        // earnings dates come as date-only strings; new Date("2026-02-01") parses
+        // as midnight UTC, which is Jan 31 7PM EST, which formats in ET as
+        // "Jan '26" instead of "Feb '26". Anchoring at T12:00:00Z keeps us well
+        // inside the same calendar day in both UTC and ET.
         var fmtReportDate=function(dStr){
           if(!dStr)return '';
-          try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',year:'2-digit'}).format(new Date(dStr)).replace(/(\w+) (\d+)/,"$1 '$2");}
-          catch(e){var monthAbbrFb2=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d2=new Date(dStr);if(isNaN(d2))return '';return monthAbbrFb2[d2.getUTCMonth()]+" '"+String(d2.getUTCFullYear()).slice(-2);}
+          try{
+            var s=(typeof dStr==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(dStr))?dStr+'T12:00:00Z':dStr;
+            return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',year:'2-digit'}).format(new Date(s)).replace(/(\w+) (\d+)/,"$1 '$2");
+          }catch(e){var monthAbbrFb2=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d2=new Date(dStr);if(isNaN(d2))return '';return monthAbbrFb2[d2.getUTCMonth()]+" '"+String(d2.getUTCFullYear()).slice(-2);}
         };
         return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
           {/* Header with collapse chip */}
