@@ -3688,6 +3688,16 @@ function StockProfileCheatSheetPage(p){
         if(lastReported&&lastReported.eps_estimate!=null&&lastReported.eps_estimate!==0){
           beatPct=((lastReported.eps_actual-lastReported.eps_estimate)/Math.abs(lastReported.eps_estimate))*100;
         }
+        // Compact calendar-date formatter for the report date - "Feb '26" / "May '26".
+        // The fiscal labels (Q4 FY26 / Q1 FY27) are correct but unintuitive because
+        // NVIDIA's fiscal year ends in January - the actual calendar dates make it
+        // immediately clear which quarter was reported when. Uses ET timezone for
+        // consistency with the rest of the app.
+        var fmtReportDate=function(dStr){
+          if(!dStr)return '';
+          try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',year:'2-digit'}).format(new Date(dStr)).replace(/(\w+) (\d+)/,"$1 '$2");}
+          catch(e){var monthAbbrFb2=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d2=new Date(dStr);if(isNaN(d2))return '';return monthAbbrFb2[d2.getUTCMonth()]+" '"+String(d2.getUTCFullYear()).slice(-2);}
+        };
         return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
           {/* Header with collapse chip */}
           <div onClick={function(){setEpsExpanded(!epsExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:epsExpanded?8:0}}>
@@ -3725,6 +3735,7 @@ function StockProfileCheatSheetPage(p){
               {qs.map(function(q,i){
                 return <div key={i} style={{flex:1,textAlign:'center'}}>
                   <div style={{color:q.is_future?C.txtDim:C.txt,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{q.label}</div>
+                  {q.date&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,letterSpacing:0.3,fontStyle:q.is_future?'italic':'normal'}}>{fmtReportDate(q.date)}</div>}
                   {q.eps_actual!=null?<div style={{color:C.accent,fontSize:9,fontFamily:F,fontWeight:700,marginTop:2}}>${q.eps_actual.toFixed(2)}</div>:q.eps_estimate!=null?<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2,fontStyle:'italic'}}>est ${q.eps_estimate.toFixed(2)}</div>:<div style={{height:14}}/>}
                 </div>;
               })}
