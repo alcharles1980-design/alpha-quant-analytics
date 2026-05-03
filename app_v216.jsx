@@ -1397,6 +1397,12 @@ function StockProfileCheatSheetPage(p){
   var s13=useState(true),swingExpanded=s13[0],setSwingExpanded=s13[1];
   var s14=useState(true),chartExpanded=s14[0],setChartExpanded=s14[1];
   var s15=useState(90),chartPeriod=s15[0],setChartPeriod=s15[1]; // 30 / 90 / 365 days
+  // Chart overlay toggles (v216): Close line, SMA20, SMA50 are individually
+  // dismissible. Default: candles always visible, MAs visible, close line OFF
+  // (since candles already show closes - line is redundant for most users).
+  var s16=useState(false),showCloseLine=s16[0],setShowCloseLine=s16[1];
+  var s17=useState(true),showMA20=s17[0],setShowMA20=s17[1];
+  var s18=useState(true),showMA50=s18[0],setShowMA50=s18[1];
   var abortRef=useRef(null);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
@@ -2724,8 +2730,9 @@ function StockProfileCheatSheetPage(p){
         // chart_series: minimal per-bar data for the price chart card.
         // Avoid pushing the full Polygon bar (saves memory; many fields unused in chart).
         // ma20/ma50 from computeMASeries (parallel arrays, null when insufficient history).
+        // Includes 'o' (open) since v216 added candlestick rendering.
         chart_series: dailyBars.map(function(b,i){
-          return {t:b.t,h:b.h,l:b.l,c:b.c,v:b.v,ma20:ma20Series[i],ma50:ma50Series[i]};
+          return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c,v:b.v,ma20:ma20Series[i],ma50:ma50Series[i]};
         }),
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
@@ -3023,24 +3030,26 @@ function StockProfileCheatSheetPage(p){
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PRICE CHART</span>
               <Info>{[
                 {h:'What this shows'},
-                {p:'Daily close-price chart with 20-day and 50-day SMA overlays, volume bars below, and toggleable timeframe (30 days / 90 days / 1 year).'},
+                {p:'Daily candlestick chart with toggleable 20-day SMA, 50-day SMA, and close-price line overlays. Volume bars below. Period: 30 days / 90 days / 1 year.'},
                 {b:[
-                  'Bright white line: daily close price',
-                  'Faint vertical bars: each day\'s high-low range',
-                  'Green line: 20-day SMA (short-term trend)',
-                  'Gold line: 50-day SMA (medium-term trend)',
+                  'Candlesticks: green if close ≥ open (up day), red if close < open (down day). Body = open-to-close. Wick = high-to-low.',
+                  'Blue line: 20-day SMA (short-term trend) - tap to hide/show',
+                  'Gold line: 50-day SMA (medium-term trend) - tap to hide/show',
+                  'White line: daily close (off by default since candles already show closes) - tap to enable',
                   'Volume sub-chart: green = up-day, red = down-day, height = volume',
                   'Header stats: visible-window low/high + period return %'
                 ]},
                 {h:'Why it matters'},
-                {p:'Visualizes the trend underlying all the cheat sheet\'s computed values. SMA crossovers, range expansion/contraction, volume surges - all become apparent at a glance and provide context for the projection numbers below.'},
+                {p:'Candlesticks reveal the open-close range AND the high-low range simultaneously - a single candle tells you whether buyers or sellers won the session and by how much. Toggleable overlays let you focus: clean candles only, or add reference levels as needed.'},
                 {h:'How to use it'},
                 {b:[
+                  'Long upper wicks = sellers rejected higher prices (resistance)',
+                  'Long lower wicks = buyers rejected lower prices (support)',
                   'Price above both SMAs = uptrend regime; below both = downtrend',
                   '20-day crossing 50-day from below = bullish momentum shift',
                   'Volume spike on up-day = institutional buying interest',
                   'Volume spike on down-day = distribution / selling pressure',
-                  'Use as a sanity check on the rolling stats - does the chart agree with the numbers?',
+                  'Toggle off SMAs for clean price-action read; toggle on for trend context',
                   'Switch to 1Y for regime view; 30D for current swing context'
                 ]}
               ]}</Info>
@@ -3053,7 +3062,7 @@ function StockProfileCheatSheetPage(p){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,fontFamily:F}}>
               <div>
                 <span style={{color:C.txtDim,fontSize:7,letterSpacing:1.5,fontWeight:700}}>RANGE</span>
-                <span style={{color:C.txtBright,fontSize:10,fontWeight:700,marginLeft:6}}>${minP.toFixed(2)} \u2014 ${maxP.toFixed(2)}</span>
+                <span style={{color:C.txtBright,fontSize:10,fontWeight:700,marginLeft:6}}>${minP.toFixed(2)} — ${maxP.toFixed(2)}</span>
               </div>
               <div>
                 <span style={{color:C.txtDim,fontSize:7,letterSpacing:1.5,fontWeight:700}}>RETURN</span>
@@ -3076,18 +3085,36 @@ function StockProfileCheatSheetPage(p){
                 return <line key={'g'+i} x1="0" y1={t.y} x2={plotW} y2={t.y} stroke={C.border} strokeWidth="0.5" strokeDasharray="2,3" opacity="0.5"/>;
               })}
 
-              {/* Daily range bars (h-l vertical lines, faint) */}
+              {/* CANDLESTICKS - always visible. Each candle = wick (h-l line) + body
+                  (rect from open to close). Color: green if close >= open (up day),
+                  red if close < open (down day). Body width auto-scales by bar density:
+                  ~7px on 30D, ~3px on 90D, ~1px on 1Y. Min 0.8px floor so doji days
+                  (open == close) still get a thin sliver. */}
               {series.map(function(b,i){
-                if(b.h==null||b.l==null||isNaN(b.h)||isNaN(b.l))return null;
-                return <line key={'r'+i} x1={xAt(i)} y1={yPriceAt(b.h)} x2={xAt(i)} y2={yPriceAt(b.l)} stroke={C.txt} strokeWidth="0.8" opacity="0.18"/>;
+                if(b.o==null||b.h==null||b.l==null||b.c==null)return null;
+                if(isNaN(b.o)||isNaN(b.h)||isNaN(b.l)||isNaN(b.c))return null;
+                var x=xAt(i);
+                var barW=Math.max(0.8,(plotW/series.length)*0.7);
+                var yH=yPriceAt(b.h);
+                var yL=yPriceAt(b.l);
+                var yO=yPriceAt(b.o);
+                var yC=yPriceAt(b.c);
+                var isUp=b.c>=b.o;
+                var col=isUp?C.accent:C.warn;
+                var bodyTop=isUp?yC:yO;
+                var bodyHeight=Math.max(0.8,Math.abs(yC-yO));
+                return <g key={'cd'+i}>
+                  <line x1={x} y1={yH} x2={x} y2={yL} stroke={col} strokeWidth="0.8" opacity="0.85"/>
+                  <rect x={x-barW/2} y={bodyTop} width={barW} height={bodyHeight} fill={col} opacity="0.85"/>
+                </g>;
               })}
 
-              {/* SMA50 line (gold, behind SMA20) */}
-              {ma50Path&&<path d={ma50Path} fill="none" stroke={C.gold} strokeWidth="1.4" opacity="0.8"/>}
-              {/* SMA20 line (green) */}
-              {ma20Path&&<path d={ma20Path} fill="none" stroke={C.accent} strokeWidth="1.4" opacity="0.85"/>}
-              {/* Close-price line (bright white, on top) */}
-              <path d={closePath} fill="none" stroke={C.txtBright} strokeWidth="1.6"/>
+              {/* SMA50 line (gold), conditional on toggle. Drawn FIRST so SMA20 sits on top */}
+              {showMA50&&ma50Path&&<path d={ma50Path} fill="none" stroke={C.gold} strokeWidth="1.4" opacity="0.9"/>}
+              {/* SMA20 line - now BLUE (was green - clashed with up-candle color) */}
+              {showMA20&&ma20Path&&<path d={ma20Path} fill="none" stroke={C.blue} strokeWidth="1.4" opacity="0.95"/>}
+              {/* Close-price line (bright white), default OFF - candles already show closes */}
+              {showCloseLine&&closePath&&<path d={closePath} fill="none" stroke={C.txtBright} strokeWidth="1.4" opacity="0.85"/>}
 
               {/* Y-axis labels on the right side */}
               {yTicks.map(function(t,i){
@@ -3121,11 +3148,31 @@ function StockProfileCheatSheetPage(p){
               </g>
             </svg>
 
-            {/* Legend */}
-            <div style={{display:'flex',gap:14,marginTop:8,fontSize:8,fontFamily:F,color:C.txt,flexWrap:'wrap'}}>
-              <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.txtBright,display:'inline-block'}}></span>Close</span>
-              <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.accent,display:'inline-block'}}></span>20-day SMA</span>
-              <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>50-day SMA</span>
+            {/* Interactive overlay toggles. Each pill toggles its respective overlay
+                on/off. Visual state: full color when ON, dimmed when OFF. Replaces
+                the previous static legend - same color cues + tappable functionality. */}
+            <div style={{display:'flex',gap:6,marginTop:10,fontSize:8,fontFamily:F,flexWrap:'wrap'}}>
+              {/* Close line toggle */}
+              <div onClick={function(){setShowCloseLine(!showCloseLine);}} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:14,border:'1px solid '+(showCloseLine?C.txtBright:C.border),background:showCloseLine?C.bgInput:'transparent',cursor:'pointer',opacity:showCloseLine?1:0.55}}>
+                <span style={{width:10,height:10,borderRadius:5,border:'1.5px solid '+C.txtBright,background:showCloseLine?C.txtBright:'transparent',display:'inline-block'}}></span>
+                <span style={{color:showCloseLine?C.txtBright:C.txtDim,fontWeight:700}}>Close line</span>
+              </div>
+              {/* SMA20 toggle */}
+              <div onClick={function(){setShowMA20(!showMA20);}} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:14,border:'1px solid '+(showMA20?C.blue:C.border),background:showMA20?C.bgInput:'transparent',cursor:'pointer',opacity:showMA20?1:0.55}}>
+                <span style={{width:10,height:10,borderRadius:5,border:'1.5px solid '+C.blue,background:showMA20?C.blue:'transparent',display:'inline-block'}}></span>
+                <span style={{color:showMA20?C.blue:C.txtDim,fontWeight:700}}>20-day SMA</span>
+              </div>
+              {/* SMA50 toggle */}
+              <div onClick={function(){setShowMA50(!showMA50);}} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:14,border:'1px solid '+(showMA50?C.gold:C.border),background:showMA50?C.bgInput:'transparent',cursor:'pointer',opacity:showMA50?1:0.55}}>
+                <span style={{width:10,height:10,borderRadius:5,border:'1.5px solid '+C.gold,background:showMA50?C.gold:'transparent',display:'inline-block'}}></span>
+                <span style={{color:showMA50?C.gold:C.txtDim,fontWeight:700}}>50-day SMA</span>
+              </div>
+              {/* Static candle legend - non-toggleable since candles are the primary view */}
+              <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',color:C.txtDim,fontWeight:700}}>
+                <span style={{width:6,height:10,background:C.accent,display:'inline-block',borderRadius:1}}></span>
+                <span style={{width:6,height:10,background:C.warn,display:'inline-block',borderRadius:1,marginLeft:-2}}></span>
+                <span>Candles</span>
+              </div>
             </div>
           </div>}
         </div>;
