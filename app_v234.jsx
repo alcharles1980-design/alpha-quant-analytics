@@ -1404,7 +1404,26 @@ function StockProfileCheatSheetPage(p){
   var s17=useState(true),showMA20=s17[0],setShowMA20=s17[1];
   var s18=useState(true),showMA50=s18[0],setShowMA50=s18[1];
   var s19=useState(true),showVolProfile=s19[0],setShowVolProfile=s19[1];
+  // RANGES & CYCLES ESTIMATOR state (v234). Pre-populated from swing_targets
+  // on each ticker fetch via useEffect below; user can override any field.
+  var s20=useState(true),rcExpanded=s20[0],setRcExpanded=s20[1];
+  var s21=useState(''),rcBottom=s21[0],setRcBottom=s21[1];
+  var s22=useState(''),rcTop=s22[0],setRcTop=s22[1];
+  var s23=useState('0.01'),rcIncrement=s23[0],setRcIncrement=s23[1];
+  var s24=useState(''),rcCapital=s24[0],setRcCapital=s24[1];
+  var s25=useState(''),rcTpPct=s25[0],setRcTpPct=s25[1];
   var abortRef=useRef(null);
+
+  // Auto-prepopulate Ranges & Cycles bottom/top from swing_targets whenever
+  // data refreshes (new ticker fetch). Reuses the same low_swing/top_end
+  // formulas the Swing Targets card displays. User edits afterward are
+  // preserved until the next fetchProfile call clobbers them.
+  useEffect(function(){
+    if(data&&data.swing_targets){
+      if(data.swing_targets.low_swing!=null)setRcBottom(data.swing_targets.low_swing.toFixed(2));
+      if(data.swing_targets.top_end!=null)setRcTop(data.swing_targets.top_end.toFixed(2));
+    }
+  },[data]);
 
   // Get YYYY-MM-DD in America/New_York timezone (handles DST automatically).
   // Uses en-CA locale which formats as ISO-style YYYY-MM-DD.
@@ -4614,6 +4633,172 @@ function StockProfileCheatSheetPage(p){
             {/* Methodology footer */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
               3-day avg C→L: <span style={{color:C.warn,fontStyle:'normal',fontWeight:700}}>{fmtSignedPct(st.avg_cl_pct)}</span> (low swing from base)&nbsp;·&nbsp;3-day avg L→H: <span style={{color:C.accent,fontStyle:'normal',fontWeight:700}}>{fmtSignedPct(st.avg_lh_pct)}</span> (top end from projected low). Models price dipping to the low, then rallying to the top.
+            </div>
+          </div>}
+        </div>;
+      })()}
+
+      {/* RANGES & CYCLES ESTIMATOR card (v234) - placed after SWING POTENTIAL
+          TARGETS at the very bottom of the cheat sheet. Interactive grid-trading
+          calculator: a staggered buy ladder of N rungs spaced by an increment,
+          each with the same $ capital and same TP%. Computes the one-way
+          swing-up profit if price walks the full ladder.
+          
+          Inputs:
+            BOTTOM PRICE   - lowest rung. Pre-populated to swing_targets.low_swing
+                             (= base_close × (1 + avg 3d C→L%))
+            TOP PRICE      - highest rung. Pre-populated to swing_targets.top_end
+                             (= low_swing × (1 + avg 3d L→H%))
+            INCREMENT      - rung spacing in $ (default $0.01)
+            CAPITAL/RANGE  - $ deployed at each rung
+            PROFIT TAKER % - take-profit % on each filled rung
+          
+          Derived:
+            RANGES COUNT          = floor((top - bottom) / increment) + 1
+            TOTAL CAPITAL         = ranges × capital_per_range
+            PROFIT PER RANGE      = capital × tp_pct / 100  (level-invariant:
+                                    shares = capital/P, sell = shares × P × (1+tp%),
+                                    profit = capital × tp%, P cancels out)
+            TOTAL SWING-UP PROFIT = ranges × profit_per_range
+            RETURN %              = total_profit / total_capital  (= tp_pct when
+                                    all rungs participate equally)
+          
+          Default expanded. Inputs gated to numeric chars + decimal point. */}
+      {(function(){
+        var parseNum=function(s){
+          if(s==null||s==='')return NaN;
+          var n=parseFloat(String(s).replace(/[^0-9.\-]/g,''));
+          return isNaN(n)?NaN:n;
+        };
+        var bottom=parseNum(rcBottom);
+        var top=parseNum(rcTop);
+        var increment=parseNum(rcIncrement);
+        var capital=parseNum(rcCapital);
+        var tpPct=parseNum(rcTpPct);
+        var spread=(isFinite(bottom)&&isFinite(top)&&top>bottom)?(top-bottom):NaN;
+        // floor + 1: a $1.00→$1.04 ladder at $0.01 has 5 rungs ($1.00, $1.01,
+        // $1.02, $1.03, $1.04), not 4. Math.round to absorb float-precision
+        // noise (e.g. 0.04/0.01 sometimes yielding 3.9999...).
+        var rangesCount=(isFinite(spread)&&isFinite(increment)&&increment>0)?Math.round(spread/increment)+1:NaN;
+        var totalCapital=(isFinite(rangesCount)&&isFinite(capital)&&capital>0)?rangesCount*capital:NaN;
+        var profitPerRange=(isFinite(capital)&&isFinite(tpPct)&&capital>0)?capital*tpPct/100:NaN;
+        var totalProfit=(isFinite(rangesCount)&&isFinite(profitPerRange))?rangesCount*profitPerRange:NaN;
+        var returnPct=(isFinite(totalProfit)&&isFinite(totalCapital)&&totalCapital>0)?(totalProfit/totalCapital)*100:NaN;
+        var fmtMoney=function(v){
+          if(!isFinite(v))return '-';
+          var abs=Math.abs(v);
+          var sign=v<0?'-':'';
+          if(abs>=1e9)return sign+'$'+(abs/1e9).toFixed(2)+'B';
+          if(abs>=1e6)return sign+'$'+(abs/1e6).toFixed(2)+'M';
+          if(abs>=1e3)return sign+'$'+abs.toLocaleString(undefined,{maximumFractionDigits:0});
+          return sign+'$'+abs.toFixed(2);
+        };
+        var fmtInt=function(v){return isFinite(v)?Math.round(v).toLocaleString():'-';};
+        var hasSwingPrePop=data&&data.swing_targets;
+        var inpStyle={padding:'8px 10px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:5,color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,width:'100%',boxSizing:'border-box',outline:'none'};
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border,marginTop:14}}>
+          {/* Header */}
+          <div onClick={function(){setRcExpanded(!rcExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:rcExpanded?12:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>RANGES &amp; CYCLES ESTIMATOR</span>
+              <Info>{[
+                {h:'What this shows'},
+                {p:'Interactive grid-trading calculator. Models a staggered buy ladder of N rungs spaced evenly between a bottom and top price. Each rung deploys the same $ capital and exits at the same TP%. Computes the one-way swing-up profit if price walks the full ladder and every rung\'s TP fires.'},
+                {h:'Inputs'},
+                {b:[
+                  'BOTTOM PRICE — lowest rung. Pre-populated to base_close × (1 + avg 3d C→L%) — the LOW SWING from the swing card above',
+                  'TOP PRICE — highest rung. Pre-populated to bottom × (1 + avg 3d L→H%) — the TOP END from the swing card above',
+                  'INCREMENT — spacing between rungs in $ (default $0.01)',
+                  'CAPITAL / RANGE — $ deployed at each rung',
+                  'PROFIT TAKER % — take-profit on each filled rung'
+                ]},
+                {h:'Outputs'},
+                {b:[
+                  'RANGES COUNT — round((top − bottom) / increment) + 1',
+                  'TOTAL CAPITAL — ranges × capital per range (full ladder filled)',
+                  'PROFIT PER RANGE — capital × TP% / 100. Level-invariant: at price P you buy capital/P shares; sell at P × (1 + TP%); profit = capital × TP%. P cancels',
+                  'SWING-UP PROFIT — ranges × profit per range. Assumes all rungs fill on the down-leg and all TPs fire on the up-leg',
+                  'RETURN % — profit / total capital. Equals TP% when all rungs participate equally (the math is by design)'
+                ]},
+                {h:'Caveats'},
+                {b:[
+                  'For the highest rungs to actually fire, price must exceed top × (1 + TP%). On a strict swing-to-top, the top few TPs miss. The number this card shows is the theoretical full-ladder figure — use it as an upper bound.',
+                  'Assumes no fees, no slippage, no partial fills',
+                  'Single one-way leg. A complete cycle (down then up) is what realistically fills the buys; the swing-up math captures only the sell leg of that cycle'
+                ]},
+                {h:'How to use it'},
+                {b:[
+                  'Edit bottom / top to test wider or tighter ranges',
+                  'Increase increment to thin the ladder (fewer rungs, less capital required)',
+                  'Lower TP% for faster cycles, higher TP% for fewer-but-bigger wins',
+                  'Compare TOTAL CAPITAL to your actual buying power — large ladders × small increments × big capital/range stack up fast'
+                ]}
+              ]}</Info>
+            </div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rcExpanded?'\u25BE':'\u25B8'}</div>
+          </div>
+          {rcExpanded&&<div>
+            {/* Input grid: 2 columns × 3 rows on mobile.
+                Row 1: bottom price | top price (color-coded warn / accent)
+                Row 2: increment    | ranges count (read-only derived)
+                Row 3: capital      | TP% (gold-accented) */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+              <div>
+                <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>BOTTOM PRICE $</div>
+                <input type="text" inputMode="decimal" value={rcBottom} onChange={function(e){setRcBottom(e.target.value);}} placeholder="0.00" style={Object.assign({},inpStyle,{borderColor:C.warn+'66'})}/>
+                {hasSwingPrePop&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto: ${data.swing_targets.low_swing.toFixed(2)}</div>}
+              </div>
+              <div>
+                <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>TOP PRICE $</div>
+                <input type="text" inputMode="decimal" value={rcTop} onChange={function(e){setRcTop(e.target.value);}} placeholder="0.00" style={Object.assign({},inpStyle,{borderColor:C.accent+'66'})}/>
+                {hasSwingPrePop&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>auto: ${data.swing_targets.top_end.toFixed(2)}</div>}
+              </div>
+              <div>
+                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>INCREMENT $</div>
+                <input type="text" inputMode="decimal" value={rcIncrement} onChange={function(e){setRcIncrement(e.target.value);}} placeholder="0.01" style={inpStyle}/>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>rung spacing</div>
+              </div>
+              <div>
+                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>RANGES COUNT</div>
+                <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(rangesCount)?C.txtBright:C.txtDim,letterSpacing:0.5})}>{fmtInt(rangesCount)}</div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>derived</div>
+              </div>
+              <div>
+                <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>CAPITAL / RANGE $</div>
+                <input type="text" inputMode="decimal" value={rcCapital} onChange={function(e){setRcCapital(e.target.value);}} placeholder="0.00" style={inpStyle}/>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>$ per rung</div>
+              </div>
+              <div>
+                <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>PROFIT TAKER %</div>
+                <input type="text" inputMode="decimal" value={rcTpPct} onChange={function(e){setRcTpPct(e.target.value);}} placeholder="0.00" style={Object.assign({},inpStyle,{borderColor:C.gold+'66'})}/>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>take-profit</div>
+              </div>
+            </div>
+            {/* Output stack - three rows of label/value, building visual
+                emphasis up to the swing-up profit which is the headline. */}
+            <div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0',borderBottom:'1px solid '+C.border}}>
+                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>TOTAL CAPITAL</span>
+                <span style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700}}>{fmtMoney(totalCapital)}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
+                <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>PROFIT PER RANGE</span>
+                <span style={{color:C.gold,fontSize:13,fontFamily:F,fontWeight:700}}>{fmtMoney(profitPerRange)}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0 4px'}}>
+                <div>
+                  <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>SWING-UP PROFIT</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>full ladder, all TPs fire</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{color:C.accent,fontSize:18,fontFamily:F,fontWeight:700}}>{fmtMoney(totalProfit)}</div>
+                  {isFinite(returnPct)&&<div style={{color:C.accent,fontSize:9,fontFamily:F,fontWeight:700,marginTop:1}}>{returnPct.toFixed(2)}% return</div>}
+                </div>
+              </div>
+            </div>
+            {/* Methodology footnote */}
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
+              Bottom / top auto-populate from the swing card (3-day C→L and L→H averages) on each fetch; edits persist until the next ticker switch. Profit assumes every rung fills and every TP fires — a theoretical upper bound, not a guaranteed result.
             </div>
           </div>}
         </div>;
