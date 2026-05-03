@@ -2211,6 +2211,20 @@ function StockProfileCheatSheetPage(p){
       // 52 Weeks: daily bars approximated (uniform across H-L per bar). Marked as approx.
       var prof52w=(dailyBars.length>0&&w52)?buildProfile(dailyBars,'uniform',w52.lo,w52.hi):null;
 
+      // ===== PRICE CHART card profiles =====
+      // Pre-computed at fetch-time because buildProfile is closure-scoped to
+      // fetchProfile and cannot be called from the React render block.
+      // Reuse the existing profile objects where the timeframe matches; build
+      // fresh for 30D since none of the existing windows is exactly trading-30d.
+      // Each profile uses the bars' actual h/l range (forceLo/forceHi=null) -
+      // the chart render maps profile bucket prices via yPriceAt, which is
+      // independent of the profile's internal range.
+      var prof30dChart=null;
+      if(dailyBars.length>=30){
+        var d30=dailyBars.slice(-30);
+        prof30dChart=buildProfile(d30,'uniform',null,null);
+      }
+
       // Add derived metrics to each window. ATR% is normalized by lastClose
       // (the same denominator used by hero ATR(14) and Rolling Stats card) so
       // every ATR% on the page reads as 'how much of today's price is one
@@ -2754,6 +2768,21 @@ function StockProfileCheatSheetPage(p){
             return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c,v:b.v};
           });
         })(),
+        // Volume profile per chart timeframe. Pre-computed because buildProfile
+        // is closure-scoped to fetchProfile (this function) and not accessible
+        // from the React render block. Each entry is the full profile object
+        // with buckets, poc, val, vah, range_lo, range_hi, max_bucket_vol, etc.
+        // Reuse existing window profiles where they match (today, prev, 2w, 90d, 1y);
+        // 30d uses a freshly-built profile since no existing window matches
+        // 30 trading days exactly.
+        chart_profiles:{
+          today:profToday,
+          prev:profPrev,
+          '2w':prof2wk,
+          '30d':prof30dChart,
+          '90d':prof3mo,
+          '1y':prof52w
+        },
         windows:{
           today:(function(w){if(w&&profToday)w.profile=profToday;return enrichWin(w);})(wToday),
           prev:(function(w){if(w&&profPrev)w.profile=profPrev;return enrichWin(w);})(wPrev),
@@ -3040,16 +3069,17 @@ function StockProfileCheatSheetPage(p){
         var yAxisW=44; // reserved on right for y-axis labels
 
         // ====== VOLUME PROFILE for visible window ======
-        // Reuses the same buildProfile helper that powers the rolling-vol-profile card.
-        // 'point' mode for intraday (treats each bar as a single price+volume tick);
-        // 'uniform' mode for daily (distributes each bar's volume across its h-l range).
-        // forceLo/forceHi = chart's padded price range (pMin/pMax) so the histogram
-        // aligns vertically to the same y-axis as the price chart.
-        // Skipped when toggle is OFF or when series is too small for a meaningful profile.
+        // Lookup the pre-computed profile for the selected timeframe. We can't
+        // call buildProfile() from this render block because it's closure-scoped
+        // to fetchProfile (an async function); the chart_profiles map was built
+        // there and passed through data so we can read it here.
+        // Each profile object has: buckets[], poc, val, vah, range_lo, range_hi,
+        // max_bucket_vol, n_buckets, va_lo_idx, va_hi_idx, poc_idx, etc.
+        // Profile may be null when bars were insufficient (brand-new ticker,
+        // weekend with no minute bars, etc.) - hasVP guards against that.
         var vpProfile=null;
-        if(showVolProfile&&series.length>=5){
-          var profMode=isIntraday?'point':'uniform';
-          try{vpProfile=buildProfile(series,profMode,pMin,pMax);}catch(e){vpProfile=null;}
+        if(showVolProfile&&data.chart_profiles&&series.length>=5){
+          vpProfile=data.chart_profiles[chartPeriod]||null;
         }
         var hasVP=vpProfile!=null;
         var vpW=hasVP?54:0; // histogram column width when VP is on
@@ -3230,8 +3260,13 @@ function StockProfileCheatSheetPage(p){
               {hasVP&&<g transform={'translate('+plotW+',0)'}>
                 {vpProfile.buckets.map(function(volume,bi){
                   if(volume<=0||vpProfile.max_bucket_vol<=0)return null;
-                  var bSize=pSpan/vpProfile.n_buckets;
-                  var bucketLow=pMin+bi*bSize;
+                  // Bucket sizing uses the profile's ACTUAL price range (range_lo/range_hi)
+                  // since v219 - profiles are pre-computed with bars' actual h/l, not the
+                  // chart's padded range. yPriceAt then correctly maps each bucket's price
+                  // to chart-Y coords, so visually the histogram occupies just the data
+                  // portion of the y-axis (no empty buckets at the padded edges).
+                  var bSize=(vpProfile.range_hi-vpProfile.range_lo)/vpProfile.n_buckets;
+                  var bucketLow=vpProfile.range_lo+bi*bSize;
                   var bucketHigh=bucketLow+bSize;
                   var yTop=yPriceAt(bucketHigh);
                   var yBot=yPriceAt(bucketLow);
