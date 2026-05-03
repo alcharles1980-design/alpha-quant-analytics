@@ -4971,10 +4971,11 @@ function StockProfileCheatSheetPage(p){
         var hasInputs=isFinite(bottom)&&isFinite(top)&&top>bottom&&isFinite(increment)&&increment>0&&isFinite(capital)&&capital>0;
         return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border,marginTop:14}}>
           {/* Header */}
-          <div onClick={function(){setPtcExpanded(!ptcExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:ptcExpanded?12:0}}>
-            <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PROFIT TAKER COMPARISON TABLE</span>
-              <Info>{[
+          <div onClick={function(){setPtcExpanded(!ptcExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:ptcExpanded?12:0,gap:8}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PROFIT TAKER COMPARISON TABLE</span>
+                <Info>{[
                 {h:'What this shows'},
                 {p:'Side-by-side comparison of how cycles closed and total profit change as the take-profit % varies. Pulls bottom / top / increment / capital from the Ranges & Cycles card above and sweeps TP% across a fixed list (1%, 0.75%, 0.5%, 0.25%, 0.10%, 0.05%).'},
                 {h:'How each row is computed'},
@@ -5000,8 +5001,10 @@ function StockProfileCheatSheetPage(p){
                   'Assumes uniform $ capital per rung. Volume-profile-weighted allocation would shift the curve.'
                 ]}
               ]}</Info>
+              </div>
+              <div style={{color:C.txtDim,fontSize:8,fontFamily:F,fontStyle:'italic',marginTop:3,letterSpacing:0.3}}>(One-way swing counts only — oscillations not factored in)</div>
             </div>
-            <div style={{width:34,height:34,borderRadius:'50%',background:C.purpleDim,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.2s',transform:ptcExpanded?'rotate(180deg)':'rotate(0deg)'}}>
+            <div style={{width:34,height:34,borderRadius:'50%',background:C.purpleDim,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.2s',transform:ptcExpanded?'rotate(180deg)':'rotate(0deg)',flexShrink:0}}>
               <span style={{color:C.purple,fontSize:12,fontWeight:700}}>▼</span>
             </div>
           </div>
