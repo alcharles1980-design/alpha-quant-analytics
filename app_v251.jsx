@@ -16950,6 +16950,23 @@ function HourlyDataPage(p){
   };
   var fmtInt=function(v){return isFinite(v)&&v>0?Math.round(v).toLocaleString():'-';};
   var fmtHr=function(h){return (h<10?'0':'')+h+':00';};
+  // ATR uses different precision than $ notional. Notional is large
+  // (millions/billions); ATR is typically $0.05–$10 for normal stocks. fmtMoney
+  // truncates sub-$1k values to 0 decimals (would display \$0 for an actual
+  // \$0.45 ATR), so a dedicated formatter preserves cent-level precision and
+  // only switches to compact units (K/M) for unusually high-priced stocks.
+  var fmtATR=function(v){
+    if(!isFinite(v)||v<=0)return '-';
+    if(v>=1000)return '$'+(v/1e3).toFixed(2)+'K';
+    if(v>=10)return '$'+v.toFixed(2);
+    if(v>=1)return '$'+v.toFixed(3);
+    return '$'+v.toFixed(4);
+  };
+  var fmtPct=function(v){
+    if(!isFinite(v)||v<=0)return '-';
+    if(v>=10)return v.toFixed(1)+'%';
+    return v.toFixed(2)+'%';
+  };
 
   var run=async function(){
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
@@ -17004,7 +17021,41 @@ function HourlyDataPage(p){
       // Bucket bars into 24 ET hours. Hour-only formatter; hour12:false gives
       // 0-23 (some locales emit '24' for midnight — clamp to 0).
       var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,hour:'numeric'});
-      var buckets=[];for(var h=0;h<24;h++)buckets.push({hour:h,trades:0,volume:0,notional:0,bars:0});
+      var buckets=[];for(var h=0;h<24;h++)buckets.push({hour:h,trades:0,volume:0,notional:0,bars:0,trSum:0,trPctSum:0,trCount:0});
+
+      // Pre-compute true range per bar for ATR aggregation. TR = max of:
+      //   bar high − bar low
+      //   |bar high − prev close|
+      //   |bar low  − prev close|
+      // The prev-close form captures gap-driven moves (matters for the first
+      // bar of each trading day when there's an overnight gap from yesterday's
+      // close to today's pre-market open). For the very first bar in the
+      // dataset there's no prior close — fall back to (high − low). Bars are
+      // already sort=asc from Polygon so chronological order is correct.
+      // TR% = TR / bar.close × 100; uses the bar's own close as the price
+      // reference so a 0.20% hourly TR means the same thing across price
+      // levels regardless of the stock's nominal price.
+      var trArr=new Array(bars.length);
+      var trPctArr=new Array(bars.length);
+      var prevClose=null;
+      for(var ti=0;ti<bars.length;ti++){
+        var bb=bars[ti];
+        var hi=bb.h,lo=bb.l,cl=bb.c;
+        var trVal=0;
+        if(isFinite(hi)&&isFinite(lo)){
+          var hl=hi-lo;
+          if(prevClose!=null&&isFinite(prevClose)){
+            var hc=Math.abs(hi-prevClose);
+            var lc=Math.abs(lo-prevClose);
+            trVal=Math.max(hl,hc,lc);
+          } else {
+            trVal=hl;
+          }
+        }
+        trArr[ti]=trVal;
+        trPctArr[ti]=(isFinite(cl)&&cl>0)?(trVal/cl)*100:0;
+        if(isFinite(cl))prevClose=cl;
+      }
 
       var dayCounts={};
       for(var i=0;i<bars.length;i++){
@@ -17017,7 +17068,22 @@ function HourlyDataPage(p){
         buckets[hVal].volume+=(b.v||0);
         if(b.vw!=null&&isFinite(b.vw)&&b.v!=null&&isFinite(b.v))buckets[hVal].notional+=b.vw*b.v;
         buckets[hVal].bars+=1;
+        // ATR aggregation. Only count bars where TR could be computed
+        // (needs finite h,l). trCount may be < bars[].length on rare days
+        // with corrupted bars; bucket ATR uses trCount as denominator.
+        if(trArr[i]>0||(isFinite(b.h)&&isFinite(b.l))){
+          buckets[hVal].trSum+=trArr[i];
+          buckets[hVal].trPctSum+=trPctArr[i];
+          buckets[hVal].trCount+=1;
+        }
         dayCounts[etDayFmt.format(new Date(b.t))]=true;
+      }
+
+      // Finalize bucket ATRs: simple mean across bars in the same hour bucket.
+      for(var bi=0;bi<buckets.length;bi++){
+        var bk=buckets[bi];
+        bk.atr=bk.trCount>0?bk.trSum/bk.trCount:0;
+        bk.atrPct=bk.trCount>0?bk.trPctSum/bk.trCount:0;
       }
 
       var dayList=Object.keys(dayCounts).sort();
@@ -17091,11 +17157,12 @@ function HourlyDataPage(p){
       </div>
 
       {/* Column headers */}
-      <div style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.1fr 1.1fr',gap:6,padding:'4px 6px',borderBottom:'1px solid '+C.border,marginBottom:2}}>
+      <div style={{display:'grid',gridTemplateColumns:'0.7fr 0.85fr 1.1fr 1fr 0.75fr',gap:6,padding:'4px 6px',borderBottom:'1px solid '+C.border,marginBottom:2}}>
         <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700}}>HOUR (ET)</div>
         <div style={{color:C.purple,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>TRADES</div>
         <div style={{color:C.blue,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>VOLUME</div>
         <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>$ NOTIONAL</div>
+        <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>ATR ($/%)</div>
       </div>
 
       {/* Rows */}
@@ -17112,7 +17179,7 @@ function HourlyDataPage(p){
         var avgTrades=multiDay?r.trades/meta.tradingDays:0;
         var avgVolume=multiDay?r.volume/meta.tradingDays:0;
         var avgNotional=multiDay?r.notional/meta.tradingDays:0;
-        return <div key={r.hour} style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.1fr 1.1fr',gap:6,padding:'7px 6px',borderBottom:i<23?'1px solid '+C.border:'none',alignItems:'center',opacity:hasData?1:0.45}}>
+        return <div key={r.hour} style={{display:'grid',gridTemplateColumns:'0.7fr 0.85fr 1.1fr 1fr 0.75fr',gap:6,padding:'7px 6px',borderBottom:i<23?'1px solid '+C.border:'none',alignItems:'center',opacity:hasData?1:0.45}}>
           <div style={{display:'flex',alignItems:'center',gap:5}}>
             <span style={{color:hasData?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtHr(r.hour)}</span>
             <span style={{color:sess.color,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:0.5,padding:'1px 4px',background:sess.color+'22',borderRadius:3}}>{sess.label}</span>
@@ -17129,6 +17196,10 @@ function HourlyDataPage(p){
             <div style={{color:hasData?C.accent:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{showSplit&&avgNotional>0?fmtMoney(avgNotional)+'/day':(r.notional>0?fmtMoney(r.notional):'-')}</div>
             {showSplit&&avgNotional>0&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtMoney(r.notional)} total</div>}
           </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{color:hasData&&r.atr>0?C.gold:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtATR(r.atr)}</div>
+            {hasData&&r.atrPct>0&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtPct(r.atrPct)}</div>}
+          </div>
         </div>;
       })}
 
@@ -17138,7 +17209,19 @@ function HourlyDataPage(p){
         var avgT=multiDay?totals.trades/meta.tradingDays:0;
         var avgV=multiDay?totals.volume/meta.tradingDays:0;
         var avgN=multiDay?totals.notional/meta.tradingDays:0;
-        return <div style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.1fr 1.1fr',gap:6,padding:'9px 6px',borderTop:'2px solid '+C.border,marginTop:4,alignItems:'center'}}>
+        // ATR row total = weighted mean of bucket ATRs by bar count, which is
+        // mathematically equivalent to the simple mean of all bar TRs across
+        // the whole dataset. Reads as 'typical hourly TR for this stock,
+        // pooled across all hours and days'.
+        var allTrSum=0,allTrPctSum=0,allTrCount=0;
+        for(var ti=0;ti<rows.length;ti++){
+          allTrSum+=rows[ti].atr*rows[ti].trCount;
+          allTrPctSum+=rows[ti].atrPct*rows[ti].trCount;
+          allTrCount+=rows[ti].trCount;
+        }
+        var totATR=allTrCount>0?allTrSum/allTrCount:0;
+        var totATRPct=allTrCount>0?allTrPctSum/allTrCount:0;
+        return <div style={{display:'grid',gridTemplateColumns:'0.7fr 0.85fr 1.1fr 1fr 0.75fr',gap:6,padding:'9px 6px',borderTop:'2px solid '+C.border,marginTop:4,alignItems:'center'}}>
           <div>
             <div style={{color:C.txtBright,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1}}>ALL HOURS</div>
             {multiDay&&<div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3,fontStyle:'italic'}}>/ trading day</div>}
@@ -17155,11 +17238,15 @@ function HourlyDataPage(p){
             <div style={{color:C.accent,fontSize:11,fontFamily:F,fontWeight:700}}>{multiDay?fmtMoney(avgN)+'/day':fmtMoney(totals.notional)}</div>
             {multiDay&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtMoney(totals.notional)} total</div>}
           </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{color:totATR>0?C.gold:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtATR(totATR)}</div>
+            {totATRPct>0&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,marginTop:1,letterSpacing:0.3}}>{fmtPct(totATRPct)}</div>}
+          </div>
         </div>;
       })()}
 
       <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.3,marginTop:10,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic',lineHeight:1.5}}>
-        Hour bucket = top-of-hour ET (e.g. 09:00 covers 09:00:00\u201309:59:59). Trades and volume summed across bars in each bucket; dollar notional = sum of (vwap \u00D7 volume) per bar = total $ traded in that hour. Primary value (large) = average per trading day; sub-line "total" = sum across all trading days in the range. Single-day queries show just the total. Hours with no Polygon-reported activity show "-" and are dimmed.
+        Hour bucket = top-of-hour ET (e.g. 09:00 covers 09:00:00\u201309:59:59). Trades and volume summed across bars in each bucket; dollar notional = sum of (vwap \u00D7 volume) per bar = total $ traded in that hour. ATR ($/%) = average per-bar true range in that hour bucket, computed as max(high\u2212low, |high\u2212prev_close|, |low\u2212prev_close|) so overnight gaps are captured at the first bar of each day; ATR% = TR \u00F7 bar.close. Primary value (large) = avg per trading day for trades/volume/$; sub-line "total" = sum across all trading days. Single-day queries show just the total. Hours with no Polygon-reported activity show "-" and are dimmed.
       </div>
     </div>}
   </div>;
