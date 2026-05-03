@@ -1414,6 +1414,11 @@ function StockProfileCheatSheetPage(p){
   var s23=useState('0.01'),rcIncrement=s23[0],setRcIncrement=s23[1];
   var s24=useState('10'),rcCapital=s24[0],setRcCapital=s24[1];
   var s25=useState('1'),rcTpPct=s25[0],setRcTpPct=s25[1];
+  // Profit Taker Comparison Table — collapse state. Defaults open; the table
+  // is short and the user came here for it. Same useEffect-free design as the
+  // parent card: derives entirely from rcBottom/rcTop/rcIncrement/rcCapital,
+  // sweeps a fixed list of TP%s and reuses the parent's math chain per row.
+  var s26=useState(true),ptcExpanded=s26[0],setPtcExpanded=s26[1];
   var abortRef=useRef(null);
 
   // Auto-prepopulate Ranges & Cycles bottom/top from swing_targets whenever
@@ -4888,6 +4893,126 @@ function StockProfileCheatSheetPage(p){
             {/* Methodology footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
               TOP is treated as the highest exit price. Highest buy = top / (1 + TP%); rungs above that have exits beyond top and don't close on a swing-to-top — they show as "idle". Bottom / top auto-populate from the swing card (3-day C→L and L→H averages) on each fetch; edits persist until the next fetch (re-searching the same ticker resets too). No fees / slippage modeled.
+            </div>
+          </div>}
+        </div>;
+      })()}
+      {/* PROFIT TAKER COMPARISON TABLE — sweeps a fixed list of TP%s through
+          the same math chain as the parent card. Each row derives:
+            cycles = rungs whose exit lands at-or-below top for that TP%
+            profit = cycles × capital × tpPct/100
+          Entirely derived from rcBottom/rcTop/rcIncrement/rcCapital — no own
+          inputs. Highlights the row matching the active rcTpPct so the user
+          sees their current setting in context. */}
+      {!!data&&(function(){
+        var bottom=parseFloat(String(rcBottom||'').replace(/[^0-9.\-]/g,''));
+        var top=parseFloat(String(rcTop||'').replace(/[^0-9.\-]/g,''));
+        var increment=parseFloat(String(rcIncrement||'').replace(/[^0-9.\-]/g,''));
+        var capital=parseFloat(String(rcCapital||'').replace(/[^0-9.\-]/g,''));
+        var activeTp=parseFloat(String(rcTpPct||'').replace(/[^0-9.\-]/g,''));
+        // Fixed sweep list, descending. Mirrors the user's example: 1, 0.75,
+        // 0.5, 0.25, 0.10, 0.05. Descending because tighter TP% = more cycles
+        // closed (denser ladder) but smaller profit per cycle, and the user
+        // generally reads top-down looking for a sweet spot.
+        var sweepTpList=[1,0.75,0.5,0.25,0.10,0.05];
+        // Per-row computation. Replicates parent math chain exactly so the
+        // 1% row matches the parent's RANGES CLOSED / SWING-UP PROFIT to
+        // the dollar (built-in self-consistency check).
+        var computeRow=function(tp){
+          if(!isFinite(bottom)||!isFinite(top)||top<=bottom||!isFinite(increment)||increment<=0||!isFinite(capital)||capital<=0||!isFinite(tp)||tp<=0){
+            return {tp:tp,cycles:NaN,profit:NaN,tpTooHigh:false};
+          }
+          var maxBuy=top/(1+tp/100);
+          if(maxBuy<bottom)return {tp:tp,cycles:0,profit:0,tpTooHigh:true};
+          var nSpread=maxBuy-bottom;
+          var cycles=Math.max(1,Math.round(nSpread/increment)+1);
+          var profitPer=capital*tp/100;
+          var profit=cycles*profitPer;
+          return {tp:tp,cycles:cycles,profit:profit,tpTooHigh:false};
+        };
+        var rows=sweepTpList.map(computeRow);
+        // Find max profit across rows for relative-bar visualization. Skips
+        // tpTooHigh rows (profit=0) and NaN rows. If everything's blank,
+        // maxProfit=0 and bars don't render.
+        var validProfits=rows.filter(function(r){return isFinite(r.profit)&&r.profit>0;}).map(function(r){return r.profit;});
+        var maxProfit=validProfits.length?Math.max.apply(null,validProfits):0;
+        var fmtMoney=function(v){
+          if(!isFinite(v))return '-';
+          var abs=Math.abs(v);
+          var sign=v<0?'-':'';
+          if(abs>=1e9)return sign+'$'+(abs/1e9).toFixed(2)+'B';
+          if(abs>=1e6)return sign+'$'+(abs/1e6).toFixed(2)+'M';
+          if(abs>=1e3)return sign+'$'+abs.toLocaleString(undefined,{maximumFractionDigits:0});
+          return sign+'$'+abs.toFixed(2);
+        };
+        var fmtInt=function(v){return isFinite(v)?Math.round(v).toLocaleString():'-';};
+        var hasInputs=isFinite(bottom)&&isFinite(top)&&top>bottom&&isFinite(increment)&&increment>0&&isFinite(capital)&&capital>0;
+        return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border,marginTop:14}}>
+          {/* Header */}
+          <div onClick={function(){setPtcExpanded(!ptcExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:ptcExpanded?12:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PROFIT TAKER COMPARISON TABLE</span>
+              <Info>{[
+                {h:'What this shows'},
+                {p:'Side-by-side comparison of how cycles closed and total profit change as the take-profit % varies. Pulls bottom / top / increment / capital from the Ranges & Cycles card above and sweeps TP% across a fixed list (1%, 0.75%, 0.5%, 0.25%, 0.10%, 0.05%).'},
+                {h:'How each row is computed'},
+                {b:[
+                  'maxBuy = top / (1 + TP%/100). Rungs above this can\u2019t fire on a swing-to-top.',
+                  'cycles = round((maxBuy − bottom) / increment) + 1. Same RANGES CLOSED math as the parent card.',
+                  'profit = cycles \u00D7 capital \u00D7 TP%/100',
+                  'When TP% > spread%, no rung closes. Row shows 0 cycles, $0 profit, with a "tp too high" tag.'
+                ]},
+                {h:'Reading the table'},
+                {b:[
+                  'Tighter TP% (toward 0.05%) = more cycles closed but smaller profit per cycle. The total can go up OR down depending on how cycles scale vs the per-cycle drop.',
+                  'Looser TP% (toward 1%) = fewer cycles, bigger per-cycle profit, larger idle count.',
+                  'The bar to the right of profit shows relative magnitude across all rows \u2014 visual sweet-spot finder.',
+                  'The row matching your active PROFIT TAKER % in the card above is highlighted.'
+                ]},
+                {h:'Limitations'},
+                {b:[
+                  'Models a single swing-to-top, not multiple round trips per day.',
+                  'No fees / slippage / rebates. On dense ladders these matter \u2014 Alpaca SEC/TAF fees are sub-cent per share but can erode tight-TP profit.',
+                  'Assumes uniform $ capital per rung. Volume-profile-weighted allocation would shift the curve.'
+                ]}
+              ]}</Info>
+            </div>
+            <div style={{width:34,height:34,borderRadius:'50%',background:C.purpleDim,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.2s',transform:ptcExpanded?'rotate(180deg)':'rotate(0deg)'}}>
+              <span style={{color:C.purple,fontSize:12,fontWeight:700}}>▼</span>
+            </div>
+          </div>
+          {ptcExpanded&&<div>
+            {!hasInputs?<div style={{color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic',padding:'12px 4px'}}>Fill in BOTTOM, TOP, INCREMENT, and CAPITAL/RANGE in the card above to populate this table.</div>:<div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
+              {/* Column headers */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1.6fr',gap:8,padding:'4px 0',borderBottom:'1px solid '+C.border,marginBottom:4}}>
+                <div style={{color:C.gold,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>PROFIT TAKER %</div>
+                <div style={{color:C.purple,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700,textAlign:'right'}}>CYCLES</div>
+                <div style={{color:C.accent,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700,textAlign:'right'}}>PROFIT</div>
+              </div>
+              {/* Rows */}
+              {rows.map(function(r,i){
+                var isActive=isFinite(activeTp)&&Math.abs(r.tp-activeTp)<0.001;
+                var barPct=(maxProfit>0&&isFinite(r.profit)&&r.profit>0)?(r.profit/maxProfit)*100:0;
+                return <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1.6fr',gap:8,padding:'8px 6px',borderBottom:i<rows.length-1?'1px solid '+C.border:'none',background:isActive?'rgba(110,86,207,0.12)':'transparent',borderRadius:isActive?4:0,alignItems:'center'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    {isActive&&<span style={{color:C.purple,fontSize:9,fontWeight:700}}>▶</span>}
+                    <span style={{color:isActive?C.txtBright:C.txt,fontSize:12,fontFamily:F,fontWeight:700}}>{r.tp.toFixed(2)}%</span>
+                  </div>
+                  <div style={{textAlign:'right',color:r.tpTooHigh?C.warn:(isFinite(r.cycles)?C.txtBright:C.txtDim),fontSize:12,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'0':fmtInt(r.cycles)}</div>
+                  <div style={{textAlign:'right',position:'relative'}}>
+                    {/* Relative magnitude bar (background) */}
+                    {barPct>0&&<div style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',height:18,width:barPct+'%',background:'rgba(0,231,179,0.10)',borderRight:'2px solid '+C.accent,borderRadius:'2px 0 0 2px',pointerEvents:'none'}}/>}
+                    <div style={{position:'relative',display:'flex',justifyContent:'flex-end',alignItems:'baseline',gap:6}}>
+                      {r.tpTooHigh&&<span style={{color:C.warn,fontSize:7,fontFamily:F,fontStyle:'italic',fontWeight:700}}>tp too high</span>}
+                      <span style={{color:r.tpTooHigh?C.txtDim:(isFinite(r.profit)&&r.profit>0?C.accent:C.txtDim),fontSize:13,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'$0.00':fmtMoney(r.profit)}</span>
+                    </div>
+                  </div>
+                </div>;
+              })}
+            </div>}
+            {/* Footnote */}
+            <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
+              Each row uses the same math chain as the card above with TP% swapped. The active row (matching your current PROFIT TAKER %) is highlighted. Profit bar = relative magnitude across rows. No fees / slippage modeled.
             </div>
           </div>}
         </div>;
