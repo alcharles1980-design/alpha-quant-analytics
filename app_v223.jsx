@@ -3258,17 +3258,19 @@ function StockProfileCheatSheetPage(p){
                   still occupy the chart but the labels stay readable on the dark bg.
                   Render order is VAL -> VAH -> POC so that on tight days where labels
                   collide vertically (within ~11px), POC always wins legibility - it's
-                  the most actionable reference. */}
+                  the most actionable reference. Pill Y is clamped to [0, priceH-11]
+                  so when POC/VAH/VAL hit the chart's top/bottom edges, the pill
+                  doesn't spill into the gap or past the SVG top. */}
               {hasVP&&<g>
-                <g transform={'translate(2,'+(yPriceAt(vpProfile.val)-6)+')'}>
+                <g transform={'translate(2,'+Math.max(0,Math.min(priceH-11,yPriceAt(vpProfile.val)-6))+')'}>
                   <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.warn} strokeWidth="0.4" strokeOpacity="0.4"/>
                   <text x="3" y="8" fill={C.warn} fontSize="7" fontFamily={F} fontWeight="700">VAL ${vpProfile.val.toFixed(2)}</text>
                 </g>
-                <g transform={'translate(2,'+(yPriceAt(vpProfile.vah)-6)+')'}>
+                <g transform={'translate(2,'+Math.max(0,Math.min(priceH-11,yPriceAt(vpProfile.vah)-6))+')'}>
                   <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.accent} strokeWidth="0.4" strokeOpacity="0.4"/>
                   <text x="3" y="8" fill={C.accent} fontSize="7" fontFamily={F} fontWeight="700">VAH ${vpProfile.vah.toFixed(2)}</text>
                 </g>
-                <g transform={'translate(2,'+(yPriceAt(vpProfile.poc)-6)+')'}>
+                <g transform={'translate(2,'+Math.max(0,Math.min(priceH-11,yPriceAt(vpProfile.poc)-6))+')'}>
                   <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.txtBright} strokeWidth="0.4" strokeOpacity="0.4"/>
                   <text x="3" y="8" fill={C.txtBright} fontSize="7" fontFamily={F} fontWeight="700">POC ${vpProfile.poc.toFixed(2)}</text>
                 </g>
@@ -3302,9 +3304,14 @@ function StockProfileCheatSheetPage(p){
               </g>}
 
               {/* Y-axis labels on the right side. Position depends on whether the
-                  vol-profile histogram is taking up space (vpW>0 shifts labels right). */}
+                  vol-profile histogram is taking up space (vpW>0 shifts labels right).
+                  Y is clamped to [8, priceH-1] so the top label's glyph ascenders
+                  don't get clipped by the SVG viewBox top (which happens when
+                  t.y=0 + 3 = 3 with an 8px font - top ~3px of glyph would render
+                  at negative y). */}
               {yTicks.map(function(t,i){
-                return <text key={'y'+i} x={plotW+vpW+4} y={t.y+3} fill={C.txtDim} fontSize="8" fontFamily={F}>{t.label}</text>;
+                var labelY=Math.max(8,Math.min(priceH-1,t.y+3));
+                return <text key={'y'+i} x={plotW+vpW+4} y={labelY} fill={C.txtDim} fontSize="8" fontFamily={F}>{t.label}</text>;
               })}
 
               {/* Volume sub-chart */}
