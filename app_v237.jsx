@@ -1406,12 +1406,14 @@ function StockProfileCheatSheetPage(p){
   var s19=useState(true),showVolProfile=s19[0],setShowVolProfile=s19[1];
   // RANGES & CYCLES ESTIMATOR state (v234). Pre-populated from swing_targets
   // on each ticker fetch via useEffect below; user can override any field.
+  // Capital & TP defaults seeded to typical grid-bot starting values ($10/rung,
+  // 1% TP) so the output stack shows non-empty math the moment a ticker loads.
   var s20=useState(true),rcExpanded=s20[0],setRcExpanded=s20[1];
   var s21=useState(''),rcBottom=s21[0],setRcBottom=s21[1];
   var s22=useState(''),rcTop=s22[0],setRcTop=s22[1];
   var s23=useState('0.01'),rcIncrement=s23[0],setRcIncrement=s23[1];
-  var s24=useState(''),rcCapital=s24[0],setRcCapital=s24[1];
-  var s25=useState(''),rcTpPct=s25[0],setRcTpPct=s25[1];
+  var s24=useState('10'),rcCapital=s24[0],setRcCapital=s24[1];
+  var s25=useState('1'),rcTpPct=s25[0],setRcTpPct=s25[1];
   var abortRef=useRef(null);
 
   // Auto-prepopulate Ranges & Cycles bottom/top from swing_targets whenever
@@ -4782,7 +4784,7 @@ function StockProfileCheatSheetPage(p){
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>SPREAD $</div>
                 <div style={Object.assign({},inpStyle,{background:C.bgCard,color:isFinite(spread)?C.txtBright:C.txtDim,letterSpacing:0.5})}>{isFinite(spread)?'$'+spread.toFixed(2):'-'}</div>
-                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>top \u2212 bottom</div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:3,fontStyle:'italic'}}>top − bottom</div>
               </div>
               <div>
                 <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.5,fontWeight:700,marginBottom:4}}>CAPITAL / RANGE $</div>
@@ -4806,7 +4808,7 @@ function StockProfileCheatSheetPage(p){
             <div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0',borderBottom:'1px solid '+C.border}}>
                 <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>GROSS RANGES</span>
-                <span style={{color:isFinite(rangesCount)?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(rangesCount)}{isFinite(spread)&&isFinite(increment)&&increment>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= ${spread.toFixed(2)} \u00F7 ${increment.toFixed(2)} + 1</span>}</span>
+                <span style={{color:isFinite(rangesCount)?C.txtBright:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700}}>{fmtInt(rangesCount)}{isFinite(spread)&&isFinite(increment)&&increment>0&&<span style={{color:C.txtDim,fontSize:7,fontWeight:400,marginLeft:6}}>= ${spread.toFixed(2)} ÷ ${increment.toFixed(2)} + 1</span>}</span>
               </div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderBottom:'1px solid '+C.border}}>
                 <span style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>HIGHEST BUY PRICE</span>
@@ -4833,7 +4835,7 @@ function StockProfileCheatSheetPage(p){
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0 4px'}}>
                 <div>
                   <div style={{color:C.txt,fontSize:8,fontFamily:F,letterSpacing:1.5,fontWeight:700}}>SWING-UP PROFIT</div>
-                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>net ranges \u00D7 profit per range</div>
+                  <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:1,fontStyle:'italic'}}>net ranges × profit per range</div>
                 </div>
                 <div style={{textAlign:'right'}}>
                   <div style={{color:C.accent,fontSize:18,fontFamily:F,fontWeight:700}}>{fmtMoney(totalProfit)}</div>
@@ -4843,7 +4845,7 @@ function StockProfileCheatSheetPage(p){
             </div>
             {/* Methodology footnote */}
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:0.5,marginTop:8,paddingTop:6,borderTop:'1px solid '+C.border,fontStyle:'italic'}}>
-              TOP is treated as the highest exit price. Highest buy = top / (1 + TP%); rungs above that have exits beyond top and don\u2019t close on a swing-to-top — they show as \u201Cidle\u201D. Bottom / top auto-populate from the swing card (3-day C\u2192L and L\u2192H averages) on each fetch; edits persist until the next ticker switch. No fees / slippage modeled.
+              TOP is treated as the highest exit price. Highest buy = top / (1 + TP%); rungs above that have exits beyond top and don't close on a swing-to-top — they show as "idle". Bottom / top auto-populate from the swing card (3-day C→L and L→H averages) on each fetch; edits persist until the next ticker switch. No fees / slippage modeled.
             </div>
           </div>}
         </div>;
