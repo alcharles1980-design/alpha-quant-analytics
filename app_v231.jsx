@@ -3004,7 +3004,7 @@ function StockProfileCheatSheetPage(p){
 
       {/* ============== PRICE CHART card ==============
           Mobile-first SVG price chart. Default expanded, ~400px tall total.
-          Period toggle: Today / Prev / 2W (intraday) + 30D / 90D / 1Y (daily).
+          Period toggle: Today / Prev / 2W (intraday) + 30D / 90D / 1Y / 3Y / 5Y (daily).
           Layout: header (title + info + caret) -> stats summary -> period toggle ->
                   main price area (candles + range bars + SMA20 + SMA50) ->
                   volume sub-chart (up-day green / down-day red).
@@ -3180,6 +3180,7 @@ function StockProfileCheatSheetPage(p){
         //   today / prev   -> ET clock time (e.g. '10:30 AM')
         //   2w             -> ET short date (e.g. 'Apr 17')
         //   30d / 90d / 1y -> ET short date (e.g. 'Apr 1')
+        //   3y / 5y        -> ET short date with 2-digit year (e.g. "May '24")
         // Uses Intl.DateTimeFormat with America/New_York timezone for accuracy
         // - the same pattern used elsewhere in the app since the v94-v97 timezone fix.
         var fmtETTime=function(t){
@@ -3448,8 +3449,12 @@ function StockProfileCheatSheetPage(p){
         var todayMs=new Date(data.today_str+'T00:00:00Z').getTime();
         var earnMs=new Date(ev.date+'T00:00:00Z').getTime();
         var daysAway=Math.round((earnMs-todayMs)/86400000);
+        // Stale-data guard: if the API still has a past date as 'next' earnings
+        // (common right after a print, before the feed refreshes), bucket as
+        // 'PAST' with neutral styling rather than rendering "HIGH RISK in -2 days".
         var risk,borderColor,bgTint,labelColor,riskMsg;
-        if(daysAway<=14){risk='HIGH';borderColor=C.warn;bgTint='#3d1010';labelColor=C.warn;riskMsg='within 14 days \u2014 swing trade risk';}
+        if(daysAway<0){risk='PAST';borderColor=C.txtDim;bgTint=C.bg;labelColor=C.txtDim;riskMsg='already reported \u2014 feed may be stale';}
+        else if(daysAway<=14){risk='HIGH';borderColor=C.warn;bgTint='#3d1010';labelColor=C.warn;riskMsg='within 14 days \u2014 swing trade risk';}
         else if(daysAway<=30){risk='MED';borderColor=C.gold;bgTint='#3d2d10';labelColor=C.gold;riskMsg='within 30 days \u2014 caution';}
         else{risk='LOW';borderColor=C.accent;bgTint=C.bg;labelColor=C.accent;riskMsg='clear runway';}
         var timeLabel=ev.time?(function(){
@@ -3475,7 +3480,7 @@ function StockProfileCheatSheetPage(p){
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,letterSpacing:1}}>{ev.source==='benzinga'?'BENZINGA':'ESTIMATED'}</div>
           </div>
           <div style={{color:C.txtBright,fontSize:18,fontFamily:F,fontWeight:700,marginBottom:2}}>{ev.date}</div>
-          <div style={{color:labelColor,fontSize:11,fontFamily:F,fontWeight:700,marginBottom:6}}>{daysAway===0?'today':daysAway===1?'tomorrow':'in '+daysAway+' days'}</div>
+          <div style={{color:labelColor,fontSize:11,fontFamily:F,fontWeight:700,marginBottom:6}}>{daysAway===0?'today':daysAway===1?'tomorrow':daysAway<0?(daysAway===-1?'yesterday':Math.abs(daysAway)+' days ago'):'in '+daysAway+' days'}</div>
           {(ev.fiscal_period||ev.fiscal_year||ev.status||timeLabel)&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
             {ev.fiscal_period&&ev.fiscal_year&&<span style={{padding:'2px 8px',background:C.bgInput,borderRadius:10,color:C.txt,fontSize:8,fontFamily:F,fontWeight:700}}>{ev.fiscal_period} {ev.fiscal_year}</span>}
             {ev.status&&<span style={{padding:'2px 8px',background:C.bgInput,borderRadius:10,color:ev.status==='confirmed'?C.accent:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1}}>{ev.status.toUpperCase()}</span>}
@@ -3930,12 +3935,25 @@ function StockProfileCheatSheetPage(p){
                 </div>
               </div>
             </div>
-            {/* Period labels - aligned with bars (offset by yAxisW) */}
+            {/* Period labels - aligned with bars (offset by yAxisW). For
+                consistency with the EPS card (which got calendar dates in v225),
+                a small dim sub-label shows the period's end date in 'MMM YY'
+                format under the fiscal label. NVIDIA's Jan-ending fiscal year
+                makes 'Q4 FY26' read like late 2026 when it actually ended Jan
+                2026; the calendar date removes the ambiguity. Reuses the noon-
+                UTC anchor pattern from v228 to avoid timezone shift. */}
             <div style={{display:'flex',marginBottom:8,paddingTop:6}}>
               <div style={{width:yAxisW,flexShrink:0}}/>
               <div style={{flex:1,display:'flex'}}>
                 {periods.map(function(p,i){
-                  return <div key={i} style={{flex:1,textAlign:'center',fontSize:8,color:C.txt,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{p.label}</div>;
+                  var endLbl='';
+                  if(p.end_date&&/^\d{4}-\d{2}-\d{2}$/.test(p.end_date)){
+                    try{endLbl=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',year:'2-digit'}).format(new Date(p.end_date+'T12:00:00Z')).replace(/(\w+) (\d+)/,"$1 '$2");}catch(e){endLbl='';}
+                  }
+                  return <div key={i} style={{flex:1,textAlign:'center'}}>
+                    <div style={{fontSize:8,color:C.txt,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{p.label}</div>
+                    {endLbl&&<div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:1,letterSpacing:0.3}}>{endLbl}</div>}
+                  </div>;
                 })}
               </div>
             </div>
