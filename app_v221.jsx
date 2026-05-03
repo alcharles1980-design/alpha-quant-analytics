@@ -3255,19 +3255,22 @@ function StockProfileCheatSheetPage(p){
               {/* VOL PROFILE - PRICE LABELS for POC/VAH/VAL on the left edge.
                   Small dark pills at each line's y-position showing the actual price
                   (POC bright, VAH accent green, VAL warn red). Sits at x=2 so candles
-                  still occupy the chart but the labels stay readable on the dark bg. */}
+                  still occupy the chart but the labels stay readable on the dark bg.
+                  Render order is VAL -> VAH -> POC so that on tight days where labels
+                  collide vertically (within ~11px), POC always wins legibility - it's
+                  the most actionable reference. */}
               {hasVP&&<g>
-                <g transform={'translate(2,'+(yPriceAt(vpProfile.poc)-6)+')'}>
-                  <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.txtBright} strokeWidth="0.4" strokeOpacity="0.4"/>
-                  <text x="3" y="8" fill={C.txtBright} fontSize="7" fontFamily={F} fontWeight="700">POC ${vpProfile.poc.toFixed(2)}</text>
+                <g transform={'translate(2,'+(yPriceAt(vpProfile.val)-6)+')'}>
+                  <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.warn} strokeWidth="0.4" strokeOpacity="0.4"/>
+                  <text x="3" y="8" fill={C.warn} fontSize="7" fontFamily={F} fontWeight="700">VAL ${vpProfile.val.toFixed(2)}</text>
                 </g>
                 <g transform={'translate(2,'+(yPriceAt(vpProfile.vah)-6)+')'}>
                   <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.accent} strokeWidth="0.4" strokeOpacity="0.4"/>
                   <text x="3" y="8" fill={C.accent} fontSize="7" fontFamily={F} fontWeight="700">VAH ${vpProfile.vah.toFixed(2)}</text>
                 </g>
-                <g transform={'translate(2,'+(yPriceAt(vpProfile.val)-6)+')'}>
-                  <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.warn} strokeWidth="0.4" strokeOpacity="0.4"/>
-                  <text x="3" y="8" fill={C.warn} fontSize="7" fontFamily={F} fontWeight="700">VAL ${vpProfile.val.toFixed(2)}</text>
+                <g transform={'translate(2,'+(yPriceAt(vpProfile.poc)-6)+')'}>
+                  <rect x="0" y="0" width="56" height="11" fill={C.bg} opacity="0.92" rx="2" stroke={C.txtBright} strokeWidth="0.4" strokeOpacity="0.4"/>
+                  <text x="3" y="8" fill={C.txtBright} fontSize="7" fontFamily={F} fontWeight="700">POC ${vpProfile.poc.toFixed(2)}</text>
                 </g>
               </g>}
 
