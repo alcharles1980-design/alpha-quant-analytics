@@ -2,7 +2,7 @@
 
 Quantitative tick-level analysis web app for the Beta Proprietary Trading Algorithm.
 
-**Version:** v233 | **Last Updated:** May 3, 2026
+**Version:** v247 | **Last Updated:** May 3, 2026
 
 ## Features
 - Stage 1: Cycles, trends, daily optimal TP%, volume profile (with chart-overlay POC/VAH/VAL labels)
