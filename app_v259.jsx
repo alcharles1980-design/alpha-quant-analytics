@@ -2969,7 +2969,7 @@ function StockProfileCheatSheetPage(p){
               var h=(vol/w.profile.max_bucket_vol)*100;
               var inVA=i>=w.profile.va_lo_idx&&i<=w.profile.va_hi_idx;
               var isPOC=i===w.profile.poc_idx;
-              var bg=isPOC?C.purple:(inVA?C.purple+'8c':'rgba(255,255,255,0.18)');
+              var bg=isPOC?C.purple:(inVA?C.purple+'8c':C.txtDim+'40');
               return <div key={i} style={{flex:1,height:h+'%',background:bg,minHeight:vol>0?1:0,borderRadius:'1px 1px 0 0'}}/>;
             })}
           </div>
@@ -5106,7 +5106,7 @@ function StockProfileCheatSheetPage(p){
               {rows.map(function(r,i){
                 var isActive=isFinite(activeTp)&&Math.abs(r.tp-activeTp)<0.001;
                 var barPct=(maxProfit>0&&isFinite(r.profit)&&r.profit>0)?(r.profit/maxProfit)*100:0;
-                return <div key={i} style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.3fr 1fr',gap:6,padding:'8px 6px',borderBottom:i<rows.length-1?'1px solid '+C.border:'none',background:isActive?'rgba(110,86,207,0.12)':'transparent',borderRadius:isActive?4:0,alignItems:'center'}}>
+                return <div key={i} style={{display:'grid',gridTemplateColumns:'0.85fr 0.95fr 1.3fr 1fr',gap:6,padding:'8px 6px',borderBottom:i<rows.length-1?'1px solid '+C.border:'none',background:isActive?C.purple+'1F':'transparent',borderRadius:isActive?4:0,alignItems:'center'}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     {isActive&&<span style={{color:C.purple,fontSize:8,fontWeight:700}}>▶</span>}
                     <span style={{color:isActive?C.txtBright:C.txt,fontSize:11,fontFamily:F,fontWeight:700}}>{r.tp.toFixed(2)}%</span>
@@ -15733,7 +15733,7 @@ function ConfluencePage(p){
             </div>
             <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
               {r._signals.map(function(sig,si){
-                return <div key={si} style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(255,255,255,0.05)',border:'1px solid '+sig.color+'60',borderRadius:4,padding:'2px 6px'}}>
+                return <div key={si} style={{display:'inline-flex',alignItems:'center',gap:3,background:sig.color+'15',border:'1px solid '+sig.color+'60',borderRadius:4,padding:'2px 6px'}}>
                   <span style={{color:sig.color,fontSize:7,fontWeight:700,fontFamily:F}}>{sig.name}</span>
                   <span style={{color:C.txtDim,fontSize:6,fontFamily:F}}>{sig.val}</span>
                 </div>;
@@ -18566,7 +18566,7 @@ function RangePredictorPage(p){
       </div>
       <div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={function(){setSession('full');}} style={{flex:1,padding:'6px',border:session==='full'?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:session==='full'?C.accent+'26':C.bg,color:session==='full'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='full'?800:600,cursor:'pointer'}}>{'Full Day (4AM-8PM)'}</button>
-        <button onClick={function(){setSession('rth');}} style={{flex:1,padding:'6px',border:session==='rth'?'2px solid '+C.gold:'1px solid '+C.border,borderRadius:4,background:session==='rth'?'rgba(255,215,0,0.15)':C.bg,color:session==='rth'?C.gold:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='rth'?800:600,cursor:'pointer'}}>{'RTH Only (9:30-4PM)'}</button>
+        <button onClick={function(){setSession('rth');}} style={{flex:1,padding:'6px',border:session==='rth'?'2px solid '+C.gold:'1px solid '+C.border,borderRadius:4,background:session==='rth'?C.gold+'26':C.bg,color:session==='rth'?C.gold:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='rth'?800:600,cursor:'pointer'}}>{'RTH Only (9:30-4PM)'}</button>
       </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
         {[{k:'full',l:'Full Day (4AM\u20138PM)'},{k:'rth',l:'RTH Only (9:30\u20134PM)'}].map(function(opt){
