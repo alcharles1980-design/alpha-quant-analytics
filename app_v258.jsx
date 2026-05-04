@@ -1,8 +1,8 @@
 const{useState,useEffect,useRef}=React;
 var RC=typeof Recharts!=="undefined"?Recharts:{};
 var THEMES={
-  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#e0eaf4",txtDim:"#a0b8d0",txtBright:"#f4f8fc",grid:"#14203a"},
-  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00875a",accentDim:"#00875a15",warn:"#c03020",warnDim:"#c0302015",blue:"#1860c0",blueDim:"#1860c015",purple:"#5c2da0",gold:"#a87010",goldDim:"#a8701015",txt:"#101828",txtDim:"#3a4a68",txtBright:"#060e18",grid:"#e0e4e8"}
+  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#e0eaf4",txtDim:"#a0b8d0",txtBright:"#f4f8fc",grid:"#14203a",code:"#8ec07c",codeBg:"#0a0e14",codeDim:"#a0b4c8",codeBright:"#e8f0f8"},
+  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00875a",accentDim:"#00875a15",warn:"#c03020",warnDim:"#c0302015",blue:"#1860c0",blueDim:"#1860c015",purple:"#5c2da0",gold:"#a87010",goldDim:"#a8701015",txt:"#101828",txtDim:"#3a4a68",txtBright:"#060e18",grid:"#e0e4e8",code:"#1a6b1a",codeBg:"#f4f6f8",codeDim:"#5a6878",codeBright:"#202830"}
 };
 var CURRENT_THEME=(function(){try{return localStorage.getItem('aq_theme')||'dark';}catch(e){return 'dark';}})();
 var C=Object.assign({},THEMES[CURRENT_THEME]);
@@ -473,7 +473,7 @@ function SectionHead(p){
 
 function LiveClock(){var s=useState(new Date()),now=s[0],setNow=s[1];useEffect(function(){var id=setInterval(function(){setNow(new Date());},1000);return function(){clearInterval(id);};},[]);var days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d=days[now.getDay()]+' '+months[now.getMonth()]+' '+now.getDate()+', '+now.getFullYear();var h=now.getHours(),m=now.getMinutes(),sec=now.getSeconds();var ampm=h>=12?'PM':'AM';h=h%12;if(h===0)h=12;var t=h+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+' '+ampm;return <div style={{textAlign:'right'}}><div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{t}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F,color:'#c8d8e8'}}>{d}</div></div>;}
 function MenuIcon(p){return <div onClick={p.onClick} style={{cursor:'pointer',padding:8}}><div style={{width:20,height:2,background:C.txtBright,marginBottom:4,borderRadius:1}}></div><div style={{width:14,height:2,background:C.txtBright,marginBottom:4,borderRadius:1}}></div><div style={{width:18,height:2,background:C.txtBright,borderRadius:1}}></div></div>;}
-function MenuDropdown(p){var ref=useRef(null);useEffect(function(){function h(e){if(ref.current&&!ref.current.contains(e.target))p.onClose();}document.addEventListener('touchstart',h);document.addEventListener('mousedown',h);return function(){document.removeEventListener('touchstart',h);document.removeEventListener('mousedown',h);};},[]);if(!p.open)return null;return <div ref={ref} style={{position:'absolute',top:44,right:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,boxShadow:CURRENT_THEME==='dark'?'0 8px 32px rgba(0,0,0,0.6)':'0 8px 32px rgba(0,0,0,0.15)',zIndex:100,minWidth:180,overflow:'hidden',maxHeight:'80vh',overflowY:'auto'}}>{p.items.map(function(item){if(item.type==='divider')return <div key={item.key} style={{height:1,background:C.accent,opacity:0.2,margin:'0 12px'}}></div>;if(item.type==='header')return <div key={item.key} style={{padding:'10px 16px 4px',color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,background:'rgba(255,176,32,0.05)'}}>{item.label}</div>;return <div key={item.key} onClick={function(){p.onSelect(item.key);p.onClose();}} style={{padding:(item.indent?'10px 16px 10px 32px':'12px 16px'),color:C.txtBright,fontSize:item.indent?10:11,fontFamily:F,fontWeight:600,letterSpacing:0.8,textTransform:'uppercase',cursor:'pointer',borderBottom:'1px solid '+C.border,display:'flex',alignItems:'center',gap:10}}><span style={{color:item.indent?C.accent:C.accent,fontSize:item.indent?12:14}}>{item.icon}</span>{item.label}</div>;})}</div>;}
+function MenuDropdown(p){var ref=useRef(null);useEffect(function(){function h(e){if(ref.current&&!ref.current.contains(e.target))p.onClose();}document.addEventListener('touchstart',h);document.addEventListener('mousedown',h);return function(){document.removeEventListener('touchstart',h);document.removeEventListener('mousedown',h);};},[]);if(!p.open)return null;return <div ref={ref} style={{position:'absolute',top:44,right:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,boxShadow:CURRENT_THEME==='dark'?'0 8px 32px rgba(0,0,0,0.6)':'0 8px 32px rgba(0,0,0,0.15)',zIndex:100,minWidth:180,overflow:'hidden',maxHeight:'80vh',overflowY:'auto'}}>{p.items.map(function(item){if(item.type==='divider')return <div key={item.key} style={{height:1,background:C.accent,opacity:0.2,margin:'0 12px'}}></div>;if(item.type==='header')return <div key={item.key} style={{padding:'10px 16px 4px',color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,background:C.gold+'0d'}}>{item.label}</div>;return <div key={item.key} onClick={function(){p.onSelect(item.key);p.onClose();}} style={{padding:(item.indent?'10px 16px 10px 32px':'12px 16px'),color:C.txtBright,fontSize:item.indent?10:11,fontFamily:F,fontWeight:600,letterSpacing:0.8,textTransform:'uppercase',cursor:'pointer',borderBottom:'1px solid '+C.border,display:'flex',alignItems:'center',gap:10}}><span style={{color:item.indent?C.accent:C.accent,fontSize:item.indent?12:14}}>{item.icon}</span>{item.label}</div>;})}</div>;}
 function BatchPage(p){
   var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -891,7 +891,7 @@ function TrendPage(p){
       <Cd>
         <SectionHead title="Average Hourly Profile" sub={"Mean values across "+data.totalDays+" days"} info="The average ATR%, volume, and trades for each hour across all days in the range. Shows the typical intraday pattern for this stock."/>
         <div style={{marginTop:8}}>
-          <div style={{color:'#e8f0f8',fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly ATR $</div>
+          <div style={{color:C.codeBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly ATR $</div>
           {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){
             var maxA=0;for(var k=4;k<20;k++){if(data.hourAvg[k].atr>maxA)maxA=data.hourAvg[k].atr;}
             var pct=maxA>0?(data.hourAvg[h2].atr/maxA*100):0;
@@ -900,12 +900,12 @@ function TrendPage(p){
               <div style={{flex:1,position:'relative',height:14}}>
                 <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.gold:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].atr>0?2:0}}></div>
               </div>
-              <div style={{width:44,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{'$'+data.hourAvg[h2].atr.toFixed(3)}</div>
+              <div style={{width:44,fontSize:7,color:C.codeBright,fontFamily:F,textAlign:'right',paddingLeft:4}}>{'$'+data.hourAvg[h2].atr.toFixed(3)}</div>
             </div>;
           })}
         </div>
         <div style={{marginTop:14}}>
-          <div style={{color:'#e8f0f8',fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly ATR %</div>
+          <div style={{color:C.codeBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly ATR %</div>
           {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){
             var maxA=0;for(var k=4;k<20;k++){if(data.hourAvg[k].atrPct>maxA)maxA=data.hourAvg[k].atrPct;}
             var pct=maxA>0?(data.hourAvg[h2].atrPct/maxA*100):0;
@@ -914,12 +914,12 @@ function TrendPage(p){
               <div style={{flex:1,position:'relative',height:14}}>
                 <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.accent:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].atrPct>0?2:0}}></div>
               </div>
-              <div style={{width:40,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{data.hourAvg[h2].atrPct.toFixed(2)+'%'}</div>
+              <div style={{width:40,fontSize:7,color:C.codeBright,fontFamily:F,textAlign:'right',paddingLeft:4}}>{data.hourAvg[h2].atrPct.toFixed(2)+'%'}</div>
             </div>;
           })}
         </div>
         <div style={{marginTop:14}}>
-          <div style={{color:'#e8f0f8',fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly Volume</div>
+          <div style={{color:C.codeBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly Volume</div>
           {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){
             var maxV=0;for(var k=4;k<20;k++){if(data.hourAvg[k].volume>maxV)maxV=data.hourAvg[k].volume;}
             var pct=maxV>0?(data.hourAvg[h2].volume/maxV*100):0;
@@ -928,12 +928,12 @@ function TrendPage(p){
               <div style={{flex:1,position:'relative',height:14}}>
                 <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.blue:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].volume>0?2:0}}></div>
               </div>
-              <div style={{width:40,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{fmtVol(data.hourAvg[h2].volume)}</div>
+              <div style={{width:40,fontSize:7,color:C.codeBright,fontFamily:F,textAlign:'right',paddingLeft:4}}>{fmtVol(data.hourAvg[h2].volume)}</div>
             </div>;
           })}
         </div>
         <div style={{marginTop:14}}>
-          <div style={{color:'#e8f0f8',fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly Trades</div>
+          <div style={{color:C.codeBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly Trades</div>
           {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){
             var maxT=0;for(var k=4;k<20;k++){if(data.hourAvg[k].trades>maxT)maxT=data.hourAvg[k].trades;}
             var pct=maxT>0?(data.hourAvg[h2].trades/maxT*100):0;
@@ -942,13 +942,13 @@ function TrendPage(p){
               <div style={{flex:1,position:'relative',height:14}}>
                 <div style={{position:'absolute',left:0,top:2,bottom:2,width:pct+'%',background:(h2>=9&&h2<16)?C.gold:C.txtDim,borderRadius:'0 2px 2px 0',minWidth:data.hourAvg[h2].trades>0?2:0}}></div>
               </div>
-              <div style={{width:40,fontSize:7,color:'#e8f0f8',fontFamily:F,textAlign:'right',paddingLeft:4}}>{fmtVol(data.hourAvg[h2].trades)}</div>
+              <div style={{width:40,fontSize:7,color:C.codeBright,fontFamily:F,textAlign:'right',paddingLeft:4}}>{fmtVol(data.hourAvg[h2].trades)}</div>
             </div>;
           })}
         </div>
         <div style={{marginTop:14}}>
           <div style={{display:'inline-block',background:C.accentDim,border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>CYCLE DATA @ {trendTp}% TAKE PROFIT</div>
-          <div style={{color:'#e8f0f8',fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly Cycles</div>
+          <div style={{color:C.codeBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Hourly Cycles</div>
           {data.hasCycles&&[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function(h2){
             var maxC2=0;for(var k=4;k<20;k++){if(data.avgHourlyCycles[k]>maxC2)maxC2=data.avgHourlyCycles[k];}
             var pct=maxC2>0?(data.avgHourlyCycles[h2]/maxC2*100):0;
@@ -963,7 +963,7 @@ function TrendPage(p){
           {!data.hasCycles&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:'8px 0'}}>No hourly cycle data cached. Re-run batch process to generate.</div>}
         </div>
         <div style={{marginTop:14}}>
-          <div style={{color:'#e8f0f8',fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Low-to-Next-High Swing %</div>
+          <div style={{color:C.codeBright,fontSize:9,fontWeight:700,fontFamily:F,marginBottom:6}}>Avg Low-to-Next-High Swing %</div>
           {[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].map(function(h2){
             var swings=[];
             for(var d3=0;d3<data.allDates.length;d3++){
@@ -1092,11 +1092,11 @@ function TrendPage(p){
         <div style={{overflowX:'auto',marginTop:8}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
             <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-              <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'left'}}>Date</th>
-              <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>ATR %</th>
-              <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>Volume</th>
-              <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>Trades</th>
-              <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>Range $</th>
+              <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'left'}}>Date</th>
+              <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>ATR %</th>
+              <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>Volume</th>
+              <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>Trades</th>
+              <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>Range $</th>
             </tr></thead>
             <tbody>{data.allDates.map(function(dt){
               var dayData=data.dates[dt];var totVol=0,totTrades=0,dayHigh=-Infinity,dayLow=Infinity,maxAP=0;
@@ -2969,7 +2969,7 @@ function StockProfileCheatSheetPage(p){
               var h=(vol/w.profile.max_bucket_vol)*100;
               var inVA=i>=w.profile.va_lo_idx&&i<=w.profile.va_hi_idx;
               var isPOC=i===w.profile.poc_idx;
-              var bg=isPOC?C.purple:(inVA?'rgba(168,85,247,0.55)':'rgba(255,255,255,0.18)');
+              var bg=isPOC?C.purple:(inVA?C.purple+'8c':'rgba(255,255,255,0.18)');
               return <div key={i} style={{flex:1,height:h+'%',background:bg,minHeight:vol>0?1:0,borderRadius:'1px 1px 0 0'}}/>;
             })}
           </div>
@@ -3047,7 +3047,7 @@ function StockProfileCheatSheetPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value);}} onKeyDown={function(e){if(e.key==='Enter')fetchProfile();}} placeholder="Enter ticker (e.g. NVDA)" style={iS} autoCapitalize="characters" autoCorrect="off" spellCheck={false}/>
       </div>
       <button onClick={fetchProfile} disabled={loading} style={bS}>{loading?(progMsg||'Loading...'):'Fetch Profile'}</button>
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {data&&<Cd glow={true}>
@@ -3065,12 +3065,15 @@ function StockProfileCheatSheetPage(p){
           {(function(){
             var mc=data.market_cap;
             var tier,tierColor,tierBg;
-            if(mc>=200e9){tier='MEGA CAP';tierColor='#9333ea';tierBg='#1e0a3d';}
-            else if(mc>=10e9){tier='LARGE CAP';tierColor='#10b981';tierBg='#0a2e22';}
-            else if(mc>=2e9){tier='MID CAP';tierColor='#fbbf24';tierBg='#3d2d10';}
-            else if(mc>=300e6){tier='SMALL CAP';tierColor='#3b82f6';tierBg='#0a1a3d';}
-            else if(mc>=50e6){tier='MICRO CAP';tierColor='#f97316';tierBg='#3d1e0a';}
-            else{tier='NANO CAP';tierColor='#ef4444';tierBg='#3d1010';}
+            // Tier pill bg = translucent version of tierColor (alpha appended).
+            // Works in both dark and light mode without per-theme branching.
+            if(mc>=200e9){tier='MEGA CAP';tierColor='#9333ea';}
+            else if(mc>=10e9){tier='LARGE CAP';tierColor='#10b981';}
+            else if(mc>=2e9){tier='MID CAP';tierColor='#fbbf24';}
+            else if(mc>=300e6){tier='SMALL CAP';tierColor='#3b82f6';}
+            else if(mc>=50e6){tier='MICRO CAP';tierColor='#f97316';}
+            else{tier='NANO CAP';tierColor='#ef4444';}
+            tierBg=tierColor+'25';
             return <div style={{marginTop:8,display:'inline-block',padding:'4px 10px',background:tierBg,border:'1px solid '+tierColor,borderRadius:12,color:tierColor,fontSize:9,fontWeight:700,letterSpacing:1.5,fontFamily:F}}>{tier}</div>;
           })()}
         </div>}
@@ -3121,7 +3124,7 @@ function StockProfileCheatSheetPage(p){
           return <div style={{marginBottom:14,padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border}}>
             <div onClick={function(){setChartExpanded(!chartExpanded);}} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:chartExpanded?10:0}}>
               <span style={{color:C.txtBright,fontSize:11,fontFamily:F,letterSpacing:2,fontWeight:700}}>PRICE CHART</span>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{chartExpanded?'\u25BE':'\u25B8'}</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{chartExpanded?'\u25BE':'\u25B8'}</div>
             </div>
             {chartExpanded&&<div>
               <div style={{display:'flex',gap:4,marginBottom:10,flexWrap:'wrap'}}>
@@ -3322,7 +3325,7 @@ function StockProfileCheatSheetPage(p){
                 ]}
               ]}</Info>
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{chartExpanded?'\u25BE':'\u25B8'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{chartExpanded?'\u25BE':'\u25B8'}</div>
           </div>
 
           {chartExpanded&&<div>
@@ -3535,8 +3538,8 @@ function StockProfileCheatSheetPage(p){
         // 'PAST' with neutral styling rather than rendering "HIGH RISK in -2 days".
         var risk,borderColor,bgTint,labelColor,riskMsg;
         if(daysAway<0){risk='PAST';borderColor=C.txtDim;bgTint=C.bg;labelColor=C.txtDim;riskMsg='already reported \u2014 feed may be stale';}
-        else if(daysAway<=14){risk='HIGH';borderColor=C.warn;bgTint='#3d1010';labelColor=C.warn;riskMsg='within 14 days \u2014 swing trade risk';}
-        else if(daysAway<=30){risk='MED';borderColor=C.gold;bgTint='#3d2d10';labelColor=C.gold;riskMsg='within 30 days \u2014 caution';}
+        else if(daysAway<=14){risk='HIGH';borderColor=C.warn;bgTint=C.warnDim;labelColor=C.warn;riskMsg='within 14 days \u2014 swing trade risk';}
+        else if(daysAway<=30){risk='MED';borderColor=C.gold;bgTint=C.goldDim;labelColor=C.gold;riskMsg='within 30 days \u2014 caution';}
         else{risk='LOW';borderColor=C.accent;bgTint=C.bg;labelColor=C.accent;riskMsg='clear runway';}
         var timeLabel=ev.time?(function(){
           var h=parseInt(ev.time.slice(0,2),10);
@@ -3677,7 +3680,7 @@ function StockProfileCheatSheetPage(p){
               {sCounts.positive>0&&<span style={{color:C.accent}}>{sCounts.positive}+</span>}
               {sCounts.neutral>0&&<span style={{color:C.gold}}>{sCounts.neutral}○</span>}
               {sCounts.negative>0&&<span style={{color:C.warn}}>{sCounts.negative}-</span>}
-              <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{newsExpanded?'▾':'▸'}</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{newsExpanded?'▾':'▸'}</div>
             </div>
           </div>
           {/* Article list - 5 most recent when expanded, 1 when collapsed */}
@@ -3807,7 +3810,7 @@ function StockProfileCheatSheetPage(p){
               ]}</Info>
               {a.total_active>0&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{a.total_active} active</span>}
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{analystExpanded?'▾':'▸'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{analystExpanded?'▾':'▸'}</div>
           </div>
           {/* Consensus + upside */}
           {a.consensus!=null&&<div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
@@ -3838,15 +3841,15 @@ function StockProfileCheatSheetPage(p){
               always fit; the COUNT and color carry the visual weight, not pill size.
               (Proportional flex collapses the 0-count pills to vertical letter wrap.) */}
           {a.total_active>0&&<div style={{display:'flex',gap:6,marginBottom:10}}>
-            <div style={{flex:1,padding:'6px 4px',background:'rgba(0,229,160,0.18)',border:'1px solid '+C.accent,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.buy>0?1:0.4}}>
+            <div style={{flex:1,padding:'6px 4px',background:C.accent+'2D',border:'1px solid '+C.accent,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.buy>0?1:0.4}}>
               <div style={{color:C.accent,fontSize:14,fontFamily:F,fontWeight:700,lineHeight:1}}>{a.distribution.buy}</div>
               <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.5,marginTop:2}}>BUY</div>
             </div>
-            <div style={{flex:1,padding:'6px 4px',background:'rgba(255,176,32,0.18)',border:'1px solid '+C.gold,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.hold>0?1:0.4}}>
+            <div style={{flex:1,padding:'6px 4px',background:C.gold+'2D',border:'1px solid '+C.gold,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.hold>0?1:0.4}}>
               <div style={{color:C.gold,fontSize:14,fontFamily:F,fontWeight:700,lineHeight:1}}>{a.distribution.hold}</div>
               <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1.5,marginTop:2}}>HOLD</div>
             </div>
-            <div style={{flex:1,padding:'6px 4px',background:'rgba(255,92,58,0.18)',border:'1px solid '+C.warn,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.sell>0?1:0.4}}>
+            <div style={{flex:1,padding:'6px 4px',background:C.warn+'2D',border:'1px solid '+C.warn,borderRadius:4,textAlign:'center',minWidth:0,opacity:a.distribution.sell>0?1:0.4}}>
               <div style={{color:C.warn,fontSize:14,fontFamily:F,fontWeight:700,lineHeight:1}}>{a.distribution.sell}</div>
               <div style={{color:C.warn,fontSize:7,fontFamily:F,letterSpacing:1.5,marginTop:2}}>SELL</div>
             </div>
@@ -3950,7 +3953,7 @@ function StockProfileCheatSheetPage(p){
               ]}</Info>
               {beatPct!=null&&<span style={{color:beatPct>=0?C.accent:C.warn,fontSize:9,fontFamily:F,fontWeight:700}}>{beatPct>=0?'BEAT +':'MISS '}{beatPct.toFixed(1)}%</span>}
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{epsExpanded?'▾':'▸'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{epsExpanded?'▾':'▸'}</div>
           </div>
           {epsExpanded&&<div>
             <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1,marginBottom:10}}>○ consensus est · ● actual reported</div>
@@ -4103,7 +4106,7 @@ function StockProfileCheatSheetPage(p){
               ]}</Info>
               {latest&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{latest.label}: {fmtMoney(latest.revenue)} rev</span>}
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{revExpanded?'▾':'▸'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{revExpanded?'▾':'▸'}</div>
           </div>
           {revExpanded&&<div>
             {/* Mode toggle */}
@@ -4381,7 +4384,7 @@ function StockProfileCheatSheetPage(p){
               ]}</Info>
               <span style={{color:regimeColor,fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1.2,padding:'2px 8px',borderRadius:4,border:'1px solid '+regimeColor,marginLeft:4}}>VOL {regime}</span>
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rollingExpanded?'▾':'▸'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rollingExpanded?'▾':'▸'}</div>
           </div>
           {rollingExpanded&&<div>
             {/* Header row. Columns: WINDOW + 6 data columns ordered as
@@ -4471,7 +4474,7 @@ function StockProfileCheatSheetPage(p){
                 ]}
               ]}</Info>
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rpcExpanded?'▾':'▸'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rpcExpanded?'▾':'▸'}</div>
           </div>
           {rpcExpanded&&<div>
             {/* Header row. Window col + 5 data cols (POC, VAL, VAH, %, POS).
@@ -4579,7 +4582,7 @@ function StockProfileCheatSheetPage(p){
                 ]}
               ]}</Info>
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{swingExpanded?'\u25BE':'\u25B8'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{swingExpanded?'\u25BE':'\u25B8'}</div>
           </div>
           {swingExpanded&&<div>
             {/* BASE: last completed close + date */}
@@ -4847,7 +4850,7 @@ function StockProfileCheatSheetPage(p){
                 ]}
               ]}</Info>
             </div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:'rgba(168,85,247,0.18)',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rcExpanded?'\u25BE':'\u25B8'}</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:13,background:C.purple+'2e',border:'1.5px solid '+C.purple,color:C.purple,fontSize:14,fontWeight:700,marginLeft:6}}>{rcExpanded?'\u25BE':'\u25B8'}</div>
           </div>
           {rcExpanded&&<div>
             {/* PERIOD SOURCE selector — picks which Rolling Stats window
@@ -4918,7 +4921,7 @@ function StockProfileCheatSheetPage(p){
                   capital \u00D7 tp%          \u2192 PROFIT / RANGE
                   net \u00D7 profit/range     \u2192 SWING-UP PROFIT */}
             <div style={{padding:'10px 12px',background:C.bgInput,borderRadius:6,border:'1px solid '+C.border}}>
-              {tpTooHigh&&<div style={{padding:'8px 10px',marginBottom:8,background:'rgba(255,176,32,0.10)',border:'1px solid '+C.warn,borderRadius:5}}>
+              {tpTooHigh&&<div style={{padding:'8px 10px',marginBottom:8,background:C.gold+'1a',border:'1px solid '+C.warn,borderRadius:5}}>
                 <div style={{color:C.warn,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:3}}>⚠ TP% TOO HIGH — 0 RANGES CLOSE</div>
                 <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>The take-profit % ({isFinite(tpPct)?tpPct.toFixed(2):'-'}%) exceeds the spread % ({isFinite(spreadPct)?spreadPct.toFixed(2):'-'}%). Every rung\u2019s exit price would land above TOP, so none can fire.</div>
                 <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,fontStyle:'italic'}}>Fix: lower TP% below {isFinite(spreadPct)?spreadPct.toFixed(2)+'%':'spread%'}, raise TOP, or lower BOTTOM.</div>
@@ -5111,7 +5114,7 @@ function StockProfileCheatSheetPage(p){
                   <div style={{textAlign:'right',color:r.tpTooHigh?C.warn:(isFinite(r.cycles)?C.txtBright:C.txtDim),fontSize:11,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'0':fmtInt(r.cycles)}</div>
                   <div style={{textAlign:'right',position:'relative'}}>
                     {/* Relative magnitude bar (background) */}
-                    {barPct>0&&<div style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',height:18,width:barPct+'%',background:'rgba(0,231,179,0.10)',borderRight:'2px solid '+C.accent,borderRadius:'2px 0 0 2px',pointerEvents:'none'}}/>}
+                    {barPct>0&&<div style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',height:18,width:barPct+'%',background:C.accent+'1a',borderRight:'2px solid '+C.accent,borderRadius:'2px 0 0 2px',pointerEvents:'none'}}/>}
                     <div style={{position:'relative',display:'flex',justifyContent:'flex-end',alignItems:'baseline',gap:4}}>
                       {r.tpTooHigh&&<span style={{color:C.warn,fontSize:6,fontFamily:F,fontStyle:'italic',fontWeight:700}}>tp too high</span>}
                       <span style={{color:r.tpTooHigh?C.txtDim:(isFinite(r.profit)&&r.profit>0?C.accent:C.txtDim),fontSize:12,fontFamily:F,fontWeight:700}}>{r.tpTooHigh?'$0.00':fmtMoney(r.profit)}</span>
@@ -5326,11 +5329,11 @@ function ObjectivesPage(p){
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Step 2: Model Prediction</p>
           <p style={{marginBottom:6,fontSize:9}}>The live feature values are fed into the trained ML model from Stage 3. The model outputs a recommended profit taker percentage for the upcoming hour. For example:</p>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'8px',marginBottom:6}}>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'8px',marginBottom:6}}>
             <p style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:4}}>{"Hour: 10:30 - 11:30 AM"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"VIX: 22.4 | Prev hour cycles: 47"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"Gap: +1.2% | Vol ratio: 1.8x"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"Prev day ATR: 4.1%"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"VIX: 22.4 | Prev hour cycles: 47"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"Gap: +1.2% | Vol ratio: 1.8x"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"Prev day ATR: 4.1%"}</p>
             <p style={{fontSize:8,fontFamily:F,color:C.accent,marginBottom:0}}>{">> Recommended TP%: 0.72%"}</p>
           </div>
           <p style={{fontSize:9}}>The system does not guess or use a fixed rule. It applies the learned relationships from thousands of historical hourly periods to the current conditions.</p>
@@ -5457,8 +5460,8 @@ function ObjectivesPage(p){
 
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>The Continuous Improvement Loop</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:14}}>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'10px',marginBottom:6,overflowX:'auto'}}>
-            <pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,lineHeight:1.8}}>{"Observe market state\n      |\n      v\nRL agent selects TP%\n      |\n      v\nExecute for 1 hour\n      |\n      v\nMeasure actual reward\n      |\n      v\nUpdate RL policy\n      |\n      v\nCheck for regime change\n      |\n      v\n[No change] --> loop back\n[Change detected] --> recalibrate\n      |\n      v\nLoop continues forever"}</pre>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'10px',marginBottom:6,overflowX:'auto'}}>
+            <pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0,lineHeight:1.8}}>{"Observe market state\n      |\n      v\nRL agent selects TP%\n      |\n      v\nExecute for 1 hour\n      |\n      v\nMeasure actual reward\n      |\n      v\nUpdate RL policy\n      |\n      v\nCheck for regime change\n      |\n      v\n[No change] --> loop back\n[Change detected] --> recalibrate\n      |\n      v\nLoop continues forever"}</pre>
           </div>
           <p style={{fontSize:9}}>This loop runs every hour during market hours, indefinitely. The system never stops learning. Each hour of live data makes it marginally better at predicting the next hour's optimal TP%. Over weeks and months, this compounding improvement creates a meaningful and growing edge.</p>
         </div>
@@ -5480,8 +5483,8 @@ function ObjectivesPage(p){
 
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Pipeline Overview</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:14}}>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'10px',marginBottom:6,overflowX:'auto'}}>
-            <pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,lineHeight:1.8}}>{"Market Data Sources\n      |\n      v\n[1] Data Ingestion Layer\n      |\n      v\n[2] Processing & Feature Engineering\n      |\n      v\n[3] Storage Layer\n      |\n      v\n[4] ML Model Layer\n      |\n      v\n[5] Prediction & Execution\n      |\n      v\nAlpha Trader System"}</pre>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'10px',marginBottom:6,overflowX:'auto'}}>
+            <pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0,lineHeight:1.8}}>{"Market Data Sources\n      |\n      v\n[1] Data Ingestion Layer\n      |\n      v\n[2] Processing & Feature Engineering\n      |\n      v\n[3] Storage Layer\n      |\n      v\n[4] ML Model Layer\n      |\n      v\n[5] Prediction & Execution\n      |\n      v\nAlpha Trader System"}</pre>
           </div>
           <p style={{fontSize:9}}>Each layer runs independently and communicates through defined interfaces, so any component can be upgraded or scaled without disrupting the others.</p>
         </div>
@@ -5531,15 +5534,15 @@ function ObjectivesPage(p){
 
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Timing and Schedule</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'8px',marginBottom:6}}>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"04:00 AM  Data ingestion starts (pre-market)"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"09:25 AM  Feature vector built from pre-market"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"09:30 AM  First prediction: opening hour TP%"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"10:30 AM  Hour 1 reviewed, Hour 2 predicted"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"11:30 AM  Hour 2 reviewed, Hour 3 predicted"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"  ...      (continues hourly)"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c',marginBottom:2}}>{"04:00 PM  Final hour reviewed, day summary"}</p>
-            <p style={{fontSize:8,fontFamily:F,color:'#8ec07c'}}>{"08:00 PM  Nightly: archive data, retrain model"}</p>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'8px',marginBottom:6}}>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"04:00 AM  Data ingestion starts (pre-market)"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"09:25 AM  Feature vector built from pre-market"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"09:30 AM  First prediction: opening hour TP%"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"10:30 AM  Hour 1 reviewed, Hour 2 predicted"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"11:30 AM  Hour 2 reviewed, Hour 3 predicted"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"  ...      (continues hourly)"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code,marginBottom:2}}>{"04:00 PM  Final hour reviewed, day summary"}</p>
+            <p style={{fontSize:8,fontFamily:F,color:C.code}}>{"08:00 PM  Nightly: archive data, retrain model"}</p>
           </div>
         </div>
 
@@ -6291,33 +6294,33 @@ function SourcePage(p){
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Table: cached_analyses</p>
           <p style={{marginBottom:4,fontSize:9}}>One row per ticker/date/TP%/session combo. Primary results table.</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>ticker, trade_date, tp_pct, session_type (unique key)</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>total_cycles, active_levels, total_levels, total_trades</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>tick_min, tick_max, open_price, pre_seed_max</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>ohlc_open, ohlc_high, ohlc_low, ohlc_close, ohlc_volume</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>ticker, trade_date, tp_pct, session_type (unique key)</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>total_cycles, active_levels, total_levels, total_trades</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>tick_min, tick_max, open_price, pre_seed_max</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>ohlc_open, ohlc_high, ohlc_low, ohlc_close, ohlc_volume</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Table: cached_levels</p>
           <p style={{marginBottom:4,fontSize:9}}>Per-level cycle counts. Linked to parent analysis via FK. Only levels with cycles &gt; 0 stored. CASCADE delete when parent removed.</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>analysis_id (FK to cached_analyses.id)</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>level_price, target_price, cycles</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>analysis_id (FK to cached_analyses.id)</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>level_price, target_price, cycles</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Table: cached_seasonality</p>
           <p style={{marginBottom:4,fontSize:9}}>One row per ticker/date/hour. Hourly intraday metrics (16 rows per stock-day).</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>ticker, trade_date, hour (unique key, hour 4-19 ET)</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>high, low, atr, atr_pct, volume, trades</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>ticker, trade_date, hour (unique key, hour 4-19 ET)</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>high, low, atr, atr_pct, volume, trades</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Table: cached_sessions</p>
           <p style={{marginBottom:4,fontSize:9}}>One row per ticker/date/session. Pre-market, regular, and post-market breakdowns (3 rows per stock-day).</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>ticker, trade_date, session_type (unique key)</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>high, low, range_dollars, range_pct, volume, trades</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>ticker, trade_date, session_type (unique key)</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>high, low, range_dollars, range_pct, volume, trades</p>
         </div>
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Relationships</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'8px',marginBottom:6}}>
-            <pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,lineHeight:1.8}}>{"cached_analyses (1) --< cached_levels (many)\n  FK: cached_levels.analysis_id\n  CASCADE: delete analysis = delete levels\n\ncached_seasonality    (standalone, keyed by ticker+date+hour)\ncached_sessions       (standalone, keyed by ticker+date+session)\ncached_hourly_cycles  (standalone, keyed by ticker+date+hour+tp_pct+session)"}</pre>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'8px',marginBottom:6}}>
+            <pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0,lineHeight:1.8}}>{"cached_analyses (1) --< cached_levels (many)\n  FK: cached_levels.analysis_id\n  CASCADE: delete analysis = delete levels\n\ncached_seasonality    (standalone, keyed by ticker+date+hour)\ncached_sessions       (standalone, keyed by ticker+date+session)\ncached_hourly_cycles  (standalone, keyed by ticker+date+hour+tp_pct+session)"}</pre>
           </div>
         </div>
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Cache Write Flow</p>
@@ -6347,8 +6350,8 @@ function SourcePage(p){
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Table: cached_hourly_cycles</p>
           <p style={{marginBottom:4,fontSize:9}}>One row per ticker/date/hour/TP%/session. Stores cycle counts per hour, tied to a specific take-profit percentage. 16 rows per stock-day-TP%.</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>ticker, trade_date, hour, tp_pct, session_type (unique key)</p>
-          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:'#8ec07c'}}>cycles</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>ticker, trade_date, hour, tp_pct, session_type (unique key)</p>
+          <p style={{marginBottom:2,paddingLeft:8,fontSize:8,color:C.code}}>cycles</p>
         </div>
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Edge Function: batch-analyze</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
@@ -6722,8 +6725,8 @@ function LogicPage(p){
     <CollapseStage title="Cross-Verification Code" sub="Python script to replicate the analysis">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8,marginTop:8}}>
         <p style={{marginBottom:10}}>This Python script replicates the exact logic including the pre-seeded ladder and limit order fill rules. Run it independently to verify cycle counts match.</p>
-        <div style={{background:'#0a0e14',border:'1px solid '+C.border,borderRadius:6,padding:'12px',overflowX:'auto',marginBottom:10}}>
-          <pre style={{color:'#8ec07c',fontSize:8,fontFamily:F,lineHeight:1.6,margin:0,whiteSpace:'pre-wrap'}}>{PYCODE}</pre>
+        <div style={{background:C.bgDeep,border:'1px solid '+C.border,borderRadius:6,padding:'12px',overflowX:'auto',marginBottom:10}}>
+          <pre style={{color:C.code,fontSize:8,fontFamily:F,lineHeight:1.6,margin:0,whiteSpace:'pre-wrap'}}>{PYCODE}</pre>
         </div>
         <p style={{color:C.txtDim,fontSize:9}}>Replace YOUR_POLYGON_API_KEY. Requires: <span style={{color:C.txtBright}}>pip install requests</span></p>
       </div>
@@ -6735,14 +6738,14 @@ function LogicPage(p){
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>Endpoints Used</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:8}}><span style={{color:C.accent,fontWeight:700}}>1. Trades Endpoint</span></p>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'6px 8px',marginBottom:6,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:8,fontFamily:F,margin:0}}>GET /v3/trades/{"{"} TICKER {"}"}</pre></div>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'6px 8px',marginBottom:6,overflowX:'auto'}}><pre style={{color:C.code,fontSize:8,fontFamily:F,margin:0}}>GET /v3/trades/{"{"} TICKER {"}"}</pre></div>
           <p style={{marginBottom:4,fontSize:9}}>Returns every individual trade tick for a given stock on a given day. Each record includes:</p>
           <p style={{marginBottom:2,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>price</span> - Exact execution price (sub-penny precision)</p>
           <p style={{marginBottom:2,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>size</span> - Number of shares traded</p>
           <p style={{marginBottom:2,paddingLeft:8,fontSize:9}}><span style={{color:C.accent}}>sip_timestamp</span> - Nanosecond-precision timestamp from the SIP feed</p>
           <p style={{marginBottom:6,fontSize:9}}>Results are paginated at 50,000 trades per page. The app follows the next_url cursor automatically to fetch the complete dataset (often 50,000 - 500,000+ trades per day depending on the stock).</p>
           <p style={{marginBottom:8}}><span style={{color:C.accent,fontWeight:700}}>2. Daily OHLC Endpoint</span></p>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'6px 8px',marginBottom:6,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:8,fontFamily:F,margin:0}}>GET /v1/open-close/{"{"} TICKER {"}"}/{"{"} DATE {"}"}</pre></div>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'6px 8px',marginBottom:6,overflowX:'auto'}}><pre style={{color:C.code,fontSize:8,fontFamily:F,margin:0}}>GET /v1/open-close/{"{"} TICKER {"}"}/{"{"} DATE {"}"}</pre></div>
           <p style={{fontSize:9}}>Returns the official daily Open, High, Low, Close prices and total volume for the regular trading session. Used for the Market Data summary card.</p>
         </div>
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>How Data is Fetched</p>
@@ -6790,7 +6793,7 @@ function LogicPage(p){
         <p style={{marginBottom:10,color:C.txtBright,fontWeight:700}}>How It Works</p>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Step 1: Create your test data.</span> Open any spreadsheet or text editor and create a simple CSV file with a column of prices. This can be as few as 10-20 rows. For example:</p>
-          <div style={{background:'#0a0e14',borderRadius:4,padding:'6px 8px',marginBottom:6,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:8,fontFamily:F,margin:0}}>{"price\n5.00\n5.03\n5.06\n5.02\n5.00\n5.04\n5.07\n5.01\n5.00\n5.05"}</pre></div>
+          <div style={{background:C.bgDeep,borderRadius:4,padding:'6px 8px',marginBottom:6,overflowX:'auto'}}><pre style={{color:C.code,fontSize:8,fontFamily:F,margin:0}}>{"price\n5.00\n5.03\n5.06\n5.02\n5.00\n5.04\n5.07\n5.01\n5.00\n5.05"}</pre></div>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Step 2: Count cycles manually.</span> Walk through your prices row by row using the same rules: first row is the opening tick (no orders). Levels from open to +1% are pre-seeded. Track which levels are active, when sells trigger (tick {'>='} target), and when re-buys happen (tick within level range). Count the cycles by hand.</p>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Step 3: Upload to the app.</span> Go to Verify Logic Data Upload in the menu, upload your CSV file, set the same take-profit %, and tap Analyze.</p>
           <p><span style={{color:C.accent,fontWeight:700}}>Step 4: Compare.</span> The app shows a complete step-by-step audit of every row from your file, showing exactly which BUY and SELL events triggered and why. Compare this line-by-line against your manual count. The total cycles should match exactly.</p>
@@ -6832,7 +6835,7 @@ function LogicPage(p){
         <p style={{marginBottom:4,paddingLeft:8}}>During EST months (November through early March), every trade was assigned to the wrong hourly bucket, shifted by exactly one hour. This created false zero-trade hours in the data integrity view. For example, 9:00 AM ET trades (UTC 14:00) were computed as 14-4=10, placing them in the 10 AM bucket instead of the correct 9 AM bucket. The 9 AM bucket appeared empty even though the market open at 9:30 AM should always have trades. The error affected 12 separate code locations across the entire codebase.</p>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>The Resolution</p>
         <p style={{marginBottom:6,paddingLeft:8}}>Replaced ALL manual offset calculations with JavaScript's built-in <span style={{color:C.accent}}>Intl.DateTimeFormat</span> API using <span style={{color:C.accent}}>timeZone: 'America/New_York'</span>. This uses the IANA timezone database embedded in every browser's JavaScript engine, which knows every DST transition for the America/New_York timezone, past and future. A cached formatter (<span style={{color:C.accent}}>_etFmt</span>) is reused for performance across hundreds of thousands of trades.</p>
-        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0}}>{"// WRONG - hardcoded offset, fails during EST\nvar eh = d.getUTCHours() - 4;\n\n// CORRECT - uses IANA timezone database\nvar _etFmt = new Intl.DateTimeFormat('en-US', {\n  timeZone: 'America/New_York',\n  hour: 'numeric', hour12: false\n});\nfunction getETHourFromMs(ms) {\n  return parseInt(_etFmt.format(new Date(ms)));\n}"}</pre></div>
+        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0}}>{"// WRONG - hardcoded offset, fails during EST\nvar eh = d.getUTCHours() - 4;\n\n// CORRECT - uses IANA timezone database\nvar _etFmt = new Intl.DateTimeFormat('en-US', {\n  timeZone: 'America/New_York',\n  hour: 'numeric', hour12: false\n});\nfunction getETHourFromMs(ms) {\n  return parseInt(_etFmt.format(new Date(ms)));\n}"}</pre></div>
         <p style={{marginBottom:10,paddingLeft:8,color:C.txtDim}}>Applied to all 12 locations: computeHourlyCycles, computeCycleHoldTimes, formatTS, verifyFetchIntegrity, BatchPage, SeasonalityPage, HourlyOptimalPage, runRange, single-day run, loadFullData, and RTH filters. The Web Worker receives the offset as a passed parameter since workers run in an isolated thread.</p>
 
         <p style={{marginBottom:6,color:C.warn,fontWeight:700,fontSize:11}}>2. Data Retrieval Issues (Polygon API)</p>
@@ -6840,7 +6843,7 @@ function LogicPage(p){
         <p style={{marginBottom:6,paddingLeft:8}}>Polygon's /v3/trades endpoint returns up to 50,000 results per page with cursor-based pagination via a <span style={{color:C.accent}}>next_url</span> field. When fetching a full trading day in a single API call (e.g., T04:00Z to T23:59Z), Polygon's next_url pagination silently drops pre-market trades on subsequent pages. The first page returns data correctly, but following pages skip early-morning timestamps, resulting in zero trades for pre-market hours (4-8 AM ET) even for stocks that actively trade pre-market.</p>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>Resolution A: Multi-Window Fetch with Overlap</p>
         <p style={{marginBottom:6,paddingLeft:8}}>Split the full day into 3 overlapping time windows, each fetched as a separate Polygon API call. Windows overlap by 2-3 hours to ensure no trades are lost at boundaries. After concatenating all results, trades are sorted by timestamp and deduplicated (matching on exact nanosecond timestamp). The overlapping windows ensure that even if Polygon drops trades near a boundary, the neighboring window captures them.</p>
-        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:6,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0}}>{"// 3 windows with 2-3 hour overlap, EST/EDT-aware\nW1: 4AM-12PM ET  (pre-market through morning)\nW2: 9AM-5PM ET   (overlaps 3hrs, covers full RTH)\nW3: 2PM-8:30PM ET (overlaps 3hrs, close+post)\n\n// Dedup after concatenation\nallRaw.sort((a,b) => a.ts - b.ts);\nfor (var i = 0; i < allRaw.length; i++)\n  if (allRaw[i].ts !== lastTs) allTrades.push(allRaw[i]);"}</pre></div>
+        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:6,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0}}>{"// 3 windows with 2-3 hour overlap, EST/EDT-aware\nW1: 4AM-12PM ET  (pre-market through morning)\nW2: 9AM-5PM ET   (overlaps 3hrs, covers full RTH)\nW3: 2PM-8:30PM ET (overlaps 3hrs, close+post)\n\n// Dedup after concatenation\nallRaw.sort((a,b) => a.ts - b.ts);\nfor (var i = 0; i < allRaw.length; i++)\n  if (allRaw[i].ts !== lastTs) allTrades.push(allRaw[i]);"}</pre></div>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>Problem B: Window Boundaries Must Be EST/EDT-Aware</p>
         <p style={{marginBottom:6,paddingLeft:8}}>Fetch windows are defined in UTC (e.g., T09:00Z to T17:00Z). If these boundaries are designed for EDT (UTC-4) but the trading date is during EST (UTC-5), the windows cover the wrong ET hours. For example, T13:00Z is 9:00 AM EDT but 8:00 AM EST. This caused the 4 AM ET hour to be missed entirely during EST months because the fetch started too late in UTC.</p>
         <p style={{marginBottom:6,paddingLeft:8,color:C.txtDim}}>Resolution: The <span style={{color:C.accent}}>getETOffset()</span> function (itself using the Intl API) determines the correct UTC offset for each date. Window boundaries are then computed dynamically: <span style={{color:C.accent}}>var hPre = 4 + etOff</span> converts 4 AM ET to the correct UTC hour (T09:00Z for EST, T08:00Z for EDT).</p>
@@ -6882,7 +6885,7 @@ function LogicPage(p){
         <p style={{marginBottom:6,paddingLeft:8}}>Correlation Finder reports "1 DAYS | 10 DATA POINTS" despite the database containing 24 days. Correlations show extreme values (+1.000 or -1.000) because with only 10 points, any feature can appear perfectly correlated by chance. Seasonality features show r=+1.000 because with 1 day, the seasonal average for each hour IS that hour's value (a tautology).</p>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>The Resolution</p>
         <p style={{marginBottom:6,paddingLeft:8}}>Paginate large fetches using URL parameters <span style={{color:C.accent}}>limit</span> and <span style={{color:C.accent}}>offset</span>. CRITICAL: the <span style={{color:C.accent}}>limit</span> value MUST be set to <span style={{color:C.accent}}>1000</span> or lower because PostgREST enforces a server-side <span style={{color:C.accent}}>max_rows</span> cap of 1,000. If you request <span style={{color:C.accent}}>limit=10000</span>, PostgREST silently returns only 1,000 rows. The pagination loop then sees <span style={{color:C.accent}}>batch.length (1000) &lt; batchSize (10000)</span> and breaks, thinking it received the last partial page. Loop with batch size of 1000 until an empty or partial batch signals end-of-data.</p>
-        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0}}>{"// WRONG - silent truncation at 1,000 rows\nvar r = await fetch(URL + '?ticker=eq.ONON', {headers: h});\nvar data = await r.json(); // only 1,000 rows!\n\n// ALSO WRONG - batch > max_rows, loop breaks early\nvar r = await fetch(URL + '&limit=10000&offset=0');\n// Returns 1000 rows, loop sees 1000 < 10000, breaks!\n\n// CORRECT - batch size matches max_rows (1000)\nvar all = [], offset = 0, batch = 1000;\nwhile (true) {\n  var r = await fetch(URL + '&limit=' + batch + '&offset=' + offset);\n  var rows = await r.json();\n  if (!rows.length) break;\n  all = all.concat(rows);\n  if (rows.length < batch) break; // last page\n  offset += batch;\n}\n// all now contains every row"}</pre></div>
+        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0}}>{"// WRONG - silent truncation at 1,000 rows\nvar r = await fetch(URL + '?ticker=eq.ONON', {headers: h});\nvar data = await r.json(); // only 1,000 rows!\n\n// ALSO WRONG - batch > max_rows, loop breaks early\nvar r = await fetch(URL + '&limit=10000&offset=0');\n// Returns 1000 rows, loop sees 1000 < 10000, breaks!\n\n// CORRECT - batch size matches max_rows (1000)\nvar all = [], offset = 0, batch = 1000;\nwhile (true) {\n  var r = await fetch(URL + '&limit=' + batch + '&offset=' + offset);\n  var rows = await r.json();\n  if (!rows.length) break;\n  all = all.concat(rows);\n  if (rows.length < batch) break; // last page\n  offset += batch;\n}\n// all now contains every row"}</pre></div>
         <p style={{marginBottom:6,paddingLeft:8,color:C.txtDim}}>Rule: Any table that could exceed 1,000 rows for a single query MUST use paginated fetching. Currently affected: optimal_tp_hourly (1,600 rows/day), cached_daily_optimal_tp (100 rows/day), hourly_features (16 rows/day, safe under 1,000 for ~60 days).</p>
 
         <p style={{marginBottom:6,color:C.warn,fontWeight:700,fontSize:11}}>7. Cloudflare Worker Timeouts and Memory Limits</p>
@@ -6910,7 +6913,7 @@ function LogicPage(p){
         <p style={{marginBottom:6,paddingLeft:8}}>When a feature has a constant value across all data points (e.g., Day Low is identical every hour), the Pearson correlation formula produces <span style={{color:C.accent}}>0/0 = NaN</span>. JavaScript's <span style={{color:C.accent}}>Array.sort()</span> comparator expects numeric return values. When the comparator returns <span style={{color:C.accent}}>NaN</span> (from <span style={{color:C.accent}}>vb - va</span> where either is NaN), the sort algorithm enters undefined behavior -- no elements get reordered at all. The entire correlation matrix appears unsortable no matter which column header is clicked.</p>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>The Resolution</p>
         <p style={{marginBottom:6,paddingLeft:8}}>Added a NaN guard in every sort comparator: check both values with <span style={{color:C.accent}}>isNaN()</span> before subtraction. If both are NaN, return 0. If only one is NaN, push it to the end (return 1 or -1). NaN correlation values also display as a dash '—' in the table instead of the literal string "NaN".</p>
-        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0}}>{"// NaN guard in sort comparator\nvar aNaN = isNaN(va), bNaN = isNaN(vb);\nif (aNaN && bNaN) return 0;\nif (aNaN) return 1;  // push NaN to end\nif (bNaN) return -1;\nreturn sortDir === 'desc' ? (vb - va) : (va - vb);"}</pre></div>
+        <div style={{background:C.bg,borderRadius:4,padding:'6px 8px',marginBottom:10,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0}}>{"// NaN guard in sort comparator\nvar aNaN = isNaN(va), bNaN = isNaN(vb);\nif (aNaN && bNaN) return 0;\nif (aNaN) return 1;  // push NaN to end\nif (bNaN) return -1;\nreturn sortDir === 'desc' ? (vb - va) : (va - vb);"}</pre></div>
 
         <p style={{marginBottom:6,color:C.warn,fontWeight:700,fontSize:11}}>11. PostgREST PATCH Silently Failing (VIX Backfill)</p>
         <p style={{marginBottom:4,color:C.txtBright,fontWeight:700}}>The Problem</p>
@@ -7462,16 +7465,16 @@ function OptimalTPPage(p){
         <div style={{maxHeight:400,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
             <thead><tr style={{position:'sticky',top:0,background:C.bgCard}}>
-              <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'left'}}>#</th>
-              <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>TP%</th>
-              <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>TP $</th>
-              <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>Cycles</th>
-              <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>Net $</th>
-              <th style={{padding:'4px 2px',color:'#a0b4c8',textAlign:'right'}}>ROI</th>
+              <th style={{padding:'4px 2px',color:C.codeDim,textAlign:'left'}}>#</th>
+              <th style={{padding:'4px 2px',color:C.codeDim,textAlign:'right'}}>TP%</th>
+              <th style={{padding:'4px 2px',color:C.codeDim,textAlign:'right'}}>TP $</th>
+              <th style={{padding:'4px 2px',color:C.codeDim,textAlign:'right'}}>Cycles</th>
+              <th style={{padding:'4px 2px',color:C.codeDim,textAlign:'right'}}>Net $</th>
+              <th style={{padding:'4px 2px',color:C.codeDim,textAlign:'right'}}>ROI</th>
             </tr></thead>
             <tbody>{results.scan.results.map(function(r,idx){
               var isBest=idx===0;var isTop5=idx<5;var curTdH=Math.max(0.01,Math.round((Math.ceil(results.sharePrice*(1+(parseFloat(currentTp)||0)/100)*100)/100-results.sharePrice)*100)/100);var isCurrent=Math.abs(r.tpPct-(parseFloat(currentTp)||0))<0.001||Math.abs(r.tpDollar-curTdH)<0.001;
-              return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCurrent?'rgba(157,92,255,0.15)':isBest?'rgba(255,176,32,0.1)':isTop5?'rgba(0,229,160,0.03)':'transparent'}}>
+              return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCurrent?C.purple+'26':isBest?C.gold+'1a':isTop5?C.accent+'08':'transparent'}}>
                 <td style={{padding:'5px 2px',color:isCurrent?C.purple:isBest?C.gold:C.txtDim}}>{isCurrent?'\u25B6':idx+1}</td>
                 <td style={{padding:'5px 2px',color:isCurrent?C.purple:isBest?C.gold:isTop5?C.accent:C.txt,textAlign:'right',fontWeight:isCurrent||isBest?700:400}}>{r.tpPct.toFixed(2)}%</td>
                 <td style={{padding:'5px 2px',color:C.gold,textAlign:'right'}}>{'$'+r.tpDollar.toFixed(2)}</td>
@@ -7679,7 +7682,7 @@ function OptimalTPPage(p){
             <tbody>{multiResults.flatRanked.map(function(fr,idx){
               var curTdR=multiResults.currentTpPct>0?Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+multiResults.currentTpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100):0;var isCur=multiResults.currentTpPct>0&&(Math.abs(fr.tpPct-multiResults.currentTpPct)<0.001||(curTdR>0&&Math.abs(parseFloat(Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+fr.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100))-curTdR)<0.001));
               var isBest=idx===0;
-              return <tr key={fr.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCur?'rgba(157,92,255,0.15)':isBest?'rgba(255,176,32,0.1)':'transparent'}}>
+              return <tr key={fr.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isCur?C.purple+'26':isBest?C.gold+'1a':'transparent'}}>
                 <td style={{padding:'5px 2px',color:isCur?C.purple:isBest?C.gold:C.txtDim}}>{isCur?'\u25B6':idx+1}</td>
                 <td style={{padding:'5px 2px',color:isCur?C.purple:isBest?C.gold:C.txt,textAlign:'right',fontWeight:isCur||isBest?700:400}}>{fr.tpPct.toFixed(2)+'%'}</td>
                 <td style={{padding:'5px 2px',color:C.txtDim,textAlign:'right'}}>{'$'+(Math.max(0.01,Math.round((Math.ceil(multiResults.avgClosePrice*(1+fr.tpPct/100)*100)/100-multiResults.avgClosePrice)*100)/100)).toFixed(2)}</td>
@@ -7713,16 +7716,16 @@ function OptimalTPPage(p){
 
         <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>2. The Cycle Engine (per TP% iteration)</div>
         <p style={{marginBottom:4,paddingLeft:8}}>For each TP% value tested, the engine builds a fresh ladder of $0.01 price levels using typed arrays for O(1) access:</p>
-        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:8,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"// Level oscillation setup\nvar minCents = Math.round(minPrice * 100);\nvar maxCents = Math.round(maxPrice * 100);\nvar count = maxCents - minCents + 1;  // one level per penny\n\nvar lvlActive = new Uint8Array(count);   // 0=inactive, 1=active\nvar lvlCycles = new Int32Array(count);   // cycle counter per level\nvar lvlTarget = new Float64Array(count); // sell target per level\n\n// Sell target = always ceil to next tradeable penny\nlvlTarget[c] = Math.ceil(levelPrice * (1 + TP/100) * 100) / 100;\n\n// Pre-seed: levels from open to open+1% start ACTIVE\nlvlActive[c] = (cents >= openCents && cents <= preSeedMaxCents) ? 1 : 0;"}</pre></div>
+        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:8,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"// Level oscillation setup\nvar minCents = Math.round(minPrice * 100);\nvar maxCents = Math.round(maxPrice * 100);\nvar count = maxCents - minCents + 1;  // one level per penny\n\nvar lvlActive = new Uint8Array(count);   // 0=inactive, 1=active\nvar lvlCycles = new Int32Array(count);   // cycle counter per level\nvar lvlTarget = new Float64Array(count); // sell target per level\n\n// Sell target = always ceil to next tradeable penny\nlvlTarget[c] = Math.ceil(levelPrice * (1 + TP/100) * 100) / 100;\n\n// Pre-seed: levels from open to open+1% start ACTIVE\nlvlActive[c] = (cents >= openCents && cents <= preSeedMaxCents) ? 1 : 0;"}</pre></div>
 
         <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>3. Tick-by-Tick Execution</div>
         <p style={{marginBottom:4,paddingLeft:8}}>From tick #2 onwards (tick #1 is observe-only), two operations execute in strict order on every tick:</p>
-        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:4,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"for (var i = 1; i < trades.length; i++) {\n  var price = trades[i].price;\n\n  // STEP A: SELL FIRST - scan ALL active levels\n  for (var j = 0; j < count; j++) {\n    if (lvlActive[j] === 1 && price >= lvlTarget[j]) {\n      lvlCycles[j]++;    // cycle complete\n      lvlActive[j] = 0;  // level goes inactive\n    }\n  }\n\n  // STEP B: BUY SECOND - activate ONE level\n  var idx = Math.floor(price * 100) - minCents;\n  if (idx >= 0 && idx < count && lvlActive[idx] === 0) {\n    lvlActive[idx] = 1;  // level activated\n  }\n}"}</pre></div>
+        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:4,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"for (var i = 1; i < trades.length; i++) {\n  var price = trades[i].price;\n\n  // STEP A: SELL FIRST - scan ALL active levels\n  for (var j = 0; j < count; j++) {\n    if (lvlActive[j] === 1 && price >= lvlTarget[j]) {\n      lvlCycles[j]++;    // cycle complete\n      lvlActive[j] = 0;  // level goes inactive\n    }\n  }\n\n  // STEP B: BUY SECOND - activate ONE level\n  var idx = Math.floor(price * 100) - minCents;\n  if (idx >= 0 && idx < count && lvlActive[idx] === 0) {\n    lvlActive[idx] = 1;  // level activated\n  }\n}"}</pre></div>
         <p style={{marginBottom:8,paddingLeft:8,color:C.warn,fontWeight:600}}>SELL-before-BUY order is critical. Reversing it would count a cycle and immediately re-buy on the same tick, inflating results.</p>
 
         <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>4. Profit Calculation</div>
         <p style={{marginBottom:4,paddingLeft:8}}>Profit uses the actual penny-rounded dollar spread, not the theoretical percentage:</p>
-        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:8,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:'#8ec07c',fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"// Dollar spread (always rounds UP to next tradeable penny)\ntpDollar = Math.ceil(sharePrice * (1 + TP%/100) * 100) / 100 - sharePrice;\nif (tpDollar < 0.01) tpDollar = 0.01;  // minimum 1 cent\n\n// Fractional share quantity\nshares_per_level = capitalPerLevel / sharePrice;  // e.g. $1 / $25 = 0.04 shares\n\n// Fee scales with fractional quantity\nadj_fee = fee_per_share * shares_per_level;  // e.g. $0.005 * 0.04 = $0.0002\n\n// Per-cycle economics\ngross_per_cycle = shares_per_level * tpDollar;\nnet_per_cycle   = gross_per_cycle - adj_fee;\n\n// Totals\nnet_total = total_cycles * net_per_cycle;\nroi = net_total / (active_levels * capitalPerLevel) * 100;"}</pre></div>
+        <div style={{background:C.bgDeep,borderRadius:4,padding:'8px 10px',marginBottom:8,marginLeft:8,border:'1px solid '+C.border,overflowX:'auto'}}><pre style={{color:C.code,fontSize:7,fontFamily:F,margin:0,whiteSpace:'pre-wrap'}}>{"// Dollar spread (always rounds UP to next tradeable penny)\ntpDollar = Math.ceil(sharePrice * (1 + TP%/100) * 100) / 100 - sharePrice;\nif (tpDollar < 0.01) tpDollar = 0.01;  // minimum 1 cent\n\n// Fractional share quantity\nshares_per_level = capitalPerLevel / sharePrice;  // e.g. $1 / $25 = 0.04 shares\n\n// Fee scales with fractional quantity\nadj_fee = fee_per_share * shares_per_level;  // e.g. $0.005 * 0.04 = $0.0002\n\n// Per-cycle economics\ngross_per_cycle = shares_per_level * tpDollar;\nnet_per_cycle   = gross_per_cycle - adj_fee;\n\n// Totals\nnet_total = total_cycles * net_per_cycle;\nroi = net_total / (active_levels * capitalPerLevel) * 100;"}</pre></div>
 
         <div style={{color:C.txtBright,fontWeight:700,marginBottom:4}}>5. TP% Deduplication</div>
         <p style={{marginBottom:8,paddingLeft:8}}>Multiple TP% values can ceil to the same penny target (e.g., on a $25 stock, 0.01% through 0.03% all ceil to a $0.01 spread). After scanning, results are deduped by <span style={{color:C.gold}}>tpDollar</span> -- keeping the best net profit per unique cent spread. This prevents showing redundant entries that would produce identical trading behavior.</p>
@@ -7830,7 +7833,7 @@ function AdaptiveOptPage(p){
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Database: New Table</p>
-          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:'#8ec07c'}}>Table: optimal_tp_hourly</span></p>
+          <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}><span style={{color:C.code}}>Table: optimal_tp_hourly</span></p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>One row per ticker/date/hour/tp_pct. Stores cycle count and net profit for that combination.</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>UNIQUE(ticker, trade_date, hour, tp_pct, session_type)</p>
           <p style={{marginBottom:4,paddingLeft:8,fontSize:9}}>Columns: ticker, trade_date, hour, tp_pct, session_type, cycles, net_profit, tp_dollar</p>
@@ -8069,7 +8072,7 @@ function HourlyOptimalPage(p){
             <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:3}}>{(function(){var tps=[];for(var hh=4;hh<20;hh++){if(results.avgBestPerHour[hh])tps.push(results.avgBestPerHour[hh].tpPct);}if(!tps.length)return'--';var mn=Math.min.apply(null,tps),mx=Math.max.apply(null,tps);return mn===mx?mn.toFixed(2)+'%/cycle':mn.toFixed(2)+'%-'+mx.toFixed(2)+'% range';})()}</div>
           </div>
         </div>
-        {results.adaptiveSum>results.flatSum&&<div style={{marginTop:8,padding:'6px 10px',background:'rgba(0,229,160,0.08)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:6,textAlign:'center'}}>
+        {results.adaptiveSum>results.flatSum&&<div style={{marginTop:8,padding:'6px 10px',background:C.accent+'14',border:'1px solid rgba(0,229,160,0.2)',borderRadius:6,textAlign:'center'}}>
           <span style={{color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>Adaptive edge: +${(results.adaptiveSum-results.flatSum).toFixed(2)} ({((results.adaptiveSum/results.flatSum-1)*100).toFixed(1)}% improvement over {results.totalDays} days)</span>
         </div>}
       </Cd>
@@ -8615,7 +8618,7 @@ function BuildDataSetPage(p){
         <Mt label="Feature Rows" value={stats.totalRows} color={C.purple} size="lg"/>
         <Mt label="Fields per Row" value="22" color={C.blue} size="lg"/>
       </div>
-      <div style={{marginTop:8,padding:'6px 10px',background:'rgba(168,85,247,0.08)',border:'1px solid rgba(168,85,247,0.2)',borderRadius:6,textAlign:'center'}}>
+      <div style={{marginTop:8,padding:'6px 10px',background:C.purple+'14',border:'1px solid rgba(168,85,247,0.2)',borderRadius:6,textAlign:'center'}}>
         <span style={{color:C.purple,fontSize:9,fontFamily:F,fontWeight:700}}>Data saved to hourly_features table. Run Stage 2 Hourly TP% Scanner on the same dates to generate the target variable (Y), then use correlation analysis to find predictive features.</span>
       </div>
     </Cd>}
@@ -8665,7 +8668,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-    <CollapseStage title="Derived Position Features" sub="price_vs_day_open_pct, intraday_range_pct, cumulative_volume_pct" badge="3 fields" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+    <CollapseStage title="Derived Position Features" sub="price_vs_day_open_pct, intraday_range_pct, cumulative_volume_pct" badge="3 fields" badgeColor={C.accent} badgeBg={C.accent+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:4}}><span style={{color:C.accent,fontWeight:700}}>What:</span> Price vs Open = how far the hourly close is from the day open (%). Intraday Range = cumulative high-low range up to this hour (%). Cumulative Volume = what fraction of the day total volume has occurred by this hour (%).</p>
@@ -8676,7 +8679,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-    <CollapseStage title="Day Context Features" sub="day_open/high/low/close, day_volume, day_trades, day_of_week" badge="7 fields" badgeColor={C.purple} badgeBg={'rgba(168,85,247,0.1)'}>
+    <CollapseStage title="Day Context Features" sub="day_open/high/low/close, day_volume, day_trades, day_of_week" badge="7 fields" badgeColor={C.purple} badgeBg={C.purple+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:4}}><span style={{color:C.accent,fontWeight:700}}>What:</span> Full day OHLCV computed from all ticks. Day of week as integer (1=Mon through 5=Fri). These are the same for all 16 hourly rows within a day.</p>
@@ -8737,7 +8740,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-    <CollapseStage title="Mean-Reversion Features" sub="reversal_count, reversal_rate" badge="2 fields" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+    <CollapseStage title="Mean-Reversion Features" sub="reversal_count, reversal_rate" badge="2 fields" badgeColor={C.accent} badgeBg={C.accent+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: These features directly measure how often price reverses direction -- the core behavior that makes the cycle engine profitable. More reversals = more buy-sell cycles = more profit opportunities.</p>
@@ -8748,7 +8751,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-    <CollapseStage title="Oscillation Profile Features" sub="autocorrelation, Hurst exponent, half-life, run lengths, oscillation score" badge="8 fields" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+    <CollapseStage title="Oscillation Profile Features" sub="autocorrelation, Hurst exponent, half-life, run lengths, oscillation score" badge="8 fields" badgeColor={C.accent} badgeBg={C.accent+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: These features statistically profile the oscillation character of each hour. They answer: is the price mean-reverting (good for oscillation trading), random walking, or trending (bad for oscillation trading)? They are the most theoretically grounded features for predicting TP% because they directly measure the statistical properties the cycle engine exploits.</p>
@@ -8764,7 +8767,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-    <CollapseStage title="Advanced Statistical Features" sub="trend R\u00B2, Shannon entropy, order flow imbalance, VWAP deviation, price concentration" badge="5 fields" badgeColor={C.purple} badgeBg={'rgba(168,85,247,0.1)'}>
+    <CollapseStage title="Advanced Statistical Features" sub="trend R\u00B2, Shannon entropy, order flow imbalance, VWAP deviation, price concentration" badge="5 fields" badgeColor={C.purple} badgeBg={C.purple+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: Five orthogonal statistical features that each measure a different dimension of price behavior. Together with the oscillation profile and excursion features, they provide a complete statistical fingerprint of each hour.</p>
@@ -8795,7 +8798,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-        <CollapseStage title="Derived: Previous Hour Features (Hourly Correlation)" sub="prev_hour_atr_pct, prev_hour_volume, prev_hour_best_tp, + 18 more" badge="19 LEADABLE" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+        <CollapseStage title="Derived: Previous Hour Features (Hourly Correlation)" sub="prev_hour_atr_pct, prev_hour_volume, prev_hour_best_tp, + 18 more" badge="19 LEADABLE" badgeColor={C.accent} badgeBg={C.accent+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: For each hour, the Correlation Finder looks back at the previous hour (same day) and copies its feature values. These are the most powerful LEADABLE predictors because they are the freshest signal available before the current hour starts.</p>
@@ -8832,7 +8835,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-    <CollapseStage title="Derived: Seasonality Features (Hourly + Daily)" sub="hour_seasonal_*, dow_seasonal_*, *_vs_*_seasonal" badge="13 hourly + 7 daily" badgeColor={C.purple} badgeBg={'rgba(168,85,247,0.1)'}>
+    <CollapseStage title="Derived: Seasonality Features (Hourly + Daily)" sub="hour_seasonal_*, dow_seasonal_*, *_vs_*_seasonal" badge="13 hourly + 7 daily" badgeColor={C.purple} badgeBg={C.purple+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: Seasonality features capture recurring time-based patterns. They answer: is this hour/day more or less active than it normally is? These are all LEADABLE because they are computed from historical data.</p>
@@ -8892,7 +8895,7 @@ function BuildDataSetPage(p){
       </div>
     </CollapseStage>
 
-        <CollapseStage title="Daily Mode: Previous Day Features" sub="28 leadable features from yesterday's aggregated data" badge="28 LEADABLE" badgeColor={C.accent} badgeBg={'rgba(0,229,160,0.1)'}>
+        <CollapseStage title="Daily Mode: Previous Day Features" sub="28 leadable features from yesterday's aggregated data" badge="28 LEADABLE" badgeColor={C.accent} badgeBg={C.accent+'1a'}>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
         <div style={fS}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700}}>Summary: In Daily mode, the Correlation Finder aggregates all 16 hourly rows into one day-level summary, then creates previous-day versions. These 28 features are all known before today's market opens -- the foundation for daily TP% prediction.</p>
@@ -9926,7 +9929,7 @@ function CorrelationFinderPage(p){
     </Cd>
     {results&&<div>
       <Cd glow={true}>
-        <div style={{display:'inline-block',background:results.mode==='daily'?'rgba(255,176,32,0.15)':'rgba(157,92,255,0.15)',border:'1px solid '+(results.mode==='daily'?C.gold:C.purple),borderRadius:4,padding:'2px 8px',fontSize:7,color:results.mode==='daily'?C.gold:C.purple,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{(results.mode==='daily'?'DAILY':'HOURLY')+' CORRELATION | '+results.ticker+' | '+results.days+' DAYS | '+results.dataPoints+' DATA POINTS'}</div>
+        <div style={{display:'inline-block',background:results.mode==='daily'?C.gold+'26':C.purple+'26',border:'1px solid '+(results.mode==='daily'?C.gold:C.purple),borderRadius:4,padding:'2px 8px',fontSize:7,color:results.mode==='daily'?C.gold:C.purple,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{(results.mode==='daily'?'DAILY':'HOURLY')+' CORRELATION | '+results.ticker+' | '+results.days+' DAYS | '+results.dataPoints+' DATA POINTS'}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
           <Mt label="Data Points" value={results.dataPoints} color={C.purple} size="lg"/>
           <Mt label="Trading Days" value={results.days} color={C.blue} size="md"/>
@@ -9979,7 +9982,7 @@ function CorrelationFinderPage(p){
             </tr></thead>
             <tbody>{sortedCorrelations.map(function(c,idx){
               var cMax=Math.max(c.rAbs,Math.abs(c.rProfit||0));var isStrong=cMax>=0.4;var isMod=cMax>=0.2;
-              return <tr key={c.feature+'_'+sortVer} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?'rgba(157,92,255,0.1)':isStrong?'rgba(0,229,160,0.05)':isMod?'rgba(61,158,255,0.03)':'transparent'}}>
+              return <tr key={c.feature+'_'+sortVer} onClick={function(){setExpandedFeat(expandedFeat===c.feature?null:c.feature);}} style={{borderBottom:'1px solid '+C.grid,cursor:'pointer',background:expandedFeat===c.feature?C.purple+'1a':isStrong?C.accent+'0d':isMod?C.blue+'08':'transparent'}}>
                 <td style={{padding:'5px 3px',color:C.txtDim}}>{idx+1}</td>
                 <td style={{padding:'5px 3px',color:isStrong?C.txtBright:C.txt,fontWeight:isStrong?700:400}}>{c.label}{c.leadable&&<span style={{color:C.accent,fontSize:5,fontWeight:700,marginLeft:3,padding:'1px 3px',background:C.accentDim,borderRadius:2}}>LEADABLE</span>}<span style={{color:C.purple,fontSize:6,marginLeft:3}}>{expandedFeat===c.feature?'\u25B2':'\u25BC'}</span></td>
                 <td style={{padding:'5px 3px',color:isNaN(c.r)?C.txtDim:strengthColor(c.r,0),textAlign:'right',fontWeight:700}}>{isNaN(c.r)?'—':(c.r>0?'+':'')+c.r.toFixed(3)}</td>
@@ -10146,15 +10149,15 @@ function DollarVolumeTimeLogicPage(p){
     <Cd>
       <SectionHead title="The Tradeoffs" sub="What dollar bars cost you"/>
       <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8,marginTop:8}}>
-        <div style={{padding:'10px 12px',background:'#3d2010',borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
+        <div style={{padding:'10px 12px',background:C.goldDim,borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>1. Non-uniform bar count across days</p>
           <p>High-vol days produce more bars; quiet days fewer. Any "time-of-day" or "fraction-of-session" feature must be reformulated -- e.g. "fraction of session dollar volume elapsed" replaces "hour of day."</p>
         </div>
-        <div style={{padding:'10px 12px',background:'#3d2010',borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
+        <div style={{padding:'10px 12px',background:C.goldDim,borderRadius:6,border:'1px solid '+C.warn,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>2. Pre/post-market handling</p>
           <p>Dollar volume in extended hours is too sparse for a fixed $5M threshold (could take all session). Two options: (a) skip extended hours entirely, (b) use a separate, smaller threshold for extended hours. v126 default = RTH-only bars.</p>
         </div>
-        <div style={{padding:'10px 12px',background:'#3d2010',borderRadius:6,border:'1px solid '+C.warn}}>
+        <div style={{padding:'10px 12px',background:C.goldDim,borderRadius:6,border:'1px solid '+C.warn}}>
           <p style={{marginBottom:6,color:C.warn,fontWeight:700}}>3. Threshold calibration matters</p>
           <p>Too small -> noise per bar. Too large -> few bars, lose intraday resolution. Adaptive mode mitigates this for stocks with regime-changing dollar volume.</p>
         </div>
@@ -10310,7 +10313,7 @@ function CalibrateThresholdsPage(p){
         <div><label style={lS}>Target Bars / Day</label><input value={target} onChange={function(e){setTarget(e.target.value);}} placeholder="50" style={iS}/></div>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Calibrating...':'Run Calibration'}</button>
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {log.length>0&&<Cd>
@@ -10501,7 +10504,7 @@ function DollarBarBuilderPage(p){
         <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
       </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        <button onClick={function(){setMode('auto');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='auto'?C.goldDim||'#3d2d10':'transparent',border:'1px solid '+(mode==='auto'?C.gold:C.border),color:mode==='auto'?C.gold:C.txt})}>Auto 50/day</button>
+        <button onClick={function(){setMode('auto');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='auto'?C.goldDim:'transparent',border:'1px solid '+(mode==='auto'?C.gold:C.border),color:mode==='auto'?C.gold:C.txt})}>Auto 50/day</button>
         <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $</button>
         <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>%ADV</button>
       </div>
@@ -10514,7 +10517,7 @@ function DollarBarBuilderPage(p){
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Building...':'Build Bars'}</button>
       {prog&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:8,textAlign:'center'}}>{prog}</div>}
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {stats&&<Cd>
@@ -10635,7 +10638,7 @@ function DollarVsClockComparePage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value);}} placeholder="NVDA" style={iS}/>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Loading...':'Compare Distributions'}</button>
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {data&&<div>
@@ -10983,7 +10986,7 @@ function BuildDollarDataSetPage(p){
         <div><label style={lS}>To</label><input type="date" value={toDate} onChange={function(e){setToDate(e.target.value);}} style={iS}/></div>
       </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        <button onClick={function(){setMode('auto');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='auto'?'#3d2d10':'transparent',border:'1px solid '+(mode==='auto'?C.gold:C.border),color:mode==='auto'?C.gold:C.txt})}>Auto 50/day</button>
+        <button onClick={function(){setMode('auto');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='auto'?C.goldDim:'transparent',border:'1px solid '+(mode==='auto'?C.gold:C.border),color:mode==='auto'?C.gold:C.txt})}>Auto 50/day</button>
         <button onClick={function(){setMode('fixed');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='fixed'?C.accentDim:'transparent',border:'1px solid '+(mode==='fixed'?C.accent:C.border),color:mode==='fixed'?C.accent:C.txt})}>Fixed $</button>
         <button onClick={function(){setMode('adaptive');}} style={Object.assign({},bB,{flex:1,padding:'6px',fontSize:8,background:mode==='adaptive'?C.blueDim:'transparent',border:'1px solid '+(mode==='adaptive'?C.blue:C.border),color:mode==='adaptive'?C.blue:C.txt})}>%ADV</button>
       </div>
@@ -10995,7 +10998,7 @@ function BuildDollarDataSetPage(p){
         <label htmlFor="rthb" style={{color:C.txt,fontSize:9,fontFamily:F}}>RTH only (recommended)</label>
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Running...':'Run Pipeline'}</button>
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
     {log.length>0&&<Cd>
       <SectionHead title="Pipeline Log" sub={log.length+' entries'}/>
@@ -11099,7 +11102,7 @@ function DollarCorrelationFinderPage(p){
       </div>
       <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000'})}>{loading?'Running...':'Compute Correlations'}</button>
       {prog&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:8,textAlign:'center'}}>{prog}</div>}
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {results&&<Cd>
@@ -11451,7 +11454,7 @@ function UniverseMembershipPage(p){
       <SectionHead title="Filter" sub="Narrow to a specific index"/>
       <div style={{display:'flex',gap:4,marginTop:8,marginBottom:8}}>
         <button onClick={function(){setFilter('all');}} style={{flex:1,padding:'8px',fontSize:9,border:'1px solid '+(filter==='all'?C.accent:C.border),background:filter==='all'?C.accentDim:'transparent',color:filter==='all'?C.accent:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>All ({combinedCount})</button>
-        <button onClick={function(){setFilter('sp500');}} style={{flex:1,padding:'8px',fontSize:9,border:'1px solid '+(filter==='sp500'?C.gold:C.border),background:filter==='sp500'?'#3d2d10':'transparent',color:filter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P ({sp500Count})</button>
+        <button onClick={function(){setFilter('sp500');}} style={{flex:1,padding:'8px',fontSize:9,border:'1px solid '+(filter==='sp500'?C.gold:C.border),background:filter==='sp500'?C.goldDim:'transparent',color:filter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P ({sp500Count})</button>
         <button onClick={function(){setFilter('r2000');}} style={{flex:1,padding:'8px',fontSize:9,border:'1px solid '+(filter==='r2000'?C.blue:C.border),background:filter==='r2000'?C.blueDim:'transparent',color:filter==='r2000'?C.blue:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>R2K ({r2000Count})</button>
         <button onClick={function(){setFilter('both');}} style={{flex:1,padding:'8px',fontSize:9,border:'1px solid '+(filter==='both'?C.purple:C.border),background:filter==='both'?'#2a1d3d':'transparent',color:filter==='both'?C.purple:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>Both ({bothCount})</button>
       </div>
@@ -11629,7 +11632,7 @@ function OptimalTpMinutePage(p){
 
       <button onClick={trigger} disabled={building} style={{width:'100%',padding:'10px',border:'none',borderRadius:8,background:building?C.bgInput:C.accent,color:building?C.txtDim:'#000',fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:building?'default':'pointer',marginTop:10}}>{building?'Running...':'Run Minute-Osc Pipeline'}</button>
       {pipeStatus&&building&&<div style={{padding:8,background:C.bg,borderRadius:6,marginTop:8,fontFamily:F,fontSize:9,color:C.txt}}><div>{pipeStatus.message||'Running...'}</div>{pipeStatus.progress_pct!=null&&<div style={{height:4,background:C.border,borderRadius:2,marginTop:4,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:C.accent,transition:'width 0.5s'}}/></div>}</div>}
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {data&&data.length>0&&<Cd>
@@ -11638,7 +11641,7 @@ function OptimalTpMinutePage(p){
         <label style={lS}>Universe</label>
         <div style={{display:'flex',gap:4}}>
           <button onClick={function(){setUniFilter('all');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='all'?C.accent:C.border),background:uniFilter==='all'?C.accentDim:'transparent',color:uniFilter==='all'?C.accent:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>All</button>
-          <button onClick={function(){setUniFilter('sp500');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='sp500'?C.gold:C.border),background:uniFilter==='sp500'?'#3d2d10':'transparent',color:uniFilter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
+          <button onClick={function(){setUniFilter('sp500');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='sp500'?C.gold:C.border),background:uniFilter==='sp500'?C.goldDim:'transparent',color:uniFilter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
           <button onClick={function(){setUniFilter('r2000');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='r2000'?C.blue:C.border),background:uniFilter==='r2000'?C.blueDim:'transparent',color:uniFilter==='r2000'?C.blue:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>R2K</button>
         </div>
       </div>}
@@ -11842,7 +11845,7 @@ function TickerDetailModal(p){
         </div>
       </div>}
 
-      {det.multi_grid_skipped==='too_wide'&&<div style={{padding:10,background:'#3d1010',borderRadius:6,marginBottom:10,border:'1px solid '+C.warn,color:C.warn,fontFamily:F,fontSize:9}}>
+      {det.multi_grid_skipped==='too_wide'&&<div style={{padding:10,background:C.warnDim,borderRadius:6,marginBottom:10,border:'1px solid '+C.warn,color:C.warn,fontFamily:F,fontSize:9}}>
         Multi-oscillation simulation skipped: {det.multi_grid_levels} levels exceeds the 5,000 cap. Use the single-level result instead, or note that this stock's 30-day price range is too wide for a dense penny-spaced ladder to be practical.
       </div>}
     </div>
@@ -11989,7 +11992,7 @@ function StockClassificationPage(p){
         <label style={lS}>Universe</label>
         <div style={{display:'flex',gap:4}}>
           <button onClick={function(){setUniFilter('all');setSelectedCell(null);}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='all'?C.accent:C.border),background:uniFilter==='all'?C.accentDim:'transparent',color:uniFilter==='all'?C.accent:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>All Screener ({data.length})</button>
-          <button onClick={function(){setUniFilter('sp500');setSelectedCell(null);}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='sp500'?C.gold:C.border),background:uniFilter==='sp500'?'#3d2d10':'transparent',color:uniFilter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
+          <button onClick={function(){setUniFilter('sp500');setSelectedCell(null);}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='sp500'?C.gold:C.border),background:uniFilter==='sp500'?C.goldDim:'transparent',color:uniFilter==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
           <button onClick={function(){setUniFilter('r2000');setSelectedCell(null);}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(uniFilter==='r2000'?C.blue:C.border),background:uniFilter==='r2000'?C.blueDim:'transparent',color:uniFilter==='r2000'?C.blue:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>R2K</button>
         </div>
       </div>}
@@ -12060,7 +12063,7 @@ function StockClassificationPage(p){
       </div>}
 
       {classified.length===0&&!loading&&data&&<div style={{padding:16,textAlign:'center',color:C.gold,fontFamily:F,fontSize:9,lineHeight:1.7}}>{'Screener has '+data.length+' stocks but none are regime-classified yet. Trigger a fresh screener scan from Stock Oscillation Screener \u2192 Run New Scan. The pipeline will compute regime fields for every ticker.'}</div>}
-      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:'#3d1010',borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
+      {err&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:8,padding:8,background:C.warnDim,borderRadius:6,border:'1px solid '+C.warn}}>{err}</div>}
     </Cd>
 
     {classified.length>0&&<Cd>
@@ -12339,7 +12342,7 @@ function ExtendedHoursVolumePage(p){
 
       <div style={{display:'flex',gap:4,marginTop:10,marginBottom:8}}>
         <button onClick={function(){setMode('1d');}} style={{flex:1,padding:'8px',border:'1px solid '+(mode==='1d'?C.accent:C.border),background:mode==='1d'?C.accentDim:'transparent',color:mode==='1d'?C.accent:C.txt,fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,borderRadius:6,cursor:'pointer'}}>1 Day</button>
-        <button onClick={function(){setMode('5d');}} style={{flex:1,padding:'8px',border:'1px solid '+(mode==='5d'?C.gold:C.border),background:mode==='5d'?'#3d2d10':'transparent',color:mode==='5d'?C.gold:C.txt,fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,borderRadius:6,cursor:'pointer'}}>5-Day Avg</button>
+        <button onClick={function(){setMode('5d');}} style={{flex:1,padding:'8px',border:'1px solid '+(mode==='5d'?C.gold:C.border),background:mode==='5d'?C.goldDim:'transparent',color:mode==='5d'?C.gold:C.txt,fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,borderRadius:6,cursor:'pointer'}}>5-Day Avg</button>
         <button onClick={function(){setMode('20d');}} style={{flex:1,padding:'8px',border:'1px solid '+(mode==='20d'?C.blue:C.border),background:mode==='20d'?C.blueDim:'transparent',color:mode==='20d'?C.blue:C.txt,fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,borderRadius:6,cursor:'pointer'}}>20-Day Avg</button>
       </div>
 
@@ -12353,7 +12356,7 @@ function ExtendedHoursVolumePage(p){
         <label style={lS}>Universe</label>
         <div style={{display:'flex',gap:4}}>
           <button onClick={function(){setUniverse('all');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(universe==='all'?C.accent:C.border),background:universe==='all'?C.accentDim:'transparent',color:universe==='all'?C.accent:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>All</button>
-          <button onClick={function(){setUniverse('sp500');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(universe==='sp500'?C.gold:C.border),background:universe==='sp500'?'#3d2d10':'transparent',color:universe==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
+          <button onClick={function(){setUniverse('sp500');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(universe==='sp500'?C.gold:C.border),background:universe==='sp500'?C.goldDim:'transparent',color:universe==='sp500'?C.gold:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>S&P 500</button>
           <button onClick={function(){setUniverse('r2000');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(universe==='r2000'?C.blue:C.border),background:universe==='r2000'?C.blueDim:'transparent',color:universe==='r2000'?C.blue:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>R2K</button>
           <button onClick={function(){setUniverse('both');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(universe==='both'?C.purple:C.border),background:universe==='both'?'#2a1d3d':'transparent',color:universe==='both'?C.purple:C.txt,fontFamily:F,fontWeight:700,borderRadius:6,cursor:'pointer'}}>Both</button>
         </div>
@@ -12364,7 +12367,7 @@ function ExtendedHoursVolumePage(p){
           <div style={{display:'flex',gap:4}}>
             <button onClick={function(){setTickerType('CS');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(tickerType==='CS'?C.accent:C.border),background:tickerType==='CS'?C.accentDim:'transparent',color:tickerType==='CS'?C.accent:C.txt,fontFamily:F,borderRadius:6,cursor:'pointer'}}>CS</button>
             <button onClick={function(){setTickerType('ETF');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(tickerType==='ETF'?C.blue:C.border),background:tickerType==='ETF'?C.blueDim:'transparent',color:tickerType==='ETF'?C.blue:C.txt,fontFamily:F,borderRadius:6,cursor:'pointer'}}>ETF</button>
-            <button onClick={function(){setTickerType('All');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(tickerType==='All'?C.gold:C.border),background:tickerType==='All'?'#3d2d10':'transparent',color:tickerType==='All'?C.gold:C.txt,fontFamily:F,borderRadius:6,cursor:'pointer'}}>All</button>
+            <button onClick={function(){setTickerType('All');}} style={{flex:1,padding:'7px',fontSize:8,border:'1px solid '+(tickerType==='All'?C.gold:C.border),background:tickerType==='All'?C.goldDim:'transparent',color:tickerType==='All'?C.gold:C.txt,fontFamily:F,borderRadius:6,cursor:'pointer'}}>All</button>
           </div>
         </div>
         <div><label style={lS}>Min Price</label><input value={minPrice} onChange={function(e){setMinPrice(e.target.value);}} placeholder="0" style={iS}/></div>
@@ -12747,7 +12750,7 @@ function OscillationScreenerPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Oscillation Trading Screener" sub="S&P 500 + Russell 2000 ranked by mean-reversion quality" info="Screens ~2500 liquid US stocks for oscillation-trading suitability. Raw volatility is the wrong metric - what matters is intraday mean-reversion: high realized range with low directional trend. A stock dropping 8% straight is useless for oscillation trading; one chopping +/-3% around a mean all day is ideal."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{'SCAN: '+(scanTime||scanDate)+' | '+((data&&data.length)||0)+' stocks'}</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Filter Ticker</label><input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/></div>
         <div><label style={lS}>Type</label>
@@ -12933,7 +12936,7 @@ function OscillationScreenerPage(p){
           </tr></thead>
           <tbody>{(function(){var displayRows=sorted.slice(0,filter?sorted.length:200);var fullRanks={};if(filter){var allSorted=data?data.slice().map(function(r2){return Object.assign({},r2,{_score:getScore(r2)});}).sort(function(a,b){return(b._score||0)-(a._score||0);}):[];for(var ri=0;ri<allSorted.length;ri++)fullRanks[allSorted[ri].ticker]=ri+1;}return displayRows.map(function(r,idx){
             var rank=filter?fullRanks[r.ticker]||'--':(idx+1);
-            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?'rgba(0,229,160,0.03)':'transparent'}}>
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{rank}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
@@ -12966,7 +12969,7 @@ function OscillationScreenerPage(p){
         <button onClick={function(){if(hourlyTicker)fetchHourlyOsc(hourlyTicker);}} disabled={loadingHourly} style={Object.assign({},bB,{width:'auto',padding:'10px 20px',background:loadingHourly?C.border:'linear-gradient(135deg,#3d9eff,#1860c0)',color:loadingHourly?C.txtDim:'#fff',fontSize:8})}>{loadingHourly?'Loading...':'View'}</button>
       </div>
       {hourlyData&&<div style={{marginTop:12}}>
-        <div style={{display:'inline-block',background:'rgba(61,158,255,0.15)',border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8}}>{hourlyData.ticker+' | '+hourlyData.days+' days | '+hourlyData.totalBars.toLocaleString()+' bars'}</div>
+        <div style={{display:'inline-block',background:C.blue+'26',border:'1px solid '+C.blue,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.blue,fontFamily:F,fontWeight:700,marginBottom:8}}>{hourlyData.ticker+' | '+hourlyData.days+' days | '+hourlyData.totalBars.toLocaleString()+' bars'}</div>
         <div style={{marginBottom:12}}>
           <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:4,letterSpacing:1}}>OSCILLATIONS PER HOUR (AVG/DAY)</div>
           {(function(){var maxOsc=0;for(var i=0;i<hourlyData.hours.length;i++)if(hourlyData.hours[i].osc>maxOsc)maxOsc=hourlyData.hours[i].osc;
@@ -13197,8 +13200,8 @@ function ATRScreenerPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Hourly ATR% Screener" sub="Filter stocks by minimum ATR% per hour (10-day average)" info="Shows the average hourly ATR% (high minus low as percentage of open price) for each trading hour across the last 10 days. Set minimum thresholds per hour to find stocks with enough volatility during your target trading windows."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with ATR data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No hourly ATR data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with ATR data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No hourly ATR data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -13418,8 +13421,8 @@ function SwingScreenerPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Hourly Low-to-Next-High Swing %" sub="Filter by minimum swing % from each hour's low to the next hour's high (10-day avg)" info="Measures the percentage change from one hour's lowest price to the following hour's highest price. This captures the maximum potential swing opportunity between consecutive hours. High positive values mean the stock regularly swings upward from one hour's low to the next hour's high -- ideal for oscillation trading. Hour 19 has no next hour so shows 0."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with swing data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No swing data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with swing data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No swing data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -13481,7 +13484,7 @@ function SwingScreenerPage(p){
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
               <td style={{padding:'3px',color:swColor(r._score),textAlign:'right',fontWeight:700}}>{r._score.toFixed(2)+'%'}</td>
               {Array.from({length:15},function(_,i){var h=i+4;var v=sw[h]||0;var hasFilter=hourFilters[h]!==undefined;var passes=!hasFilter||v>=hourFilters[h];
-                return <td key={h} style={{padding:'3px 2px',color:passes?swColor(v):C.warn,textAlign:'right',fontSize:6,background:hasFilter?(passes?'rgba(0,229,160,0.05)':'rgba(255,92,58,0.05)'):'transparent'}}>{v.toFixed(2)}</td>;
+                return <td key={h} style={{padding:'3px 2px',color:passes?swColor(v):C.warn,textAlign:'right',fontSize:6,background:hasFilter?(passes?C.accent+'0d':C.warn+'0d'):'transparent'}}>{v.toFixed(2)}</td>;
               })}
             </tr>;
           })}</tbody>
@@ -13640,8 +13643,8 @@ function CloseHighScreenerPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Hour Close to Next Hour High %" sub="Filter by avg % swing from each hour's close to the next hour's high (10-day avg)" info="Measures the percentage change from one hour's closing price to the following hour's highest price. This captures how much upside exists from where price settled at the end of one hour to the peak of the next hour. More conservative than Low-to-High since the close is typically between the high and low, not at the extreme."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -13681,7 +13684,7 @@ function CloseHighScreenerPage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}>Each column shows: <span style={{color:C.accent,fontWeight:700}}>that hour's close price {'\u2192'} next hour's high price</span> as a percentage.</p>
@@ -13715,7 +13718,7 @@ function CloseHighScreenerPage(p){
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
               <td style={{padding:'3px',color:swColor(r._score),textAlign:'right',fontWeight:700}}>{r._score.toFixed(2)+'%'}</td>
               {Array.from({length:15},function(_,i){var h=i+4;var v=ch[h]||0;var hasFilter=hourFilters[h]!==undefined;var passes=!hasFilter||v>=hourFilters[h];
-                return <td key={h} style={{padding:'3px 2px',color:passes?swColor(v):C.warn,textAlign:'right',fontSize:6,background:hasFilter?(passes?'rgba(0,229,160,0.05)':'rgba(255,92,58,0.05)'):'transparent'}}>{v.toFixed(2)}</td>;
+                return <td key={h} style={{padding:'3px 2px',color:passes?swColor(v):C.warn,textAlign:'right',fontSize:6,background:hasFilter?(passes?C.accent+'0d':C.warn+'0d'):'transparent'}}>{v.toFixed(2)}</td>;
               })}
             </tr>;
           })}</tbody>
@@ -13875,8 +13878,8 @@ function DailySwingScreenerPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Previous Day Close to Next Day High %" sub="Filter by avg % swing from one day's close to the next day's high (~252-day sample)" info="Measures the percentage change from one trading day's closing price to the following trading day's highest price. Computed from daily OHLC bars across ~252 trading days (~1 year). Shows per day-of-week breakdown since some stocks may swing more on certain days."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -13919,7 +13922,7 @@ function DailySwingScreenerPage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}>Each day column shows: <span style={{color:C.accent,fontWeight:700}}>that day's close {'\u2192'} next trading day's high</span> as a percentage.</p>
@@ -13959,7 +13962,7 @@ function DailySwingScreenerPage(p){
               <td style={{padding:'3px',color:swColor(dch.max||0),textAlign:'right'}}>{(dch.max||0).toFixed(2)+'%'}</td>
               <td style={{padding:'3px',color:(dch.std||0)<1?C.accent:(dch.std||0)<2?C.gold:C.warn,textAlign:'right'}}>{(dch.std||0).toFixed(2)}</td>
               {dowKeys.map(function(d){var v=dch[d]||0;var hasFilter=dowFilters[d]!==undefined;var passes=!hasFilter||v>=dowFilters[d];
-                return <td key={d} style={{padding:'3px',color:passes?swColor(v):C.warn,textAlign:'right',background:hasFilter?(passes?'rgba(0,229,160,0.05)':'rgba(255,92,58,0.05)'):'transparent'}}>{v.toFixed(2)+'%'}</td>;
+                return <td key={d} style={{padding:'3px',color:passes?swColor(v):C.warn,textAlign:'right',background:hasFilter?(passes?C.accent+'0d':C.warn+'0d'):'transparent'}}>{v.toFixed(2)+'%'}</td>;
               })}
             </tr>;
           })}</tbody>
@@ -14115,8 +14118,8 @@ function DirBiasPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Directional Bias & Consecutive Day Streaks" sub="Win rate and streak analysis over ~1 year (252 trading days)" info="Win Rate = percentage of days the stock closes above its open. Avg Up/Down % = average magnitude of up and down days. Streak data shows how many consecutive days the stock tends to move in the same direction before reversing. Uses ~252 trading days of daily bars for statistical significance."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -14147,7 +14150,7 @@ function DirBiasPage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Win Rate:</span> Percentage of days the stock closes above its open over ~252 trading days. A 60% win rate means 6 out of 10 days are up days. Higher = bullish intraday bias.</p>
@@ -14350,8 +14353,8 @@ function RecoveryPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Recovery After Drop" sub="How stocks bounce after large down days (~1 year, 252 trading days)" info="Identifies stocks with strong mean-reversion after large drops. For each stock, finds all days where the close-to-close drop exceeded 1x ATR or 2x ATR, then measures the next day's open-to-close return. High bounce rate + high avg bounce = reliable recovery trade."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -14382,7 +14385,7 @@ function RecoveryPage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1x ATR section:</span> Days where the stock dropped more than its average daily range. These are notable selloffs that stand out from normal trading.</p>
@@ -14603,8 +14606,8 @@ function PullbackPage(p){
 
     <Cd glow={true}>
       <SectionHead title="Pullback After Rally" sub="How stocks fade after large up days (~1 year, 252 trading days)" info="Identifies stocks that tend to pull back after large rallies. For each stock, finds all days where the close-to-close gain exceeded 1x ATR or 2x ATR, then measures the next day's open-to-close return. High fade rate = stock reliably gives back gains the next day."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with data'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -14635,7 +14638,7 @@ function PullbackPage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>1x ATR section:</span> Days where the stock rallied more than its average daily range. These are notable up-days that stand out from normal trading.</p>
@@ -14872,8 +14875,8 @@ function ZScorePage(p){
 
     <Cd glow={true}>
       <SectionHead title="Z-Score Scanner" sub="Current Z-scores with historical forward return backtest (~1 year)" info="Z-score measures how many standard deviations the current price is from its 20-day moving average. Negative Z = oversold (below average). Positive Z = overbought (above average). The backtest shows what historically happens after the stock reaches each Z-level."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -14924,7 +14927,7 @@ function ZScorePage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>QUICK REFERENCE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>Current Z:</span> How far the stock's last close is from its 20-day moving average in standard deviations. Z = -2 means the stock is 2 standard deviations below average -- deeply oversold.</p>
@@ -15141,8 +15144,8 @@ function SqueezePage(p){
 
     <Cd glow={true}>
       <SectionHead title="Volatility Squeeze Scanner" sub="Find stocks where Bollinger Bands are contracting -- breakout imminent" info="A volatility squeeze occurs when Bollinger Band width contracts to its lowest levels. Like a coiled spring, compressed volatility tends to expand -- producing large directional moves. This tool finds stocks in a squeeze right now and shows how they historically break out."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -15175,7 +15178,7 @@ function SqueezePage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>COMPLETE USER GUIDE</div>
         <div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.8}}>
           <p style={{marginBottom:6}}><span style={{color:C.accent,fontWeight:700}}>What is a volatility squeeze?</span> Bollinger Bands measure how far price moves from its 20-day average. When the bands contract (narrow), it means the stock has been unusually quiet. Like a spring being compressed, this quiet period usually ends with a large move -- a "breakout." The squeeze doesn't tell you which direction, but the backtest history does.</p>
@@ -15208,7 +15211,7 @@ function SqueezePage(p){
           </tr></thead>
           <tbody>{filtered.slice(0,300).map(function(r,idx){
             var sq=r._sq||{};
-            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:sq.in_squeeze?'rgba(255,176,32,0.05)':'transparent'}}>
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:sq.in_squeeze?C.gold+'0d':'transparent'}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
@@ -15383,8 +15386,8 @@ function RangePositionPage(p){
 
     <Cd glow={true}>
       <SectionHead title="52-Week Range Position" sub="Where each stock sits within its yearly high-low range with forward return backtest" info="Shows the current price as a percentile of the 52-week range (0% = at the low, 100% = at the high). Backtests historical forward returns when the stock was at its current position. Stocks near lows with high historical bounce rates are buy candidates."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -15646,8 +15649,8 @@ function ConfluencePage(p){
 
     <Cd glow={true}>
       <SectionHead title="Multi-Signal Confluence Scanner" sub="Stocks where multiple trading signals align simultaneously" info="Scans all 2,500 stocks and counts how many independent signals are active RIGHT NOW. More signals aligned = higher conviction trade. A stock that is Z-score oversold, near its 52-week low, has high bounce rate, short down streaks, AND is in a squeeze = maximum confluence."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -15686,7 +15689,7 @@ function ConfluencePage(p){
     </Cd>
 
     <Cd>
-      <div style={{padding:'10px 12px',background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue,borderRadius:6}}>
+      <div style={{padding:'10px 12px',background:C.blue+'14',border:'1px solid '+C.blue,borderRadius:6}}>
         <div style={{color:C.blue,fontWeight:700,fontSize:9,fontFamily:F,marginBottom:6}}>{viewMode==='buy'?'ACTIVE SIGNAL CRITERIA (BUY)':'ACTIVE SIGNAL CRITERIA (SELL)'}</div>
         <div style={{color:C.txt,fontSize:8,fontFamily:F,lineHeight:1.8}}>
           {viewMode==='buy'?<div>
@@ -15892,8 +15895,8 @@ function VolRegimePage(p){
 
     <Cd glow={true}>
       <SectionHead title="Volatility Regime Classification" sub="Classifying each stock's current volatility state vs its own history (~252 days)" info="Each stock's 20-day rolling ATR is ranked against its full-year ATR distribution. This tells you whether the stock is in a period of unusually low or high volatility relative to itself, and whether volatility is expanding or contracting."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -16125,8 +16128,8 @@ function HourlyRegimePage(p){
 
     <Cd glow={true}>
       <SectionHead title="Hourly Volatility Regimes" sub="Per-hour volatility vs 10-day baseline from 1-minute bars" info="For each of the 16 trading hours, compares the last day's ATR% against the 10-day average for that specific hour. Identifies which hours are running hotter or cooler than normal for each stock."/>
-      {scanDate&&<div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
-      {data&&data.length===0&&<div style={{padding:10,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
+      {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks'}</div>}
+      {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff',transition:'all 0.2s'}}>{scanning?'\u2713 Scan Triggered!':'Run New Scan'}</button>
       </div>}
@@ -16210,7 +16213,7 @@ function HourlyRegimePage(p){
               <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Days</th>
             </tr></thead>
             <tbody>{Array.from({length:16},function(_,i){var h=i+4;var hr=detailData._hvr.hours[h]||{};
-              return <tr key={h} style={{borderBottom:'1px solid '+C.grid,background:h===detailData._hvr.hottest_hr?'rgba(255,92,58,0.06)':h===detailData._hvr.coolest_hr?'rgba(0,229,160,0.06)':'transparent'}}>
+              return <tr key={h} style={{borderBottom:'1px solid '+C.grid,background:h===detailData._hvr.hottest_hr?C.warn+'0f':h===detailData._hvr.coolest_hr?C.accent+'0f':'transparent'}}>
                 <td style={{padding:'4px 6px',color:C.txtBright,fontWeight:700}}>{fmtHr(h)}</td>
                 <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{(hr.avg||0).toFixed(3)+'%'}</td>
                 <td style={{padding:'4px 3px',color:(hr.avg3||0)>(hr.avg||0)?C.gold:(hr.avg3||0)<(hr.avg||0)*0.8?C.blue:C.txtDim,textAlign:'right'}}>{(hr.avg3||0).toFixed(3)+'%'}</td>
@@ -16444,11 +16447,11 @@ function CycleSimPage(p){
       </div>
       {resolution==='second'&&<div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:4}}>1-second mode fetches ~500k+ bars. Takes 15-30 seconds but captures every micro-cycle your bot would execute.</div>}
       {fetchStatus&&loading&&<div style={{color:C.purple,fontSize:7,fontFamily:F,marginTop:4,fontWeight:700}}>{fetchStatus}</div>}
-      {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+      {err&&<div style={{padding:8,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </Cd>
 
     {results&&<Cd>
-      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.days+' days | '+results.bars.toLocaleString()+' '+(results.resolution==='second'?'1-sec':'1-min')+' bars | Fee: $0.005 RT'}</div>
+      <div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.days+' days | '+results.bars.toLocaleString()+' '+(results.resolution==='second'?'1-sec':'1-min')+' bars | Fee: $0.005 RT'}</div>
       <SectionHead title="TP Optimization Curve" sub="Net profit per day at each take-profit level"/>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
@@ -16463,7 +16466,7 @@ function CycleSimPage(p){
           </tr></thead>
           <tbody>{results.simResults.map(function(r,idx){
             var isOpt=r.optimal;var isSel=selectedTP===idx;
-            return <tr key={idx} onClick={function(){setSelectedTP(idx);setHourlyDetail(r.hours);}} style={{borderBottom:'1px solid '+C.grid,background:isOpt?'rgba(0,229,160,0.08)':isSel?'rgba(61,158,255,0.06)':'transparent',cursor:'pointer'}}>
+            return <tr key={idx} onClick={function(){setSelectedTP(idx);setHourlyDetail(r.hours);}} style={{borderBottom:'1px solid '+C.grid,background:isOpt?C.accent+'14':isSel?C.blue+'0f':'transparent',cursor:'pointer'}}>
               <td style={{padding:'4px 3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+r.tp.toFixed(2)}</td>
               <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{r.tpPct.toFixed(3)+'%'}</td>
               <td style={{padding:'4px 3px',color:r.cyclesPerDay>100?C.accent:r.cyclesPerDay>20?C.gold:C.txtDim,textAlign:'right',fontWeight:700}}>{r.cyclesPerDay.toFixed(1)}</td>
@@ -16709,11 +16712,11 @@ function MFETrackerPage(p){
         <button onClick={runMFE} disabled={loading} style={{border:'none',borderRadius:8,padding:'10px 20px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.border:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.txtDim:'#fff'}}>{loading?'Computing...':'Analyze'}</button>
       </div>
       {fetchStatus&&loading&&<div style={{color:C.purple,fontSize:7,fontFamily:F,marginTop:4,fontWeight:700}}>{fetchStatus}</div>}
-      {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+      {err&&<div style={{padding:8,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginTop:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </Cd>
 
     {results&&results.mfe&&<Cd>
-      <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.mfe.days+' days | '+results.bars.toLocaleString()+' 1-sec bars | '+results.mfe.total.toLocaleString()+' completed MFE cycles'}</div>
+      <div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{results.ticker+' | $'+results.price.toFixed(2)+' | '+results.mfe.days+' days | '+results.bars.toLocaleString()+' 1-sec bars | '+results.mfe.total.toLocaleString()+' completed MFE cycles'}</div>
 
       <SectionHead title="MFE Summary" sub="Percentiles across all completed cycles"/>
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -16734,7 +16737,7 @@ function MFETrackerPage(p){
       {(function(){var bestTP9=0;var bestNet9=-Infinity;var bestFills9=0;var bestRate9=0;
         for(var oi=0;oi<results.mfe.dist.length;oi++){var d9=results.mfe.dist[oi];var net9=d9.count*(d9.threshold-fee);if(net9>bestNet9){bestNet9=net9;bestTP9=d9.threshold;bestFills9=d9.count;bestRate9=results.mfe.total>0?Math.round(d9.count/results.mfe.total*1000)/10:0;}}
         var nD9=results.mfe.days||1;
-        return <div style={{padding:12,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:8,marginBottom:12}}>
+        return <div style={{padding:12,background:C.accent+'0f',border:'2px solid '+C.accent,borderRadius:8,marginBottom:12}}>
           <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:6}}>Overall Daily Optimal</div>
           <div style={{display:'flex',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
             <div><span style={{color:C.accent,fontSize:16,fontWeight:800,fontFamily:F}}>{'$'+bestTP9.toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>{results.price>0?(bestTP9/results.price*100).toFixed(3)+'%':''}{'  TP'}</span></div>
@@ -16763,7 +16766,7 @@ function MFETrackerPage(p){
             var netTotal=d.count*(d.threshold-fee);
             var netPerDay=results.mfe.days>0?netTotal/results.mfe.days:0;
             var isOpt=idx===bestIdx2;
-            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isOpt?'rgba(0,229,160,0.08)':'transparent'}}>
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isOpt?C.accent+'14':'transparent'}}>
               <td style={{padding:'4px 3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+d.threshold.toFixed(2)}</td>
               <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>{d.thresholdPct.toFixed(3)+'%'}</td>
               <td style={{padding:'4px 3px',color:barCol,textAlign:'right',fontWeight:700}}>{d.rate.toFixed(1)+'%'}</td>
@@ -16774,7 +16777,7 @@ function MFETrackerPage(p){
           })}</tbody>
         </table>
       </div>;})()}
-      <div style={{padding:8,background:'rgba(61,158,255,0.08)',border:'1px solid '+C.blue+'40',borderRadius:6,marginTop:8}}>
+      <div style={{padding:8,background:C.blue+'14',border:'1px solid '+C.blue+'40',borderRadius:6,marginTop:8}}>
         <div style={{color:C.blue,fontSize:7,fontWeight:700,fontFamily:F,marginBottom:3}}>HOW TO READ THIS</div>
         <div style={{color:C.txt,fontSize:7,fontFamily:F}}>{'Net$/Day = completed fills \u00D7 (TP$ \u2212 $'+fee.toFixed(4)+' fee) \u00F7 '+results.mfe.days+' days. The OPTIMAL row has the highest net profit per day per share. Wider TPs earn more per cycle but complete less often. The peak is where these balance.'}</div>
       </div>
@@ -16803,7 +16806,7 @@ function MFETrackerPage(p){
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+h.p75.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.blue,textAlign:'right',fontWeight:700}}>{'$'+h.p90.toFixed(2)}</td>
             </tr>;
-          })}<tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+          })}<tr style={{borderTop:'2px solid '+C.accent,background:C.accent+'0f'}}>
               <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>ALL DAY</td>
               <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{results.mfe.total.toLocaleString()}</td>
               <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+results.mfe.avg.toFixed(2)}</td>
@@ -16842,7 +16845,7 @@ function MFETrackerPage(p){
             </tr>;
           })}{(function(){var allBestTP=0;var allBestNet=-Infinity;var allBestFills=0;var allBestRate=0;
             for(var ti5=0;ti5<threshs.length;ti5++){var d5=results.mfe.dist[ti5];if(!d5)continue;var cnt5=d5.count;var net5=cnt5*(d5.threshold-fee);if(net5>allBestNet){allBestNet=net5;allBestTP=d5.threshold;allBestFills=cnt5;allBestRate=results.mfe.total>0?Math.round(cnt5/results.mfe.total*1000)/10:0;}}
-            return <tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+            return <tr style={{borderTop:'2px solid '+C.accent,background:C.accent+'0f'}}>
               <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>ALL DAY</td>
               <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+allBestTP.toFixed(2)}</td>
               <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontSize:6}}>{results.price>0?(allBestTP/results.price*100).toFixed(3)+'%':'--'}</td>
@@ -17403,7 +17406,7 @@ function HourlyDataPage(p){
       {loading&&progress&&<div style={{marginTop:8,padding:'6px 10px',background:C.bgInput,borderRadius:5,color:C.txt,fontSize:9,fontFamily:F,fontStyle:'italic',textAlign:'center'}}>{progress}</div>}
     </div>
 
-    {err&&<div style={{padding:'10px 12px',background:'rgba(255,92,58,0.10)',border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:14}}>{err}</div>}
+    {err&&<div style={{padding:'10px 12px',background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:14}}>{err}</div>}
 
     {/* Results */}
     {rows&&meta&&<div style={{padding:'12px 14px',background:C.bg,borderRadius:10,border:'1px solid '+C.border,marginBottom:14}}>
@@ -17429,9 +17432,9 @@ function HourlyDataPage(p){
         var planGated=hasErr&&(d.firstError.status===401||d.firstError.status===403);
         var notFound=hasErr&&d.firstError.status===404;
         var rateLimit=hasErr&&d.firstError.status===429;
-        var bg='rgba(0,231,179,0.08)',bd=C.accent,col=C.accent,label='OVERNIGHT (BOATS)';
-        if(hasErr){bg='rgba(255,92,58,0.10)';bd=C.warn;col=C.warn;label='OVERNIGHT FETCH BLOCKED';}
-        else if(d.trades===0){bg='rgba(255,176,32,0.08)';bd=C.gold;col=C.gold;label='OVERNIGHT — NO ACTIVITY';}
+        var bg=C.accent+'14',bd=C.accent,col=C.accent,label='OVERNIGHT (BOATS)';
+        if(hasErr){bg=C.warn+'1a';bd=C.warn;col=C.warn;label='OVERNIGHT FETCH BLOCKED';}
+        else if(d.trades===0){bg=C.gold+'14';bd=C.gold;col=C.gold;label='OVERNIGHT — NO ACTIVITY';}
         return <div style={{padding:'8px 10px',marginBottom:10,background:bg,border:'1px solid '+bd,borderRadius:5}}>
           <div style={{color:col,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:3}}>{label}</div>
           {!hasErr&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.daysWithData} of {d.daysAttempted} day{d.daysAttempted!==1?'s':''} returned overnight prints · {d.trades.toLocaleString()} trades over {d.pages} page{d.pages!==1?'s':''} · {d.bucketed.toLocaleString()} bucketed{d.filteredOutByHour>0?' · '+d.filteredOutByHour.toLocaleString()+' rejected by hour-guard':''}.</div>}
@@ -17676,7 +17679,7 @@ function OverlapScreenerPage(p){
         <button onClick={function(){setRefreshing(true);loadData().then(function(){setRefreshing(false);});}} disabled={refreshing} style={{flex:1,border:'1px solid '+C.accent,borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:refreshing?C.accent:'transparent',color:refreshing?C.bg:C.accent}}>{refreshing?'\u21BB Refreshing...':'Refresh Data'}</button>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff'}}>{scanning?'\u25CF Scanning...':'Run New Scan'}</button>
       </div>
-      {pipeStatus&&<div style={{marginBottom:8,padding:'10px',background:pipeStatus.status==='complete'?'rgba(0,229,160,0.08)':pipeStatus.status==='error'?'rgba(255,92,58,0.08)':'rgba(157,92,255,0.08)',borderRadius:8,border:'2px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+      {pipeStatus&&<div style={{marginBottom:8,padding:'10px',background:pipeStatus.status==='complete'?C.accent+'14':pipeStatus.status==='error'?C.warn+'14':C.purple+'14',borderRadius:8,border:'2px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
         <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
           <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:9,fontWeight:800,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF Scanning...'}</span>
           <span style={{color:C.txtBright,fontSize:11,fontWeight:800,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
@@ -17911,10 +17914,10 @@ function TrueSwingPage(p){
       <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:8}}>
         {[0.01,0.02,0.03,0.05,0.07,0.10,0.15,0.20,0.30,0.50,0.75,1.00].map(function(v){
           var active=parseFloat(threshInput)===v;
-          return <button key={v} onClick={function(){onThreshChange(v.toString());}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{'$'+v.toFixed(2)}</button>;
+          return <button key={v} onClick={function(){onThreshChange(v.toString());}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?C.accent+'26':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{'$'+v.toFixed(2)}</button>;
         })}
       </div>
-      {(loading||prog)&&<div style={{marginTop:8,padding:'10px',background:loading?'rgba(157,92,255,0.08)':'rgba(0,229,160,0.08)',borderRadius:8,border:'2px solid '+(loading?C.purple:C.accent)}}>
+      {(loading||prog)&&<div style={{marginTop:8,padding:'10px',background:loading?C.purple+'14':C.accent+'14',borderRadius:8,border:'2px solid '+(loading?C.purple:C.accent)}}>
         <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
           <span style={{color:loading?C.purple:C.accent,fontSize:9,fontWeight:800,fontFamily:F}}>{loading?'\u25CF Fetching 1-sec bars...':'\u2713 Complete'}</span>
           {loading&&<span style={{color:C.txtBright,fontSize:9,fontWeight:800,fontFamily:F}}>{prog}</span>}
@@ -17933,13 +17936,13 @@ function TrueSwingPage(p){
     {results&&<Cd>
       <SectionHead title="Raw vs Filtered Comparison" sub={bars.ticker+' | '+results.filtered.days+' trading days | '+bars.bars.length.toLocaleString()+' 1-sec bars'}/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-        <div style={{padding:10,background:'rgba(255,92,58,0.06)',border:'1px solid '+C.warn,borderRadius:8}}>
+        <div style={{padding:10,background:C.warn+'0f',border:'1px solid '+C.warn,borderRadius:8}}>
           <div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:6}}>Raw (No Filter)</div>
           <div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{results.raw.swingsPerDay}<span style={{fontSize:8,color:C.txtDim,marginLeft:4}}>swings/day</span></div>
           <div style={{marginTop:4,fontSize:8,fontFamily:F,color:C.txtDim}}>{'Avg $'+results.raw.avgSwing.toFixed(2)+' | Up $'+results.raw.avgUp.toFixed(2)+' | Dn $'+results.raw.avgDn.toFixed(2)}</div>
           <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>{results.raw.total.toLocaleString()+' total ('+results.raw.upCount+' up, '+results.raw.dnCount+' dn)'}</div>
         </div>
-        <div style={{padding:10,background:'rgba(0,229,160,0.06)',border:'1px solid '+C.accent,borderRadius:8}}>
+        <div style={{padding:10,background:C.accent+'0f',border:'1px solid '+C.accent,borderRadius:8}}>
           <div style={{color:C.accent,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',marginBottom:6}}>{'Filtered ($'+results.filtered.threshold.toFixed(2)+')'}</div>
           <div style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{results.filtered.swingsPerDay}<span style={{fontSize:8,color:C.txtDim,marginLeft:4}}>swings/day</span></div>
           <div style={{marginTop:4,fontSize:8,fontFamily:F,color:C.txtDim}}>{'Avg $'+results.filtered.avgSwing.toFixed(2)+' | Up $'+results.filtered.avgUp.toFixed(2)+' | Dn $'+results.filtered.avgDn.toFixed(2)}</div>
@@ -17985,7 +17988,7 @@ function TrueSwingPage(p){
               <td style={{padding:'3px',color:noise>80?C.warn:noise>50?C.gold:C.accent,textAlign:'right'}}>{noise+'%'}</td>
             </tr>;
           })}{(function(){var nD=results.filtered.days||1;var tFilt=Math.round(results.filtered.total/nD*10)/10;var tRaw=Math.round(results.raw.total/nD*10)/10;var tNoise=tRaw>0?Math.round((1-tFilt/tRaw)*100):0;
-            return <tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+            return <tr style={{borderTop:'2px solid '+C.accent,background:C.accent+'0f'}}>
               <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>ALL DAY</td>
               <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{tFilt.toFixed(1)}</td>
               <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>{'$'+results.filtered.avgSwing.toFixed(2)}</td>
@@ -18274,11 +18277,11 @@ function GridScannerPage(p){
           </div>
         </div>
       </div>
-      {detailRow.risks.length>0&&<div style={{padding:8,background:'rgba(255,92,58,0.06)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8}}>
+      {detailRow.risks.length>0&&<div style={{padding:8,background:C.warn+'0f',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8}}>
         <div style={{color:C.warn,fontSize:7,fontFamily:F,fontWeight:800,marginBottom:4}}>{'\u26A0 RISK FLAGS'}</div>
         <div style={{fontSize:7,fontFamily:F,color:C.warn}}>{detailRow.risks.join(' \u2022 ')}</div>
       </div>}
-      {detailRow.risks.length===0&&<div style={{padding:8,background:'rgba(0,229,160,0.06)',border:'1px solid '+C.accent,borderRadius:6,marginBottom:8}}>
+      {detailRow.risks.length===0&&<div style={{padding:8,background:C.accent+'0f',border:'1px solid '+C.accent,borderRadius:6,marginBottom:8}}>
         <div style={{color:C.accent,fontSize:7,fontFamily:F,fontWeight:800}}>{'\u2713 No risk flags — conditions favorable for oscillation trading'}</div>
       </div>}
     </Cd>}
@@ -18562,13 +18565,13 @@ function RangePredictorPage(p){
         <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Predict'}</button>
       </div>
       <div style={{display:'flex',gap:6,marginBottom:8}}>
-        <button onClick={function(){setSession('full');}} style={{flex:1,padding:'6px',border:session==='full'?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:session==='full'?'rgba(0,229,160,0.15)':C.bg,color:session==='full'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='full'?800:600,cursor:'pointer'}}>{'Full Day (4AM-8PM)'}</button>
+        <button onClick={function(){setSession('full');}} style={{flex:1,padding:'6px',border:session==='full'?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:session==='full'?C.accent+'26':C.bg,color:session==='full'?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='full'?800:600,cursor:'pointer'}}>{'Full Day (4AM-8PM)'}</button>
         <button onClick={function(){setSession('rth');}} style={{flex:1,padding:'6px',border:session==='rth'?'2px solid '+C.gold:'1px solid '+C.border,borderRadius:4,background:session==='rth'?'rgba(255,215,0,0.15)':C.bg,color:session==='rth'?C.gold:C.txtDim,fontFamily:F,fontSize:7,fontWeight:session==='rth'?800:600,cursor:'pointer'}}>{'RTH Only (9:30-4PM)'}</button>
       </div>
       <div style={{display:'flex',gap:4,marginBottom:8}}>
         {[{k:'full',l:'Full Day (4AM\u20138PM)'},{k:'rth',l:'RTH Only (9:30\u20134PM)'}].map(function(opt){
           var active=session===opt.k;
-          return <button key={opt.k} onClick={function(){setSession(opt.k);}} style={{flex:1,padding:'7px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:6,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:active?800:600,cursor:'pointer'}}>{opt.l}</button>;
+          return <button key={opt.k} onClick={function(){setSession(opt.k);}} style={{flex:1,padding:'7px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:6,background:active?C.accent+'26':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:7,fontWeight:active?800:600,cursor:'pointer'}}>{opt.l}</button>;
         })}
       </div>
       {loading&&prog&&<div style={{color:C.purple,fontSize:8,fontFamily:F,padding:4}}>{prog}</div>}
@@ -18577,7 +18580,7 @@ function RangePredictorPage(p){
 
     {results&&<Cd glow={true}>
       <SectionHead title={results.ticker+' \u2014 Next Day Forecast'} sub={results.session+' | '+results.tradingDays+' trading days | Last close: $'+results.forecast.close.toFixed(2)+(results.rthDays?' | RTH data: '+results.rthDays+' days':'')}/>
-      <div style={{padding:14,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
+      <div style={{padding:14,background:C.accent+'0f',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5}}>PRICE ZONE (p75 — {results.accuracy.hit75}% reliable)</div>
@@ -18605,7 +18608,7 @@ function RangePredictorPage(p){
             <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>ATR5: </span><span style={{color:results.forecast.atr5>results.forecast.atr?C.warn:C.accent,fontWeight:700}}>{'$'+results.forecast.atr5}</span></div>
             <div style={{fontSize:7,fontFamily:F}}><span style={{color:C.txtDim}}>Today Range: </span><span style={{color:C.txtBright,fontWeight:700}}>{'$'+results.forecast.todayRange}</span></div>
         </div>
-        <div style={{marginTop:10,padding:8,background:'rgba(0,229,160,0.1)',borderRadius:6}}>
+        <div style={{marginTop:10,padding:8,background:C.accent+'1a',borderRadius:6}}>
           <div style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:800}}>OSCILLATION RECOMMENDATION</div>
           <div style={{color:C.txtBright,fontSize:8,fontFamily:F,marginTop:3}}>{'Set oscillation levels $'+(results.forecast.close-results.forecast.range75/2).toFixed(2)+' to $'+(results.forecast.close+results.forecast.range75/2).toFixed(2)+' (p75 price zone, '+results.accuracy.hit75+'% of days the range fits within this width)'}</div>
         </div>
@@ -18825,12 +18828,12 @@ function CycleDensityPage(p){
       <div style={{display:'flex',gap:4,alignItems:'center',marginBottom:8}}>
         <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1,marginRight:4}}>LOOKBACK</span>
         {[5,10,20,30,60].map(function(v){
-          return <button key={v} onClick={function(){setLookback(v);}} style={{padding:'5px 8px',border:lookback===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:lookback===v?'rgba(0,229,160,0.15)':C.bg,color:lookback===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:lookback===v?800:600,cursor:'pointer'}}>{v+'d'}</button>;
+          return <button key={v} onClick={function(){setLookback(v);}} style={{padding:'5px 8px',border:lookback===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:lookback===v?C.accent+'26':C.bg,color:lookback===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:lookback===v?800:600,cursor:'pointer'}}>{v+'d'}</button>;
         })}
         <input value={lookback} onChange={function(e){var v=parseInt(e.target.value);if(v>0&&v<=260)setLookback(v);else if(e.target.value==='')setLookback(10);}} style={{width:40,padding:'5px 4px',background:C.bg,border:'1px solid '+C.purple,borderRadius:4,color:C.purple,fontFamily:F,fontSize:8,fontWeight:700,textAlign:'center'}}/>
         <span style={{color:C.txtDim,fontSize:6,fontFamily:F}}>days</span>
       </div>
-      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:C.purple+'14',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
         <div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:3}}>{'\u26A0 Do not refresh \u2014 fetching from Polygon'}</div>
       </div>}
@@ -18839,7 +18842,7 @@ function CycleDensityPage(p){
 
     {results&&bestLevel&&bestLevel.lv&&<Cd glow={true}>
       <SectionHead title={results.ticker+' \u2014 Optimal TP Level'} sub={results.days+' trading days | '+results.bars.toLocaleString()+' bars | $'+results.price.toFixed(2)}/>
-      <div style={{padding:12,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:8,marginBottom:12}}>
+      <div style={{padding:12,background:C.accent+'0f',border:'2px solid '+C.accent,borderRadius:8,marginBottom:12}}>
         <div style={{display:'flex',gap:16,alignItems:'baseline',flexWrap:'wrap'}}>
           <div><span style={{color:C.accent,fontSize:18,fontWeight:800,fontFamily:F}}>{'$'+bestLevel.lv.tp.toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>{'('+bestLevel.lv.effLabel+') TP'}</span></div>
           <div><span style={{color:C.accent,fontSize:14,fontWeight:800,fontFamily:F}}>{'$'+(Math.round(bestLevel.net/results.days*100)/100).toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:4}}>Net/Day</span></div>
@@ -18866,7 +18869,7 @@ function CycleDensityPage(p){
             var net=lv.total*(lv.tp-fee)/results.days;
             var isBest=bestLevel&&bestLevel.lv&&lv.pct===bestLevel.lv.pct;
             var isSel=selLevel!==null?lv.pct===selLevel:isBest;
-            return <tr key={lv.pct} onClick={function(){setSelLevel(lv.pct);}} style={{borderBottom:'1px solid '+C.grid,background:isSel?'rgba(157,92,255,0.12)':isBest?'rgba(0,229,160,0.06)':'transparent',cursor:'pointer'}}>
+            return <tr key={lv.pct} onClick={function(){setSelLevel(lv.pct);}} style={{borderBottom:'1px solid '+C.grid,background:isSel?C.purple+'1f':isBest?C.accent+'0f':'transparent',cursor:'pointer'}}>
               <td style={{padding:'3px',color:isBest?C.accent:isSel?C.purple:C.txtDim,fontWeight:isBest||isSel?800:400}}>{lv.pctLabel}{isBest?' \u2605':''}</td>
               <td style={{padding:'3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{'$'+lv.tp.toFixed(2)}</td>
               <td style={{padding:'3px',color:lv.effPct>lv.pct*1.3?C.gold:C.txtDim,textAlign:'right',fontSize:6}}>{lv.effLabel}</td>
@@ -19076,7 +19079,7 @@ function CycleSpeedPage(p){
         <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
           {['0.05','0.10','0.15','0.20','0.30','0.50','0.75','1.00','1.50','2.00','3.00','5.00'].map(function(v){
             var active=tpPctInput===v;
-            return <button key={v} onClick={function(){onTpChange(v);}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?'rgba(0,229,160,0.15)':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{v+'%'}</button>;
+            return <button key={v} onClick={function(){onTpChange(v);}} style={{padding:'5px 8px',border:active?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:active?C.accent+'26':C.bg,color:active?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:active?800:600,cursor:'pointer'}}>{v+'%'}</button>;
           })}
         </div>
       </div>
@@ -19084,7 +19087,7 @@ function CycleSpeedPage(p){
         <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700}}>FEE $/SHARE</span>
         <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:60,padding:'5px 8px',background:C.bg,border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontFamily:F,fontSize:10,fontWeight:700,textAlign:'center'}}/>
       </div>
-      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:C.purple+'14',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
         <div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:3}}>{'\u26A0 Do not refresh'}</div>
       </div>}
@@ -19129,7 +19132,7 @@ function CycleSpeedPage(p){
         </div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-        <div style={{padding:10,background:'rgba(0,229,160,0.06)',borderRadius:8,textAlign:'center',border:'1px solid '+C.accent}}>
+        <div style={{padding:10,background:C.accent+'0f',borderRadius:8,textAlign:'center',border:'1px solid '+C.accent}}>
           <div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700}}>NET $/DAY</div>
           <div style={{color:results.netPerDay>0?C.accent:C.warn,fontSize:16,fontWeight:800,fontFamily:F}}>{'$'+results.netPerDay.toFixed(2)}</div>
         </div>
@@ -19383,7 +19386,7 @@ function GridPlannerPage(p){
         <div><div style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:3}}>FEE $</div>
           <input value={feeInput} onChange={function(e){setFeeInput(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,boxSizing:'border-box',textAlign:'center'}}/></div>
       </div>
-      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:C.purple+'14',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
         <div style={{color:C.gold,fontSize:7,fontFamily:F,marginTop:3}}>{'\u26A0 Do not refresh'}</div>
       </div>}
@@ -19392,7 +19395,7 @@ function GridPlannerPage(p){
 
     {results&&<Cd glow={true}>
       <SectionHead title={results.ticker+' \u2014 Deployment Summary'} sub={'$'+results.price.toFixed(2)+' | TP: $'+results.tpDollar.toFixed(2)+' ('+results.effPct+'%) | Capital: '+fmtK(results.capital)}/>
-      <div style={{padding:14,background:'rgba(0,229,160,0.06)',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
+      <div style={{padding:14,background:C.accent+'0f',border:'2px solid '+C.accent,borderRadius:10,marginBottom:12}}>
         <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,marginBottom:6}}>OSCILLATION ZONE</div>
         <div style={{color:C.accent,fontSize:16,fontWeight:800,fontFamily:F}}>{'$'+results.zoneLow.toFixed(2)+' \u2014 $'+results.zoneHigh.toFixed(2)}</div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{'Width: $'+results.zoneRange.toFixed(2)+' ('+((results.zoneRange/results.price)*100).toFixed(2)+'%) | '+results.totalLevels+' levels at $0.01 spacing'}</div>
@@ -19427,7 +19430,7 @@ function GridPlannerPage(p){
           var maxW=Math.max.apply(null,results.zones.map(function(x){return x.weight;}));
           var barW=maxW>0?Math.round(z.weight/maxW*100):0;
           var isCenter=z.low<=results.price&&z.high>=results.price;
-          return <div key={idx} style={{marginBottom:6,padding:8,background:isCenter?'rgba(0,229,160,0.06)':C.bg,borderRadius:6,border:isCenter?'1px solid '+C.accent:'1px solid '+C.grid}}>
+          return <div key={idx} style={{marginBottom:6,padding:8,background:isCenter?C.accent+'0f':C.bg,borderRadius:6,border:isCenter?'1px solid '+C.accent:'1px solid '+C.grid}}>
             <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
               <span style={{color:isCenter?C.accent:C.txtBright,fontSize:8,fontWeight:700,fontFamily:F}}>{'$'+z.low.toFixed(2)+' \u2014 $'+z.high.toFixed(2)}{isCenter?' \u25C0 price':''}
               </span>
@@ -19462,7 +19465,7 @@ function GridPlannerPage(p){
           </tr></thead>
           <tbody>{results.zones.map(function(z,idx){
             var isCenter=z.low<=results.price&&z.high>=results.price;
-            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isCenter?'rgba(0,229,160,0.04)':'transparent'}}>
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isCenter?C.accent+'0a':'transparent'}}>
               <td style={{padding:'3px',color:isCenter?C.accent:C.txtDim,fontWeight:isCenter?700:400,fontSize:6}}>{'$'+z.low.toFixed(2)+'-'+z.high.toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtBright,textAlign:'right',fontWeight:700}}>{z.weight+'%'}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{fmtK(z.allocCap)}</td>
@@ -19470,7 +19473,7 @@ function GridPlannerPage(p){
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{z.cyclesPerDay}</td>
               <td style={{padding:'3px',color:z.netPerDay>0?C.accent:C.warn,textAlign:'right',fontWeight:700}}>{'$'+z.netPerDay.toFixed(2)}</td>
             </tr>;
-          })}<tr style={{borderTop:'2px solid '+C.accent,background:'rgba(0,229,160,0.06)'}}>
+          })}<tr style={{borderTop:'2px solid '+C.accent,background:C.accent+'0f'}}>
             <td style={{padding:'4px 3px',color:C.accent,fontWeight:800}}>TOTAL</td>
             <td style={{padding:'4px 3px',color:C.accent,textAlign:'right',fontWeight:800}}>100%</td>
             <td style={{padding:'4px 3px',color:C.accent,textAlign:'right'}}>{fmtK(results.totalAllocCap)}</td>
@@ -19639,7 +19642,7 @@ function HourlyReturnsPage(p){
         <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')analyze();}} placeholder="Enter ticker e.g. WULF" style={{flex:1,padding:'8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
         <button onClick={analyze} disabled={loading} style={{border:'none',borderRadius:6,padding:'8px 16px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:loading?C.accent:'linear-gradient(135deg,#9d5cff,#6030c0)',color:loading?C.bg:'#fff'}}>{loading?'Analyzing...':'Analyze'}</button>
       </div>
-      {loading&&prog&&<div style={{padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+      {loading&&prog&&<div style={{padding:'8px',background:C.purple+'14',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
       </div>}
       {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
@@ -19686,7 +19689,7 @@ function HourlyReturnsPage(p){
             var gCol=h.greenPct>=60?C.accent:h.greenPct>=50?C.gold:C.warn;
             var isSel=selHour===h.hour;
             var barW=Math.round(h.greenPct);
-            return <tr key={h.hour} onClick={function(){setSelHour(selHour===h.hour?null:h.hour);}} style={{borderBottom:'1px solid '+C.grid,background:isSel?'rgba(157,92,255,0.12)':'transparent',cursor:'pointer'}}>
+            return <tr key={h.hour} onClick={function(){setSelHour(selHour===h.hour?null:h.hour);}} style={{borderBottom:'1px solid '+C.grid,background:isSel?C.purple+'1f':'transparent',cursor:'pointer'}}>
               <td style={{padding:'3px',color:session==='rth'?C.txtBright:C.txtDim,fontWeight:session==='rth'?700:400}}>{fmtHr(h.hour)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{h.n}</td>
               <td style={{padding:'3px',color:gCol,textAlign:'right',fontWeight:800,fontSize:9}}>{h.greenPct+'%'}</td>
@@ -19843,7 +19846,7 @@ function VolStabilityPage(p){
       <div style={{display:'flex',gap:4,marginBottom:8}}>
         <span style={{color:C.txtDim,fontSize:6,fontFamily:F,fontWeight:700,alignSelf:'center',marginRight:4}}>SORT BY</span>
         {[{l:'Stability (All)',v:'all'},{l:'Stability (60d)',v:'cv60'},{l:'Score',v:'score'},{l:'Regime Changes',v:'changes'},{l:'ATR Range',v:'ratio'}].map(function(o){
-          return <button key={o.v} onClick={function(){setSortCol(o.v);}} style={{padding:'4px 6px',border:sortCol===o.v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:sortCol===o.v?'rgba(0,229,160,0.15)':C.bg,color:sortCol===o.v?C.accent:C.txtDim,fontFamily:F,fontSize:6,fontWeight:sortCol===o.v?800:600,cursor:'pointer'}}>{o.l}</button>;
+          return <button key={o.v} onClick={function(){setSortCol(o.v);}} style={{padding:'4px 6px',border:sortCol===o.v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:sortCol===o.v?C.accent+'26':C.bg,color:sortCol===o.v?C.accent:C.txtDim,fontFamily:F,fontSize:6,fontWeight:sortCol===o.v?800:600,cursor:'pointer'}}>{o.l}</button>;
         })}
       </div>
     </Cd>
@@ -20055,10 +20058,10 @@ function VolConcentrationPage(p){
       <div style={{display:'flex',gap:6,marginBottom:8,alignItems:'center'}}>
         <span style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1}}>PRICE BINS</span>
         {[5,10,15,20].map(function(v){
-          return <button key={v} onClick={function(){onBinsChange(v);}} style={{padding:'4px 8px',border:numBins===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:numBins===v?'rgba(0,229,160,0.15)':C.bg,color:numBins===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:numBins===v?800:600,cursor:'pointer'}}>{v}</button>;
+          return <button key={v} onClick={function(){onBinsChange(v);}} style={{padding:'4px 8px',border:numBins===v?'2px solid '+C.accent:'1px solid '+C.border,borderRadius:4,background:numBins===v?C.accent+'26':C.bg,color:numBins===v?C.accent:C.txtDim,fontFamily:F,fontSize:8,fontWeight:numBins===v?800:600,cursor:'pointer'}}>{v}</button>;
         })}
       </div>
-      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:'rgba(157,92,255,0.08)',borderRadius:6,border:'1px solid '+C.purple}}>
+      {loading&&prog&&<div style={{marginTop:6,padding:'8px',background:C.purple+'14',borderRadius:6,border:'1px solid '+C.purple}}>
         <div style={{color:C.purple,fontSize:8,fontFamily:F,fontWeight:700}}>{prog}</div>
       </div>}
       {err&&<div style={{color:C.warn,fontSize:8,fontFamily:F,padding:4}}>{err}</div>}
@@ -20083,7 +20086,7 @@ function VolConcentrationPage(p){
           <div style={{color:C.txtDim,fontSize:6,fontFamily:F}}>from midpoint</div>
         </div>
       </div>
-      <div style={{padding:8,background:'rgba(0,229,160,0.06)',borderRadius:6,marginBottom:8}}>
+      <div style={{padding:8,background:C.accent+'0f',borderRadius:6,marginBottom:8}}>
         <div style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:800}}>OSCILLATION INSIGHT</div>
         <div style={{color:C.txtBright,fontSize:8,fontFamily:F,marginTop:3}}>{results.avgConc>=2?'Volume clusters tightly — '+results.avgZone+'% of the price range holds 80% of volume. Focus oscillation levels in this zone for maximum fill probability.':'Volume spreads across the range — oscillation levels will fill more evenly but each level gets less volume.'}</div>
       </div>
@@ -20366,7 +20369,7 @@ function MFEDashPage(p){
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
         <button onClick={triggerScan} disabled={scanning} style={{flex:1,border:'none',borderRadius:8,padding:'10px',fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:2,textTransform:'uppercase',cursor:'pointer',background:scanning?'linear-gradient(135deg,#00e5a0,#00c488)':'linear-gradient(135deg,#9d5cff,#6030c0)',color:scanning?C.bg:'#fff'}}>{scanning?'\u25CF Scanning... See Progress Below':'Run MFE Scan'}</button>
       </div>}
-      {pipeStatus&&<div style={{marginBottom:8,padding:'12px',background:pipeStatus.status==='complete'?'rgba(0,229,160,0.08)':pipeStatus.status==='error'?'rgba(255,92,58,0.08)':'rgba(157,92,255,0.08)',borderRadius:8,border:'2px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
+      {pipeStatus&&<div style={{marginBottom:8,padding:'12px',background:pipeStatus.status==='complete'?C.accent+'14':pipeStatus.status==='error'?C.warn+'14':C.purple+'14',borderRadius:8,border:'2px solid '+(pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple)}}>
         <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
           <span style={{color:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,fontSize:9,fontWeight:800,fontFamily:F}}>{pipeStatus.status==='complete'?'\u2713 MFE Scan Complete':pipeStatus.status==='error'?'\u2717 Error':'\u25CF MFE Scan Running...'}</span>
           <span style={{color:C.txtBright,fontSize:11,fontWeight:800,fontFamily:F}}>{(pipeStatus.progress_pct||0)+'%'}</span>
@@ -20374,7 +20377,7 @@ function MFEDashPage(p){
         <div style={{height:8,background:C.border,borderRadius:4,overflow:'hidden',marginBottom:6}}><div style={{width:Math.max(pipeStatus.progress_pct||0,2)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:'linear-gradient(90deg,#9d5cff,#6030c0)',borderRadius:4,transition:'width 0.3s'}}/></div>
         <div style={{color:pipeStatus.status==='running'?C.txtBright:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600}}>{pipeStatus.message||''}</div>
       </div>}
-      {err&&<div style={{padding:8,background:'rgba(255,92,58,0.1)',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+      {err&&<div style={{padding:8,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </Cd>
 
     {displayRows.length>0&&<Cd>
@@ -20694,7 +20697,7 @@ function VolumeProfilePage(p){
 
     {profile&&<div>
       <Cd glow={true}>
-        <div style={{display:'inline-block',background:'rgba(168,85,247,0.15)',border:'1px solid '+C.purple,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.purple,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{ticker+' | '+profile.nDays+' day'+(profile.nDays!==1?'s':'')+' | $'+bucketSize+' buckets | '+profile.totalTrades.toLocaleString()+' ticks'}</div>
+        <div style={{display:'inline-block',background:C.purple+'26',border:'1px solid '+C.purple,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.purple,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{ticker+' | '+profile.nDays+' day'+(profile.nDays!==1?'s':'')+' | $'+bucketSize+' buckets | '+profile.totalTrades.toLocaleString()+' ticks'}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:8}}>
           <Mt label="POC" value={'$'+profile.poc.toFixed(2)} color={C.gold} size="lg"/>
           <Mt label="VWAP" value={'$'+profile.vwap.toFixed(2)} color={C.blue} size="lg"/>
@@ -20975,7 +20978,7 @@ function TradeFinderPage(p){
                 <tbody>{ft.slice(0,5000).map(function(t,idx){
                   var isOddLot=t.conditions&&t.conditions.indexOf(21)>=0;
                   var isExtHrs=t.conditions&&(t.conditions.indexOf(14)>=0||t.conditions.indexOf(33)>=0);
-                  return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?'rgba(61,158,255,0.05)':isOddLot?'rgba(157,92,255,0.05)':'transparent'}}>
+                  return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
                     <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
                     <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t.price.toFixed(4)}</td>
                     <td style={{padding:'3px 3px',color:t.size===0?C.warn:isOddLot?C.purple:C.txt,textAlign:'right'}}>{t.size!=null?t.size.toLocaleString():'--'}</td>
@@ -21403,7 +21406,7 @@ function MLModelFinderPage(p){
           </tr></thead>
           <tbody>{sorted.map(function(r,idx){
             var isBest=idx===0;
-            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.06)':r.edge_dollars>0?'rgba(0,229,160,0.02)':'transparent'}}>
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBest?C.accent+'0f':r.edge_dollars>0?C.accent+'05':'transparent'}}>
               <td style={{padding:'3px',color:isBest?C.accent:C.txtDim,fontWeight:isBest?700:400}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700,fontSize:7}}>{r.model}</td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.top_n}</td>
@@ -22234,7 +22237,7 @@ function HourlyPredictionPage(p){
 
     {results&&<div>
       <Cd glow>
-        <div style={{display:'inline-block',background:'rgba(0,229,160,0.15)',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | '+results.modelName+' | TRAIN '+results.trainDays+'d | TEST '+results.testDays+'d | '+results.testPoints+' pts'}</div>
+        <div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:10,letterSpacing:0.5}}>{'BACKTEST | '+results.ticker+' | '+results.modelName+' | TRAIN '+results.trainDays+'d | TEST '+results.testDays+'d | '+results.testPoints+' pts'}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
           <Mt label="Predicted Profit" value={'$'+results.predictedProfit.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} color={results.edge>0?C.accent:C.warn} size="md"/>
           <Mt label="Flat Profit" value={'$'+results.flatProfit.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} color={C.gold} size="md"/>
@@ -22314,7 +22317,7 @@ function HourlyPredictionPage(p){
             <tbody>{sf.quintiles.map(function(q){
               var maxP=Math.max.apply(null,sf.quintiles.map(function(qq){return qq.avgProfit;}));
               var isBest=q.avgProfit===maxP;
-              return <tr key={q.q} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(0,229,160,0.08)':'transparent'}}>
+              return <tr key={q.q} style={{borderBottom:'1px solid '+C.grid,background:isBest?C.accent+'14':'transparent'}}>
                 <td style={{padding:'4px 3px',color:isBest?C.accent:C.txt,fontWeight:isBest?700:400}}>{'Q'+q.q}</td>
                 <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>{q.min.toFixed(2)+' to '+q.max.toFixed(2)}</td>
                 <td style={{padding:'4px 3px',color:C.gold,textAlign:'right',fontWeight:700}}>{q.avgTp.toFixed(3)+'%'}</td>
@@ -22341,7 +22344,7 @@ function HourlyPredictionPage(p){
             </tr></thead>
             <tbody>{results.predictions.map(function(pr,idx){
               var won=pr.predProfit>pr.flatProfit;
-              return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:won?'rgba(0,229,160,0.04)':'transparent'}}>
+              return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:won?C.accent+'0a':'transparent'}}>
                 <td style={{padding:'3px',color:C.txt,fontSize:7}}>{pr.date}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{pr.hour}</td>
                 <td style={{padding:'3px',color:C.purple,textAlign:'right',fontWeight:700}}>{pr.predTp!==null?pr.predTp.toFixed(2)+'%':'--'}</td>
@@ -22895,16 +22898,16 @@ function App(){
           <div style={{marginTop:12,maxHeight:300,overflowY:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:8,fontFamily:F}}>
               <thead><tr style={{position:'sticky',top:0,background:C.bgCard}}>
-                <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'left'}}>Rank</th>
-                <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>TP%</th>
-                <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>TP $</th>
-                <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>Cycles</th>
-                <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>Net $</th>
-                <th style={{padding:'4px 3px',color:'#a0b4c8',textAlign:'right'}}>ROI</th>
+                <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'left'}}>Rank</th>
+                <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>TP%</th>
+                <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>TP $</th>
+                <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>Cycles</th>
+                <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>Net $</th>
+                <th style={{padding:'4px 3px',color:C.codeDim,textAlign:'right'}}>ROI</th>
               </tr></thead>
               <tbody>{optResults.results.slice(0,20).map(function(r,idx){
                 var isBest=idx===0;
-                return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isBest?'rgba(255,176,32,0.08)':'transparent'}}>
+                return <tr key={r.tpPct} style={{borderBottom:'1px solid '+C.grid,background:isBest?C.gold+'14':'transparent'}}>
                   <td style={{padding:'5px 3px',color:isBest?C.gold:C.txtDim}}>{idx+1}</td>
                   <td style={{padding:'5px 3px',color:isBest?C.gold:C.accent,textAlign:'right',fontWeight:isBest?700:400}}>{r.tpPct.toFixed(2)}%</td>
                   <td style={{padding:'5px 3px',color:C.gold,textAlign:'right'}}>{'$'+r.tpDollar.toFixed(2)}</td>
