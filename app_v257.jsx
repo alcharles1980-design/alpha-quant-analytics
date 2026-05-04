@@ -17434,7 +17434,7 @@ function HourlyDataPage(p){
         else if(d.trades===0){bg='rgba(255,176,32,0.08)';bd=C.gold;col=C.gold;label='OVERNIGHT — NO ACTIVITY';}
         return <div style={{padding:'8px 10px',marginBottom:10,background:bg,border:'1px solid '+bd,borderRadius:5}}>
           <div style={{color:col,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:3}}>{label}</div>
-          {!hasErr&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.daysWithData} of {d.daysAttempted} day{d.daysAttempted!==1?'s':''} returned overnight prints \u00B7 {d.trades.toLocaleString()} trades over {d.pages} page{d.pages!==1?'s':''} \u00B7 {d.bucketed.toLocaleString()} bucketed{d.filteredOutByHour>0?' \u00B7 '+d.filteredOutByHour.toLocaleString()+' rejected by hour-guard':''}.</div>}
+          {!hasErr&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>{d.daysWithData} of {d.daysAttempted} day{d.daysAttempted!==1?'s':''} returned overnight prints · {d.trades.toLocaleString()} trades over {d.pages} page{d.pages!==1?'s':''} · {d.bucketed.toLocaleString()} bucketed{d.filteredOutByHour>0?' · '+d.filteredOutByHour.toLocaleString()+' rejected by hour-guard':''}.</div>}
           {planGated&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned {d.firstError.status} ({d.firstError.statusText||'forbidden'}) on /v3/trades. The endpoint refused the request. Common causes: API key doesn't include /v3/trades scope, plan tier doesn't cover trades, or the key is malformed. Check Polygon dashboard.</div>}
           {notFound&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon returned 404 on /v3/trades for this ticker. Trades endpoint may not cover this symbol type.</div>}
           {rateLimit&&<div style={{color:C.txt,fontSize:9,fontFamily:F,lineHeight:1.5}}>Polygon rate-limited the trades endpoint (429). Try again in a moment, or use a shorter date range.</div>}
@@ -17442,9 +17442,9 @@ function HourlyDataPage(p){
           {d.firstTradeSample&&<div style={{marginTop:6,padding:'6px 8px',background:C.bg,borderRadius:3,border:'1px solid '+C.border}}>
             <div style={{color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.2,marginBottom:2}}>FIRST TRADE SAMPLE (day {d.firstTradeSample.day})</div>
             <div style={{color:C.txt,fontSize:7,fontFamily:'monospace',lineHeight:1.5,wordBreak:'break-all'}}>
-              <div>price={d.firstTradeSample.priceFromTrade} \u00B7 size={d.firstTradeSample.sizeFromTrade} \u00B7 exchange={d.firstTradeSample.exchange}</div>
+              <div>price={d.firstTradeSample.priceFromTrade} · size={d.firstTradeSample.sizeFromTrade} · exchange={d.firstTradeSample.exchange}</div>
               <div>participant_ts={String(d.firstTradeSample.participantTs)}</div>
-              <div>sip_ts={String(d.firstTradeSample.sipTs)} \u00B7 trf_ts={String(d.firstTradeSample.trfTs||'(none)')}</div>
+              <div>sip_ts={String(d.firstTradeSample.sipTs)} · trf_ts={String(d.firstTradeSample.trfTs||'(none)')}</div>
               <div>trf_id={String(d.firstTradeSample.trfId||'(none)')}</div>
               <div style={{color:C.txtDim,marginTop:2}}>window: gte={d.firstTradeSample.windowStartNs}</div>
               <div style={{color:C.txtDim}}>window: lt= {d.firstTradeSample.windowEndNs}</div>
