@@ -12195,120 +12195,116 @@ function StockClassificationPage(p){
   </div>;
 }
 
-// ─── STOCKS AT GLANCE ─────────────────────────────────────────────────────────
-// Saved watchlist of tickers persisted in Supabase stocks_watchlist table.
-// For each ticker fetches:
-//   A. Market cap           → /v3/reference/tickers/{t}
-//   B. Current price        → /v2/snapshot/locale/us/markets/stocks/tickers/{t}
-//   C. 52w + 90d H/L        → /v2/aggs/ticker/{t}/range/1/day/{from}/{to}
-//   D. 2026 PT H/Avg/Low    → /benzinga/v1/ratings?ticker={t}&date.gte=2026-01-01
-// Renders a sortable live table with add/delete per row.
+// ─── STOCKS AT GLANCE (MULTI-LIST) ───────────────────────────────────────────
+// Multiple named watchlists persisted in Supabase.
+// Tables: stock_lists (id, name) + stocks_watchlist (ticker, list_id).
+// Per ticker: fetches price, mkt cap, 52W/90D ranges from Polygon +
+// 2026 price targets + rating breakdown from Benzinga.
 function StocksAtGlancePage(p){
-  var s1=useState([]),tickers=s1[0],setTickers=s1[1];
-  var s2=useState({}),rowData=s2[0],setRowData=s2[1];
-  var s3=useState(''),input=s3[0],setInput=s3[1];
-  var s4=useState(false),adding=s4[0],setAdding=s4[1];
-  var s5=useState(null),err=s5[0],setErr=s5[1];
-  var s6=useState({}),loading=s6[0],setLoading=s6[1]; // per-ticker loading
-  var s7=useState('market_cap'),sortBy=s7[0],setSortBy=s7[1];
-  var s8=useState(false),sortAsc=s8[0],setSortAsc=s8[1];
+  var SB=p.sb; var pgKey=p.apiKey; var supaUrl=p.supaUrl;
 
-  var SB=p.sb; var pgKey=p.apiKey;
+  // ── state ─────────────────────────────────────────────────────────────────
+  var s1=useState([]),lists=s1[0],setLists=s1[1];
+  var s2=useState(null),activeId=s2[0],setActiveId=s2[1];
+  var s3=useState([]),tickers=s3[0],setTickers=s3[1];
+  var s4=useState({}),rowData=s4[0],setRowData=s4[1];
+  var s5=useState({}),loadingTkr=s5[0],setLoadingTkr=s5[1];
+  var s6=useState(''),addInput=s6[0],setAddInput=s6[1];
+  var s7=useState(false),adding=s7[0],setAdding=s7[1];
+  var s8=useState(null),err=s8[0],setErr=s8[1];
+  var s9=useState('price'),sortBy=s9[0],setSortBy=s9[1];
+  var s10=useState(false),sortAsc=s10[0],setSortAsc=s10[1];
+  // list management UI state
+  var s11=useState(false),showNewList=s11[0],setShowNewList=s11[1];
+  var s12=useState(''),newName=s12[0],setNewName=s12[1];
+  var s13=useState(null),renaming=s13[0],setRenaming=s13[1]; // list id being renamed
+  var s14=useState(''),renameVal=s14[0],setRenameVal=s14[1];
+  var s15=useState(null),confirmDel=s15[0],setConfirmDel=s15[1]; // list id to confirm delete
 
-  // ── helpers ──────────────────────────────────────────────────────────────
-  var fv=function(v,compact){
-    if(v==null||!isFinite(v))return '—';
-    var n=Number(v);
-    if(compact){
-      if(n>=1e12)return '$'+(n/1e12).toFixed(2)+'T';
-      if(n>=1e9) return '$'+(n/1e9).toFixed(1)+'B';
-      if(n>=1e6) return '$'+(n/1e6).toFixed(0)+'M';
-    }
-    if(n>=1000)return '$'+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
-    return '$'+n.toFixed(2);
-  };
-  var upside=function(price,avg){
-    if(!avg||!price)return null;
-    return ((avg-price)/price*100);
-  };
+  // ── Supabase helpers ──────────────────────────────────────────────────────
+  var sbGet=function(path){return fetch(supaUrl+path,{headers:SB()}).then(function(r){return r.json();});};
+  var sbPost=function(path,body){return fetch(supaUrl+path,{method:'POST',headers:Object.assign({'Content-Type':'application/json','Prefer':'return=representation'},SB()),body:JSON.stringify(body)}).then(function(r){return r.json();});};
+  var sbPatch=function(path,body){return fetch(supaUrl+path,{method:'PATCH',headers:Object.assign({'Content-Type':'application/json','Prefer':'return=representation'},SB()),body:JSON.stringify(body)}).then(function(r){return r.json();});};
+  var sbDel=function(path){return fetch(supaUrl+path,{method:'DELETE',headers:SB()});};
 
-  // ── load watchlist from Supabase ─────────────────────────────────────────
-  var loadList=async function(){
+  // ── load all lists ────────────────────────────────────────────────────────
+  var loadLists=async function(){
     try{
-      var h=SB();
-      var r=await fetch(p.supaUrl+'/rest/v1/stocks_watchlist?select=ticker&order=added_at.asc',{headers:h});
-      var d=await r.json();
+      var d=await sbGet('/rest/v1/stock_lists?select=id,name&order=created_at.asc');
+      if(Array.isArray(d)){
+        setLists(d);
+        if(d.length>0&&activeId==null){
+          switchList(d[0].id, d);
+        }
+      }
+    }catch(e){setErr('Could not load lists');}
+  };
+
+  // ── switch active list ────────────────────────────────────────────────────
+  var switchList=async function(id, listsArr){
+    setActiveId(id);setTickers([]);setRowData({});setErr(null);
+    try{
+      var d=await sbGet('/rest/v1/stocks_watchlist?select=ticker&list_id=eq.'+id+'&order=added_at.asc');
       if(Array.isArray(d)){
         var ts=d.map(function(x){return x.ticker;});
         setTickers(ts);
         ts.forEach(function(t){fetchTicker(t);});
       }
-    }catch(e){setErr('Failed to load watchlist');}
+    }catch(e){setErr('Could not load tickers');}
   };
 
-  // ── fetch all data for one ticker ─────────────────────────────────────────
+  // ── fetch data for one ticker ─────────────────────────────────────────────
   var fetchTicker=async function(tkr){
-    if(!pgKey){return;}
-    setLoading(function(prev){var n=Object.assign({},prev);n[tkr]=true;return n;});
+    if(!pgKey)return;
+    setLoadingTkr(function(prev){var n=Object.assign({},prev);n[tkr]=true;return n;});
     try{
-      var today=new Date();
+      var base='https://api.polygon.io';
       var etFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'});
+      var today=new Date();
       var toStr=etFmt.format(today);
       var d52=new Date(today);d52.setDate(d52.getDate()-365);
       var from52=etFmt.format(d52);
-      var d90=new Date(today);d90.setDate(d90.getDate()-90);
-      var epoch90=d90.getTime();
+      var epoch90=new Date(today);epoch90.setDate(epoch90.getDate()-90);
+      var ep90=epoch90.getTime();
 
-      // Parallel: ref + aggs + snapshot
-      var base='https://api.polygon.io';
       var [refR,aggR,snapR]=await Promise.all([
         fetch(base+'/v3/reference/tickers/'+tkr+'?apiKey='+pgKey),
         fetch(base+'/v2/aggs/ticker/'+tkr+'/range/1/day/'+from52+'/'+toStr+'?adjusted=true&sort=asc&limit=300&apiKey='+pgKey),
         fetch(base+'/v2/snapshot/locale/us/markets/stocks/tickers/'+tkr+'?apiKey='+pgKey)
       ]);
-      var refD=await refR.json();
-      var aggD=await aggR.json();
-      var snapD=await snapR.json();
+      var refD=await refR.json(); var aggD=await aggR.json(); var snapD=await snapR.json();
 
       var mc=(refD.results&&refD.results.market_cap)||null;
       var price=(snapD.ticker&&snapD.ticker.day&&snapD.ticker.day.c)||null;
       var bars=aggD.results||[];
-
       var w52h=null,w52l=null,d90h=null,d90l=null;
       bars.forEach(function(b){
-        var h=b.h,l=b.l;
-        if(h!=null){if(w52h==null||h>w52h)w52h=h; if(l<(w52l||Infinity))w52l=l;}
-        if(b.t>=epoch90){
-          if(h!=null){if(d90h==null||h>d90h)d90h=h; if(l<(d90l||Infinity))d90l=l;}
+        if(b.h!=null){
+          if(w52h==null||b.h>w52h)w52h=b.h;
+          if(w52l==null||b.l<w52l)w52l=b.l;
+          if(b.t>=ep90){
+            if(d90h==null||b.h>d90h)d90h=b.h;
+            if(d90l==null||b.l<d90l)d90l=b.l;
+          }
         }
       });
 
-      // Benzinga 2026 ratings — paginate fully
-      var ptHi=null,ptSum=0,ptCount=0,ptLo=null;
+      // Benzinga 2026 ratings — paginated
+      var ptHi=null,ptLo=null,ptSum=0,ptN=0;
+      var buys=0,holds=0,sells=0; var seenFirms={};
+      var rMap={buy:1,'strong buy':1,overweight:1,outperform:1,hold:0,neutral:0,'market perform':0,underperform:-1,sell:-1,'strong sell':-1,'underweight':-1};
       var cursor=base+'/benzinga/v1/ratings?ticker='+tkr+'&date.gte=2026-01-01&limit=200&sort=date.desc&apiKey='+pgKey;
-      var ratingBuys=0,ratingHolds=0,ratingSells=0;
-      var ratingMap={buy:1,'strong buy':1,overweight:1,outperform:1,hold:0,neutral:0,'market perform':0,underperform:-1,sell:-1,'strong sell':-1,'underweight':-1};
-      var seenFirms={};
       while(cursor){
         var bzR=await fetch(cursor);
         if(!bzR.ok)break;
         var bzD=await bzR.json();
-        var results=bzD.results||[];
-        results.forEach(function(r){
+        (bzD.results||[]).forEach(function(r){
           var pt=r.price_target;
-          if(pt&&pt>0){
-            ptCount++;ptSum+=pt;
-            if(ptHi==null||pt>ptHi)ptHi=pt;
-            if(ptLo==null||pt<ptLo)ptLo=pt;
-          }
-          // Count ratings — deduplicate by firm (use latest per firm)
+          if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
           if(r.firm&&!seenFirms[r.firm]){
             seenFirms[r.firm]=true;
-            var rat=(r.rating||'').toLowerCase();
-            var v=ratingMap[rat];
-            if(v===1)ratingBuys++;
-            else if(v===0)ratingHolds++;
-            else if(v===-1)ratingSells++;
+            var v=rMap[(r.rating||'').toLowerCase()];
+            if(v===1)buys++;else if(v===0)holds++;else if(v===-1)sells++;
           }
         });
         cursor=bzD.next_url?(bzD.next_url+(bzD.next_url.indexOf('apiKey=')<0?'&apiKey='+pgKey:'')):null;
@@ -12317,44 +12313,77 @@ function StocksAtGlancePage(p){
       setRowData(function(prev){
         var n=Object.assign({},prev);
         n[tkr]={mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l,
-                ptHi:ptHi,ptAvg:ptCount>0?Math.round(ptSum/ptCount*100)/100:null,
-                ptLo:ptLo,ptN:ptCount,buy:ratingBuys,hold:ratingHolds,sell:ratingSells};
+                ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
+                ptN:ptN,buy:buys,hold:holds,sell:sells};
         return n;
       });
     }catch(e){
       setRowData(function(prev){var n=Object.assign({},prev);n[tkr]={error:true};return n;});
     }finally{
-      setLoading(function(prev){var n=Object.assign({},prev);delete n[tkr];return n;});
+      setLoadingTkr(function(prev){var n=Object.assign({},prev);delete n[tkr];return n;});
     }
   };
 
-  // ── add ticker ────────────────────────────────────────────────────────────
+  // ── list CRUD ─────────────────────────────────────────────────────────────
+  var createList=async function(){
+    var name=(newName||'').trim();
+    if(!name)return;
+    try{
+      var d=await sbPost('/rest/v1/stock_lists',{name:name});
+      var newList=Array.isArray(d)?d[0]:d;
+      if(newList&&newList.id){
+        setLists(function(prev){return prev.concat([{id:newList.id,name:name}]);});
+        setNewName('');setShowNewList(false);
+        switchList(newList.id);
+      }
+    }catch(e){setErr('Could not create list');}
+  };
+
+  var renameList=async function(id){
+    var name=(renameVal||'').trim();
+    if(!name)return;
+    try{
+      await sbPatch('/rest/v1/stock_lists?id=eq.'+id,{name:name});
+      setLists(function(prev){return prev.map(function(l){return l.id===id?{id:l.id,name:name}:l;});});
+      setRenaming(null);setRenameVal('');
+    }catch(e){setErr('Could not rename list');}
+  };
+
+  var deleteList=async function(id){
+    try{
+      await sbDel('/rest/v1/stock_lists?id=eq.'+id);
+      var remaining=lists.filter(function(l){return l.id!==id;});
+      setLists(remaining);setConfirmDel(null);
+      if(activeId===id){
+        if(remaining.length>0){switchList(remaining[0].id);}
+        else{setActiveId(null);setTickers([]);setRowData({});}
+      }
+    }catch(e){setErr('Could not delete list');}
+  };
+
+  // ── ticker CRUD ───────────────────────────────────────────────────────────
   var addTicker=async function(){
-    var t=(input||'').trim().toUpperCase();
-    if(!t)return;
-    if(tickers.indexOf(t)>=0){setErr(t+' already in list');return;}
+    var t=(addInput||'').trim().toUpperCase();
+    if(!t||activeId==null)return;
+    if(tickers.indexOf(t)>=0){setErr(t+' already in this list');return;}
     setAdding(true);setErr(null);
     try{
-      var h=Object.assign({'Content-Type':'application/json'},SB());
-      var r=await fetch(p.supaUrl+'/rest/v1/stocks_watchlist',{method:'POST',headers:h,body:JSON.stringify({ticker:t})});
-      if(!r.ok){setErr('Failed to add '+t);return;}
+      await sbPost('/rest/v1/stocks_watchlist',{ticker:t,list_id:activeId});
       setTickers(function(prev){return prev.concat([t]);});
-      setInput('');
+      setAddInput('');
       fetchTicker(t);
-    }catch(e){setErr('Error adding ticker');}finally{setAdding(false);}
+    }catch(e){setErr('Could not add '+t);}finally{setAdding(false);}
   };
 
-  // ── delete ticker ─────────────────────────────────────────────────────────
   var deleteTicker=async function(t){
     try{
-      var h=SB();
-      await fetch(p.supaUrl+'/rest/v1/stocks_watchlist?ticker=eq.'+t,{method:'DELETE',headers:h});
+      await sbDel('/rest/v1/stocks_watchlist?ticker=eq.'+t+'&list_id=eq.'+activeId);
       setTickers(function(prev){return prev.filter(function(x){return x!==t;});});
       setRowData(function(prev){var n=Object.assign({},prev);delete n[t];return n;});
-    }catch(e){setErr('Error deleting '+t);}
+    }catch(e){setErr('Could not delete '+t);}
   };
 
-  // ── sort + render ─────────────────────────────────────────────────────────
+  // ── sort ──────────────────────────────────────────────────────────────────
   var sortedTickers=tickers.slice().sort(function(a,b){
     var ra=rowData[a]||{},rb=rowData[b]||{};
     var va=ra[sortBy],vb=rb[sortBy];
@@ -12363,147 +12392,221 @@ function StocksAtGlancePage(p){
     return sortAsc?(va>vb?1:-1):(va<vb?1:-1);
   });
 
-  var colH=function(label,field,align){
+  // ── mount ─────────────────────────────────────────────────────────────────
+  var didMount=useRef(false);
+  if(!didMount.current){didMount.current=true;loadLists();}
+
+  // ── render helpers ────────────────────────────────────────────────────────
+  var fv=function(v,compact){
+    if(v==null||!isFinite(Number(v)))return null;
+    var n=Number(v);
+    if(compact){
+      if(n>=1e12)return '$'+(n/1e12).toFixed(2)+'T';
+      if(n>=1e9) return '$'+(n/1e9).toFixed(1)+'B';
+      if(n>=1e6) return '$'+(n/1e6).toFixed(0)+'M';
+    }
+    return n>=1000?('$'+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})):('$'+n.toFixed(2));
+  };
+
+  var colH=function(label,field){
     var active=sortBy===field;
     return <th onClick={function(){if(sortBy===field)setSortAsc(!sortAsc);else{setSortBy(field);setSortAsc(false);}}}
-      style={{padding:'8px 10px',fontSize:9,fontFamily:F,letterSpacing:1.2,fontWeight:700,
-        textTransform:'uppercase',color:active?C.accent:C.txtDim,
-        textAlign:align||'right',cursor:'pointer',userSelect:'none',
-        borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap'}}>
+      style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,
+        textTransform:'uppercase',color:active?C.accent:C.txtDim,textAlign:'right',
+        cursor:'pointer',userSelect:'none',borderBottom:'2px solid '+C.border,
+        background:C.bgDeep,whiteSpace:'nowrap'}}>
       {label}{active?(' '+(sortAsc?'▲':'▼')):''}
     </th>;
   };
 
-  var ups=function(price,avg){
-    if(!avg||!price)return null;
-    var pct=((avg-price)/price*100).toFixed(1);
-    var col=pct>=0?C.accent:C.warn;
-    return <div style={{fontSize:9,color:col,fontFamily:F,marginTop:1}}>{pct>=0?'+':''}{pct}%</div>;
-  };
+  var inp={background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
+           padding:'8px 10px',color:C.txtBright,fontSize:11,fontFamily:F,outline:'none'};
 
-  var ratingBar=function(b,h,s){
-    var tot=b+h+s;if(!tot)return null;
-    var bw=b/tot*100,hw=h/tot*100,sw=s/tot*100;
-    return <div>
-      <div style={{display:'flex',height:10,width:90,borderRadius:3,overflow:'hidden',gap:1,marginBottom:3}}>
-        <div style={{flex:b,background:C.accent,minWidth:b?2:0}}/>
-        <div style={{flex:h,background:C.gold,minWidth:h?2:0}}/>
-        <div style={{flex:s,background:C.warn,minWidth:s?2:0}}/>
-      </div>
-      <div style={{display:'flex',gap:5,fontSize:8,fontFamily:F}}>
-        <span style={{color:C.accent,fontWeight:700}}>{'▲'+b}</span>
-        <span style={{color:C.gold,fontWeight:700}}>{'◆'+h}</span>
-        <span style={{color:C.warn,fontWeight:700}}>{'▼'+s}</span>
-      </div>
-    </div>;
-  };
-
-  // On mount, load list
-  var didMount=useRef(false);
-  if(!didMount.current){didMount.current=true;loadList();}
-
-  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
-          padding:'8px 12px',color:C.txtBright,fontSize:12,fontFamily:F,outline:'none'};
+  var activeList=lists.find(function(l){return l.id===activeId;})||null;
 
   return <div>
-    {/* Header */}
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+
+    {/* Page header */}
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Stocks At Glance</div>
-      <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginLeft:4}}>{tickers.length} stocks · live Polygon + Benzinga 2026</div>
     </div>
 
-    {/* Add ticker input */}
-    <div style={{padding:'12px 14px',background:C.bgCard,borderRadius:10,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,alignItems:'center'}}>
-      <input
-        type="text" value={input}
-        onChange={function(e){setInput(e.target.value.toUpperCase());setErr(null);}}
+    {/* ── LIST TABS ─────────────────────────────────────────────────────── */}
+    <div style={{marginBottom:12}}>
+      <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
+        <div style={{display:'flex',gap:6,alignItems:'center',minWidth:'max-content'}}>
+          {lists.map(function(l){
+            var active=l.id===activeId;
+            return <button key={l.id} onClick={function(){if(!active)switchList(l.id);}}
+              style={{padding:'7px 14px',background:active?C.accent:C.bgInput,
+                border:'1px solid '+(active?C.accent:C.border),borderRadius:20,
+                color:active?C.bg:C.txt,fontSize:11,fontFamily:F,fontWeight:active?700:400,
+                cursor:'pointer',whiteSpace:'nowrap',letterSpacing:0.5}}>
+              {l.name}
+            </button>;
+          })}
+          {/* New list button */}
+          {!showNewList&&<button onClick={function(){setShowNewList(true);setNewName('');}}
+            style={{padding:'7px 14px',background:'transparent',border:'1px dashed '+C.border,
+              borderRadius:20,color:C.txtDim,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap'}}>
+            + New List
+          </button>}
+          {showNewList&&<div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <input autoFocus value={newName} onChange={function(e){setNewName(e.target.value);}}
+              onKeyDown={function(e){if(e.key==='Enter')createList();if(e.key==='Escape'){setShowNewList(false);setNewName('');}}}
+              placeholder="List name…"
+              style={Object.assign({},inp,{width:140,padding:'6px 10px',fontSize:11})}/>
+            <button onClick={createList} style={{padding:'6px 12px',background:C.accent,border:'none',borderRadius:6,color:C.bg,fontSize:11,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Create</button>
+            <button onClick={function(){setShowNewList(false);setNewName('');}} style={{padding:'6px 10px',background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer'}}>✕</button>
+          </div>}
+        </div>
+      </div>
+    </div>
+
+    {/* ── ACTIVE LIST MANAGEMENT ────────────────────────────────────────── */}
+    {activeList&&<div style={{padding:'10px 14px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
+        {renaming===activeId
+          ? <div style={{display:'flex',gap:6,alignItems:'center',flex:1}}>
+              <input autoFocus value={renameVal}
+                onChange={function(e){setRenameVal(e.target.value);}}
+                onKeyDown={function(e){if(e.key==='Enter')renameList(activeId);if(e.key==='Escape')setRenaming(null);}}
+                style={Object.assign({},inp,{flex:1,maxWidth:220,padding:'5px 10px',fontSize:12})}/>
+              <button onClick={function(){renameList(activeId);}} style={{padding:'5px 12px',background:C.accent,border:'none',borderRadius:5,color:C.bg,fontSize:11,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Save</button>
+              <button onClick={function(){setRenaming(null);}} style={{padding:'5px 10px',background:'transparent',border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer'}}>✕</button>
+            </div>
+          : <div>
+              <span style={{color:C.txtBright,fontSize:13,fontWeight:700,fontFamily:F}}>{activeList.name}</span>
+              <span style={{color:C.txtDim,fontSize:10,fontFamily:F,marginLeft:8}}>{tickers.length} tickers</span>
+            </div>
+        }
+      </div>
+      <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+        {renaming!==activeId&&<button onClick={function(){setRenaming(activeId);setRenameVal(activeList.name);}}
+          style={{padding:'5px 12px',background:'transparent',border:'1px solid '+C.border,borderRadius:5,
+            color:C.txt,fontSize:10,fontFamily:F,cursor:'pointer'}}>✎ Rename</button>}
+        {confirmDel===activeId
+          ? <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <span style={{color:C.warn,fontSize:10,fontFamily:F}}>Delete list + all tickers?</span>
+              <button onClick={function(){deleteList(activeId);}} style={{padding:'5px 10px',background:C.warn,border:'none',borderRadius:5,color:'#fff',fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Yes Delete</button>
+              <button onClick={function(){setConfirmDel(null);}} style={{padding:'5px 10px',background:'transparent',border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontSize:10,fontFamily:F,cursor:'pointer'}}>Cancel</button>
+            </div>
+          : <button onClick={function(){setConfirmDel(activeId);}}
+              style={{padding:'5px 12px',background:'transparent',border:'1px solid '+C.warn+'80',borderRadius:5,
+                color:C.warn,fontSize:10,fontFamily:F,cursor:'pointer'}}>&#128465; Delete List</button>
+        }
+      </div>
+    </div>}
+
+    {/* ── ADD TICKER + REFRESH ──────────────────────────────────────────── */}
+    <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12,flexWrap:'wrap'}}>
+      <input value={addInput}
+        onChange={function(e){setAddInput(e.target.value.toUpperCase());setErr(null);}}
         onKeyDown={function(e){if(e.key==='Enter')addTicker();}}
         placeholder="Add ticker (e.g. TSLA)"
-        style={Object.assign({},iS,{flex:1,maxWidth:240})}
-      />
-      <button onClick={addTicker} disabled={adding||!input.trim()}
-        style={{padding:'8px 18px',background:C.accent,border:'none',borderRadius:6,
-          color:C.bg,fontSize:11,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer',
-          opacity:(adding||!input.trim())?0.5:1,whiteSpace:'nowrap'}}>
+        disabled={activeId==null}
+        style={Object.assign({},inp,{flex:1,minWidth:140,maxWidth:220})}/>
+      <button onClick={addTicker} disabled={adding||!addInput.trim()||activeId==null}
+        style={{padding:'8px 16px',background:C.accent,border:'none',borderRadius:6,color:C.bg,
+          fontSize:11,fontFamily:F,fontWeight:700,cursor:'pointer',
+          opacity:(adding||!addInput.trim()||activeId==null)?0.4:1,whiteSpace:'nowrap'}}>
         {adding?'Adding…':'+ Add'}
       </button>
       <button onClick={function(){setRowData({});tickers.forEach(function(t){fetchTicker(t);});}}
+        disabled={activeId==null}
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
-          color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap'}}>
+          color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
         ↻ Refresh All
       </button>
     </div>
 
-    {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
+    {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:10}}>{err}</div>}
 
-    {/* Table */}
-    <div style={{background:C.bgCard,borderRadius:10,border:'1px solid '+C.border,overflow:'hidden'}}>
+    {/* ── TABLE ────────────────────────────────────────────────────────── */}
+    <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,overflow:'hidden'}}>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:860}}>
           <thead>
-            <tr style={{borderBottom:'1px solid '+C.border}}>
-              {colH('#','_idx','left')}
-              {colH('Ticker','_tkr','left')}
+            <tr>
+              {colH('#','_idx')}
+              <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep}}>Ticker</th>
               {colH('Price','price')}
               {colH('Mkt Cap','mc')}
-              {colH('52W High','w52h')}
-              {colH('52W Low','w52l')}
-              {colH('90D High','d90h')}
-              {colH('90D Low','d90l')}
-              {colH('PT High','ptHi')}
+              {colH('52W Hi','w52h')}
+              {colH('52W Lo','w52l')}
+              {colH('90D Hi','d90h')}
+              {colH('90D Lo','d90l')}
+              {colH('PT Hi','ptHi')}
               {colH('PT Avg','ptAvg')}
-              {colH('PT Low','ptLo')}
-              <th style={{padding:'8px 10px',fontSize:9,fontFamily:F,letterSpacing:1.2,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'right',borderBottom:'2px solid '+C.border,background:C.bgDeep}}>B/H/S</th>
-              <th style={{padding:'8px 10px',fontSize:9,fontFamily:F,letterSpacing:1.2,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'center',borderBottom:'2px solid '+C.border,background:C.bgDeep}}>Del</th>
+              {colH('PT Lo','ptLo')}
+              <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'right',borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap'}}>B/H/S</th>
+              <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,borderBottom:'2px solid '+C.border,background:C.bgDeep,textAlign:'center'}}>Del</th>
             </tr>
           </thead>
           <tbody>
-            {sortedTickers.length===0&&<tr><td colSpan={13} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No stocks added yet — use the input above</td></tr>}
+            {activeId==null&&<tr><td colSpan={13} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Select or create a list above</td></tr>}
+            {activeId!=null&&sortedTickers.length===0&&<tr><td colSpan={13} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No tickers in this list yet — add one above</td></tr>}
             {sortedTickers.map(function(t,i){
               var r=rowData[t]||{};
-              var isLoading=!!loading[t];
-              var cell=function(val,col,compact,extra){
-                return <td style={{padding:'9px 10px',textAlign:'right',fontFamily:F,fontWeight:500,
-                  fontSize:12,color:col||C.txtBright,borderBottom:'1px solid '+C.border,
-                  opacity:isLoading?0.4:1,whiteSpace:'nowrap'}}>
-                  {isLoading?<span style={{color:C.txtDim,fontSize:10}}>…</span>:(val!=null?fv(val,compact):
-                    <span style={{color:C.txtDim}}>—</span>)}
-                  {extra}
+              var isLoad=!!loadingTkr[t];
+              var tdStyle={padding:'8px 9px',textAlign:'right',fontFamily:F,fontSize:12,
+                fontWeight:500,borderBottom:'1px solid '+C.border,
+                background:i%2===0?'transparent':C.bgDeep+'44',
+                whiteSpace:'nowrap'};
+              var cell=function(v,col){
+                return <td style={Object.assign({},tdStyle,{color:col||C.txtBright})}>
+                  {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:
+                    (v!=null?v:<span style={{color:C.border}}>—</span>)}
                 </td>;
               };
-              return <tr key={t} style={{background:i%2===0?'transparent':C.bgDeep+'55'}}>
-                <td style={{padding:'9px 10px',fontSize:10,color:C.txtDim,fontFamily:F,borderBottom:'1px solid '+C.border,textAlign:'right'}}>{i+1}</td>
-                <td style={{padding:'9px 10px',textAlign:'left',borderBottom:'1px solid '+C.border}}>
+              var ups=r.ptAvg&&r.price?(((r.ptAvg-r.price)/r.price)*100).toFixed(1):null;
+              var rbar=function(){
+                var tot=(r.buy||0)+(r.hold||0)+(r.sell||0);
+                if(!tot)return null;
+                return <div>
+                  <div style={{display:'flex',height:10,width:84,borderRadius:3,overflow:'hidden',gap:1,marginBottom:2}}>
+                    <div style={{flex:r.buy||0,background:C.accent,minWidth:r.buy?2:0}}/>
+                    <div style={{flex:r.hold||0,background:C.gold,minWidth:r.hold?2:0}}/>
+                    <div style={{flex:r.sell||0,background:C.warn,minWidth:r.sell?2:0}}/>
+                  </div>
+                  <div style={{display:'flex',gap:4,fontSize:8,fontFamily:F}}>
+                    <span style={{color:C.accent,fontWeight:700}}>{'▲'+(r.buy||0)}</span>
+                    <span style={{color:C.gold,fontWeight:700}}>{'◆'+(r.hold||0)}</span>
+                    <span style={{color:C.warn,fontWeight:700}}>{'▼'+(r.sell||0)}</span>
+                  </div>
+                </div>;
+              };
+              return <tr key={t}>
+                <td style={Object.assign({},tdStyle,{color:C.txtDim,fontSize:10,textAlign:'right'})}>{i+1}</td>
+                <td style={Object.assign({},tdStyle,{textAlign:'left'})}>
                   <span style={{fontFamily:F,fontWeight:700,fontSize:12,color:C.txtBright,
-                    background:C.bgInput,border:'1px solid '+C.border,padding:'2px 8px',
-                    borderRadius:4,display:'inline-block'}}>{t}</span>
+                    background:C.bgInput,border:'1px solid '+C.border,padding:'2px 8px',borderRadius:4}}>
+                    {t}
+                  </span>
                 </td>
-                {cell(r.price, C.txtBright)}
-                {cell(r.mc, C.txt, true)}
-                {cell(r.w52h, C.accent)}
-                {cell(r.w52l, C.warn)}
-                {cell(r.d90h, C.purple)}
-                {cell(r.d90l, C.blue)}
-                {cell(r.ptHi, C.accent)}
-                <td style={{padding:'9px 10px',textAlign:'right',fontFamily:F,fontWeight:500,
-                  fontSize:12,color:C.txtBright,borderBottom:'1px solid '+C.border,opacity:isLoading?0.4:1,whiteSpace:'nowrap'}}>
-                  {isLoading?<span style={{color:C.txtDim,fontSize:10}}>…</span>:(
+                {cell(fv(r.price), C.txtBright)}
+                {cell(fv(r.mc,true), C.txt)}
+                {cell(fv(r.w52h), C.accent)}
+                {cell(fv(r.w52l), C.warn)}
+                {cell(fv(r.d90h), C.purple)}
+                {cell(fv(r.d90l), C.blue)}
+                {cell(fv(r.ptHi), C.accent)}
+                <td style={Object.assign({},tdStyle,{color:C.txtBright})}>
+                  {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:
                     r.ptAvg!=null?<div>
                       <div>{fv(r.ptAvg)}</div>
-                      {ups(r.price,r.ptAvg)}
-                    </div>:<span style={{color:C.txtDim}}>—</span>
-                  )}
+                      {ups!=null&&<div style={{fontSize:9,color:ups>=0?C.accent:C.warn,marginTop:1}}>{ups>=0?'+':''}{ups}%</div>}
+                    </div>:<span style={{color:C.border}}>—</span>}
                 </td>
-                {cell(r.ptLo, C.warn)}
-                <td style={{padding:'9px 10px',textAlign:'right',borderBottom:'1px solid '+C.border,opacity:isLoading?0.4:1}}>
-                  {!isLoading&&r.buy!=null?ratingBar(r.buy,r.hold,r.sell):
-                    <span style={{color:C.txtDim,fontSize:10,fontFamily:F}}>—</span>}
+                {cell(fv(r.ptLo), C.warn)}
+                <td style={Object.assign({},tdStyle,{textAlign:'right'})}>
+                  {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:rbar()||<span style={{color:C.border}}>—</span>}
                 </td>
-                <td style={{padding:'9px 10px',textAlign:'center',borderBottom:'1px solid '+C.border}}>
+                <td style={Object.assign({},tdStyle,{textAlign:'center'})}>
                   <button onClick={function(){deleteTicker(t);}}
-                    style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
-                      color:C.warn,fontFamily:F,fontSize:10,padding:'3px 8px',cursor:'pointer',lineHeight:1}}>✕</button>
+                    style={{background:'transparent',border:'1px solid '+C.warn+'80',borderRadius:4,
+                      color:C.warn,fontSize:10,fontFamily:F,padding:'2px 7px',cursor:'pointer'}}>✕</button>
                 </td>
               </tr>;
             })}
@@ -12512,8 +12615,8 @@ function StocksAtGlancePage(p){
       </div>
     </div>
 
-    <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:10,lineHeight:1.6,fontStyle:'italic'}}>
-      Data: Polygon (market cap, price, 52W/90D ranges) + Benzinga (2026 price targets only). Click column headers to sort. Refresh All re-fetches all live data.
+    <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.6,fontStyle:'italic'}}>
+      Polygon: price, mkt cap, 52W &amp; 90D ranges &nbsp;·&nbsp; Benzinga: 2026 price targets &amp; ratings only &nbsp;·&nbsp; Click headers to sort
     </div>
   </div>;
 }
