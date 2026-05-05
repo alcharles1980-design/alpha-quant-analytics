@@ -17365,18 +17365,65 @@ function TradeAnalysisPage(p){
   var s8=useState(0),page=s8[0],setPage=s8[1];
   var s9=useState(false),scanning=s9[0],setScanning=s9[1];
   var s10=useState(null),pipeStatus=s10[0],setPipeStatus=s10[1];
+  var s11=useState(false),showFilters=s11[0],setShowFilters=s11[1];
+  // Single object for all min/max filter inputs. Keys: {col}_min, {col}_max.
+  // Values are raw strings so the user can type freely. Parsed on apply.
+  var s12=useState({}),filters=s12[0],setFilters=s12[1];
+  var s13=useState({}),activeFilters=s13[0],setActiveFilters=s13[1];
   var PAGE_SIZE=100;
+
+  // Columns with min/max filters. label shown in filter panel, field = DB key,
+  // color = accent color for the input border when active.
+  var FILTER_COLS=[
+    {field:'price',            label:'Price',           color:C.txtBright, prefix:'$'},
+    {field:'market_cap',       label:'Mkt Cap',         color:C.txt,       prefix:'$'},
+    {field:'adv_shares',       label:'Avg Vol (shs)',   color:C.blue,      prefix:''},
+    {field:'adv_dollars',      label:'Avg $ Vol',       color:C.accent,    prefix:'$'},
+    {field:'avg_trades',       label:'Avg Trades/Day',  color:C.purple,    prefix:''},
+    {field:'avg_shares_per_trade', label:'Shs/Trade',   color:C.gold,      prefix:''},
+    {field:'avg_dollar_per_trade', label:'$/Trade',     color:C.gold,      prefix:'$'},
+  ];
+
+  // Parse filter string: supports K/M/B suffixes (case-insensitive).
+  // e.g. "1M" → 1000000, "500K" → 500000, "2.5B" → 2500000000
+  var parseFilter=function(s){
+    if(!s||!s.trim())return null;
+    var v=s.trim().replace(/[$,]/g,'');
+    var mul=1;
+    if(/[Kk]$/.test(v)){mul=1e3;v=v.slice(0,-1);}
+    else if(/[Mm]$/.test(v)){mul=1e6;v=v.slice(0,-1);}
+    else if(/[Bb]$/.test(v)){mul=1e9;v=v.slice(0,-1);}
+    var n=parseFloat(v);
+    return isFinite(n)?n*mul:null;
+  };
+
+  var applyFilters=function(){
+    // Convert raw input strings → parsed numeric limits
+    var af={};
+    FILTER_COLS.forEach(function(fc){
+      var mn=parseFilter(filters[fc.field+'_min']);
+      var mx=parseFilter(filters[fc.field+'_max']);
+      if(mn!=null)af[fc.field+'_min']=mn;
+      if(mx!=null)af[fc.field+'_max']=mx;
+    });
+    setActiveFilters(af);
+    setPage(0);
+  };
+
+  var clearFilters=function(){
+    setFilters({});setActiveFilters({});setPage(0);
+  };
+
+  var activeFilterCount=Object.keys(activeFilters).length;
 
   var load=async function(){
     setLoading(true);setErr(null);
     try{
-      // Get latest scan_date
       var r=await fetch(SB_URL+'/rest/v1/trade_analysis?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
       var meta=await r.json();
       if(!meta||!meta[0]){setData([]);setScanDate(null);setLoading(false);return;}
       var latest=meta[0].scan_date;
       setScanDate(latest);
-      // Paginate full dataset
       var all=[],offset=0;
       while(true){
         var batch=await fetch(SB_URL+'/rest/v1/trade_analysis?scan_date=eq.'+latest+'&select=ticker,price,market_cap,adv_shares,adv_dollars,avg_trades,avg_shares_per_trade,avg_dollar_per_trade,days_sampled&order=adv_dollars.desc&limit=1000&offset='+offset,{headers:getSbHeaders()});
@@ -17418,8 +17465,17 @@ function TradeAnalysisPage(p){
     }catch(e){setErr('Dispatch failed: '+e.message);setScanning(false);}
   };
 
+  // Filter + sort pipeline
   var sortedData=(data||[]).slice();
+  // Ticker search
   if(search.trim()){var s=search.trim().toUpperCase();sortedData=sortedData.filter(function(r){return r.ticker&&r.ticker.toUpperCase().includes(s);});}
+  // Min/max filters
+  FILTER_COLS.forEach(function(fc){
+    var mn=activeFilters[fc.field+'_min'];
+    var mx=activeFilters[fc.field+'_max'];
+    if(mn!=null)sortedData=sortedData.filter(function(r){return r[fc.field]!=null&&r[fc.field]>=mn;});
+    if(mx!=null)sortedData=sortedData.filter(function(r){return r[fc.field]!=null&&r[fc.field]<=mx;});
+  });
   sortedData.sort(function(a,b){
     var va=a[sortBy],vb=b[sortBy];
     if(va==null&&vb==null)return 0;
@@ -17446,10 +17502,7 @@ function TradeAnalysisPage(p){
     if(n>=1e3)return '$'+(n/1e3).toFixed(0)+'K';
     return '$'+n.toFixed(2);
   };
-  var fmtPrice=function(v){
-    if(v==null||!isFinite(v))return '—';
-    return '$'+Number(v).toFixed(2);
-  };
+  var fmtPrice=function(v){if(v==null||!isFinite(v))return '—';return '$'+Number(v).toFixed(2);};
   var fmtCap=function(v){
     if(v==null||!isFinite(v))return '—';
     var n=Number(v);
@@ -17458,7 +17511,6 @@ function TradeAnalysisPage(p){
     if(n>=1e6)return '$'+(n/1e6).toFixed(0)+'M';
     return '—';
   };
-
   var colStyle=function(col,align){
     var active=sortBy===col;
     return {padding:'8px 10px',textAlign:align||'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:active?C.accent:C.txtDim};
@@ -17466,7 +17518,14 @@ function TradeAnalysisPage(p){
   var thClick=function(col){return function(){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);setPage(0);}};};
   var arrow=function(col){return sortBy===col?(sortAsc?' ▲':' ▼'):'';};
 
-  // Kick off initial load
+  var iS=function(col,key){
+    var hasVal=!!(filters[key]&&filters[key].trim());
+    var fc=FILTER_COLS.find(function(x){return x.field===col;});
+    return {width:'100%',background:C.bgInput,border:'1px solid '+(hasVal?fc.color:C.border),borderRadius:4,padding:'5px 8px',color:C.txtBright,fontFamily:F,fontSize:10,outline:'none'};
+  };
+
+  var setF=function(key){return function(e){setFilters(function(prev){var n=Object.assign({},prev);n[key]=e.target.value;return n;});};};
+
   var didMount=useRef(false);
   if(!didMount.current){didMount.current=true;load();}
 
@@ -17478,10 +17537,14 @@ function TradeAnalysisPage(p){
       {scanDate&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>Scan: {scanDate} · {(data||[]).length} stocks</div>}
     </div>
 
-    {/* Controls */}
-    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+    {/* Controls row */}
+    <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
       <input value={search} onChange={function(e){setSearch(e.target.value);setPage(0);}} placeholder="Filter ticker…"
-        style={{flex:'0 0 180px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,padding:'7px 10px',color:C.txtBright,fontFamily:F,fontSize:11,outline:'none'}}/>
+        style={{flex:'0 0 160px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,padding:'7px 10px',color:C.txtBright,fontFamily:F,fontSize:11,outline:'none'}}/>
+      <button onClick={function(){setShowFilters(!showFilters);}}
+        style={{padding:'7px 14px',background:showFilters?C.accentDim:C.bgInput,border:'1px solid '+(showFilters?C.accent:C.border),borderRadius:6,color:showFilters?C.accent:C.txt,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+        {'\u25BC Filters'+(activeFilterCount>0?' ('+activeFilterCount+')':'')}
+      </button>
       <button onClick={triggerScan} disabled={scanning}
         style={{padding:'7px 16px',background:scanning?C.bgInput:C.blue,border:'none',borderRadius:6,color:scanning?C.txtDim:C.bg,fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1,cursor:scanning?'default':'pointer'}}>
         {scanning?'SCANNING…':'▶ RUN SCAN'}
@@ -17490,8 +17553,38 @@ function TradeAnalysisPage(p){
       {pipeStatus&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim,fontStyle:'italic'}}>{pipeStatus}</div>}
     </div>
 
-    {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
+    {/* Filter panel */}
+    {showFilters&&<div style={{padding:'14px 16px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,marginBottom:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:1}}>COLUMN FILTERS</div>
+        <div style={{display:'flex',gap:6}}>
+          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,fontStyle:'italic',alignSelf:'center'}}>Supports K / M / B suffixes (e.g. 1M, 500K, 2.5B)</div>
+          {activeFilterCount>0&&<button onClick={clearFilters} style={{padding:'4px 10px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:4,color:C.warn,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
+          <button onClick={applyFilters} style={{padding:'4px 14px',background:C.accent,border:'none',borderRadius:4,color:C.bg,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Apply</button>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:12}}>
+        {FILTER_COLS.map(function(fc){
+          var mnKey=fc.field+'_min',mxKey=fc.field+'_max';
+          var hasActive=!!(activeFilters[mnKey]!=null||activeFilters[mxKey]!=null);
+          return <div key={fc.field} style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+(hasActive?fc.color:C.border)}}>
+            <div style={{color:hasActive?fc.color:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',marginBottom:8}}>{fc.label}{hasActive?' ●':''}</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+              <div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:3}}>MIN {fc.prefix}</div>
+                <input value={filters[mnKey]||''} onChange={setF(mnKey)} onKeyDown={function(e){if(e.key==='Enter')applyFilters();}} placeholder={'e.g. '+(fc.prefix==='$'?'1M':'1000')} style={iS(fc.field,mnKey)}/>
+              </div>
+              <div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:3}}>MAX {fc.prefix}</div>
+                <input value={filters[mxKey]||''} onChange={setF(mxKey)} onKeyDown={function(e){if(e.key==='Enter')applyFilters();}} placeholder={'e.g. '+(fc.prefix==='$'?'10B':'1M')} style={iS(fc.field,mxKey)}/>
+              </div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>}
 
+    {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
     {loading&&<div style={{padding:32,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading trade analysis data…</div>}
 
     {!loading&&(!data||data.length===0)&&<div style={{padding:'24px 14px',background:C.bgCard,borderRadius:10,border:'1px solid '+C.border,textAlign:'center'}}>
@@ -17503,7 +17596,6 @@ function TradeAnalysisPage(p){
     </div>}
 
     {!loading&&data&&data.length>0&&<div>
-      {/* Table */}
       <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,overflow:'hidden',marginBottom:12}}>
         <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
           <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
@@ -17521,6 +17613,7 @@ function TradeAnalysisPage(p){
               </tr>
             </thead>
             <tbody>
+              {sortedData.length===0&&<tr><td colSpan={9} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No stocks match the current filters</td></tr>}
               {pageRows.map(function(r,i){
                 var globalIdx=page*PAGE_SIZE+i+1;
                 var stripe=i%2===0?'transparent':C.bgDeep+'55';
@@ -17529,8 +17622,8 @@ function TradeAnalysisPage(p){
                     {fmt?fmt(val):(val!=null?val:<span style={{color:C.txtDim}}>—</span>)}
                   </td>;
                 };
-                return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.border}}>
-                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:9,color:C.txtDim,background:stripe}}>{globalIdx}</td>
+                return <tr key={r.ticker}>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:9,color:C.txtDim,background:stripe,borderBottom:'1px solid '+C.border}}>{globalIdx}</td>
                   <td style={{padding:'8px 10px',textAlign:'left',fontFamily:F,background:stripe,borderBottom:'1px solid '+C.border}}>
                     <span style={{fontWeight:700,fontSize:12,color:C.txtBright,background:C.bgInput,border:'1px solid '+C.border,padding:'2px 7px',borderRadius:4}}>{r.ticker}</span>
                   </td>
@@ -17557,12 +17650,11 @@ function TradeAnalysisPage(p){
           <button onClick={function(){setPage(Math.min(totalPages-1,page+1));}} disabled={page>=totalPages-1}
             style={{padding:'5px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:10,cursor:page>=totalPages-1?'default':'pointer',opacity:page>=totalPages-1?0.4:1}}>Next &#8594;</button>
         </div>
-        <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{sortedData.length} stocks{search?' (filtered)':''} · 100/page</div>
+        <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{sortedData.length.toLocaleString()} stocks{(search||activeFilterCount>0)?' (filtered)':''} · 100/page</div>
       </div>
 
-      {/* Legend */}
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.6,fontStyle:'italic'}}>
-        All values are 30-trading-day averages from Polygon grouped daily bars. Avg Vol = avg daily shares traded. Avg $ Vol = avg(shares &times; VWAP) per day. Avg Trades/Day = avg number of transactions per day. Shs/Trade = Avg Vol &divide; Avg Trades. $/Trade = Avg $ Vol &divide; Avg Trades. Click column headers to sort. Filter by ticker above.
+        All values are 30-trading-day averages from Polygon grouped daily bars. Avg Vol = avg daily shares. Avg $ Vol = avg(shares &times; VWAP)/day. Avg Trades/Day = avg transactions/day. Shs/Trade = Avg Vol &divide; Avg Trades. $/Trade = Avg $ Vol &divide; Avg Trades. Filters support K/M/B suffixes. Click headers to sort.
       </div>
     </div>}
   </div>;
