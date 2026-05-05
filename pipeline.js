@@ -3743,6 +3743,184 @@ async function runExtendedVolume() {
 }
 
 
+// ─── TRADE ANALYSIS ──────────────────────────────────────────────────────────
+// Scans ~2,500 tickers from the SP500+R2000 universe and computes per-ticker
+// trade microstructure metrics over the last 30 trading days:
+//
+//   adv_shares           = avg(v)           per day
+//   adv_dollars          = avg(v * vw)      per day  (vw = VWAP)
+//   avg_trades           = avg(n)           per day  (n = trade count)
+//   avg_shares_per_trade = adv_shares / avg_trades
+//   avg_dollar_per_trade = adv_dollars / avg_trades
+//
+// Data source: /v2/aggs/grouped/locale/us/market/stocks/{date} (same endpoint
+// as the oscillation screener). The grouped daily endpoint returns v, vw, n
+// for every active US equity in a single call per day — no per-ticker loop.
+// Price and market cap are pulled from the latest cached_oscillation_screener.
+//
+// Results go into trade_analysis table, keyed by scan_date. The app reads the
+// latest scan_date; running again replaces with fresh data.
+async function runTradeAnalysis() {
+  var scanDate = new Date().toISOString().slice(0, 10);
+
+  // Concurrent-run guard
+  try {
+    var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.trade-analysis&status=eq.running&select=ticker,started_at&order=started_at.desc&limit=3', { headers: sbHeaders() });
+    if (lockR.ok) {
+      var lockRows = await lockR.json();
+      for (var li = 0; li < lockRows.length; li++) {
+        var ageSec = (Date.now() - new Date(lockRows[li].started_at).getTime()) / 1000;
+        if (ageSec < 3600) {
+          var msg = 'Another trade-analysis is already running (' + Math.round(ageSec) + 's ago). Aborting.';
+          await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'error', progress_pct: 0, message: msg });
+          return;
+        }
+      }
+    }
+  } catch (e) { console.log('Concurrent-run check failed (continuing): ' + e.message); }
+
+  await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting trade analysis scan...' });
+
+  // Step 1: Build last 30 trading days
+  var LOOKBACK = 30;
+  var days = [];
+  var d = new Date(); d.setDate(d.getDate() - 1);
+  while (days.length < LOOKBACK + 15) {
+    var dow = d.getDay();
+    if (dow !== 0 && dow !== 6) days.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() - 1);
+  }
+  days = days.slice(0, LOOKBACK + 5);
+  days.reverse();
+
+  console.log('Fetching ' + days.length + ' days of grouped daily bars (v, vw, n per ticker)...');
+
+  // Accumulator: ticker -> {vSum, dolSum, nSum, count}
+  var acc = {};
+
+  for (var di = 0; di < days.length; di++) {
+    var date = days[di];
+    var pct = Math.round((di / days.length) * 55);
+    await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Fetching grouped bars: ' + date + ' (' + (di + 1) + '/' + days.length + ')' });
+    try {
+      var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 30000);
+      var r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) { console.log('  Grouped daily ' + date + ': HTTP ' + r.status); continue; }
+      var body = await r.json();
+      if (!body.results) { console.log('  Grouped daily ' + date + ': no results (holiday?)'); continue; }
+      for (var i = 0; i < body.results.length; i++) {
+        var bar = body.results[i];
+        var tk = bar.T;
+        // Skip warrants, rights, preferred, multi-class shares
+        if (!tk || tk.indexOf('.') >= 0 || tk.indexOf('/') >= 0 || tk.length > 5) continue;
+        var v = bar.v || 0;       // shares traded
+        var vw = bar.vw || bar.c || 0; // vwap (fallback to close)
+        var n = bar.n || 0;       // number of transactions
+        if (!acc[tk]) acc[tk] = { vSum: 0, dolSum: 0, nSum: 0, count: 0, lastClose: null };
+        acc[tk].vSum  += v;
+        acc[tk].dolSum += v * vw;
+        acc[tk].nSum  += n;
+        acc[tk].count += 1;
+        if (bar.c) acc[tk].lastClose = bar.c;
+      }
+      console.log('  Day ' + date + ': ' + body.results.length + ' tickers');
+    } catch (e) { console.log('  Grouped daily ' + date + ' error: ' + e.message); }
+    await sleep(250);
+  }
+
+  var allTickers = Object.keys(acc);
+  console.log('Tickers with data: ' + allTickers.length);
+
+  // Step 2: Pull price + market cap from latest screener snapshot
+  await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'running', progress_pct: 58, message: 'Loading price + market cap from screener...' });
+  var priceMap = {};
+  var mcapMap = {};
+  try {
+    // Get the most recent scan_date in screener
+    var scanR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1', { headers: sbHeaders() });
+    if (scanR.ok) {
+      var scanMeta = await scanR.json();
+      if (scanMeta && scanMeta[0]) {
+        var latestScan = scanMeta[0].scan_date;
+        // Paginate screener for price + mcap
+        var offset = 0;
+        while (true) {
+          var sr = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap&scan_date=eq.' + latestScan + '&limit=1000&offset=' + offset, { headers: sbHeaders() });
+          if (!sr.ok) break;
+          var sRows = await sr.json();
+          sRows.forEach(function(row) { priceMap[row.ticker] = row.price; mcapMap[row.ticker] = row.market_cap; });
+          if (sRows.length < 1000) break;
+          offset += 1000;
+        }
+        console.log('Loaded price/mcap for ' + Object.keys(priceMap).length + ' tickers from screener');
+      }
+    }
+  } catch (e) { console.log('Price/mcap load failed (continuing without): ' + e.message); }
+
+  // Step 3: Compute metrics and filter to meaningful stocks
+  var rows = [];
+  allTickers.forEach(function(tk) {
+    var a = acc[tk];
+    if (a.count < 5) return; // need at least 5 trading days of data
+    var adv = a.vSum / a.count;
+    var addol = a.dolSum / a.count;
+    var avgN = a.nSum / a.count;
+    if (adv < 1000) return; // skip extremely illiquid
+    var sppt = avgN > 0 ? adv / avgN : null;
+    var dpt  = avgN > 0 ? addol / avgN : null;
+    rows.push({
+      ticker:                tk,
+      price:                 priceMap[tk] || a.lastClose,
+      market_cap:            mcapMap[tk] || null,
+      adv_shares:            Math.round(adv),
+      adv_dollars:           Math.round(addol),
+      avg_trades:            Math.round(avgN),
+      avg_shares_per_trade:  sppt != null ? Math.round(sppt * 100) / 100 : null,
+      avg_dollar_per_trade:  dpt  != null ? Math.round(dpt  * 100) / 100 : null,
+      days_sampled:          a.count,
+      scan_date:             scanDate
+    });
+  });
+
+  // Sort by adv_dollars desc for top 2500
+  rows.sort(function(a, b) { return (b.adv_dollars || 0) - (a.adv_dollars || 0); });
+  rows = rows.slice(0, 2500);
+  console.log('Computed metrics for ' + rows.length + ' tickers');
+
+  // Step 4: Delete today's previous data + insert fresh
+  await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'running', progress_pct: 72, message: 'Saving ' + rows.length + ' rows to trade_analysis...' });
+  try {
+    var delR = await fetch(SB_URL + '/rest/v1/trade_analysis?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+    console.log('Deleted previous rows for ' + scanDate + ': HTTP ' + delR.status);
+  } catch (e) { console.log('Delete failed (continuing): ' + e.message); }
+
+  // Upsert in batches of 200
+  var BATCH = 200;
+  var inserted = 0;
+  for (var bi = 0; bi < rows.length; bi += BATCH) {
+    var batch = rows.slice(bi, bi + BATCH);
+    var pct2 = 72 + Math.round((bi / rows.length) * 25);
+    await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'running', progress_pct: pct2, message: 'Inserting batch ' + Math.floor(bi / BATCH + 1) + '/' + Math.ceil(rows.length / BATCH) });
+    try {
+      var inR = await fetch(SB_URL + '/rest/v1/trade_analysis', {
+        method: 'POST',
+        headers: Object.assign({}, sbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+        body: JSON.stringify(batch)
+      });
+      if (inR.ok) { inserted += batch.length; }
+      else { console.log('Insert batch failed: HTTP ' + inR.status); }
+    } catch (e) { console.log('Insert batch error: ' + e.message); }
+    await sleep(100);
+  }
+
+  console.log('Trade Analysis complete. Inserted: ' + inserted + ' rows for ' + scanDate);
+  await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. ' + inserted + ' stocks saved for ' + scanDate + '.' });
+}
+
+
 async function runBuildUniverse() {
   var snapshotDate = new Date().toISOString().slice(0, 10);
   await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Fetching iShares holdings...' });
@@ -4549,7 +4727,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -4596,6 +4774,11 @@ async function main() {
     try { await runExtendedVolume(); } catch (e) {
       console.error('EXTENDED-VOLUME CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'extended-volume', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'trade-analysis') {
+    try { await runTradeAnalysis(); } catch (e) {
+      console.error('TRADE-ANALYSIS CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'backfill-mcap') {
     await backfillMcap();
