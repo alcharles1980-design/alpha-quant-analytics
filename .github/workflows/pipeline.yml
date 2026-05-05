@@ -24,6 +24,7 @@ on:
           - extended-volume
           - build-universe
           - minute-osc
+          - trade-analysis
       tickers:
         description: 'Comma-separated tickers'
         required: true
