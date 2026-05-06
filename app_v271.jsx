@@ -17471,30 +17471,47 @@ function AtrAnalysisPage(p){
   var onDragEnd=function(){setDragCol(null);};
 
   // ── Column resize ─────────────────────────────────────────────────────────
-  // Resize handle is a thin strip on the RIGHT edge of each <th>.
-  // onMouseDown captures startX and the current computed width of the th.
-  // onMouseMove updates colWidths live. onMouseUp commits and removes listeners.
-  // We attach move/up to document so the drag works even if the cursor leaves
-  // the header. All mutations during drag go through resizeRef to avoid the
-  // re-render cost per pixel moved; only the final value triggers setState.
+  // Handle is 16px wide on the right edge of each header — wide enough to tap
+  // on mobile. Supports both mouse and touch events. A visible 2px accent line
+  // appears on hover/touch so the user can see the resize zone.
   var startResize=function(colId,e){
-    e.preventDefault();e.stopPropagation(); // don't trigger sort click
-    var th=e.currentTarget.parentElement; // the <th>
+    e.preventDefault();e.stopPropagation();
+    var th=e.currentTarget.parentElement;
     var startW=th.getBoundingClientRect().width;
-    resizeRef.current={active:true,colId:colId,startX:e.clientX,startW:startW};
+    // Support both mouse and touch
+    var getX=function(ev){return ev.touches?ev.touches[0].clientX:ev.clientX;};
+    resizeRef.current={active:true,colId:colId,startX:getX(e),startW:startW};
     var onMove=function(ev){
       if(!resizeRef.current.active)return;
-      var dx=ev.clientX-resizeRef.current.startX;
-      var newW=Math.max(60,resizeRef.current.startW+dx);
+      var dx=getX(ev)-resizeRef.current.startX;
+      var newW=Math.max(50,resizeRef.current.startW+dx);
       setColWidths(function(prev){var n=Object.assign({},prev);n[resizeRef.current.colId]=newW;return n;});
     };
     var onUp=function(){
       resizeRef.current.active=false;
       document.removeEventListener('mousemove',onMove);
       document.removeEventListener('mouseup',onUp);
+      document.removeEventListener('touchmove',onMove);
+      document.removeEventListener('touchend',onUp);
     };
     document.addEventListener('mousemove',onMove);
     document.addEventListener('mouseup',onUp);
+    document.addEventListener('touchmove',onMove,{passive:false});
+    document.addEventListener('touchend',onUp);
+  };
+
+  // Resize handle element — rendered inside each <th>
+  var ResizeHandle=function(colId){
+    return <div
+      onMouseDown={function(e){startResize(colId,e);}}
+      onTouchStart={function(e){startResize(colId,e);}}
+      onClick={function(e){e.stopPropagation();}}
+      style={{position:'absolute',right:0,top:0,bottom:0,width:16,
+        cursor:'col-resize',zIndex:10,display:'flex',alignItems:'center',
+        justifyContent:'center',touchAction:'none'}}
+    >
+      <div style={{width:3,height:'60%',background:C.border,borderRadius:2,pointerEvents:'none'}}/>
+    </div>;
   };
 
   // Data load
@@ -17646,9 +17663,7 @@ function AtrAnalysisPage(p){
                 <th style={{padding:'9px 10px',textAlign:'left',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:C.txtDim,width:colWidths['ticker']||80,whiteSpace:'nowrap',cursor:'pointer',position:'relative',userSelect:'none'}}
                   onClick={function(){if(sortBy==='ticker')setSortAsc(!sortAsc);else{setSortBy('ticker');setSortAsc(true);setPage(0);}}}>
                   Ticker{sortBy==='ticker'?(sortAsc?' \u25B2':' \u25BC'):''}
-                  <div onMouseDown={function(e){startResize('ticker',e);}}
-                    style={{position:'absolute',right:0,top:0,bottom:0,width:6,cursor:'col-resize',background:'transparent',zIndex:2}}
-                    onClick={function(e){e.stopPropagation();}}/>
+                  {ResizeHandle('ticker')}
                 </th>
                 {/* Draggable + resizable columns */}
                 {orderedCols.map(function(col){
@@ -17665,9 +17680,7 @@ function AtrAnalysisPage(p){
                     style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:isDragging?C.accentDim:C.bgDeep,color:active?col.color:C.txtDim,whiteSpace:'nowrap',cursor:'grab',userSelect:'none',opacity:isDragging?0.5:1,borderLeft:isDragging?'2px solid '+C.accent:'2px solid transparent',transition:'background 0.1s',width:w||undefined,minWidth:w||60,position:'relative'}}>
                     <span style={{marginRight:4,fontSize:8,opacity:0.4}}>{'\u2807'}</span>
                     {col.label}{active?(sortAsc?' \u25B2':' \u25BC'):''}
-                    <div onMouseDown={function(e){startResize(col.id,e);}}
-                      onClick={function(e){e.stopPropagation();}}
-                      style={{position:'absolute',right:0,top:0,bottom:0,width:6,cursor:'col-resize',background:'transparent',zIndex:2}}/>
+                    {ResizeHandle(col.id)}
                   </th>;
                 })}
               </tr>
