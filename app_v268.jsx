@@ -17594,12 +17594,12 @@ function AtrAnalysisPage(p){
     </div>}
 
     {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
-    {loading&&<div style={{padding:32,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading ATR analysis data\u2026</div>}
+    {loading&&<div style={{padding:32,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading ATR analysis data…</div>}
 
     {!loading&&(!data||data.length===0)&&<div style={{padding:'24px 14px',background:C.bgCard,borderRadius:10,border:'1px solid '+C.border,textAlign:'center'}}>
-      <div style={{color:C.txtDim,fontSize:11,fontFamily:F,marginBottom:8}}>No data yet \u2014 run a scan to populate.</div>
+      <div style={{color:C.txtDim,fontSize:11,fontFamily:F,marginBottom:8}}>No data yet — run a scan to populate.</div>
       <div style={{color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic',lineHeight:1.7}}>
-        ATR% = (high \u2212 low) / close \u00D7 100, averaged over 30D / 10D / 5D windows and the previous single day.
+        ATR% = (high − low) / close × 100, averaged over 30D / 10D / 5D windows and the previous single day.
       </div>
     </div>}
 
@@ -17627,7 +17627,7 @@ function AtrAnalysisPage(p){
                     onDragEnd={onDragEnd}
                     onClick={thClick(col)}
                     style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:isDragging?C.accentDim:C.bgDeep,color:active?col.color:C.txtDim,whiteSpace:'nowrap',cursor:'grab',userSelect:'none',opacity:isDragging?0.5:1,borderLeft:isDragging?'2px solid '+C.accent:'2px solid transparent',transition:'all 0.1s'}}>
-                    <span style={{marginRight:4,fontSize:8,opacity:0.4}}>\u2807</span>
+                    <span style={{marginRight:4,fontSize:8,opacity:0.4}}>{'⠇'}</span>
                     {col.label}{active?(sortAsc?' \u25B2':' \u25BC'):''}
                   </th>;
                 })}

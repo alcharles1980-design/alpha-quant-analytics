@@ -3998,17 +3998,19 @@ async function runAtrAnalysis() {
         var latestScan = scanMeta[0].scan_date;
         var offset = 0;
         while (true) {
-          var sr = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,market_cap,week_52_high,week_52_low&scan_date=eq.' + latestScan + '&limit=1000&offset=' + offset, { headers: sbHeaders() });
+          // Note: cached_oscillation_screener does NOT have week_52_high / week_52_low
+          // columns — those don't exist in the screener schema. We only pull market_cap
+          // here; the 52W H/L values are computed from the 45-day bar window instead.
+          var sr = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,market_cap&scan_date=eq.' + latestScan + '&limit=1000&offset=' + offset, { headers: sbHeaders() });
           if (!sr.ok) break;
           var sRows = await sr.json();
           sRows.forEach(function(row) {
             mcapMap[row.ticker] = row.market_cap;
-            if (row.week_52_high) w52hMap[row.ticker] = row.week_52_high;
-            if (row.week_52_low)  w52lMap[row.ticker] = row.week_52_low;
           });
           if (sRows.length < 1000) break;
           offset += 1000;
         }
+        console.log('Loaded market_cap for ' + Object.keys(mcapMap).length + ' tickers from screener');
       }
     }
   } catch (e) { console.log('Mcap/52W load failed: ' + e.message); }
@@ -4020,6 +4022,14 @@ async function runAtrAnalysis() {
   Object.keys(acc).forEach(function(tk) {
     var bars = acc[tk]; // chronological asc
     if (bars.length < 3) return;
+    var prevBar = bars[bars.length - 1];
+    // Filter quality: skip warrants, rights, sub-$0.50 stocks (penny/OTC noise
+    // dominates the top of the ATR% ranking without this check). Also skip
+    // any ticker with less than $500K average daily dollar volume — these are
+    // so illiquid they produce unreliable ATR readings from sporadic prints.
+    if (!prevBar.c || prevBar.c < 0.50) return;
+    var avgDol30 = bars.slice(-30).reduce(function(s, b) { return s + b.dol; }, 0) / Math.min(bars.length, 30);
+    if (avgDol30 < 500000) return;
     var last30 = bars.slice(-30);
     var last10 = bars.slice(-10);
     var last5  = bars.slice(-5);
