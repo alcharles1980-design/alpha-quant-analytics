@@ -17362,6 +17362,12 @@ function MFETrackerPage(p){
 // Columns (all sortable + filterable):
 //   Ticker | Market Cap | Avg Daily Notional $ |
 //   ATR% 30D | ATR% 10D | ATR% 5D | ATR% Prev Day
+// ─── HIGHEST ATR % PAGE ───────────────────────────────────────────────────────
+// Pattern A: reads from atr_analysis Supabase table.
+// Columns: Ticker | Price | Market Cap | Avg Daily $ | 52W High | 52W Low |
+//          ATR% 30D | ATR% 10D | ATR% 5D | ATR% Prev Day
+// All columns sortable, filterable (min/max), and drag-to-reorder.
+// Column order persisted in component state (not localStorage — works offline).
 function AtrAnalysisPage(p){
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
@@ -17376,106 +17382,31 @@ function AtrAnalysisPage(p){
   var s11=useState(false),showFilters=s11[0],setShowFilters=s11[1];
   var s12=useState({}),filters=s12[0],setFilters=s12[1];
   var s13=useState({}),activeFilters=s13[0],setActiveFilters=s13[1];
+  var s14=useState(null),dragCol=s14[0],setDragCol=s14[1];  // dragged column id
   var PAGE_SIZE=100;
 
-  var FILTER_COLS=[
-    {field:'market_cap',  label:'Mkt Cap',           color:C.txt,    prefix:'$'},
-    {field:'adv_dollars', label:'Avg Daily $ Vol',   color:C.accent, prefix:'$'},
-    {field:'atr_30d',     label:'ATR% 30D',           color:C.warn,   prefix:''},
-    {field:'atr_10d',     label:'ATR% 10D',           color:C.gold,   prefix:''},
-    {field:'atr_5d',      label:'ATR% 5D',            color:C.blue,   prefix:''},
-    {field:'atr_prev',    label:'ATR% Prev Day',      color:C.purple, prefix:''},
+  // All available columns. 'id' is the stable key; 'field' is the DB field.
+  var ALL_COLS=[
+    {id:'price',     field:'price',       label:'Price',          color:C.txtBright, fmt:'price',  filterable:true,  prefix:'$'},
+    {id:'market_cap',field:'market_cap',  label:'Mkt Cap',        color:C.txt,       fmt:'cap',    filterable:true,  prefix:'$'},
+    {id:'adv_dollars',field:'adv_dollars',label:'Avg Daily $',    color:C.accent,    fmt:'dol',    filterable:true,  prefix:'$'},
+    {id:'w52h',      field:'w52h',        label:'52W High',       color:'#00e5a0',   fmt:'price',  filterable:true,  prefix:'$'},
+    {id:'w52l',      field:'w52l',        label:'52W Low',        color:C.warn,      fmt:'price',  filterable:true,  prefix:'$'},
+    {id:'atr_30d',   field:'atr_30d',     label:'ATR% 30D',       color:C.warn,      fmt:'atr',    filterable:true,  prefix:''},
+    {id:'atr_10d',   field:'atr_10d',     label:'ATR% 10D',       color:C.gold,      fmt:'atr',    filterable:true,  prefix:''},
+    {id:'atr_5d',    field:'atr_5d',      label:'ATR% 5D',        color:C.blue,      fmt:'atr',    filterable:true,  prefix:''},
+    {id:'atr_prev',  field:'atr_prev',    label:'ATR% Prev Day',  color:C.purple,    fmt:'atr',    filterable:true,  prefix:''},
   ];
 
-  var parseFilter=function(s){
-    if(!s||!s.trim())return null;
-    var v=s.trim().replace(/[$,]/g,'');
-    var mul=1;
-    if(/[Kk]$/.test(v)){mul=1e3;v=v.slice(0,-1);}
-    else if(/[Mm]$/.test(v)){mul=1e6;v=v.slice(0,-1);}
-    else if(/[Bb]$/.test(v)){mul=1e9;v=v.slice(0,-1);}
-    var n=parseFloat(v);
-    return isFinite(n)?n*mul:null;
-  };
+  // Column order state — array of column ids. Default order = ALL_COLS order.
+  var s15=useState(ALL_COLS.map(function(c){return c.id;}));
+  var colOrder=s15[0],setColOrder=s15[1];
 
-  var applyFilters=function(){
-    var af={};
-    FILTER_COLS.forEach(function(fc){
-      var mn=parseFilter(filters[fc.field+'_min']);
-      var mx=parseFilter(filters[fc.field+'_max']);
-      if(mn!=null)af[fc.field+'_min']=mn;
-      if(mx!=null)af[fc.field+'_max']=mx;
-    });
-    setActiveFilters(af);setPage(0);
-  };
-  var clearFilters=function(){setFilters({});setActiveFilters({});setPage(0);};
-  var activeFilterCount=Object.keys(activeFilters).length;
-
-  var load=async function(){
-    setLoading(true);setErr(null);
-    try{
-      var r=await fetch(SB_URL+'/rest/v1/atr_analysis?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
-      var meta=await r.json();
-      if(!meta||!meta[0]){setData([]);setScanDate(null);setLoading(false);return;}
-      var latest=meta[0].scan_date;setScanDate(latest);
-      var all=[],offset=0;
-      while(true){
-        var batch=await fetch(SB_URL+'/rest/v1/atr_analysis?scan_date=eq.'+latest+'&select=ticker,market_cap,adv_dollars,atr_30d,atr_10d,atr_5d,atr_prev,days_sampled&order=atr_30d.desc&limit=1000&offset='+offset,{headers:getSbHeaders()});
-        var rows=await batch.json();
-        all=all.concat(rows);
-        if(rows.length<1000)break;
-        offset+=1000;
-      }
-      setData(all);
-    }catch(e){setErr('Load failed: '+e.message);}
-    finally{setLoading(false);}
-  };
-
-  var triggerScan=async function(){
-    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
-    setScanning(true);setErr(null);setPipeStatus('Dispatching scan…');
-    try{
-      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{
-        method:'POST',
-        headers:{'Authorization':'token '+p.ghToken,'Content-Type':'application/json'},
-        body:JSON.stringify({ref:'main',inputs:{mode:'atr-analysis',tickers:'ALL'}})
-      });
-      if(!r.ok){setErr('GitHub dispatch failed: '+r.status);setScanning(false);return;}
-      setPipeStatus('Scan queued — polling…');
-      var poll=setInterval(async function(){
-        try{
-          var sr=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.atr-analysis&order=updated_at.desc&limit=1',{headers:getSbHeaders()});
-          var rows=await sr.json();
-          if(rows&&rows[0]){
-            var row=rows[0];
-            setPipeStatus(row.status.toUpperCase()+': '+row.message);
-            if(row.status==='complete'||row.status==='error'){
-              clearInterval(poll);setScanning(false);
-              if(row.status==='complete')load();
-            }
-          }
-        }catch(e){}
-      },3000);
-    }catch(e){setErr('Dispatch failed: '+e.message);setScanning(false);}
-  };
-
-  // Filter + sort
-  var sortedData=(data||[]).slice();
-  if(search.trim()){var s=search.trim().toUpperCase();sortedData=sortedData.filter(function(r){return r.ticker&&r.ticker.toUpperCase().includes(s);});}
-  FILTER_COLS.forEach(function(fc){
-    var mn=activeFilters[fc.field+'_min'];var mx=activeFilters[fc.field+'_max'];
-    if(mn!=null)sortedData=sortedData.filter(function(r){return r[fc.field]!=null&&r[fc.field]>=mn;});
-    if(mx!=null)sortedData=sortedData.filter(function(r){return r[fc.field]!=null&&r[fc.field]<=mx;});
-  });
-  sortedData.sort(function(a,b){
-    var va=a[sortBy],vb=b[sortBy];
-    if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return -1;
-    return sortAsc?(va>vb?1:-1):(va<vb?1:-1);
-  });
-  var totalPages=Math.max(1,Math.ceil(sortedData.length/PAGE_SIZE));
-  var pageRows=sortedData.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
+  // Derive ordered column definitions from colOrder
+  var orderedCols=colOrder.map(function(id){return ALL_COLS.find(function(c){return c.id===id;});}).filter(Boolean);
 
   // Formatters
+  var fmtPrice=function(v){if(v==null||!isFinite(v))return '—';return '$'+Number(v).toFixed(2);};
   var fmtCap=function(v){
     if(v==null||!isFinite(v))return '—';var n=Number(v);
     if(n>=1e12)return '$'+(n/1e12).toFixed(2)+'T';if(n>=1e9)return '$'+(n/1e9).toFixed(1)+'B';
@@ -17487,48 +17418,132 @@ function AtrAnalysisPage(p){
     if(n>=1e3)return '$'+(n/1e3).toFixed(0)+'K';return '$'+n.toFixed(2);
   };
   var fmtAtr=function(v){if(v==null||!isFinite(v))return '—';return Number(v).toFixed(2)+'%';};
-
-  // ATR cell with color gradient (higher ATR = more orange/red)
-  var atrColor=function(v,col){
-    if(v==null)return C.txtDim;
-    return col||C.warn;
+  var applyFmt=function(col,v){
+    if(col.fmt==='price')return fmtPrice(v);
+    if(col.fmt==='cap')  return fmtCap(v);
+    if(col.fmt==='dol')  return fmtDol(v);
+    if(col.fmt==='atr')  return fmtAtr(v);
+    return v!=null?String(v):'—';
   };
 
-  var colStyle=function(col,align){
-    var active=sortBy===col;
-    return {padding:'8px 10px',textAlign:align||'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:active?C.accent:C.txtDim};
+  // Filters
+  var parseFilter=function(s){
+    if(!s||!s.trim())return null;
+    var v=s.trim().replace(/[$,]/g,'');
+    var mul=1;
+    if(/[Kk]$/.test(v)){mul=1e3;v=v.slice(0,-1);}
+    else if(/[Mm]$/.test(v)){mul=1e6;v=v.slice(0,-1);}
+    else if(/[Bb]$/.test(v)){mul=1e9;v=v.slice(0,-1);}
+    var n=parseFloat(v);return isFinite(n)?n*mul:null;
   };
-  var thClick=function(col){return function(){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);setPage(0);}};};
-  var arrow=function(col){return sortBy===col?(sortAsc?' ▲':' ▼'):'';};
+  var applyFilters=function(){
+    var af={};
+    ALL_COLS.filter(function(c){return c.filterable;}).forEach(function(c){
+      var mn=parseFilter(filters[c.field+'_min']);
+      var mx=parseFilter(filters[c.field+'_max']);
+      if(mn!=null)af[c.field+'_min']=mn;
+      if(mx!=null)af[c.field+'_max']=mx;
+    });
+    setActiveFilters(af);setPage(0);
+  };
+  var clearFilters=function(){setFilters({});setActiveFilters({});setPage(0);};
+  var activeFilterCount=Object.keys(activeFilters).length;
+  var setF=function(key){return function(e){setFilters(function(prev){var n=Object.assign({},prev);n[key]=e.target.value;return n;});};};
+
+  // Drag-to-reorder handlers
+  var onDragStart=function(id){return function(e){setDragCol(id);e.dataTransfer.effectAllowed='move';};};
+  var onDragOver=function(e){e.preventDefault();e.dataTransfer.dropEffect='move';};
+  var onDrop=function(targetId){return function(e){
+    e.preventDefault();
+    if(!dragCol||dragCol===targetId)return;
+    setColOrder(function(prev){
+      var next=prev.filter(function(id){return id!==dragCol;});
+      var idx=next.indexOf(targetId);
+      next.splice(idx,0,dragCol);
+      return next;
+    });
+    setDragCol(null);
+  };};
+  var onDragEnd=function(){setDragCol(null);};
+
+  // Data load
+  var load=async function(){
+    setLoading(true);setErr(null);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/atr_analysis?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
+      var meta=await r.json();
+      if(!meta||!meta[0]){setData([]);setScanDate(null);setLoading(false);return;}
+      var latest=meta[0].scan_date;setScanDate(latest);
+      var all=[],offset=0;
+      while(true){
+        var batch=await fetch(SB_URL+'/rest/v1/atr_analysis?scan_date=eq.'+latest+'&select=ticker,price,market_cap,adv_dollars,w52h,w52l,atr_30d,atr_10d,atr_5d,atr_prev,days_sampled&order=atr_30d.desc.nullslast&limit=1000&offset='+offset,{headers:getSbHeaders()});
+        var rows=await batch.json();
+        all=all.concat(rows);if(rows.length<1000)break;offset+=1000;
+      }
+      setData(all);
+    }catch(e){setErr('Load failed: '+e.message);}
+    finally{setLoading(false);}
+  };
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setScanning(true);setErr(null);setPipeStatus('Dispatching scan\u2026');
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{
+        method:'POST',headers:{'Authorization':'token '+p.ghToken,'Content-Type':'application/json'},
+        body:JSON.stringify({ref:'main',inputs:{mode:'atr-analysis',tickers:'ALL'}})
+      });
+      if(!r.ok){setErr('GitHub dispatch failed: '+r.status);setScanning(false);return;}
+      setPipeStatus('Scan queued \u2014 polling\u2026');
+      var poll=setInterval(async function(){
+        try{
+          var sr=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.atr-analysis&order=updated_at.desc&limit=1',{headers:getSbHeaders()});
+          var rows=await sr.json();
+          if(rows&&rows[0]){var row=rows[0];setPipeStatus(row.status.toUpperCase()+': '+row.message);
+            if(row.status==='complete'||row.status==='error'){clearInterval(poll);setScanning(false);if(row.status==='complete')load();}}
+        }catch(e){}
+      },3000);
+    }catch(e){setErr('Dispatch failed: '+e.message);setScanning(false);}
+  };
+
+  // Filter + sort pipeline
+  var sortedData=(data||[]).slice();
+  if(search.trim()){var s=search.trim().toUpperCase();sortedData=sortedData.filter(function(r){return r.ticker&&r.ticker.toUpperCase().includes(s);});}
+  ALL_COLS.forEach(function(c){
+    var mn=activeFilters[c.field+'_min'];var mx=activeFilters[c.field+'_max'];
+    if(mn!=null)sortedData=sortedData.filter(function(r){return r[c.field]!=null&&r[c.field]>=mn;});
+    if(mx!=null)sortedData=sortedData.filter(function(r){return r[c.field]!=null&&r[c.field]<=mx;});
+  });
+  sortedData.sort(function(a,b){
+    var va=a[sortBy],vb=b[sortBy];
+    if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return -1;
+    return sortAsc?(va>vb?1:-1):(va<vb?1:-1);
+  });
+  var totalPages=Math.max(1,Math.ceil(sortedData.length/PAGE_SIZE));
+  var pageRows=sortedData.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
+
+  var thClick=function(col){return function(){if(sortBy===col.field)setSortAsc(!sortAsc);else{setSortBy(col.field);setSortAsc(false);setPage(0);}};};
+
   var iS=function(field,key){
     var hasVal=!!(filters[key]&&filters[key].trim());
-    var fc=FILTER_COLS.find(function(x){return x.field===field;});
-    return {width:'100%',background:C.bgInput,border:'1px solid '+(hasVal?fc.color:C.border),borderRadius:4,padding:'5px 8px',color:C.txtBright,fontFamily:F,fontSize:10,outline:'none'};
+    var fc=ALL_COLS.find(function(x){return x.field===field;});
+    return {width:'100%',background:C.bgInput,border:'1px solid '+(hasVal?(fc?fc.color:C.accent):C.border),borderRadius:4,padding:'5px 8px',color:C.txtBright,fontFamily:F,fontSize:10,outline:'none'};
   };
-  var setF=function(key){return function(e){setFilters(function(prev){var n=Object.assign({},prev);n[key]=e.target.value;return n;});};};
 
   var didMount=useRef(false);
   if(!didMount.current){didMount.current=true;load();}
 
-  // ATR column colors
-  var ATR_COLS=[
-    {field:'atr_30d', label:'ATR% 30D',      color:C.warn},
-    {field:'atr_10d', label:'ATR% 10D',      color:C.gold},
-    {field:'atr_5d',  label:'ATR% 5D',       color:C.blue},
-    {field:'atr_prev',label:'ATR% Prev Day', color:C.purple},
-  ];
-
   return <div>
     {/* Header */}
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Highest ATR %</div>
-      {scanDate&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>Scan: {scanDate} · {(data||[]).length} stocks</div>}
+      {scanDate&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>Scan: {scanDate} &middot; {(data||[]).length} stocks</div>}
     </div>
 
     {/* Controls */}
     <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
-      <input value={search} onChange={function(e){setSearch(e.target.value);setPage(0);}} placeholder="Filter ticker…"
+      <input value={search} onChange={function(e){setSearch(e.target.value);setPage(0);}} placeholder="Filter ticker\u2026"
         style={{flex:'0 0 160px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,padding:'7px 10px',color:C.txtBright,fontFamily:F,fontSize:11,outline:'none'}}/>
       <button onClick={function(){setShowFilters(!showFilters);}}
         style={{padding:'7px 14px',background:showFilters?C.accentDim:C.bgInput,border:'1px solid '+(showFilters?C.accent:C.border),borderRadius:6,color:showFilters?C.accent:C.txt,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
@@ -17536,36 +17551,41 @@ function AtrAnalysisPage(p){
       </button>
       <button onClick={triggerScan} disabled={scanning}
         style={{padding:'7px 16px',background:scanning?C.bgInput:C.blue,border:'none',borderRadius:6,color:scanning?C.txtDim:C.bg,fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1,cursor:scanning?'default':'pointer'}}>
-        {scanning?'SCANNING…':'▶ RUN SCAN'}
+        {scanning?'SCANNING\u2026':'\u25B6 RUN SCAN'}
       </button>
-      <button onClick={load} style={{padding:'7px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,cursor:'pointer'}}>↻ Reload</button>
+      <button onClick={load} style={{padding:'7px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,cursor:'pointer'}}>&#x21BB; Reload</button>
       {pipeStatus&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim,fontStyle:'italic'}}>{pipeStatus}</div>}
     </div>
+
+    {/* Drag-to-reorder hint */}
+    {data&&data.length>0&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginBottom:8,fontStyle:'italic'}}>
+      Drag column headers to reorder &nbsp;&middot;&nbsp; Click to sort
+    </div>}
 
     {/* Filter panel */}
     {showFilters&&<div style={{padding:'14px 16px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,marginBottom:12}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
         <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:1}}>COLUMN FILTERS</div>
         <div style={{display:'flex',gap:6}}>
-          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,fontStyle:'italic',alignSelf:'center'}}>Supports K / M / B suffixes · ATR% as plain number e.g. 3.5</div>
+          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,fontStyle:'italic',alignSelf:'center'}}>K/M/B for dollar fields &nbsp;&middot;&nbsp; ATR% as decimal e.g. 3.5</div>
           {activeFilterCount>0&&<button onClick={clearFilters} style={{padding:'4px 10px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:4,color:C.warn,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
           <button onClick={applyFilters} style={{padding:'4px 14px',background:C.accent,border:'none',borderRadius:4,color:C.bg,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Apply</button>
         </div>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:12}}>
-        {FILTER_COLS.map(function(fc){
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+        {ALL_COLS.map(function(fc){
           var mnKey=fc.field+'_min',mxKey=fc.field+'_max';
           var hasActive=!!(activeFilters[mnKey]!=null||activeFilters[mxKey]!=null);
           return <div key={fc.field} style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+(hasActive?fc.color:C.border)}}>
-            <div style={{color:hasActive?fc.color:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',marginBottom:8}}>{fc.label}{hasActive?' ●':''}</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+            <div style={{color:hasActive?fc.color:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',marginBottom:7}}>{fc.label}{hasActive?' \u25CF':''}</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
               <div>
                 <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:3}}>MIN{fc.prefix?' '+fc.prefix:''}</div>
-                <input value={filters[mnKey]||''} onChange={setF(mnKey)} onKeyDown={function(e){if(e.key==='Enter')applyFilters();}} placeholder={fc.prefix==='$'?'e.g. 1M':'e.g. 2.5'} style={iS(fc.field,mnKey)}/>
+                <input value={filters[mnKey]||''} onChange={setF(mnKey)} onKeyDown={function(e){if(e.key==='Enter')applyFilters();}} placeholder={fc.fmt==='atr'?'e.g. 2':'e.g. 1M'} style={iS(fc.field,mnKey)}/>
               </div>
               <div>
                 <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:3}}>MAX{fc.prefix?' '+fc.prefix:''}</div>
-                <input value={filters[mxKey]||''} onChange={setF(mxKey)} onKeyDown={function(e){if(e.key==='Enter')applyFilters();}} placeholder={fc.prefix==='$'?'e.g. 10B':'e.g. 15'} style={iS(fc.field,mxKey)}/>
+                <input value={filters[mxKey]||''} onChange={setF(mxKey)} onKeyDown={function(e){if(e.key==='Enter')applyFilters();}} placeholder={fc.fmt==='atr'?'e.g. 15':'e.g. 10B'} style={iS(fc.field,mxKey)}/>
               </div>
             </div>
           </div>;
@@ -17574,52 +17594,63 @@ function AtrAnalysisPage(p){
     </div>}
 
     {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
-    {loading&&<div style={{padding:32,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading ATR analysis data…</div>}
+    {loading&&<div style={{padding:32,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading ATR analysis data\u2026</div>}
 
     {!loading&&(!data||data.length===0)&&<div style={{padding:'24px 14px',background:C.bgCard,borderRadius:10,border:'1px solid '+C.border,textAlign:'center'}}>
-      <div style={{color:C.txtDim,fontSize:11,fontFamily:F,marginBottom:10}}>No data yet — run a scan to populate.</div>
+      <div style={{color:C.txtDim,fontSize:11,fontFamily:F,marginBottom:8}}>No data yet \u2014 run a scan to populate.</div>
       <div style={{color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic',lineHeight:1.7}}>
-        The scan fetches 30+ days of grouped daily bars and computes ATR% = (high &minus; low) / close &times; 100<br/>
-        per bar, then averages across 30D, 10D, 5D windows plus the previous single day.
+        ATR% = (high \u2212 low) / close \u00D7 100, averaged over 30D / 10D / 5D windows and the previous single day.
       </div>
     </div>}
 
     {!loading&&data&&data.length>0&&<div>
-      <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,overflow:'hidden',marginBottom:12}}>
+      <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,overflow:'hidden',marginBottom:10}}>
         <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',minWidth:780}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
             <thead>
               <tr>
-                <th style={Object.assign({},colStyle(null,'right'),{width:40})}>#</th>
-                <th onClick={thClick('ticker')} style={Object.assign({},colStyle('ticker','left'),{minWidth:70})}>Ticker{arrow('ticker')}</th>
-                <th onClick={thClick('market_cap')} style={colStyle('market_cap')}>Mkt Cap{arrow('market_cap')}</th>
-                <th onClick={thClick('adv_dollars')} style={Object.assign({},colStyle('adv_dollars'),{color:sortBy==='adv_dollars'?C.accent:C.txtDim})}>Avg Daily ${arrow('adv_dollars')}</th>
-                {ATR_COLS.map(function(ac){
-                  return <th key={ac.field} onClick={thClick(ac.field)}
-                    style={Object.assign({},colStyle(ac.field),{color:sortBy===ac.field?ac.color:C.txtDim})}>
-                    {ac.label}{arrow(ac.field)}
+                {/* Fixed # column */}
+                <th style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:C.txtDim,width:40,whiteSpace:'nowrap'}}>#</th>
+                {/* Fixed ticker column */}
+                <th style={{padding:'9px 10px',textAlign:'left',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:C.txtDim,minWidth:70,whiteSpace:'nowrap',cursor:'pointer'}} onClick={function(){if(sortBy==='ticker')setSortAsc(!sortAsc);else{setSortBy('ticker');setSortAsc(true);setPage(0);}}}>
+                  Ticker{sortBy==='ticker'?(sortAsc?' \u25B2':' \u25BC'):''}
+                </th>
+                {/* Draggable columns */}
+                {orderedCols.map(function(col){
+                  var active=sortBy===col.field;
+                  var isDragging=dragCol===col.id;
+                  return <th key={col.id}
+                    draggable={true}
+                    onDragStart={onDragStart(col.id)}
+                    onDragOver={onDragOver}
+                    onDrop={onDrop(col.id)}
+                    onDragEnd={onDragEnd}
+                    onClick={thClick(col)}
+                    style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:isDragging?C.accentDim:C.bgDeep,color:active?col.color:C.txtDim,whiteSpace:'nowrap',cursor:'grab',userSelect:'none',opacity:isDragging?0.5:1,borderLeft:isDragging?'2px solid '+C.accent:'2px solid transparent',transition:'all 0.1s'}}>
+                    <span style={{marginRight:4,fontSize:8,opacity:0.4}}>\u2807</span>
+                    {col.label}{active?(sortAsc?' \u25B2':' \u25BC'):''}
                   </th>;
                 })}
               </tr>
             </thead>
             <tbody>
-              {sortedData.length===0&&<tr><td colSpan={8} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No stocks match the current filters</td></tr>}
+              {sortedData.length===0&&<tr><td colSpan={orderedCols.length+2} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No stocks match the current filters</td></tr>}
               {pageRows.map(function(r,i){
                 var globalIdx=page*PAGE_SIZE+i+1;
                 var stripe=i%2===0?'transparent':C.bgDeep+'55';
-                var td=function(val,col,fmt){
-                  return <td style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:500,color:col||C.txtBright,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap',background:stripe}}>
-                    {fmt?fmt(val):(val!=null?val:<span style={{color:C.txtDim}}>—</span>)}
-                  </td>;
-                };
                 return <tr key={r.ticker}>
                   <td style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:9,color:C.txtDim,background:stripe,borderBottom:'1px solid '+C.border}}>{globalIdx}</td>
                   <td style={{padding:'8px 10px',textAlign:'left',fontFamily:F,background:stripe,borderBottom:'1px solid '+C.border}}>
                     <span style={{fontWeight:700,fontSize:12,color:C.txtBright,background:C.bgInput,border:'1px solid '+C.border,padding:'2px 7px',borderRadius:4}}>{r.ticker}</span>
                   </td>
-                  {td(r.market_cap,C.txt,fmtCap)}
-                  {td(r.adv_dollars,C.accent,fmtDol)}
-                  {ATR_COLS.map(function(ac){return td(r[ac.field],ac.color,fmtAtr);})}
+                  {orderedCols.map(function(col){
+                    var val=r[col.field];
+                    var displayed=applyFmt(col,val);
+                    var cellColor=val!=null?col.color:C.txtDim;
+                    return <td key={col.id} style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:500,color:cellColor,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap',background:stripe}}>
+                      {displayed}
+                    </td>;
+                  })}
                 </tr>;
               })}
             </tbody>
@@ -17636,15 +17667,16 @@ function AtrAnalysisPage(p){
           <button onClick={function(){setPage(Math.min(totalPages-1,page+1));}} disabled={page>=totalPages-1}
             style={{padding:'5px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:10,cursor:page>=totalPages-1?'default':'pointer',opacity:page>=totalPages-1?0.4:1}}>Next &#8594;</button>
         </div>
-        <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{sortedData.length.toLocaleString()} stocks{(search||activeFilterCount>0)?' (filtered)':''} · 100/page</div>
+        <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{sortedData.length.toLocaleString()} stocks{(search||activeFilterCount>0)?' (filtered)':''} &middot; 100/page</div>
       </div>
 
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.6,fontStyle:'italic'}}>
-        ATR% = (daily high &minus; low) / close &times; 100, averaged over each window. 30D/10D/5D = simple mean of daily ATR% over that window. Prev Day = single most recent session. Sorted by ATR% 30D descending by default. Filters support K/M/B for dollar fields; ATR% filters take plain numbers (e.g. 3.5 = 3.5%).
+        ATR% = (daily high &minus; low) / close &times; 100, averaged over each window. 52W High/Low from screener snapshot (365-day lookback). Sorted by ATR% 30D descending by default. Drag column headers to reorder. Filters support K/M/B for dollar fields; ATR% filters take plain decimals.
       </div>
     </div>}
   </div>;
 }
+
 
 function TradeAnalysisPage(p){
   var s1=useState(null),data=s1[0],setData=s1[1];

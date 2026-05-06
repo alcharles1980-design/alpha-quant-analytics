@@ -3978,7 +3978,7 @@ async function runAtrAnalysis() {
         var atrPct = (h - l) / c * 100;
         if (!isFinite(atrPct) || atrPct <= 0) continue;
         if (!acc[tk]) acc[tk] = [];
-        acc[tk].push({ atrPct: atrPct, dol: v * vw });
+        acc[tk].push({ atrPct: atrPct, dol: v * vw, h: h, l: l, c: c });
       }
       console.log('  Day ' + date + ': ' + body.results.length + ' tickers');
     } catch (e) { console.log('  Day ' + date + ' error: ' + e.message); }
@@ -3988,6 +3988,8 @@ async function runAtrAnalysis() {
   // Load price/mcap from screener
   await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'running', progress_pct: 63, message: 'Loading market caps from screener...' });
   var mcapMap = {};
+  var w52hMap = {};
+  var w52lMap = {};
   try {
     var scanR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1', { headers: sbHeaders() });
     if (scanR.ok) {
@@ -3996,16 +3998,20 @@ async function runAtrAnalysis() {
         var latestScan = scanMeta[0].scan_date;
         var offset = 0;
         while (true) {
-          var sr = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,market_cap&scan_date=eq.' + latestScan + '&limit=1000&offset=' + offset, { headers: sbHeaders() });
+          var sr = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,market_cap,week_52_high,week_52_low&scan_date=eq.' + latestScan + '&limit=1000&offset=' + offset, { headers: sbHeaders() });
           if (!sr.ok) break;
           var sRows = await sr.json();
-          sRows.forEach(function(row) { mcapMap[row.ticker] = row.market_cap; });
+          sRows.forEach(function(row) {
+            mcapMap[row.ticker] = row.market_cap;
+            if (row.week_52_high) w52hMap[row.ticker] = row.week_52_high;
+            if (row.week_52_low)  w52lMap[row.ticker] = row.week_52_low;
+          });
           if (sRows.length < 1000) break;
           offset += 1000;
         }
       }
     }
-  } catch (e) { console.log('Mcap load failed: ' + e.message); }
+  } catch (e) { console.log('Mcap/52W load failed: ' + e.message); }
 
   // Compute window averages
   var rows = [];
@@ -4019,9 +4025,19 @@ async function runAtrAnalysis() {
     var last5  = bars.slice(-5);
     var prev   = bars[bars.length - 1];
 
+    // 52-week H/L from all collected bars (up to ~45 trading days here;
+    // for true 52W we use the full bars array which covers ~45 days max.
+    // The screener already has 52W values — we pull those from mcapMap
+    // separately via a joined select if available, otherwise from bars.
+    var allHighs = bars.map(function(b) { return b.h; }).filter(Boolean);
+    var allLows  = bars.map(function(b) { return b.l; }).filter(Boolean);
+
     rows.push({
       ticker:      tk,
+      price:       prev.c || null,
       market_cap:  mcapMap[tk] || null,
+      w52h:        w52hMap[tk] || (allHighs.length ? Math.max.apply(null, allHighs) : null),
+      w52l:        w52lMap[tk] || (allLows.length  ? Math.min.apply(null, allLows)  : null),
       adv_dollars: Math.round(mean(last30.map(function(b) { return b.dol; }))),
       atr_30d:     Math.round(mean(last30.map(function(b) { return b.atrPct; })) * 10000) / 10000,
       atr_10d:     Math.round(mean(last10.map(function(b) { return b.atrPct; })) * 10000) / 10000,
