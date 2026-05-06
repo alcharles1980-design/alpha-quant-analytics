@@ -4033,6 +4033,7 @@ async function runAtrAnalysis() {
     var last30 = bars.slice(-30);
     var last10 = bars.slice(-10);
     var last5  = bars.slice(-5);
+    var last3  = bars.slice(-3);
     var prev   = bars[bars.length - 1];
 
     // 52-week H/L from all collected bars (up to ~45 trading days here;
@@ -4042,6 +4043,23 @@ async function runAtrAnalysis() {
     var allHighs = bars.map(function(b) { return b.h; }).filter(Boolean);
     var allLows  = bars.map(function(b) { return b.l; }).filter(Boolean);
 
+    // L2H (Low to next-day High %) for each consecutive day pair.
+    // L2H[i] = (bars[i+1].h - bars[i].l) / bars[i].l × 100
+    // Measures the % move from yesterday's low to today's high — a proxy for
+    // the upside capture available to a trader who bought the previous day's low.
+    // l2h_prev = most recent single pair (yesterday's low → today's high).
+    // Window averages use the last N L2H values (N-1 bar pairs from N bars).
+    var l2hAll = [];
+    for (var li = 0; li < bars.length - 1; li++) {
+      var lo = bars[li].l, hi2 = bars[li + 1].h;
+      if (lo && hi2 && lo > 0) l2hAll.push((hi2 - lo) / lo * 100);
+    }
+    var round4 = function(v) { return Math.round(v * 10000) / 10000; };
+    var l2h_prev = l2hAll.length > 0 ? round4(l2hAll[l2hAll.length - 1]) : null;
+    var l2h_3d   = l2hAll.length >= 3  ? round4(mean(l2hAll.slice(-3)))  : (l2hAll.length > 0 ? round4(mean(l2hAll)) : null);
+    var l2h_5d   = l2hAll.length >= 5  ? round4(mean(l2hAll.slice(-5)))  : (l2hAll.length > 0 ? round4(mean(l2hAll)) : null);
+    var l2h_10d  = l2hAll.length >= 10 ? round4(mean(l2hAll.slice(-10))) : (l2hAll.length > 0 ? round4(mean(l2hAll)) : null);
+
     rows.push({
       ticker:      tk,
       price:       prev.c || null,
@@ -4049,10 +4067,14 @@ async function runAtrAnalysis() {
       w52h:        w52hMap[tk] || (allHighs.length ? Math.max.apply(null, allHighs) : null),
       w52l:        w52lMap[tk] || (allLows.length  ? Math.min.apply(null, allLows)  : null),
       adv_dollars: Math.round(mean(last30.map(function(b) { return b.dol; }))),
-      atr_30d:     Math.round(mean(last30.map(function(b) { return b.atrPct; })) * 10000) / 10000,
-      atr_10d:     Math.round(mean(last10.map(function(b) { return b.atrPct; })) * 10000) / 10000,
-      atr_5d:      Math.round(mean(last5.map(function(b) { return b.atrPct; })) * 10000) / 10000,
-      atr_prev:    Math.round(prev.atrPct * 10000) / 10000,
+      atr_30d:     round4(mean(last30.map(function(b) { return b.atrPct; }))),
+      atr_10d:     round4(mean(last10.map(function(b) { return b.atrPct; }))),
+      atr_5d:      round4(mean(last5.map(function(b) { return b.atrPct; }))),
+      atr_prev:    round4(prev.atrPct),
+      l2h_10d:     l2h_10d,
+      l2h_5d:      l2h_5d,
+      l2h_3d:      l2h_3d,
+      l2h_prev:    l2h_prev,
       days_sampled: bars.length,
       scan_date:   scanDate
     });

@@ -17400,6 +17400,10 @@ function AtrAnalysisPage(p){
     {id:'atr_10d',   field:'atr_10d',     label:'ATR% 10D',       color:C.gold,      fmt:'atr',    filterable:true,  prefix:''},
     {id:'atr_5d',    field:'atr_5d',      label:'ATR% 5D',        color:C.blue,      fmt:'atr',    filterable:true,  prefix:''},
     {id:'atr_prev',  field:'atr_prev',    label:'ATR% Prev Day',  color:C.purple,    fmt:'atr',    filterable:true,  prefix:''},
+    {id:'l2h_10d',   field:'l2h_10d',     label:'L2H% 10D',       color:'#00e5a0',   fmt:'atr',    filterable:true,  prefix:''},
+    {id:'l2h_5d',    field:'l2h_5d',      label:'L2H% 5D',        color:'#00cc88',   fmt:'atr',    filterable:true,  prefix:''},
+    {id:'l2h_3d',    field:'l2h_3d',      label:'L2H% 3D',        color:'#00aa70',   fmt:'atr',    filterable:true,  prefix:''},
+    {id:'l2h_prev',  field:'l2h_prev',    label:'L2H% Prev Day',  color:'#00e5c0',   fmt:'atr',    filterable:true,  prefix:''},
   ];
 
   // Column order state — array of column ids. Default order = ALL_COLS order.
@@ -17524,7 +17528,7 @@ function AtrAnalysisPage(p){
       var latest=meta[0].scan_date;setScanDate(latest);
       var all=[],offset=0;
       while(true){
-        var batch=await fetch(SB_URL+'/rest/v1/atr_analysis?scan_date=eq.'+latest+'&select=ticker,price,market_cap,adv_dollars,w52h,w52l,atr_30d,atr_10d,atr_5d,atr_prev,days_sampled&order=market_cap.desc.nullslast&limit=1000&offset='+offset,{headers:getSbHeaders()});
+        var batch=await fetch(SB_URL+'/rest/v1/atr_analysis?scan_date=eq.'+latest+'&select=ticker,price,market_cap,adv_dollars,w52h,w52l,atr_30d,atr_10d,atr_5d,atr_prev,l2h_10d,l2h_5d,l2h_3d,l2h_prev,days_sampled&order=market_cap.desc.nullslast&limit=1000&offset='+offset,{headers:getSbHeaders()});
         var rows=await batch.json();
         all=all.concat(rows);if(rows.length<1000)break;offset+=1000;
       }
@@ -17724,7 +17728,9 @@ function AtrAnalysisPage(p){
       </div>
 
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.6,fontStyle:'italic'}}>
-        ATR% = (daily high &minus; low) / close &times; 100, averaged over each window. 52W High/Low from screener snapshot (365-day lookback). Sorted by ATR% 30D descending by default. Drag column headers to reorder. Filters support K/M/B for dollar fields; ATR% filters take plain decimals.
+        ATR% = (daily high &minus; low) / close &times; 100, averaged over each window. &nbsp;
+        L2H% (Low to High) = (next day high &minus; prev day low) / prev day low &times; 100 &mdash; avg upside from yesterday's low to today's high. &nbsp;
+        52W High/Low from screener snapshot. Top 2,500 by market cap. Drag headers to reorder &middot; right edge to resize &middot; click to sort.
       </div>
     </div>}
   </div>;
