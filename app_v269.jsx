@@ -17373,7 +17373,7 @@ function AtrAnalysisPage(p){
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
-  var s5=useState('atr_30d'),sortBy=s5[0],setSortBy=s5[1];
+  var s5=useState('market_cap'),sortBy=s5[0],setSortBy=s5[1];
   var s6=useState(false),sortAsc=s6[0],setSortAsc=s6[1];
   var s7=useState(''),search=s7[0],setSearch=s7[1];
   var s8=useState(0),page=s8[0],setPage=s8[1];
@@ -17476,7 +17476,7 @@ function AtrAnalysisPage(p){
       var latest=meta[0].scan_date;setScanDate(latest);
       var all=[],offset=0;
       while(true){
-        var batch=await fetch(SB_URL+'/rest/v1/atr_analysis?scan_date=eq.'+latest+'&select=ticker,price,market_cap,adv_dollars,w52h,w52l,atr_30d,atr_10d,atr_5d,atr_prev,days_sampled&order=atr_30d.desc.nullslast&limit=1000&offset='+offset,{headers:getSbHeaders()});
+        var batch=await fetch(SB_URL+'/rest/v1/atr_analysis?scan_date=eq.'+latest+'&select=ticker,price,market_cap,adv_dollars,w52h,w52l,atr_30d,atr_10d,atr_5d,atr_prev,days_sampled&order=market_cap.desc.nullslast&limit=1000&offset='+offset,{headers:getSbHeaders()});
         var rows=await batch.json();
         all=all.concat(rows);if(rows.length<1000)break;offset+=1000;
       }

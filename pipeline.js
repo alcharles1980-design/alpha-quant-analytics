@@ -4058,8 +4058,15 @@ async function runAtrAnalysis() {
     });
   });
 
-  // Sort by 30d ATR% desc, keep top 2500
-  rows.sort(function(a, b) { return (b.atr_30d || 0) - (a.atr_30d || 0); });
+  // Sort by market_cap desc (largest companies first), keep top 2500.
+  // This ensures large liquid stocks like ASML, NVDA, AAPL are always included
+  // regardless of their ATR%. Tickers without a market_cap (not in screener)
+  // sort to the end; among those, sort by adv_dollars desc as a proxy.
+  rows.sort(function(a, b) {
+    var ma = a.market_cap || 0, mb = b.market_cap || 0;
+    if (mb !== ma) return mb - ma;
+    return (b.adv_dollars || 0) - (a.adv_dollars || 0);
+  });
   rows = rows.slice(0, 2500);
   console.log('ATR metrics computed for ' + rows.length + ' tickers');
 
