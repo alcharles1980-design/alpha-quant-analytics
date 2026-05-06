@@ -3921,6 +3921,149 @@ async function runTradeAnalysis() {
 }
 
 
+// ─── ATR ANALYSIS ────────────────────────────────────────────────────────────
+// Scans ~2,500 tickers and computes ATR% statistics over multiple lookback
+// windows using Polygon grouped daily bars.
+//
+// ATR% per bar = (high - low) / close × 100
+//
+// For each ticker the last 30 bars are collected chronologically (sorted asc
+// by date) then sliced to produce the window averages:
+//
+//   atr_30d  = mean(ATR% for all available days, up to 30)
+//   atr_10d  = mean(ATR% for last 10 days)
+//   atr_5d   = mean(ATR% for last 5 days)
+//   atr_prev = ATR% for the most recent single day
+//
+// adv_dollars = avg(v × vw) per day over 30 days (same source, free compute).
+// market_cap pulled from latest cached_oscillation_screener snapshot.
+// Results sorted by atr_30d desc, top 2500 stored.
+async function runAtrAnalysis() {
+  var scanDate = new Date().toISOString().slice(0, 10);
+
+  await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting ATR analysis scan...' });
+
+  // Build last 35 calendar trading days (buffer for holidays)
+  var days = [];
+  var d = new Date(); d.setDate(d.getDate() - 1);
+  while (days.length < 45) {
+    var dow = d.getDay();
+    if (dow !== 0 && dow !== 6) days.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() - 1);
+  }
+  days.reverse(); // chronological asc
+
+  // acc[ticker] = array of {atrPct, dolNotional} in chronological order
+  var acc = {};
+
+  for (var di = 0; di < days.length; di++) {
+    var date = days[di];
+    var pct = Math.round((di / days.length) * 60);
+    await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Fetching day ' + (di + 1) + '/' + days.length + ': ' + date });
+    try {
+      var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 30000);
+      var r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) { console.log('  Day ' + date + ': HTTP ' + r.status); continue; }
+      var body = await r.json();
+      if (!body.results) { console.log('  Day ' + date + ': no results (holiday?)'); continue; }
+      for (var i = 0; i < body.results.length; i++) {
+        var bar = body.results[i];
+        var tk = bar.T;
+        if (!tk || tk.indexOf('.') >= 0 || tk.indexOf('/') >= 0 || tk.length > 5) continue;
+        var h = bar.h, l = bar.l, c = bar.c, v = bar.v || 0, vw = bar.vw || bar.c || 0;
+        if (!h || !l || !c || c === 0) continue;
+        var atrPct = (h - l) / c * 100;
+        if (!isFinite(atrPct) || atrPct <= 0) continue;
+        if (!acc[tk]) acc[tk] = [];
+        acc[tk].push({ atrPct: atrPct, dol: v * vw });
+      }
+      console.log('  Day ' + date + ': ' + body.results.length + ' tickers');
+    } catch (e) { console.log('  Day ' + date + ' error: ' + e.message); }
+    await sleep(250);
+  }
+
+  // Load price/mcap from screener
+  await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'running', progress_pct: 63, message: 'Loading market caps from screener...' });
+  var mcapMap = {};
+  try {
+    var scanR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1', { headers: sbHeaders() });
+    if (scanR.ok) {
+      var scanMeta = await scanR.json();
+      if (scanMeta && scanMeta[0]) {
+        var latestScan = scanMeta[0].scan_date;
+        var offset = 0;
+        while (true) {
+          var sr = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?select=ticker,market_cap&scan_date=eq.' + latestScan + '&limit=1000&offset=' + offset, { headers: sbHeaders() });
+          if (!sr.ok) break;
+          var sRows = await sr.json();
+          sRows.forEach(function(row) { mcapMap[row.ticker] = row.market_cap; });
+          if (sRows.length < 1000) break;
+          offset += 1000;
+        }
+      }
+    }
+  } catch (e) { console.log('Mcap load failed: ' + e.message); }
+
+  // Compute window averages
+  var rows = [];
+  var mean = function(arr) { return arr.length ? arr.reduce(function(a, b) { return a + b; }, 0) / arr.length : null; };
+
+  Object.keys(acc).forEach(function(tk) {
+    var bars = acc[tk]; // chronological asc
+    if (bars.length < 3) return;
+    var last30 = bars.slice(-30);
+    var last10 = bars.slice(-10);
+    var last5  = bars.slice(-5);
+    var prev   = bars[bars.length - 1];
+
+    rows.push({
+      ticker:      tk,
+      market_cap:  mcapMap[tk] || null,
+      adv_dollars: Math.round(mean(last30.map(function(b) { return b.dol; }))),
+      atr_30d:     Math.round(mean(last30.map(function(b) { return b.atrPct; })) * 10000) / 10000,
+      atr_10d:     Math.round(mean(last10.map(function(b) { return b.atrPct; })) * 10000) / 10000,
+      atr_5d:      Math.round(mean(last5.map(function(b) { return b.atrPct; })) * 10000) / 10000,
+      atr_prev:    Math.round(prev.atrPct * 10000) / 10000,
+      days_sampled: bars.length,
+      scan_date:   scanDate
+    });
+  });
+
+  // Sort by 30d ATR% desc, keep top 2500
+  rows.sort(function(a, b) { return (b.atr_30d || 0) - (a.atr_30d || 0); });
+  rows = rows.slice(0, 2500);
+  console.log('ATR metrics computed for ' + rows.length + ' tickers');
+
+  // Delete & insert
+  await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'running', progress_pct: 75, message: 'Saving ' + rows.length + ' rows to atr_analysis...' });
+  try {
+    await fetch(SB_URL + '/rest/v1/atr_analysis?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+  } catch (e) { console.log('Delete failed: ' + e.message); }
+
+  var BATCH = 200, inserted = 0;
+  for (var bi = 0; bi < rows.length; bi += BATCH) {
+    var batch = rows.slice(bi, bi + BATCH);
+    await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'running', progress_pct: 75 + Math.round((bi / rows.length) * 22), message: 'Inserting batch ' + (Math.floor(bi / BATCH) + 1) + '/' + Math.ceil(rows.length / BATCH) });
+    try {
+      var inR = await fetch(SB_URL + '/rest/v1/atr_analysis', {
+        method: 'POST',
+        headers: Object.assign({}, sbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+        body: JSON.stringify(batch)
+      });
+      if (inR.ok) inserted += batch.length;
+      else console.log('Insert failed: HTTP ' + inR.status);
+    } catch (e) { console.log('Insert error: ' + e.message); }
+    await sleep(100);
+  }
+
+  console.log('ATR Analysis complete. Inserted ' + inserted + ' rows for ' + scanDate);
+  await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Complete. ' + inserted + ' stocks saved for ' + scanDate + '.' });
+}
+
+
 async function runBuildUniverse() {
   var snapshotDate = new Date().toISOString().slice(0, 10);
   await reportProgress({ mode: 'build-universe', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Fetching iShares holdings...' });
@@ -4727,7 +4870,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -4779,6 +4922,11 @@ async function main() {
     try { await runTradeAnalysis(); } catch (e) {
       console.error('TRADE-ANALYSIS CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'trade-analysis', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'atr-analysis') {
+    try { await runAtrAnalysis(); } catch (e) {
+      console.error('ATR-ANALYSIS CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'backfill-mcap') {
     await backfillMcap();

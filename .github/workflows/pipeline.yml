@@ -25,6 +25,7 @@ on:
           - build-universe
           - minute-osc
           - trade-analysis
+          - atr-analysis
       tickers:
         description: 'Comma-separated tickers'
         required: true
