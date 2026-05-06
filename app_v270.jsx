@@ -17383,6 +17383,10 @@ function AtrAnalysisPage(p){
   var s12=useState({}),filters=s12[0],setFilters=s12[1];
   var s13=useState({}),activeFilters=s13[0],setActiveFilters=s13[1];
   var s14=useState(null),dragCol=s14[0],setDragCol=s14[1];  // dragged column id
+  // Column widths — per-id pixel widths. Defaults empty = browser auto.
+  var s16=useState({}),colWidths=s16[0],setColWidths=s16[1];
+  // Resize refs — live mutation during drag without triggering re-renders
+  var resizeRef=useRef({active:false,colId:null,startX:0,startW:0});
   var PAGE_SIZE=100;
 
   // All available columns. 'id' is the stable key; 'field' is the DB field.
@@ -17465,6 +17469,33 @@ function AtrAnalysisPage(p){
     setDragCol(null);
   };};
   var onDragEnd=function(){setDragCol(null);};
+
+  // ── Column resize ─────────────────────────────────────────────────────────
+  // Resize handle is a thin strip on the RIGHT edge of each <th>.
+  // onMouseDown captures startX and the current computed width of the th.
+  // onMouseMove updates colWidths live. onMouseUp commits and removes listeners.
+  // We attach move/up to document so the drag works even if the cursor leaves
+  // the header. All mutations during drag go through resizeRef to avoid the
+  // re-render cost per pixel moved; only the final value triggers setState.
+  var startResize=function(colId,e){
+    e.preventDefault();e.stopPropagation(); // don't trigger sort click
+    var th=e.currentTarget.parentElement; // the <th>
+    var startW=th.getBoundingClientRect().width;
+    resizeRef.current={active:true,colId:colId,startX:e.clientX,startW:startW};
+    var onMove=function(ev){
+      if(!resizeRef.current.active)return;
+      var dx=ev.clientX-resizeRef.current.startX;
+      var newW=Math.max(60,resizeRef.current.startW+dx);
+      setColWidths(function(prev){var n=Object.assign({},prev);n[resizeRef.current.colId]=newW;return n;});
+    };
+    var onUp=function(){
+      resizeRef.current.active=false;
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+    };
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  };
 
   // Data load
   var load=async function(){
@@ -17559,7 +17590,7 @@ function AtrAnalysisPage(p){
 
     {/* Drag-to-reorder hint */}
     {data&&data.length>0&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginBottom:8,fontStyle:'italic'}}>
-      Drag column headers to reorder &nbsp;&middot;&nbsp; Click to sort
+      Drag column headers to reorder &nbsp;&middot;&nbsp; Drag right edge of header to resize &nbsp;&middot;&nbsp; Click to sort
     </div>}
 
     {/* Filter panel */}
@@ -17612,13 +17643,18 @@ function AtrAnalysisPage(p){
                 {/* Fixed # column */}
                 <th style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:C.txtDim,width:40,whiteSpace:'nowrap'}}>#</th>
                 {/* Fixed ticker column */}
-                <th style={{padding:'9px 10px',textAlign:'left',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:C.txtDim,minWidth:70,whiteSpace:'nowrap',cursor:'pointer'}} onClick={function(){if(sortBy==='ticker')setSortAsc(!sortAsc);else{setSortBy('ticker');setSortAsc(true);setPage(0);}}}>
+                <th style={{padding:'9px 10px',textAlign:'left',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:C.bgDeep,color:C.txtDim,width:colWidths['ticker']||80,whiteSpace:'nowrap',cursor:'pointer',position:'relative',userSelect:'none'}}
+                  onClick={function(){if(sortBy==='ticker')setSortAsc(!sortAsc);else{setSortBy('ticker');setSortAsc(true);setPage(0);}}}>
                   Ticker{sortBy==='ticker'?(sortAsc?' \u25B2':' \u25BC'):''}
+                  <div onMouseDown={function(e){startResize('ticker',e);}}
+                    style={{position:'absolute',right:0,top:0,bottom:0,width:6,cursor:'col-resize',background:'transparent',zIndex:2}}
+                    onClick={function(e){e.stopPropagation();}}/>
                 </th>
-                {/* Draggable columns */}
+                {/* Draggable + resizable columns */}
                 {orderedCols.map(function(col){
                   var active=sortBy===col.field;
                   var isDragging=dragCol===col.id;
+                  var w=colWidths[col.id];
                   return <th key={col.id}
                     draggable={true}
                     onDragStart={onDragStart(col.id)}
@@ -17626,9 +17662,12 @@ function AtrAnalysisPage(p){
                     onDrop={onDrop(col.id)}
                     onDragEnd={onDragEnd}
                     onClick={thClick(col)}
-                    style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:isDragging?C.accentDim:C.bgDeep,color:active?col.color:C.txtDim,whiteSpace:'nowrap',cursor:'grab',userSelect:'none',opacity:isDragging?0.5:1,borderLeft:isDragging?'2px solid '+C.accent:'2px solid transparent',transition:'all 0.1s'}}>
-                    <span style={{marginRight:4,fontSize:8,opacity:0.4}}>{'⠇'}</span>
+                    style={{padding:'9px 10px',textAlign:'right',fontSize:9,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',borderBottom:'2px solid '+C.border,background:isDragging?C.accentDim:C.bgDeep,color:active?col.color:C.txtDim,whiteSpace:'nowrap',cursor:'grab',userSelect:'none',opacity:isDragging?0.5:1,borderLeft:isDragging?'2px solid '+C.accent:'2px solid transparent',transition:'background 0.1s',width:w||undefined,minWidth:w||60,position:'relative'}}>
+                    <span style={{marginRight:4,fontSize:8,opacity:0.4}}>{'\u2807'}</span>
                     {col.label}{active?(sortAsc?' \u25B2':' \u25BC'):''}
+                    <div onMouseDown={function(e){startResize(col.id,e);}}
+                      onClick={function(e){e.stopPropagation();}}
+                      style={{position:'absolute',right:0,top:0,bottom:0,width:6,cursor:'col-resize',background:'transparent',zIndex:2}}/>
                   </th>;
                 })}
               </tr>
@@ -17647,7 +17686,8 @@ function AtrAnalysisPage(p){
                     var val=r[col.field];
                     var displayed=applyFmt(col,val);
                     var cellColor=val!=null?col.color:C.txtDim;
-                    return <td key={col.id} style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:500,color:cellColor,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap',background:stripe}}>
+                    var w=colWidths[col.id];
+                    return <td key={col.id} style={{padding:'8px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:500,color:cellColor,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap',background:stripe,width:w||undefined,maxWidth:w||undefined,overflow:'hidden',textOverflow:'ellipsis'}}>
                       {displayed}
                     </td>;
                   })}
