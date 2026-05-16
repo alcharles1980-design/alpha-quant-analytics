@@ -12220,6 +12220,10 @@ function StocksAtGlancePage(p){
   var s13=useState(null),renaming=s13[0],setRenaming=s13[1]; // list id being renamed
   var s14=useState(''),renameVal=s14[0],setRenameVal=s14[1];
   var s15=useState(null),confirmDel=s15[0],setConfirmDel=s15[1]; // list id to confirm delete
+  var s16=useState(false),showBulk=s16[0],setShowBulk=s16[1];
+  var s17=useState(''),bulkInput=s17[0],setBulkInput=s17[1];
+  var s18=useState(false),bulkAdding=s18[0],setBulkAdding=s18[1];
+  var s19=useState(null),bulkResult=s19[0],setBulkResult=s19[1];
 
   // ── Supabase helpers ──────────────────────────────────────────────────────
   var sbGet=function(path){return fetch(supaUrl+path,{headers:SB()}).then(function(r){return r.json();});};
@@ -12383,6 +12387,37 @@ function StocksAtGlancePage(p){
     }catch(e){setErr('Could not delete '+t);}
   };
 
+  // ── bulk add ────────────────────────────────────────────────────────────
+  // Parses a comma / space / newline / semicolon separated list of tickers.
+  // Deduplicates, skips already-in-list, inserts valid ones to Supabase,
+  // fires fetchTicker per new ticker. Reports results.
+  var bulkAdd=async function(){
+    if(activeId==null||!bulkInput.trim())return;
+    setBulkAdding(true);setErr(null);setBulkResult(null);
+    // Parse: split on comma, space, newline, semicolon, tab
+    var raw=bulkInput.toUpperCase().split(/[,\s;]+/).map(function(s){return s.trim();}).filter(function(s){return s.length>0&&s.length<=6&&/^[A-Z]+$/.test(s);});
+    // Deduplicate
+    var unique=[];var seen={};
+    raw.forEach(function(t){if(!seen[t]){seen[t]=true;unique.push(t);}});
+    var skipped=[];var added=[];var failed=[];
+    for(var i=0;i<unique.length;i++){
+      var t=unique[i];
+      if(tickers.indexOf(t)>=0){skipped.push(t);continue;}
+      try{
+        await sbPost('/rest/v1/stocks_watchlist',{ticker:t,list_id:activeId});
+        added.push(t);
+        setTickers(function(prev){return prev.concat([t]);});
+        fetchTicker(t);
+      }catch(e){failed.push(t);}
+    }
+    var msg=added.length+' added';
+    if(skipped.length>0)msg+=', '+skipped.length+' already in list';
+    if(failed.length>0)msg+=', '+failed.length+' failed';
+    setBulkResult(msg);
+    if(added.length>0)setBulkInput('');
+    setBulkAdding(false);
+  };
+
   // ── sort ──────────────────────────────────────────────────────────────────
   var sortedTickers=tickers.slice().sort(function(a,b){
     var ra=rowData[a]||{},rb=rowData[b]||{};
@@ -12500,7 +12535,7 @@ function StocksAtGlancePage(p){
     </div>}
 
     {/* ── ADD TICKER + REFRESH ──────────────────────────────────────────── */}
-    <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12,flexWrap:'wrap'}}>
+    <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:showBulk?8:12,flexWrap:'wrap'}}>
       <input value={addInput}
         onChange={function(e){setAddInput(e.target.value.toUpperCase());setErr(null);}}
         onKeyDown={function(e){if(e.key==='Enter')addTicker();}}
@@ -12513,6 +12548,14 @@ function StocksAtGlancePage(p){
           opacity:(adding||!addInput.trim()||activeId==null)?0.4:1,whiteSpace:'nowrap'}}>
         {adding?'Adding…':'+ Add'}
       </button>
+      <button onClick={function(){setShowBulk(!showBulk);setBulkResult(null);}}
+        disabled={activeId==null}
+        style={{padding:'8px 14px',background:showBulk?C.accentDim:C.bgInput,
+          border:'1px solid '+(showBulk?C.accent:C.border),borderRadius:6,
+          color:showBulk?C.accent:C.txt,fontSize:11,fontFamily:F,fontWeight:700,
+          cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
+        {showBulk?'Hide Bulk':'+ Bulk Add'}
+      </button>
       <button onClick={function(){setRowData({});tickers.forEach(function(t){fetchTicker(t);});}}
         disabled={activeId==null}
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
@@ -12520,6 +12563,35 @@ function StocksAtGlancePage(p){
         ↻ Refresh All
       </button>
     </div>
+
+    {/* ── BULK ADD PANEL ─────────────────────────────────────────────────── */}
+    {showBulk&&<div style={{padding:'12px 14px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,marginBottom:12}}>
+      <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:6}}>BULK ADD TICKERS</div>
+      <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:8,fontStyle:'italic'}}>Paste a list of tickers separated by commas, spaces, newlines, or semicolons. Duplicates and invalid entries are skipped automatically.</div>
+      <textarea
+        value={bulkInput}
+        onChange={function(e){setBulkInput(e.target.value.toUpperCase());setBulkResult(null);}}
+        placeholder={'AAPL, NVDA, TSLA, AMZN\nor one per line:\nMETA\nGOOG\nMSFT'}
+        disabled={activeId==null}
+        style={{width:'100%',minHeight:80,background:C.bgInput,border:'1px solid '+C.border,
+          borderRadius:6,padding:'10px 12px',color:C.txtBright,fontSize:12,fontFamily:F,
+          outline:'none',resize:'vertical',lineHeight:1.6}}/>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginTop:8,flexWrap:'wrap'}}>
+        <button onClick={bulkAdd}
+          disabled={bulkAdding||!bulkInput.trim()||activeId==null}
+          style={{padding:'8px 20px',background:C.accent,border:'none',borderRadius:6,
+            color:C.bg,fontSize:11,fontFamily:F,fontWeight:700,cursor:'pointer',
+            opacity:(bulkAdding||!bulkInput.trim()||activeId==null)?0.4:1}}>
+          {bulkAdding?'Adding…':'+ Add All'}
+        </button>
+        <button onClick={function(){setBulkInput('');setBulkResult(null);}}
+          style={{padding:'8px 14px',background:'transparent',border:'1px solid '+C.border,
+            borderRadius:6,color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer'}}>
+          Clear
+        </button>
+        {bulkResult&&<div style={{fontSize:10,fontFamily:F,color:C.accent,fontWeight:700}}>{bulkResult}</div>}
+      </div>
+    </div>}
 
     {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:10}}>{err}</div>}
 
