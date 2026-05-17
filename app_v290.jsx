@@ -12837,14 +12837,16 @@ function StocksAtGlancePage(p){
             // If older than 24 hours OR TipRanks data missing, mark for refresh
             if(age>=24*60*60*1000||row.smart_score==null)stale.push(row.ticker);
           });
-          // Tickers not in cache at all — need fresh fetch
+          // Tickers that need TipRanks refresh (stale or missing smart_score)
           var missing=ts.filter(function(t){return !freshMap[t];});
-          var toRefresh=stale.concat(missing);
+          var trRefresh=stale.concat(missing);
 
-          // ── Background refresh for stale/missing tickers ──
-          if(toRefresh.length>0){
-            fetchPolygonBatch(toRefresh);
-            fetchTipRanksBatch(toRefresh);
+          // ── Polygon: ALWAYS fetch fresh for ALL tickers (current price) ──
+          fetchPolygonBatch(ts);
+
+          // ── TipRanks: only refresh stale/missing (24h cache) ──
+          if(trRefresh.length>0){
+            fetchTipRanksBatch(trRefresh);
           }
         }
       }
