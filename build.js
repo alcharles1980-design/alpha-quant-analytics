@@ -28,7 +28,7 @@ const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=0.25,maximum-scale=5.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Alpha Quant Analytics</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
