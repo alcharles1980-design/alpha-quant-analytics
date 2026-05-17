@@ -24337,6 +24337,10 @@ function App(){
   },[]);
   var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
+  var zs=useState(100),zoom=zs[0],setZoom=zs[1];
+  var zoomIn=function(){setZoom(function(z){return Math.min(150,z+10);});};
+  var zoomOut=function(){setZoom(function(z){return Math.max(50,z-10);});};
+  var zoomReset=function(){setZoom(100);};
   var ps=useState(function(){var h=window.location.hash.slice(1);return h||'home';}),page=ps[0],setPageRaw=ps[1];
   var opi=useState(null),optPageInit=opi[0],setOptPageInit=opi[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
@@ -24579,10 +24583,20 @@ function App(){
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
       <div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,letterSpacing:1.5}}>ALPHA QUANT</div><div style={{color:C.accent,fontSize:8,letterSpacing:1.5}}>BETA GROWTH HOLDINGS</div></div>
-      <div style={{display:'flex',alignItems:'center',gap:6}}><LiveClock/><div onClick={toggleTheme} style={{cursor:'pointer',padding:6,fontSize:14,opacity:0.7,transition:'opacity 0.2s'}}>{theme==='dark'?'\u2600':'\u263E'}</div><MenuIcon onClick={function(){setMenuOpen(!menuOpen);}}/></div>
+      <div style={{display:'flex',alignItems:'center',gap:6}}>
+        <LiveClock/>
+        <div style={{display:'flex',alignItems:'center',gap:2,marginLeft:4}}>
+          <div onClick={zoomOut} style={{cursor:'pointer',padding:'4px 6px',fontSize:13,fontWeight:700,color:C.txtDim,fontFamily:F,lineHeight:1,userSelect:'none'}}>-</div>
+          <div onClick={zoomReset} style={{cursor:'pointer',padding:'2px 4px',fontSize:8,color:zoom===100?C.txtDim:C.accent,fontFamily:F,fontWeight:700,minWidth:28,textAlign:'center',userSelect:'none'}}>{zoom}%</div>
+          <div onClick={zoomIn} style={{cursor:'pointer',padding:'4px 6px',fontSize:13,fontWeight:700,color:C.txtDim,fontFamily:F,lineHeight:1,userSelect:'none'}}>+</div>
+        </div>
+        <div onClick={toggleTheme} style={{cursor:'pointer',padding:6,fontSize:14,opacity:0.7,transition:'opacity 0.2s'}}>{theme==='dark'?'\u2600':'\u263E'}</div>
+        <MenuIcon onClick={function(){setMenuOpen(!menuOpen);}}/>
+      </div>
     </div>
     <div style={{borderBottom:'1px solid '+C.border,marginBottom:12}}></div>
     <MenuDropdown open={menuOpen} items={menuItems} onSelect={function(k){if(k==='logout'){try{sessionStorage.removeItem('aq_auth');}catch(e){}setShowSplash(true);window.location.hash='';return;}setPage(k);}} onClose={function(){setMenuOpen(false);}}/>
+    <div style={{zoom:(zoom/100),transition:'zoom 0.15s ease'}}>
     {page==='batch'&&<BatchPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='corrlogic'&&<CorrAnalysisPage onBack={function(){setPage('objectives');}}/>}
     {page==='features'&&<FeaturesListPage onBack={function(){setPage('objectives');}}/>}
@@ -24947,6 +24961,7 @@ function App(){
         {rawTradesRef.current.length>0&&<TradeAudit trades={rawTradesRef.current} tpPct={parseFloat(tpStr)||1}/>}
       </div>}
     </div>}
+    </div>{/* end zoom wrapper */}
     <div style={{textAlign:'center',padding:'16px 0',color:C.txtDim,fontSize:7,letterSpacing:1.5}}>ALPHA QUANT ANALYTICS · BETA GROWTH HOLDINGS · EDGE DETECTION</div>
   </div>;
 }
