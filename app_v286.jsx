@@ -12222,17 +12222,39 @@ function TipRanksPage(p){
     setLoading(true);setErr(null);setData(null);setTicker(t);setShowAllExperts(false);setBdPage(0);
     try{
       var proxyBase='https://tipranks-proxy.alcharles1980.workers.dev';
-      var r=await fetch(proxyBase+'?ticker='+t+'&endpoint=getData');
-      var d=await r.json();
-      if(d&&d.error){setErr('TipRanks proxy error: '+(d.message||d.status)+'. Deploy the tipranks-proxy worker on your Cloudflare account.');setLoading(false);return;}
+      var d=null;
+
+      // ── Check Supabase cache first (24-hour TTL) ──
+      var cacheR=await fetch(SB_URL+'/rest/v1/tipranks_cache?ticker=eq.'+t+'&select=data,fetched_at',{headers:getSbHeaders()});
+      var cacheD=cacheR.ok?await cacheR.json():[];
+      if(cacheD.length>0){
+        var age=Date.now()-new Date(cacheD[0].fetched_at).getTime();
+        if(age<24*60*60*1000){d=cacheD[0].data;}
+      }
+
+      // ── Cache miss or stale — fetch from proxy ──
+      if(!d){
+        var r=await fetch(proxyBase+'?ticker='+t+'&endpoint=getData');
+        d=await r.json();
+        if(d&&d.experts&&!d.error){
+          // Save to cache
+          fetch(SB_URL+'/rest/v1/tipranks_cache?on_conflict=ticker',{
+            method:'POST',
+            headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},getSbHeaders()),
+            body:JSON.stringify({ticker:t,data:d,fetched_at:new Date().toISOString()})
+          }).catch(function(){});
+        }
+      }
+
+      if(d&&d.error){setErr('TipRanks proxy error: '+(d.message||d.status));setLoading(false);return;}
       if(!d||!d.ticker){setErr('No data returned for '+t);setLoading(false);return;}
-      // Fetch news sentiment
+      // Fetch news sentiment (not cached — lightweight call)
       try{
         var nsR=await fetch(proxyBase+'?ticker='+t+'&endpoint=newsSentiments');
         if(nsR.ok){var nsD=await nsR.json();if(!nsD.error)d.newsSentiment=nsD;}
       }catch(e2){}
       setData(d);
-    }catch(e){setErr('Fetch failed: '+e.message+'. Make sure the tipranks-proxy worker is deployed on your Cloudflare account.');}
+    }catch(e){setErr('Fetch failed: '+e.message);}
     finally{setLoading(false);}
   };
 
@@ -12855,13 +12877,38 @@ function StocksAtGlancePage(p){
   // Merges into existing rowData (Polygon data already visible).
   var fetchTipRanks=async function(tkr){
     try{
-      // Use Cloudflare Worker proxy to bypass TipRanks CORS + bot protection
-      var proxyBase='https://tipranks-proxy.alcharles1980.workers.dev';
-      var trR=await fetch(proxyBase+'?ticker='+tkr+'&endpoint=getData');
-      var trD=await trR.json();
+      // ── Check Supabase cache first (24-hour TTL) ──
+      var cacheR=await fetch(supaUrl+'/rest/v1/tipranks_cache?ticker=eq.'+tkr+'&select=data,fetched_at',{headers:SB()});
+      var cacheD=cacheR.ok?await cacheR.json():[];
+      var trD=null;
+      if(cacheD.length>0){
+        var age=Date.now()-new Date(cacheD[0].fetched_at).getTime();
+        if(age<24*60*60*1000){
+          // Cache hit — fresh within 24 hours
+          trD=cacheD[0].data;
+        }
+      }
+
+      // ── Cache miss or stale — fetch from proxy ──
+      if(!trD){
+        var proxyBase='https://tipranks-proxy.alcharles1980.workers.dev';
+        var trR=await fetch(proxyBase+'?ticker='+tkr+'&endpoint=getData');
+        var freshD=await trR.json();
+        if(freshD&&freshD.experts&&!freshD.error){
+          trD=freshD;
+          // Save to cache (upsert)
+          fetch(supaUrl+'/rest/v1/tipranks_cache?on_conflict=ticker',{
+            method:'POST',
+            headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},SB()),
+            body:JSON.stringify({ticker:tkr,data:trD,fetched_at:new Date().toISOString()})
+          }).catch(function(){});
+        }
+      }
+
+      // ── Extract consensus data ──
       var ptHi=null,ptLo=null,ptSum=0,ptN=0;
       var buys=0,holds=0,sells=0,smartScore=null;
-      if(trD&&trD.experts&&!trD.error){
+      if(trD&&trD.experts){
         if(trD.tipranksStockScore&&trD.tipranksStockScore.score!=null){
           smartScore=trD.tipranksStockScore.score;
         }
