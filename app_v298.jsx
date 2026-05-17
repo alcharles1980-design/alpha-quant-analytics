@@ -12883,20 +12883,19 @@ function StocksAtGlancePage(p){
     }).catch(function(){});
   };
   var saveTR=function(tkr,obj){
-    // ALWAYS include all columns so PostgREST updates them (even to null/0)
-    fetch(supaUrl+'/rest/v1/stocks_glance_cache?on_conflict=ticker',{
+    // Use DB function — guaranteed upsert, no race conditions
+    fetch(supaUrl+'/rest/v1/rpc/save_glance_tipranks',{
       method:'POST',
-      headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},SB()),
+      headers:Object.assign({'Content-Type':'application/json'},SB()),
       body:JSON.stringify({
-        ticker:tkr,
-        fetched_at:new Date().toISOString(),
-        smart_score:obj.smartScore!=null?obj.smartScore:null,
-        pt_hi:obj.ptHi!=null?obj.ptHi:null,
-        pt_avg:obj.ptAvg!=null?obj.ptAvg:null,
-        pt_lo:obj.ptLo!=null?obj.ptLo:null,
-        buy:obj.buy||0,
-        hold:obj.hold||0,
-        sell:obj.sell||0
+        p_ticker:tkr,
+        p_smart_score:obj.smartScore!=null?obj.smartScore:null,
+        p_pt_hi:obj.ptHi!=null?obj.ptHi:null,
+        p_pt_avg:obj.ptAvg!=null?obj.ptAvg:null,
+        p_pt_lo:obj.ptLo!=null?obj.ptLo:null,
+        p_buy:obj.buy||0,
+        p_hold:obj.hold||0,
+        p_sell:obj.sell||0
       })
     }).catch(function(){});
   };
