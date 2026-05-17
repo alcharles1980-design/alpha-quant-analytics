@@ -12395,14 +12395,6 @@ function TipRanksPage(p){
   var topPT=ptStats(consensus12m.top.pts);
   var allPT=ptStats(consensus12m.all.pts);
 
-  // ── consensus from latest ──
-  var con=null;
-  if(data&&data.consensuses){
-    var latest=data.consensuses.filter(function(c){return c.isLatest===1&&c.mStars===1;});
-    if(latest.length)con=latest[0];
-  }
-  var ptData=null;
-  if(data&&data.ptConsensus&&data.ptConsensus.length){ptData=data.ptConsensus[0];}
   var blog=data&&data.bloggerSentiment;
   var hf=data&&data.hedgeFundData;
   var news=data&&data.newsSentiment;
@@ -12444,7 +12436,8 @@ function TipRanksPage(p){
           <div style={{display:'flex',gap:16,marginTop:6,flexWrap:'wrap'}}>
             <div style={dim}>Ticker: <span style={{color:C.txtBright,fontWeight:700}}>{data.ticker}</span></div>
             {data.marketCap&&<div style={dim}>Mkt Cap: <span style={{color:C.txtBright,fontWeight:600}}>{fmtCap(data.marketCap)}</span></div>}
-            {data.numOfAnalysts&&<div style={dim}>Analysts: <span style={{color:C.txtBright}}>{data.numOfAnalysts}</span></div>}
+            {analystCount>0&&<div style={dim}>Analysts: <span style={{color:C.txtBright}}>{analystCount}</span></div>}
+            {bloggerCount>0&&<div style={dim}>Bloggers: <span style={{color:C.txtDim}}>{bloggerCount}</span></div>}
           </div>
         </div>
         {ss&&ss.score!=null&&<div style={{textAlign:'center'}}>
@@ -12454,51 +12447,6 @@ function TipRanksPage(p){
           <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,letterSpacing:1,textTransform:'uppercase'}}>Smart Score</div>
         </div>}
       </div>
-
-      {/* ── ANALYST CONSENSUS ──────────────────────────────────────────────── */}
-      {con&&<div style={card}>
-        <div style={cardTitle}>Analyst Consensus</div>
-        <div style={{display:'flex',gap:20,flexWrap:'wrap',alignItems:'flex-start'}}>
-          {/* B/H/S bar */}
-          <div style={{flex:'1 1 200px'}}>
-            <div style={{display:'flex',height:24,borderRadius:6,overflow:'hidden',gap:2,marginBottom:8}}>
-              <div style={{flex:con.nB,background:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.bg,minWidth:con.nB?8:0}}>{con.nB>0?con.nB:''}</div>
-              <div style={{flex:con.nH,background:C.gold,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.bg,minWidth:con.nH?8:0}}>{con.nH>0?con.nH:''}</div>
-              <div style={{flex:con.nS,background:C.warn,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.bg,minWidth:con.nS?8:0}}>{con.nS>0?con.nS:''}</div>
-            </div>
-            <div style={{display:'flex',gap:14,fontSize:10,fontFamily:F}}>
-              <span style={{color:C.accent,fontWeight:700}}>{'\u25B2'} {con.nB} Buy</span>
-              <span style={{color:C.gold,fontWeight:700}}>{'\u25C6'} {con.nH} Hold</span>
-              <span style={{color:C.warn,fontWeight:700}}>{'\u25BC'} {con.nS} Sell</span>
-            </div>
-            <div style={{marginTop:8,fontSize:9,fontFamily:F,color:C.txtDim}}>
-              Consensus: <span style={{color:C.accent,fontWeight:700}}>Strong Buy</span> ({con.consensusRate} analysts)
-            </div>
-          </div>
-          {/* Price targets */}
-          {ptData&&<div style={{flex:'1 1 200px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase'}}>Low</div>
-                <div style={{fontSize:16,fontWeight:700,fontFamily:F,color:C.warn}}>{fmtDol(ptData.low)}</div>
-              </div>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase'}}>Average</div>
-                <div style={{fontSize:20,fontWeight:700,fontFamily:F,color:C.txtBright}}>{fmtDol(ptData.priceTarget)}</div>
-                {data.prices&&data.prices.length>0&&<div style={{fontSize:10,fontFamily:F,color:((ptData.priceTarget-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p)>=0?C.accent:C.warn}}>
-                  {((ptData.priceTarget-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p*100).toFixed(1)}% upside
-                </div>}
-              </div>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase'}}>High</div>
-                <div style={{fontSize:16,fontWeight:700,fontFamily:F,color:C.accent}}>{fmtDol(ptData.high)}</div>
-              </div>
-            </div>
-          </div>}
-        </div>
-      </div>}
-
-      {/* ── SMART SCORE COMPONENTS ─────────────────────────────────────────── */}
 
       {/* ── 12-MONTH CONSENSUS: TOP ANALYSTS vs OVERALL ────────────────────── */}
       {(consensus12m.top.count>0||consensus12m.all.count>0)&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12,marginBottom:12}}>
