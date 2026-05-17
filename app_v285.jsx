@@ -12909,9 +12909,10 @@ function StocksAtGlancePage(p){
         if(batch.cancelled)return;
         await fetchTipRanks(tickerList[i]);
         if(batch.cancelled)return;
-        // 1.5s delay between calls to avoid TipRanks rate limiting
+        // 2.5s delay between calls — combined with 0.5-2s worker delay,
+        // each TipRanks request is spaced ~3-4.5s apart (human browsing pace)
         if(i<tickerList.length-1){
-          await new Promise(function(resolve){setTimeout(resolve,1500);});
+          await new Promise(function(resolve){setTimeout(resolve,2500);});
         }
       }
     })();
