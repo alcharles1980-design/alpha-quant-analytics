@@ -13028,9 +13028,9 @@ function StocksAtGlancePage(p){
       for(var i=0;i<toFetch.length;i++){
         await fetchTipRanks(toFetch[i]);
         delete pendingTR.current[toFetch[i]];
-        // 1s delay between calls (CF Worker adds 0.5-2s on top → 1.5-3s total)
+        // 2.5s delay between calls (CF Worker adds 0.5-2s → 3-4.5s total)
         if(i<toFetch.length-1){
-          await new Promise(function(resolve){setTimeout(resolve,1000);});
+          await new Promise(function(resolve){setTimeout(resolve,2500);});
         }
       }
     })();
