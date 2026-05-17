@@ -13159,6 +13159,85 @@ function StocksAtGlancePage(p){
     return sortAsc?(va>vb?1:-1):(va<vb?1:-1);
   });
 
+  // ── CSV Export ───────────────────────────────────────────────────────────
+  var exportCSV=function(tickerList,label){
+    var headers=['Ticker','Score','Price','Mkt Cap','52W Hi','52W Lo','90D Hi','90D Lo','PT Hi','PT Avg','PT Lo','Buy','Hold','Sell'];
+    var rows=[headers.join(',')];
+    tickerList.forEach(function(t){
+      var r=rowData[t]||{};
+      rows.push([
+        t,
+        r.smartScore!=null?r.smartScore:'',
+        r.price!=null?r.price:'',
+        r.mc!=null?r.mc:'',
+        r.w52h!=null?r.w52h:'',
+        r.w52l!=null?r.w52l:'',
+        r.d90h!=null?r.d90h:'',
+        r.d90l!=null?r.d90l:'',
+        r.ptHi!=null?r.ptHi:'',
+        r.ptAvg!=null?r.ptAvg:'',
+        r.ptLo!=null?r.ptLo:'',
+        r.buy||0,
+        r.hold||0,
+        r.sell||0
+      ].join(','));
+    });
+    var csv=rows.join('\n');
+    var blob=new Blob([csv],{type:'text/csv'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    var listName=(lists.find(function(l){return l.id===activeId;})||{}).name||'list';
+    a.href=url;
+    a.download='stocks_'+listName.replace(/\s+/g,'_').toLowerCase()+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  var exportAllLists=async function(){
+    try{
+      var allR=await fetch(supaUrl+'/rest/v1/stocks_watchlist?select=ticker,list_id&order=list_id.asc,added_at.asc',{headers:SB()});
+      var allW=await allR.json();
+      var allTickers=[];var seen={};
+      allW.forEach(function(w){if(!seen[w.ticker]){seen[w.ticker]=true;allTickers.push(w.ticker);}});
+      var cacheR=await fetch(supaUrl+'/rest/v1/stocks_glance_cache?ticker=in.('+allTickers.join(',')+')',{headers:SB()});
+      var cached=cacheR.ok?await cacheR.json():[];
+      var cacheMap={};
+      cached.forEach(function(c){cacheMap[c.ticker]=c;});
+      var listMap={};
+      lists.forEach(function(l){listMap[l.id]=l.name;});
+      var headers=['List','Ticker','Score','Price','Mkt Cap','52W Hi','52W Lo','90D Hi','90D Lo','PT Hi','PT Avg','PT Lo','Buy','Hold','Sell'];
+      var rows=[headers.join(',')];
+      allW.forEach(function(w){
+        var c=cacheMap[w.ticker]||{};
+        rows.push([
+          '"'+(listMap[w.list_id]||'Unknown')+'"',
+          w.ticker,
+          c.smart_score!=null?c.smart_score:'',
+          c.price!=null?c.price:'',
+          c.market_cap!=null?c.market_cap:'',
+          c.w52h!=null?c.w52h:'',
+          c.w52l!=null?c.w52l:'',
+          c.d90h!=null?c.d90h:'',
+          c.d90l!=null?c.d90l:'',
+          c.pt_hi!=null?c.pt_hi:'',
+          c.pt_avg!=null?c.pt_avg:'',
+          c.pt_lo!=null?c.pt_lo:'',
+          c.buy||0,
+          c.hold||0,
+          c.sell||0
+        ].join(','));
+      });
+      var csv=rows.join('\n');
+      var blob=new Blob([csv],{type:'text/csv'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;
+      a.download='stocks_all_lists_'+new Date().toISOString().slice(0,10)+'.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }catch(e){setErr('Export failed: '+e.message);}
+  };
+
   // ── mount ─────────────────────────────────────────────────────────────────
   var didMount=useRef(false);
   if(!didMount.current){didMount.current=true;loadLists();}
@@ -13293,6 +13372,20 @@ function StocksAtGlancePage(p){
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
           color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
         ↻ Refresh All
+      </button>
+      <button onClick={function(){exportCSV(tickers,'list');}}
+        disabled={activeId==null||tickers.length===0}
+        style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
+          color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',
+          opacity:(activeId==null||tickers.length===0)?0.4:1}}>
+        Export List
+      </button>
+      <button onClick={exportAllLists}
+        disabled={lists.length===0}
+        style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
+          color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',
+          opacity:lists.length===0?0.4:1}}>
+        Export All
       </button>
     </div>
 
