@@ -12806,8 +12806,6 @@ function StocksAtGlancePage(p){
   // ── switch active list ────────────────────────────────────────────────────
   var switchList=async function(id, listsArr){
     setActiveId(id);setErr(null);
-    // Cancel any in-progress TipRanks batch from previous list
-    if(trBatchRef.current){trBatchRef.current.cancelled=true;}
     try{
       // Single RPC call: joins watchlist + cache, returns tickers + all cached data
       var r=await fetch(supaUrl+'/rest/v1/rpc/glance_load',{
@@ -13017,22 +13015,22 @@ function StocksAtGlancePage(p){
     }catch(e){/* TipRanks fetch failed — Score/PT/BHS stay as — */}
   };
 
-  // ── Sequential TipRanks batch with rate limiting ──────────────────────
-  var trBatchRef=useRef(null); // ref to cancel on list switch
+  // ── Sequential TipRanks batch — feeds universal cache ──────────────────
+  // Does NOT cancel on list switch — completed fetches benefit all lists.
+  // Tracks pending tickers to avoid duplicate concurrent fetches.
+  var pendingTR=useRef({});
   var fetchTipRanksBatch=function(tickerList){
-    // Cancel any in-progress batch from a previous list
-    if(trBatchRef.current){trBatchRef.current.cancelled=true;}
-    var batch={cancelled:false};
-    trBatchRef.current=batch;
+    // Filter out tickers already being fetched by a previous batch
+    var toFetch=tickerList.filter(function(t){return !pendingTR.current[t];});
+    if(toFetch.length===0)return;
+    toFetch.forEach(function(t){pendingTR.current[t]=true;});
     (async function(){
-      for(var i=0;i<tickerList.length;i++){
-        if(batch.cancelled)return;
-        await fetchTipRanks(tickerList[i]);
-        if(batch.cancelled)return;
-        // 2.5s delay between calls — combined with 0.5-2s worker delay,
-        // each TipRanks request is spaced ~3-4.5s apart (human browsing pace)
-        if(i<tickerList.length-1){
-          await new Promise(function(resolve){setTimeout(resolve,2500);});
+      for(var i=0;i<toFetch.length;i++){
+        await fetchTipRanks(toFetch[i]);
+        delete pendingTR.current[toFetch[i]];
+        // 1s delay between calls (CF Worker adds 0.5-2s on top → 1.5-3s total)
+        if(i<toFetch.length-1){
+          await new Promise(function(resolve){setTimeout(resolve,1000);});
         }
       }
     })();
