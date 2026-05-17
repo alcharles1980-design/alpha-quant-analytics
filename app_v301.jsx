@@ -12369,15 +12369,16 @@ function TipRanksPage(p){
   if(data&&data.experts){
     var cutoff12m=new Date();cutoff12m.setFullYear(cutoff12m.getFullYear()-1);
     var cutoffStr=cutoff12m.toISOString().slice(0,10);
+    // Outlier filter: reject PTs > 5x current price (catches currency/unit errors)
+    var lastPrice=data.prices&&data.prices.length>0?data.prices[data.prices.length-1].p:null;
+    var ptMax=lastPrice?lastPrice*5:Infinity;
 
     data.experts.forEach(function(ex){
       if(!ex.ratings||!ex.ratings.length)return;
-      // Only count real Wall Street analysts — no bloggers, no AI
       if(!isAnalyst(ex)||isAI(ex))return;
 
       var stars=getStars(ex);
 
-      // Find the most recent rating within last 12 months
       var latestInWindow=null;
       for(var ri=0;ri<ex.ratings.length;ri++){
         var rd=ex.ratings[ri].date||ex.ratings[ri].rD||'';
@@ -12392,15 +12393,14 @@ function TipRanksPage(p){
 
       var rid=latestInWindow.ratingId;
       var pt=latestInWindow.priceTarget||latestInWindow.convertedPriceTarget||null;
+      if(pt&&pt>ptMax)pt=null; // outlier — likely currency error
 
-      // Overall bucket
       if(rid===1)consensus12m.all.buy++;
       else if(rid===2)consensus12m.all.hold++;
       else if(rid===3)consensus12m.all.sell++;
       consensus12m.all.count++;
       if(pt&&pt>0)consensus12m.all.pts.push(pt);
 
-      // Top analysts bucket (stars >= 4)
       if(stars>=4){
         if(rid===1)consensus12m.top.buy++;
         else if(rid===2)consensus12m.top.hold++;
@@ -12997,6 +12997,11 @@ function StocksAtGlancePage(p){
         if(trD.tipranksStockScore&&trD.tipranksStockScore.score!=null){
           smartScore=trD.tipranksStockScore.score;
         }
+        // Outlier filter: get current price, reject PTs > 5x
+        var curPrice=(trD.prices&&trD.prices.length>0)?trD.prices[trD.prices.length-1].p:null;
+        if(!curPrice){var rd2=rowData[tkr];if(rd2&&rd2.price)curPrice=rd2.price;}
+        var ptMax=curPrice?curPrice*5:Infinity;
+
         var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-1);
         var cutStr=cutoff.toISOString().slice(0,10);
         trD.experts.forEach(function(ex){
@@ -13014,6 +13019,7 @@ function StocksAtGlancePage(p){
           var rid=latest.ratingId;
           if(rid===1)buys++;else if(rid===2)holds++;else if(rid===3)sells++;
           var pt=latest.priceTarget||latest.convertedPriceTarget||null;
+          if(pt&&pt>ptMax)pt=null; // outlier — likely currency error
           if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
         });
       }
