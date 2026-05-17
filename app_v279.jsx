@@ -12435,6 +12435,7 @@ function TipRanksPage(p){
           <div style={{color:C.txtBright,fontSize:18,fontWeight:700,fontFamily:F}}>{data.companyName||data.ticker}</div>
           <div style={{display:'flex',gap:16,marginTop:6,flexWrap:'wrap'}}>
             <div style={dim}>Ticker: <span style={{color:C.txtBright,fontWeight:700}}>{data.ticker}</span></div>
+            {data.prices&&data.prices.length>0&&<div style={dim}>Price: <span style={{color:C.txtBright,fontWeight:700,fontSize:13}}>${data.prices[data.prices.length-1].p.toFixed(2)}</span></div>}
             {data.marketCap&&<div style={dim}>Mkt Cap: <span style={{color:C.txtBright,fontWeight:600}}>{fmtCap(data.marketCap)}</span></div>}
             {analystCount>0&&<div style={dim}>Analysts: <span style={{color:C.txtBright}}>{analystCount}</span></div>}
             {bloggerCount>0&&<div style={dim}>Bloggers: <span style={{color:C.txtDim}}>{bloggerCount}</span></div>}
@@ -12477,6 +12478,9 @@ function TipRanksPage(p){
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1}}>AVERAGE</div>
               <div style={{fontSize:18,fontWeight:700,fontFamily:F,color:C.txtBright}}>{topPT.avg!=null?fmtDol(topPT.avg):'\u2014'}</div>
+              {topPT.avg!=null&&data.prices&&data.prices.length>0&&<div style={{fontSize:10,fontFamily:F,color:((topPT.avg-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p)>=0?C.accent:C.warn,fontWeight:600}}>
+                {((topPT.avg-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p*100).toFixed(1)}% upside
+              </div>}
             </div>
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1}}>HIGH</div>
@@ -12511,6 +12515,9 @@ function TipRanksPage(p){
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1}}>AVERAGE</div>
               <div style={{fontSize:18,fontWeight:700,fontFamily:F,color:C.txtBright}}>{allPT.avg!=null?fmtDol(allPT.avg):'\u2014'}</div>
+              {allPT.avg!=null&&data.prices&&data.prices.length>0&&<div style={{fontSize:10,fontFamily:F,color:((allPT.avg-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p)>=0?C.accent:C.warn,fontWeight:600}}>
+                {((allPT.avg-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p*100).toFixed(1)}% upside
+              </div>}
             </div>
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1}}>HIGH</div>
