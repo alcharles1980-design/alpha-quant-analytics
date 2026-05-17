@@ -12811,17 +12811,70 @@ function StocksAtGlancePage(p){
       if(Array.isArray(d)){
         var ts=d.map(function(x){return x.ticker;});
         setTickers(ts);
-        // Phase 1: Polygon in batches of 10 (3 calls each = 30/batch, avoids rate limit)
-        fetchPolygonBatch(ts);
-        // Phase 2: TipRanks sequential with 2.5s delay
-        fetchTipRanksBatch(ts);
+
+        // ── Phase 0: Load ALL tickers from stocks_glance_cache in one query ──
+        // This gives instant data for all users — no API calls needed if fresh.
+        if(ts.length>0){
+          var cacheR=await fetch(supaUrl+'/rest/v1/stocks_glance_cache?ticker=in.('+ts.join(',')+')',{headers:SB()});
+          var cached=cacheR.ok?await cacheR.json():[];
+          var stale=[];
+          var now=Date.now();
+          var freshMap={};
+          cached.forEach(function(row){
+            freshMap[row.ticker]=true;
+            var age=now-new Date(row.fetched_at).getTime();
+            // Load cached data into rowData immediately
+            setRowData(function(prev){
+              var n=Object.assign({},prev);
+              n[row.ticker]={mc:row.market_cap?Number(row.market_cap):null,price:row.price?Number(row.price):null,
+                w52h:row.w52h?Number(row.w52h):null,w52l:row.w52l?Number(row.w52l):null,
+                d90h:row.d90h?Number(row.d90h):null,d90l:row.d90l?Number(row.d90l):null,
+                smartScore:row.smart_score,ptHi:row.pt_hi?Number(row.pt_hi):null,
+                ptAvg:row.pt_avg?Number(row.pt_avg):null,ptLo:row.pt_lo?Number(row.pt_lo):null,
+                buy:row.buy||0,hold:row.hold||0,sell:row.sell||0};
+              return n;
+            });
+            // If older than 24 hours, mark for background refresh
+            if(age>=24*60*60*1000)stale.push(row.ticker);
+          });
+          // Tickers not in cache at all — need fresh fetch
+          var missing=ts.filter(function(t){return !freshMap[t];});
+          var toRefresh=stale.concat(missing);
+
+          // ── Background refresh for stale/missing tickers ──
+          if(toRefresh.length>0){
+            fetchPolygonBatch(toRefresh);
+            fetchTipRanksBatch(toRefresh);
+          }
+        }
       }
     }catch(e){setErr('Could not load tickers');}
   };
 
+  // ── Save row data to stocks_glance_cache (fire-and-forget upsert) ────
+  var saveToCache=function(tkr,rowObj){
+    var body={ticker:tkr,fetched_at:new Date().toISOString()};
+    if(rowObj.price!=null)body.price=rowObj.price;
+    if(rowObj.mc!=null)body.market_cap=rowObj.mc;
+    if(rowObj.w52h!=null)body.w52h=rowObj.w52h;
+    if(rowObj.w52l!=null)body.w52l=rowObj.w52l;
+    if(rowObj.d90h!=null)body.d90h=rowObj.d90h;
+    if(rowObj.d90l!=null)body.d90l=rowObj.d90l;
+    if(rowObj.smartScore!=null)body.smart_score=rowObj.smartScore;
+    if(rowObj.ptHi!=null)body.pt_hi=rowObj.ptHi;
+    if(rowObj.ptAvg!=null)body.pt_avg=rowObj.ptAvg;
+    if(rowObj.ptLo!=null)body.pt_lo=rowObj.ptLo;
+    if(rowObj.buy!=null)body.buy=rowObj.buy;
+    if(rowObj.hold!=null)body.hold=rowObj.hold;
+    if(rowObj.sell!=null)body.sell=rowObj.sell;
+    fetch(supaUrl+'/rest/v1/stocks_glance_cache?on_conflict=ticker',{
+      method:'POST',
+      headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},SB()),
+      body:JSON.stringify(body)
+    }).catch(function(){});
+  };
+
   // ── Phase 1: Polygon data (price, mkt cap, 52W/90D ranges) ────────────
-  // Fires in parallel for all tickers. Sets loadingTkr per-ticker.
-  // Row data appears immediately as each ticker completes.
   var fetchPolygon=async function(tkr){
     if(!pgKey)return;
     setLoadingTkr(function(prev){var n=Object.assign({},prev);n[tkr]=true;return n;});
@@ -12859,12 +12912,15 @@ function StocksAtGlancePage(p){
         }
       });
 
+      var polyData={mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l};
       setRowData(function(prev){
         var n=Object.assign({},prev);
         var existing=n[tkr]||{};
-        n[tkr]=Object.assign(existing,{mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l});
+        n[tkr]=Object.assign(existing,polyData);
         return n;
       });
+      // Save Polygon data to cache
+      saveToCache(tkr,polyData);
     }catch(e){
       setRowData(function(prev){var n=Object.assign({},prev);n[tkr]=Object.assign(n[tkr]||{},{error:true});return n;});
     }finally{
@@ -12947,15 +13003,16 @@ function StocksAtGlancePage(p){
           if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
         });
       }
+      var trData={ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
+          ptN:ptN,buy:buys,hold:holds,sell:sells,smartScore:smartScore};
       setRowData(function(prev){
         var n=Object.assign({},prev);
         var existing=n[tkr]||{};
-        n[tkr]=Object.assign(existing,{
-          ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
-          ptN:ptN,buy:buys,hold:holds,sell:sells,smartScore:smartScore
-        });
+        n[tkr]=Object.assign(existing,trData);
         return n;
       });
+      // Save TipRanks data to cache
+      saveToCache(tkr,trData);
     }catch(e){/* TipRanks fetch failed — Score/PT/BHS stay as — */}
   };
 
@@ -13272,7 +13329,7 @@ function StocksAtGlancePage(p){
               {colH('PT Avg','ptAvg')}
               {colH('PT Lo','ptLo')}
               <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'right',borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap'}}>B/H/S</th>
-              <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,borderBottom:'2px solid '+C.border,background:C.bgDeep,textAlign:'center'}}>Del</th>
+              <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,textAlign:'center',whiteSpace:'nowrap'}}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -13342,10 +13399,14 @@ function StocksAtGlancePage(p){
                 <td style={Object.assign({},tdStyle,{textAlign:'right'})}>
                   {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:rbar()||<span style={{color:C.border}}>—</span>}
                 </td>
-                <td style={Object.assign({},tdStyle,{textAlign:'center'})}>
+                <td style={Object.assign({},tdStyle,{textAlign:'center',whiteSpace:'nowrap'})}>
+                  <button onClick={function(){fetchPolygon(t);fetchTipRanks(t);}}
+                    title="Refresh this ticker"
+                    style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
+                      color:C.accent,fontSize:10,fontFamily:F,padding:'2px 6px',cursor:'pointer',marginRight:4}}>{'\u21BB'}</button>
                   <button onClick={function(){deleteTicker(t);}}
                     style={{background:'transparent',border:'1px solid '+C.warn+'80',borderRadius:4,
-                      color:C.warn,fontSize:10,fontFamily:F,padding:'2px 7px',cursor:'pointer'}}>✕</button>
+                      color:C.warn,fontSize:10,fontFamily:F,padding:'2px 7px',cursor:'pointer'}}>{'\u2715'}</button>
                 </td>
               </tr>;
             })}
@@ -13355,7 +13416,7 @@ function StocksAtGlancePage(p){
     </div>
 
     <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.6,fontStyle:'italic'}}>
-      Polygon: price, mkt cap, 52W &amp; 90D ranges &nbsp;&middot;&nbsp; TipRanks: Smart Score, price targets &amp; analyst consensus (Wall Street analysts only, last 12 months) &nbsp;&middot;&nbsp; Click headers to sort
+      Cached in database — auto-refreshes stale data (24h+) on page load &nbsp;&middot;&nbsp; {'\u21BB'} refreshes a single ticker &nbsp;&middot;&nbsp; Polygon: price, mkt cap, ranges &nbsp;&middot;&nbsp; TipRanks: Smart Score, PT, consensus
     </div>
   </div>;
 }
