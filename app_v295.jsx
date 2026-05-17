@@ -12804,10 +12804,12 @@ function StocksAtGlancePage(p){
   };
 
   // ── switch active list ────────────────────────────────────────────────────
+  // Track what's been refreshed this session — no duplicate API calls
+  var polyRefreshed=useRef({});  // tickers already Polygon-refreshed this session
+
   var switchList=async function(id, listsArr){
     setActiveId(id);setErr(null);
     try{
-      // Single RPC call: joins watchlist + cache, returns tickers + all cached data
       var r=await fetch(supaUrl+'/rest/v1/rpc/glance_load',{
         method:'POST',
         headers:Object.assign({'Content-Type':'application/json'},SB()),
@@ -12818,13 +12820,18 @@ function StocksAtGlancePage(p){
 
       var ts=[];
       var initData={};
-      var stale=[];
+      var needPoly=[];   // tickers that need fresh Polygon data
+      var needTR=[];     // tickers that need fresh TipRanks data
       var now=Date.now();
 
       rows.forEach(function(row){
         ts.push(row.ticker);
-        // Build row data from cache (may be null for uncached tickers)
-        if(row.price!=null||row.smart_score!=null){
+
+        // Use in-memory data if we already have it (from earlier in this session)
+        // Otherwise fall back to DB cache
+        if(rowData[row.ticker]&&rowData[row.ticker].price!=null){
+          initData[row.ticker]=rowData[row.ticker];
+        }else if(row.price!=null||row.smart_score!=null){
           initData[row.ticker]={
             mc:row.market_cap?Number(row.market_cap):null,
             price:row.price?Number(row.price):null,
@@ -12836,20 +12843,23 @@ function StocksAtGlancePage(p){
             buy:row.buy||0,hold:row.hold||0,sell:row.sell||0
           };
         }
-        // Check if TipRanks data needs refresh
+
+        // Only fetch Polygon if not already refreshed this session
+        if(!polyRefreshed.current[row.ticker])needPoly.push(row.ticker);
+
+        // Only fetch TipRanks if stale (>24h) or missing
         var age=row.fetched_at?now-new Date(row.fetched_at).getTime():Infinity;
-        if(age>=24*60*60*1000||row.smart_score==null)stale.push(row.ticker);
+        if(age>=24*60*60*1000||row.smart_score==null)needTR.push(row.ticker);
       });
 
-      // Set both tickers + data in one shot (no blank screen flash)
       setTickers(ts);
       setRowData(initData);
 
-      // ── Polygon: ALWAYS fetch fresh for ALL tickers (current price) ──
-      if(ts.length>0)fetchPolygonBatch(ts);
+      // Polygon: only tickers not yet refreshed this session
+      if(needPoly.length>0)fetchPolygonBatch(needPoly);
 
-      // ── TipRanks: only refresh stale/missing (24h cache) ──
-      if(stale.length>0)fetchTipRanksBatch(stale);
+      // TipRanks: only stale/missing (24h cache)
+      if(needTR.length>0)fetchTipRanksBatch(needTR);
 
     }catch(e){setErr('Could not load list');}
   };
@@ -12934,6 +12944,7 @@ function StocksAtGlancePage(p){
       });
       // Save Polygon data to cache (does NOT update fetched_at)
       savePoly(tkr,polyData);
+      polyRefreshed.current[tkr]=true;
     }catch(e){
       setRowData(function(prev){var n=Object.assign({},prev);n[tkr]=Object.assign(n[tkr]||{},{error:true});return n;});
     }finally{
@@ -13270,7 +13281,7 @@ function StocksAtGlancePage(p){
           cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
         {showBulk?'Hide Bulk':'+ Bulk Add'}
       </button>
-      <button onClick={function(){setRowData({});fetchPolygonBatch(tickers);fetchTipRanksBatch(tickers);}}
+      <button onClick={function(){polyRefreshed.current={};pendingTR.current={};setRowData({});fetchPolygonBatch(tickers);fetchTipRanksBatch(tickers);}}
         disabled={activeId==null}
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
           color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
@@ -13399,7 +13410,7 @@ function StocksAtGlancePage(p){
                   {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:rbar()||<span style={{color:C.border}}>—</span>}
                 </td>
                 <td style={Object.assign({},tdStyle,{textAlign:'center',whiteSpace:'nowrap'})}>
-                  <button onClick={function(){fetchPolygon(t);fetchTipRanks(t);}}
+                  <button onClick={function(){delete pendingTR.current[t];fetchPolygon(t);fetchTipRanks(t);}}
                     title="Refresh this ticker"
                     style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
                       color:C.accent,fontSize:10,fontFamily:F,padding:'2px 6px',cursor:'pointer',marginRight:4}}>{'\u21BB'}</button>
