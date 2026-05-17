@@ -12828,32 +12828,53 @@ function StocksAtGlancePage(p){
         }
       });
 
-      // Benzinga 2026 ratings — paginated
+      // TipRanks data — analyst consensus, price targets, smart score
+      // Uses the tipranks_fetch() Supabase RPC (proxies TipRanks public API server-side)
       var ptHi=null,ptLo=null,ptSum=0,ptN=0;
-      var buys=0,holds=0,sells=0; var seenFirms={};
-      var rMap={buy:1,'strong buy':1,overweight:1,outperform:1,hold:0,neutral:0,'market perform':0,underperform:-1,sell:-1,'strong sell':-1,'underweight':-1};
-      var cursor=base+'/benzinga/v1/ratings?ticker='+tkr+'&date.gte=2026-01-01&limit=200&sort=date.desc&apiKey='+pgKey;
-      while(cursor){
-        var bzR=await fetch(cursor);
-        if(!bzR.ok)break;
-        var bzD=await bzR.json();
-        (bzD.results||[]).forEach(function(r){
-          var pt=r.price_target;
-          if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
-          if(r.firm&&!seenFirms[r.firm]){
-            seenFirms[r.firm]=true;
-            var v=rMap[(r.rating||'').toLowerCase()];
-            if(v===1)buys++;else if(v===0)holds++;else if(v===-1)sells++;
-          }
+      var buys=0,holds=0,sells=0,smartScore=null;
+      try{
+        var trR=await fetch(supaUrl+'/rest/v1/rpc/tipranks_fetch',{
+          method:'POST',
+          headers:Object.assign({'Content-Type':'application/json'},SB()),
+          body:JSON.stringify({tkr:tkr})
         });
-        cursor=bzD.next_url?(bzD.next_url+(bzD.next_url.indexOf('apiKey=')<0?'&apiKey='+pgKey:'')):null;
-      }
+        var trD=await trR.json();
+        if(trD&&trD.experts&&!trD.error){
+          // Smart Score
+          if(trD.tipranksStockScore&&trD.tipranksStockScore.score!=null){
+            smartScore=trD.tipranksStockScore.score;
+          }
+          // Filter to Wall Street analysts only (includedInConsensus=true, not AI), last 12 months
+          var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-1);
+          var cutStr=cutoff.toISOString().slice(0,10);
+          trD.experts.forEach(function(ex){
+            if(!ex.includedInConsensus)return;
+            if(ex.aiModel&&typeof ex.aiModel==='object'&&ex.aiModel.modelName)return;
+            if(!ex.ratings||!ex.ratings.length)return;
+            // Find most recent rating within 12 months
+            var latest=null;
+            for(var ri=0;ri<ex.ratings.length;ri++){
+              var rd=(ex.ratings[ri].date||ex.ratings[ri].rD||'').slice(0,10);
+              if(rd>=cutStr){
+                if(!latest||(rd>((latest.date||latest.rD||'').slice(0,10))))latest=ex.ratings[ri];
+              }
+            }
+            if(!latest)return;
+            // Count B/H/S
+            var rid=latest.ratingId;
+            if(rid===1)buys++;else if(rid===2)holds++;else if(rid===3)sells++;
+            // Price targets
+            var pt=latest.priceTarget||latest.convertedPriceTarget||null;
+            if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
+          });
+        }
+      }catch(e){/* TipRanks fetch failed — PT/consensus columns show — */}
 
       setRowData(function(prev){
         var n=Object.assign({},prev);
         n[tkr]={mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l,
                 ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
-                ptN:ptN,buy:buys,hold:holds,sell:sells};
+                ptN:ptN,buy:buys,hold:holds,sell:sells,smartScore:smartScore};
         return n;
       });
     }catch(e){
@@ -13138,6 +13159,7 @@ function StocksAtGlancePage(p){
             <tr>
               {colH('#','_idx')}
               <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep}}>Ticker</th>
+              {colH('Score','smartScore')}
               {colH('Price','price')}
               {colH('Mkt Cap','mc')}
               {colH('52W Hi','w52h')}
@@ -13152,8 +13174,8 @@ function StocksAtGlancePage(p){
             </tr>
           </thead>
           <tbody>
-            {activeId==null&&<tr><td colSpan={13} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Select or create a list above</td></tr>}
-            {activeId!=null&&sortedTickers.length===0&&<tr><td colSpan={13} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No tickers in this list yet — add one above</td></tr>}
+            {activeId==null&&<tr><td colSpan={14} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Select or create a list above</td></tr>}
+            {activeId!=null&&sortedTickers.length===0&&<tr><td colSpan={14} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No tickers in this list yet — add one above</td></tr>}
             {sortedTickers.map(function(t,i){
               var r=rowData[t]||{};
               var isLoad=!!loadingTkr[t];
@@ -13192,6 +13214,14 @@ function StocksAtGlancePage(p){
                     {t}
                   </span>
                 </td>
+                <td style={Object.assign({},tdStyle,{textAlign:'center'})}>
+                  {isLoad?<span style={{color:C.txtDim,fontSize:10}}>...</span>:
+                    r.smartScore!=null?<span style={{display:'inline-block',width:26,height:26,borderRadius:'50%',
+                      border:'2px solid '+(r.smartScore>=8?C.accent:r.smartScore>=5?C.gold:C.warn),
+                      lineHeight:'22px',textAlign:'center',fontSize:11,fontWeight:700,fontFamily:F,
+                      color:r.smartScore>=8?C.accent:r.smartScore>=5?C.gold:C.warn}}>{r.smartScore}</span>
+                    :<span style={{color:C.border}}>—</span>}
+                </td>
                 {cell(fv(r.price), C.txtBright)}
                 {cell(fv(r.mc,true), C.txt)}
                 {cell(fv(r.w52h), C.accent)}
@@ -13223,7 +13253,7 @@ function StocksAtGlancePage(p){
     </div>
 
     <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.6,fontStyle:'italic'}}>
-      Polygon: price, mkt cap, 52W &amp; 90D ranges &nbsp;·&nbsp; Benzinga: 2026 price targets &amp; ratings only &nbsp;·&nbsp; Click headers to sort
+      Polygon: price, mkt cap, 52W &amp; 90D ranges &nbsp;&middot;&nbsp; TipRanks: Smart Score, price targets &amp; analyst consensus (Wall Street analysts only, last 12 months) &nbsp;&middot;&nbsp; Click headers to sort
     </div>
   </div>;
 }
