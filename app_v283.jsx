@@ -12221,14 +12221,30 @@ function TipRanksPage(p){
     if(!t)return;
     setLoading(true);setErr(null);setData(null);setTicker(t);setShowAllExperts(false);setBdPage(0);
     try{
-      var r=await fetch(SB_URL+'/rest/v1/rpc/tipranks_fetch',{
-        method:'POST',
-        headers:Object.assign({'Content-Type':'application/json'},getSbHeaders()),
-        body:JSON.stringify({tkr:t})
+      var ts=Math.floor(Date.now()/1000);
+      // Try direct browser fetch first
+      var r=await fetch('https://www.tipranks.com/api/stocks/getData/?name='+t+'&benchmark=1&period=3&break='+ts,{
+        headers:{'Accept':'application/json'}
       });
-      var d=await r.json();
+      var d;
+      if(r.ok){
+        d=await r.json();
+      }else{
+        // Fallback: Supabase RPC proxy
+        var r2=await fetch(SB_URL+'/rest/v1/rpc/tipranks_fetch',{
+          method:'POST',
+          headers:Object.assign({'Content-Type':'application/json'},getSbHeaders()),
+          body:JSON.stringify({tkr:t})
+        });
+        d=await r2.json();
+      }
       if(d&&d.error){setErr('TipRanks returned error: '+(d.body||d.status));setLoading(false);return;}
-      if(!d||!d.ticker){setErr('No data returned for '+t);setLoading(false);return;}
+      if(!d||!d.ticker){setErr('No data returned for '+t+'. TipRanks may be blocking requests — try again in a few minutes.');setLoading(false);return;}
+      // Fetch news sentiment separately
+      try{
+        var nsR=await fetch('https://www.tipranks.com/api/stocks/getNewsSentiments/?ticker='+t,{headers:{'Accept':'application/json'}});
+        if(nsR.ok){var nsD=await nsR.json();d.newsSentiment=nsD;}
+      }catch(e2){}
       setData(d);
     }catch(e){setErr('Fetch failed: '+e.message);}
     finally{setLoading(false);}
@@ -12853,11 +12869,19 @@ function StocksAtGlancePage(p){
   // Merges into existing rowData (Polygon data already visible).
   var fetchTipRanks=async function(tkr){
     try{
-      var trR=await fetch(supaUrl+'/rest/v1/rpc/tipranks_fetch',{
-        method:'POST',
-        headers:Object.assign({'Content-Type':'application/json'},SB()),
-        body:JSON.stringify({tkr:tkr})
+      // Try direct browser fetch first (avoids Cloudflare bot challenge on Supabase)
+      var ts=Math.floor(Date.now()/1000);
+      var trR=await fetch('https://www.tipranks.com/api/stocks/getData/?name='+tkr+'&benchmark=1&period=3&break='+ts,{
+        headers:{'Accept':'application/json'}
       });
+      if(!trR.ok){
+        // Fallback: try Supabase RPC proxy
+        trR=await fetch(supaUrl+'/rest/v1/rpc/tipranks_fetch',{
+          method:'POST',
+          headers:Object.assign({'Content-Type':'application/json'},SB()),
+          body:JSON.stringify({tkr:tkr})
+        });
+      }
       var trD=await trR.json();
       var ptHi=null,ptLo=null,ptSum=0,ptN=0;
       var buys=0,holds=0,sells=0,smartScore=null;
