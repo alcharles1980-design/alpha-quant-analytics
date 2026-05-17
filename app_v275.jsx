@@ -12213,11 +12213,13 @@ function TipRanksPage(p){
   var s6=useState('successRate'),expertSort=s6[0],setExpertSort=s6[1];
   var s7=useState(false),expertAsc=s7[0],setExpertAsc=s7[1];
   var s8=useState(false),showAllExperts=s8[0],setShowAllExperts=s8[1];
+  var s9=useState(true),showBreakdown=s9[0],setShowBreakdown=s9[1];
+  var s10tr=useState(0),bdPage=s10tr[0],setBdPage=s10tr[1];
 
   var search=async function(){
     var t=(input||'').trim().toUpperCase();
     if(!t)return;
-    setLoading(true);setErr(null);setData(null);setTicker(t);setShowAllExperts(false);
+    setLoading(true);setErr(null);setData(null);setTicker(t);setShowAllExperts(false);setBdPage(0);
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/tipranks_fetch',{
         method:'POST',
@@ -12240,6 +12242,10 @@ function TipRanksPage(p){
   var ratingLabel=function(id){return id===1?'Buy':id===2?'Hold':id===3?'Sell':'N/A';};
   var ratingColor=function(id){return id===1?C.accent:id===2?C.gold:id===3?C.warn:C.txtDim;};
   var scoreColor=function(s){if(s>=8)return C.accent;if(s>=5)return C.gold;return C.warn;};
+  var actionLabel=function(id){
+    var map={1:'Downgrade',2:'Maintain',3:'Initiate',4:'Upgrade',5:'Buy',6:'Maintain',7:'Downgrade',8:'Reiterate'};
+    return map[id]||'Rating';
+  };
 
   // ── card style ──
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:12};
@@ -12272,6 +12278,34 @@ function TipRanksPage(p){
       return expertAsc?(va>vb?1:-1):(va<vb?1:-1);
     });
   }
+
+  // ── Flatten ALL individual ratings into a timeline sorted by date desc ──
+  var allRatings=[];
+  if(data&&data.experts){
+    data.experts.forEach(function(ex){
+      if(!ex.ratings)return;
+      ex.ratings.forEach(function(r){
+        allRatings.push({
+          name:ex.name||'Unknown',
+          firm:ex.firm||'\u2014',
+          stars:(ex.rankings&&ex.rankings.stars)||0,
+          successRate:(ex.rankings&&ex.rankings.successRate)||0,
+          avgReturn:(ex.rankings&&ex.rankings.avgReturn)||0,
+          actionId:r.actionId,
+          ratingId:r.ratingId,
+          pt:r.priceTarget||r.convertedPriceTarget||null,
+          oldPt:r.oldPriceTarget||r.convertedOldPriceTarget||null,
+          date:r.date||(r.rD)||'',
+          headline:(r.quote&&r.quote.title)||null,
+          link:(r.quote&&r.quote.link)||null
+        });
+      });
+    });
+    allRatings.sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
+  }
+  var BD_PAGE_SIZE=20;
+  var bdTotalPages=Math.max(1,Math.ceil(allRatings.length/BD_PAGE_SIZE));
+  var bdRows=allRatings.slice(bdPage*BD_PAGE_SIZE,(bdPage+1)*BD_PAGE_SIZE);
 
   // ── consensus from latest ──
   var con=null;
@@ -12444,6 +12478,69 @@ function TipRanksPage(p){
             </tbody>
           </table>
         </div>
+      </div>}
+
+      {/* ── ANALYST RATINGS TIMELINE ───────────────────────────────────────── */}
+      {allRatings.length>0&&<div style={card}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:showBreakdown?10:0}}>
+          <div style={cardTitle}>
+            Analyst Ratings Timeline ({allRatings.length})
+          </div>
+          <button onClick={function(){setShowBreakdown(!showBreakdown);setBdPage(0);}}
+            style={{padding:'4px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
+            {showBreakdown?'Collapse':'Expand'}
+          </button>
+        </div>
+        {showBreakdown&&<div>
+          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
+              <thead><tr>
+                {['Date','Analyst','Firm','Action','Rating','Price Target','Old PT','Headline'].map(function(h,ci){
+                  return <th key={ci} style={{padding:'7px 10px',textAlign:ci<3?'left':'right',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap'}}>
+                    {h}
+                  </th>;
+                })}
+              </tr></thead>
+              <tbody>
+                {bdRows.map(function(r,i){
+                  var stripe=i%2===0?'transparent':C.bgDeep+'55';
+                  var dtStr=r.date?(r.date||'').slice(0,10):'\u2014';
+                  var ptChange=null;
+                  if(r.pt&&r.oldPt){
+                    var diff=r.pt-r.oldPt;
+                    ptChange=diff>=0?'+'+fmtDol(Math.abs(diff)):'-'+fmtDol(Math.abs(diff));
+                  }
+                  return <tr key={i}>
+                    <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{dtStr}</td>
+                    <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{r.name}</td>
+                    <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{r.firm}</td>
+                    <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:9,fontWeight:700,color:C.blue,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap',letterSpacing:0.5}}>{actionLabel(r.actionId)}</td>
+                    <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:10,fontWeight:700,color:ratingColor(r.ratingId),borderBottom:'1px solid '+C.border,background:stripe}}>{ratingLabel(r.ratingId)}</td>
+                    <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:600,color:r.pt?C.txtBright:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>
+                      {r.pt?fmtDol(r.pt):'\u2014'}
+                      {ptChange&&<span style={{fontSize:8,color:r.pt>r.oldPt?C.accent:C.warn,marginLeft:4}}>({ptChange})</span>}
+                    </td>
+                    <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe}}>{r.oldPt?fmtDol(r.oldPt):'\u2014'}</td>
+                    <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:9,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,maxWidth:250,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {r.headline&&r.link?<a href={r.link} target="_blank" rel="noopener noreferrer" style={{color:C.blue,textDecoration:'none'}}>{r.headline}</a>:(r.headline||'\u2014')}
+                    </td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Pagination */}
+          {bdTotalPages>1&&<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10}}>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <button onClick={function(){setBdPage(Math.max(0,bdPage-1));}} disabled={bdPage===0}
+                style={{padding:'4px 10px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,cursor:bdPage===0?'default':'pointer',opacity:bdPage===0?0.4:1}}>{'\u2190'} Prev</button>
+              <div style={{color:C.txt,fontSize:9,fontFamily:F}}>Page {bdPage+1} of {bdTotalPages}</div>
+              <button onClick={function(){setBdPage(Math.min(bdTotalPages-1,bdPage+1));}} disabled={bdPage>=bdTotalPages-1}
+                style={{padding:'4px 10px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,cursor:bdPage>=bdTotalPages-1?'default':'pointer',opacity:bdPage>=bdTotalPages-1?0.4:1}}>Next {'\u2192'}</button>
+            </div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{allRatings.length} total ratings · 20/page</div>
+          </div>}
+        </div>}
       </div>}
 
       {/* ── SENTIMENT ROW ──────────────────────────────────────────────────── */}
