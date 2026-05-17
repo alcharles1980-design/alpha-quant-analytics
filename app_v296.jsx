@@ -12868,32 +12868,36 @@ function StocksAtGlancePage(p){
   // savePoly: saves Polygon data WITHOUT updating fetched_at
   // saveTR: saves TipRanks data AND sets fetched_at (marks ticker as fully refreshed)
   var savePoly=function(tkr,obj){
-    var body={ticker:tkr};
-    if(obj.price!=null)body.price=obj.price;
-    if(obj.mc!=null)body.market_cap=obj.mc;
-    if(obj.w52h!=null)body.w52h=obj.w52h;
-    if(obj.w52l!=null)body.w52l=obj.w52l;
-    if(obj.d90h!=null)body.d90h=obj.d90h;
-    if(obj.d90l!=null)body.d90l=obj.d90l;
     fetch(supaUrl+'/rest/v1/stocks_glance_cache?on_conflict=ticker',{
       method:'POST',
       headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},SB()),
-      body:JSON.stringify(body)
+      body:JSON.stringify({
+        ticker:tkr,
+        price:obj.price!=null?obj.price:null,
+        market_cap:obj.mc!=null?obj.mc:null,
+        w52h:obj.w52h!=null?obj.w52h:null,
+        w52l:obj.w52l!=null?obj.w52l:null,
+        d90h:obj.d90h!=null?obj.d90h:null,
+        d90l:obj.d90l!=null?obj.d90l:null
+      })
     }).catch(function(){});
   };
   var saveTR=function(tkr,obj){
-    var body={ticker:tkr,fetched_at:new Date().toISOString()};
-    if(obj.smartScore!=null)body.smart_score=obj.smartScore;
-    if(obj.ptHi!=null)body.pt_hi=obj.ptHi;
-    if(obj.ptAvg!=null)body.pt_avg=obj.ptAvg;
-    if(obj.ptLo!=null)body.pt_lo=obj.ptLo;
-    if(obj.buy!=null)body.buy=obj.buy;
-    if(obj.hold!=null)body.hold=obj.hold;
-    if(obj.sell!=null)body.sell=obj.sell;
+    // ALWAYS include all columns so PostgREST updates them (even to null/0)
     fetch(supaUrl+'/rest/v1/stocks_glance_cache?on_conflict=ticker',{
       method:'POST',
       headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},SB()),
-      body:JSON.stringify(body)
+      body:JSON.stringify({
+        ticker:tkr,
+        fetched_at:new Date().toISOString(),
+        smart_score:obj.smartScore!=null?obj.smartScore:null,
+        pt_hi:obj.ptHi!=null?obj.ptHi:null,
+        pt_avg:obj.ptAvg!=null?obj.ptAvg:null,
+        pt_lo:obj.ptLo!=null?obj.ptLo:null,
+        buy:obj.buy||0,
+        hold:obj.hold||0,
+        sell:obj.sell||0
+      })
     }).catch(function(){});
   };
 
@@ -13021,8 +13025,11 @@ function StocksAtGlancePage(p){
         n[tkr]=Object.assign(existing,trData);
         return n;
       });
-      // Save TipRanks data to cache (sets fetched_at — marks as fully refreshed)
-      saveTR(tkr,trData);
+      // Only save to cache if we actually got valid TipRanks data
+      // (don't mark as fresh if the proxy returned an error/empty response)
+      if(trD&&trD.experts&&!trD.error){
+        saveTR(tkr,trData);
+      }
     }catch(e){/* TipRanks fetch failed — Score/PT/BHS stay as — */}
   };
 
