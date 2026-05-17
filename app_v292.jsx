@@ -12805,54 +12805,55 @@ function StocksAtGlancePage(p){
 
   // ── switch active list ────────────────────────────────────────────────────
   var switchList=async function(id, listsArr){
-    setActiveId(id);setTickers([]);setRowData({});setErr(null);
+    setActiveId(id);setErr(null);
+    // Cancel any in-progress TipRanks batch from previous list
+    if(trBatchRef.current){trBatchRef.current.cancelled=true;}
     try{
-      var d=await sbGet('/rest/v1/stocks_watchlist?select=ticker&list_id=eq.'+id+'&order=added_at.asc');
-      if(Array.isArray(d)){
-        var ts=d.map(function(x){return x.ticker;});
-        setTickers(ts);
+      // Single RPC call: joins watchlist + cache, returns tickers + all cached data
+      var r=await fetch(supaUrl+'/rest/v1/rpc/glance_load',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},SB()),
+        body:JSON.stringify({list_id_param:id})
+      });
+      var rows=await r.json();
+      if(!Array.isArray(rows))rows=[];
 
-        // ── Phase 0: Load ALL tickers from stocks_glance_cache in one query ──
-        if(ts.length>0){
-          var cacheR=await fetch(supaUrl+'/rest/v1/stocks_glance_cache?ticker=in.('+ts.join(',')+')',{headers:SB()});
-          var cached=cacheR.ok?await cacheR.json():[];
-          var stale=[];
-          var now=Date.now();
-          var freshMap={};
-          var initData={};
+      var ts=[];
+      var initData={};
+      var stale=[];
+      var now=Date.now();
 
-          cached.forEach(function(row){
-            freshMap[row.ticker]=true;
-            initData[row.ticker]={
-              mc:row.market_cap?Number(row.market_cap):null,
-              price:row.price?Number(row.price):null,
-              w52h:row.w52h?Number(row.w52h):null,w52l:row.w52l?Number(row.w52l):null,
-              d90h:row.d90h?Number(row.d90h):null,d90l:row.d90l?Number(row.d90l):null,
-              smartScore:row.smart_score,
-              ptHi:row.pt_hi?Number(row.pt_hi):null,
-              ptAvg:row.pt_avg?Number(row.pt_avg):null,ptLo:row.pt_lo?Number(row.pt_lo):null,
-              buy:row.buy||0,hold:row.hold||0,sell:row.sell||0
-            };
-            var age=now-new Date(row.fetched_at).getTime();
-            if(age>=24*60*60*1000||row.smart_score==null)stale.push(row.ticker);
-          });
-
-          // Single state update — all cached data at once (no re-render storm)
-          setRowData(initData);
-          // Tickers that need TipRanks refresh (stale or missing smart_score)
-          var missing=ts.filter(function(t){return !freshMap[t];});
-          var trRefresh=stale.concat(missing);
-
-          // ── Polygon: ALWAYS fetch fresh for ALL tickers (current price) ──
-          fetchPolygonBatch(ts);
-
-          // ── TipRanks: only refresh stale/missing (24h cache) ──
-          if(trRefresh.length>0){
-            fetchTipRanksBatch(trRefresh);
-          }
+      rows.forEach(function(row){
+        ts.push(row.ticker);
+        // Build row data from cache (may be null for uncached tickers)
+        if(row.price!=null||row.smart_score!=null){
+          initData[row.ticker]={
+            mc:row.market_cap?Number(row.market_cap):null,
+            price:row.price?Number(row.price):null,
+            w52h:row.w52h?Number(row.w52h):null,w52l:row.w52l?Number(row.w52l):null,
+            d90h:row.d90h?Number(row.d90h):null,d90l:row.d90l?Number(row.d90l):null,
+            smartScore:row.smart_score,
+            ptHi:row.pt_hi?Number(row.pt_hi):null,
+            ptAvg:row.pt_avg?Number(row.pt_avg):null,ptLo:row.pt_lo?Number(row.pt_lo):null,
+            buy:row.buy||0,hold:row.hold||0,sell:row.sell||0
+          };
         }
-      }
-    }catch(e){setErr('Could not load tickers');}
+        // Check if TipRanks data needs refresh
+        var age=row.fetched_at?now-new Date(row.fetched_at).getTime():Infinity;
+        if(age>=24*60*60*1000||row.smart_score==null)stale.push(row.ticker);
+      });
+
+      // Set both tickers + data in one shot (no blank screen flash)
+      setTickers(ts);
+      setRowData(initData);
+
+      // ── Polygon: ALWAYS fetch fresh for ALL tickers (current price) ──
+      if(ts.length>0)fetchPolygonBatch(ts);
+
+      // ── TipRanks: only refresh stale/missing (24h cache) ──
+      if(stale.length>0)fetchTipRanksBatch(stale);
+
+    }catch(e){setErr('Could not load list');}
   };
 
   // ── Save row data to stocks_glance_cache (fire-and-forget upsert) ────
