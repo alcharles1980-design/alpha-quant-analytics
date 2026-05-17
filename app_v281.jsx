@@ -12814,7 +12814,10 @@ function StocksAtGlancePage(p){
       var refD=await refR.json(); var aggD=await aggR.json(); var snapD=await snapR.json();
 
       var mc=(refD.results&&refD.results.market_cap)||null;
-      var price=(snapD.ticker&&snapD.ticker.day&&snapD.ticker.day.c)||null;
+      // day.c is 0 on weekends/pre-market, so fall back to prevDay.c
+      var dayC=snapD.ticker&&snapD.ticker.day?snapD.ticker.day.c:null;
+      var prevC=snapD.ticker&&snapD.ticker.prevDay?snapD.ticker.prevDay.c:null;
+      var price=(dayC&&dayC>0)?dayC:(prevC||null);
       var bars=aggD.results||[];
       var w52h=null,w52l=null,d90h=null,d90l=null;
       bars.forEach(function(b){
