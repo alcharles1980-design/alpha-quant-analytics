@@ -12849,7 +12849,7 @@ function StocksAtGlancePage(p){
 
         // Only fetch TipRanks if stale (>24h) or missing
         var age=row.fetched_at?now-new Date(row.fetched_at).getTime():Infinity;
-        if(age>=24*60*60*1000||row.smart_score==null)needTR.push(row.ticker);
+        if(age>=24*60*60*1000||row.smart_score==null||(row.buy==null&&row.pt_avg==null))needTR.push(row.ticker);
       });
 
       setTickers(ts);
