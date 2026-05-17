@@ -12254,22 +12254,49 @@ function TipRanksPage(p){
   var val={color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F};
   var sep={borderBottom:'1px solid '+C.border,margin:'10px 0'};
 
-  // ── parse experts for table ──
+  // ── Helper: extract star rating from expert (rankings is an array) ──
+  var getStars=function(ex){
+    if(ex.rankings&&Array.isArray(ex.rankings)&&ex.rankings.length>0)return ex.rankings[0].stars||0;
+    if(ex.rankings&&typeof ex.rankings==='object'&&ex.rankings.stars)return ex.rankings.stars;
+    return 0;
+  };
+  var getRanking=function(ex,field){
+    if(ex.rankings&&Array.isArray(ex.rankings)&&ex.rankings.length>0)return ex.rankings[0][field]||0;
+    if(ex.rankings&&typeof ex.rankings==='object')return ex.rankings[field]||0;
+    return 0;
+  };
+  var isAnalyst=function(ex){return ex.includedInConsensus===true;};
+  var isAI=function(ex){return ex.aiModel&&typeof ex.aiModel==='object'&&ex.aiModel.modelName;};
+  var getType=function(ex){
+    if(isAI(ex))return 'AI';
+    if(isAnalyst(ex))return 'Analyst';
+    return 'Blogger';
+  };
+
+  // ── parse experts for table (Wall Street analysts only, no bloggers) ──
   var experts=[];
+  var analystCount=0,bloggerCount=0,aiCount=0;
   if(data&&data.experts){
     data.experts.forEach(function(ex){
       if(!ex.ratings||!ex.ratings.length)return;
+      var type=getType(ex);
+      if(type==='Analyst')analystCount++;
+      else if(type==='AI')aiCount++;
+      else bloggerCount++;
       var latest=ex.ratings[0];
       experts.push({
-        name:ex.name||'Unknown',
+        name:ex.name||(isAI(ex)?ex.aiModel.modelName:'Unknown'),
         firm:ex.firm||'\u2014',
-        stars:(ex.rankings&&ex.rankings.stars)||0,
-        successRate:(ex.rankings&&ex.rankings.successRate)||0,
-        avgReturn:(ex.rankings&&ex.rankings.avgReturn)||0,
-        totalRecs:(ex.rankings&&ex.rankings.totalRecommendations)||0,
-        rating:latest.actionId,
-        pt:latest.priceTarget,
-        date:latest.date?(latest.date||'').slice(0,10):'\u2014'
+        stars:getStars(ex),
+        successRate:getRanking(ex,'successRate'),
+        avgReturn:getRanking(ex,'avgReturn'),
+        totalRecs:getRanking(ex,'totalRecommendations'),
+        rating:latest.ratingId,
+        actionId:latest.actionId,
+        pt:latest.priceTarget||latest.convertedPriceTarget||null,
+        date:latest.date?(latest.date||'').slice(0,10):'\u2014',
+        type:type,
+        inConsensus:isAnalyst(ex)
       });
     });
     experts.sort(function(a,b){
@@ -12278,26 +12305,30 @@ function TipRanksPage(p){
       return expertAsc?(va>vb?1:-1):(va<vb?1:-1);
     });
   }
+  // Filter to Wall Street analysts only for the table (user can toggle to see all)
+  var analystExperts=experts.filter(function(e){return e.type==='Analyst';});
 
-  // ── Flatten ALL individual ratings into a timeline sorted by date desc ──
+  // ── Flatten individual ratings into timeline (all types, labeled) ──
   var allRatings=[];
   if(data&&data.experts){
     data.experts.forEach(function(ex){
       if(!ex.ratings)return;
+      var type=getType(ex);
       ex.ratings.forEach(function(r){
         allRatings.push({
-          name:ex.name||'Unknown',
+          name:ex.name||(isAI(ex)?ex.aiModel.modelName:'Unknown'),
           firm:ex.firm||'\u2014',
-          stars:(ex.rankings&&ex.rankings.stars)||0,
-          successRate:(ex.rankings&&ex.rankings.successRate)||0,
-          avgReturn:(ex.rankings&&ex.rankings.avgReturn)||0,
+          stars:getStars(ex),
+          successRate:getRanking(ex,'successRate'),
+          avgReturn:getRanking(ex,'avgReturn'),
           actionId:r.actionId,
           ratingId:r.ratingId,
           pt:r.priceTarget||r.convertedPriceTarget||null,
           oldPt:r.oldPriceTarget||r.convertedOldPriceTarget||null,
           date:r.date||(r.rD)||'',
           headline:(r.quote&&r.quote.title)||null,
-          link:(r.quote&&r.quote.link)||null
+          link:(r.quote&&r.quote.link)||null,
+          type:type
         });
       });
     });
@@ -12308,9 +12339,8 @@ function TipRanksPage(p){
   var bdRows=allRatings.slice(bdPage*BD_PAGE_SIZE,(bdPage+1)*BD_PAGE_SIZE);
 
   // ── 12-Month Consensus: Top Analysts (★4+) and Overall ──────────────────
-  // For each expert, take only their most recent rating within the last 12
-  // months. Deduplicate by expert name+firm so each analyst is counted once.
-  // Split into "Top" (stars >= 4) and "Overall" (all experts).
+  // ONLY counts Wall Street analysts (includedInConsensus=true, not AI).
+  // For each analyst, take only their most recent rating within 12 months.
   var consensus12m={top:{buy:0,hold:0,sell:0,pts:[],count:0},all:{buy:0,hold:0,sell:0,pts:[],count:0}};
   if(data&&data.experts){
     var cutoff12m=new Date();cutoff12m.setFullYear(cutoff12m.getFullYear()-1);
@@ -12318,10 +12348,10 @@ function TipRanksPage(p){
 
     data.experts.forEach(function(ex){
       if(!ex.ratings||!ex.ratings.length)return;
-      // Get star rating
-      var stars=0;
-      if(ex.rankings&&Array.isArray(ex.rankings)&&ex.rankings.length>0){stars=ex.rankings[0].stars||0;}
-      else if(ex.rankings&&ex.rankings.stars){stars=ex.rankings.stars;}
+      // Only count real Wall Street analysts — no bloggers, no AI
+      if(!isAnalyst(ex)||isAI(ex))return;
+
+      var stars=getStars(ex);
 
       // Find the most recent rating within last 12 months
       var latestInWindow=null;
@@ -12566,11 +12596,14 @@ function TipRanksPage(p){
       {/* ── TOP ANALYSTS TABLE ─────────────────────────────────────────────── */}
       {experts.length>0&&<div style={card}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-          <div style={cardTitle}>Top Analysts ({experts.length})</div>
-          {experts.length>10&&<button onClick={function(){setShowAllExperts(!showAllExperts);}}
-            style={{padding:'4px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
-            {showAllExperts?'Show Top 10':'Show All '+experts.length}
-          </button>}
+          <div style={cardTitle}>Wall Street Analysts ({analystExperts.length})</div>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <div style={{fontSize:8,fontFamily:F,color:C.txtDim}}>{analystCount} analysts · {bloggerCount} bloggers · {aiCount} AI</div>
+            {analystExperts.length>10&&<button onClick={function(){setShowAllExperts(!showAllExperts);}}
+              style={{padding:'4px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
+              {showAllExperts?'Show Top 10':'Show All '+analystExperts.length}
+            </button>}
+          </div>
         </div>
         <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
           <table style={{width:'100%',borderCollapse:'collapse',minWidth:650}}>
@@ -12593,7 +12626,7 @@ function TipRanksPage(p){
               })}
             </tr></thead>
             <tbody>
-              {(showAllExperts?experts:experts.slice(0,10)).map(function(ex,i){
+              {(showAllExperts?analystExperts:analystExperts.slice(0,10)).map(function(ex,i){
                 var stripe=i%2===0?'transparent':C.bgDeep+'55';
                 return <tr key={i}>
                   <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{ex.name}</td>
@@ -12628,8 +12661,8 @@ function TipRanksPage(p){
           <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
             <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
               <thead><tr>
-                {['Date','Analyst','Firm','Action','Rating','Price Target','Old PT','Headline'].map(function(h,ci){
-                  return <th key={ci} style={{padding:'7px 10px',textAlign:ci<3?'left':'right',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap'}}>
+                {['Date','Analyst','Firm','Type','Action','Rating','Price Target','Old PT','Headline'].map(function(h,ci){
+                  return <th key={ci} style={{padding:'7px 10px',textAlign:ci<4?'left':'right',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap'}}>
                     {h}
                   </th>;
                 })}
@@ -12647,6 +12680,9 @@ function TipRanksPage(p){
                     <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{dtStr}</td>
                     <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{r.name}</td>
                     <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{r.firm}</td>
+                    <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:8,fontWeight:700,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>
+                      <span style={{padding:'2px 6px',borderRadius:3,background:r.type==='Analyst'?C.accentDim:r.type==='AI'?C.blueDim:C.goldDim,color:r.type==='Analyst'?C.accent:r.type==='AI'?C.blue:C.gold,letterSpacing:0.5}}>{r.type}</span>
+                    </td>
                     <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:9,fontWeight:700,color:C.blue,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap',letterSpacing:0.5}}>{actionLabel(r.actionId)}</td>
                     <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:10,fontWeight:700,color:ratingColor(r.ratingId),borderBottom:'1px solid '+C.border,background:stripe}}>{ratingLabel(r.ratingId)}</td>
                     <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:600,color:r.pt?C.txtBright:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>
