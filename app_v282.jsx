@@ -12787,13 +12787,18 @@ function StocksAtGlancePage(p){
       if(Array.isArray(d)){
         var ts=d.map(function(x){return x.ticker;});
         setTickers(ts);
-        ts.forEach(function(t){fetchTicker(t);});
+        // Phase 1: Fire ALL Polygon fetches in parallel (fast, no rate limit)
+        ts.forEach(function(t){fetchPolygon(t);});
+        // Phase 2: Queue TipRanks calls sequentially with 1.5s delay (rate limit safe)
+        fetchTipRanksBatch(ts);
       }
     }catch(e){setErr('Could not load tickers');}
   };
 
-  // ── fetch data for one ticker ─────────────────────────────────────────────
-  var fetchTicker=async function(tkr){
+  // ── Phase 1: Polygon data (price, mkt cap, 52W/90D ranges) ────────────
+  // Fires in parallel for all tickers. Sets loadingTkr per-ticker.
+  // Row data appears immediately as each ticker completes.
+  var fetchPolygon=async function(tkr){
     if(!pgKey)return;
     setLoadingTkr(function(prev){var n=Object.assign({},prev);n[tkr]=true;return n;});
     try{
@@ -12814,7 +12819,6 @@ function StocksAtGlancePage(p){
       var refD=await refR.json(); var aggD=await aggR.json(); var snapD=await snapR.json();
 
       var mc=(refD.results&&refD.results.market_cap)||null;
-      // day.c is 0 on weekends/pre-market, so fall back to prevDay.c
       var dayC=snapD.ticker&&snapD.ticker.day?snapD.ticker.day.c:null;
       var prevC=snapD.ticker&&snapD.ticker.prevDay?snapD.ticker.prevDay.c:null;
       var price=(dayC&&dayC>0)?dayC:(prevC||null);
@@ -12831,60 +12835,92 @@ function StocksAtGlancePage(p){
         }
       });
 
-      // TipRanks data — analyst consensus, price targets, smart score
-      // Uses the tipranks_fetch() Supabase RPC (proxies TipRanks public API server-side)
-      var ptHi=null,ptLo=null,ptSum=0,ptN=0;
-      var buys=0,holds=0,sells=0,smartScore=null;
-      try{
-        var trR=await fetch(supaUrl+'/rest/v1/rpc/tipranks_fetch',{
-          method:'POST',
-          headers:Object.assign({'Content-Type':'application/json'},SB()),
-          body:JSON.stringify({tkr:tkr})
-        });
-        var trD=await trR.json();
-        if(trD&&trD.experts&&!trD.error){
-          // Smart Score
-          if(trD.tipranksStockScore&&trD.tipranksStockScore.score!=null){
-            smartScore=trD.tipranksStockScore.score;
-          }
-          // Filter to Wall Street analysts only (includedInConsensus=true, not AI), last 12 months
-          var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-1);
-          var cutStr=cutoff.toISOString().slice(0,10);
-          trD.experts.forEach(function(ex){
-            if(!ex.includedInConsensus)return;
-            if(ex.aiModel&&typeof ex.aiModel==='object'&&ex.aiModel.modelName)return;
-            if(!ex.ratings||!ex.ratings.length)return;
-            // Find most recent rating within 12 months
-            var latest=null;
-            for(var ri=0;ri<ex.ratings.length;ri++){
-              var rd=(ex.ratings[ri].date||ex.ratings[ri].rD||'').slice(0,10);
-              if(rd>=cutStr){
-                if(!latest||(rd>((latest.date||latest.rD||'').slice(0,10))))latest=ex.ratings[ri];
-              }
-            }
-            if(!latest)return;
-            // Count B/H/S
-            var rid=latest.ratingId;
-            if(rid===1)buys++;else if(rid===2)holds++;else if(rid===3)sells++;
-            // Price targets
-            var pt=latest.priceTarget||latest.convertedPriceTarget||null;
-            if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
-          });
-        }
-      }catch(e){/* TipRanks fetch failed — PT/consensus columns show — */}
-
       setRowData(function(prev){
         var n=Object.assign({},prev);
-        n[tkr]={mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l,
-                ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
-                ptN:ptN,buy:buys,hold:holds,sell:sells,smartScore:smartScore};
+        var existing=n[tkr]||{};
+        n[tkr]=Object.assign(existing,{mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l});
         return n;
       });
     }catch(e){
-      setRowData(function(prev){var n=Object.assign({},prev);n[tkr]={error:true};return n;});
+      setRowData(function(prev){var n=Object.assign({},prev);n[tkr]=Object.assign(n[tkr]||{},{error:true});return n;});
     }finally{
       setLoadingTkr(function(prev){var n=Object.assign({},prev);delete n[tkr];return n;});
     }
+  };
+
+  // ── Phase 2: TipRanks data (Smart Score, PT, B/H/S) ───────────────────
+  // Called sequentially with delays to avoid TipRanks rate limiting.
+  // Merges into existing rowData (Polygon data already visible).
+  var fetchTipRanks=async function(tkr){
+    try{
+      var trR=await fetch(supaUrl+'/rest/v1/rpc/tipranks_fetch',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},SB()),
+        body:JSON.stringify({tkr:tkr})
+      });
+      var trD=await trR.json();
+      var ptHi=null,ptLo=null,ptSum=0,ptN=0;
+      var buys=0,holds=0,sells=0,smartScore=null;
+      if(trD&&trD.experts&&!trD.error){
+        if(trD.tipranksStockScore&&trD.tipranksStockScore.score!=null){
+          smartScore=trD.tipranksStockScore.score;
+        }
+        var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-1);
+        var cutStr=cutoff.toISOString().slice(0,10);
+        trD.experts.forEach(function(ex){
+          if(!ex.includedInConsensus)return;
+          if(ex.aiModel&&typeof ex.aiModel==='object'&&ex.aiModel.modelName)return;
+          if(!ex.ratings||!ex.ratings.length)return;
+          var latest=null;
+          for(var ri=0;ri<ex.ratings.length;ri++){
+            var rd=(ex.ratings[ri].date||ex.ratings[ri].rD||'').slice(0,10);
+            if(rd>=cutStr){
+              if(!latest||(rd>((latest.date||latest.rD||'').slice(0,10))))latest=ex.ratings[ri];
+            }
+          }
+          if(!latest)return;
+          var rid=latest.ratingId;
+          if(rid===1)buys++;else if(rid===2)holds++;else if(rid===3)sells++;
+          var pt=latest.priceTarget||latest.convertedPriceTarget||null;
+          if(pt&&pt>0){ptN++;ptSum+=pt;if(ptHi==null||pt>ptHi)ptHi=pt;if(ptLo==null||pt<ptLo)ptLo=pt;}
+        });
+      }
+      setRowData(function(prev){
+        var n=Object.assign({},prev);
+        var existing=n[tkr]||{};
+        n[tkr]=Object.assign(existing,{
+          ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
+          ptN:ptN,buy:buys,hold:holds,sell:sells,smartScore:smartScore
+        });
+        return n;
+      });
+    }catch(e){/* TipRanks fetch failed — Score/PT/BHS stay as — */}
+  };
+
+  // ── Sequential TipRanks batch with rate limiting ──────────────────────
+  var trBatchRef=useRef(null); // ref to cancel on list switch
+  var fetchTipRanksBatch=function(tickerList){
+    // Cancel any in-progress batch from a previous list
+    if(trBatchRef.current){trBatchRef.current.cancelled=true;}
+    var batch={cancelled:false};
+    trBatchRef.current=batch;
+    (async function(){
+      for(var i=0;i<tickerList.length;i++){
+        if(batch.cancelled)return;
+        await fetchTipRanks(tickerList[i]);
+        if(batch.cancelled)return;
+        // 1.5s delay between calls to avoid TipRanks rate limiting
+        if(i<tickerList.length-1){
+          await new Promise(function(resolve){setTimeout(resolve,1500);});
+        }
+      }
+    })();
+  };
+
+  // ── single ticker add — fetch both immediately ─────────────────────────
+  var fetchTicker=function(tkr){
+    fetchPolygon(tkr);
+    fetchTipRanks(tkr);
   };
 
   // ── list CRUD ─────────────────────────────────────────────────────────────
@@ -13115,7 +13151,7 @@ function StocksAtGlancePage(p){
           cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
         {showBulk?'Hide Bulk':'+ Bulk Add'}
       </button>
-      <button onClick={function(){setRowData({});tickers.forEach(function(t){fetchTicker(t);});}}
+      <button onClick={function(){setRowData({});tickers.forEach(function(t){fetchPolygon(t);});fetchTipRanksBatch(tickers);}}
         disabled={activeId==null}
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
           color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
