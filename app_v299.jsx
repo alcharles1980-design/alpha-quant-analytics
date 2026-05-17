@@ -12868,17 +12868,18 @@ function StocksAtGlancePage(p){
   // savePoly: saves Polygon data WITHOUT updating fetched_at
   // saveTR: saves TipRanks data AND sets fetched_at (marks ticker as fully refreshed)
   var savePoly=function(tkr,obj){
-    fetch(supaUrl+'/rest/v1/stocks_glance_cache?on_conflict=ticker',{
+    // Use DB function — same pattern as saveTR
+    fetch(supaUrl+'/rest/v1/rpc/save_glance_polygon',{
       method:'POST',
-      headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},SB()),
+      headers:Object.assign({'Content-Type':'application/json'},SB()),
       body:JSON.stringify({
-        ticker:tkr,
-        price:obj.price!=null?obj.price:null,
-        market_cap:obj.mc!=null?obj.mc:null,
-        w52h:obj.w52h!=null?obj.w52h:null,
-        w52l:obj.w52l!=null?obj.w52l:null,
-        d90h:obj.d90h!=null?obj.d90h:null,
-        d90l:obj.d90l!=null?obj.d90l:null
+        p_ticker:tkr,
+        p_price:obj.price!=null?obj.price:null,
+        p_market_cap:obj.mc!=null?obj.mc:null,
+        p_w52h:obj.w52h!=null?obj.w52h:null,
+        p_w52l:obj.w52l!=null?obj.w52l:null,
+        p_d90h:obj.d90h!=null?obj.d90h:null,
+        p_d90l:obj.d90l!=null?obj.d90l:null
       })
     }).catch(function(){});
   };
