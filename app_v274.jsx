@@ -12200,6 +12200,320 @@ function StockClassificationPage(p){
 // Tables: stock_lists (id, name) + stocks_watchlist (ticker, list_id).
 // Per ticker: fetches price, mkt cap, 52W/90D ranges from Polygon +
 // 2026 price targets + rating breakdown from Benzinga.
+// ─── TIPRANKS INTELLIGENCE PAGE ────────────────────────────────────────────────
+// Fetches full TipRanks data via Supabase-proxied tipranks_fetch(ticker) function.
+// Displays Smart Score, analyst consensus, individual analysts, insiders,
+// hedge fund activity, blogger sentiment, and news sentiment — all from one call.
+function TipRanksPage(p){
+  var s1=useState(''),input=s1[0],setInput=s1[1];
+  var s2=useState(null),data=s2[0],setData=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState(null),ticker=s5[0],setTicker=s5[1];
+  var s6=useState('successRate'),expertSort=s6[0],setExpertSort=s6[1];
+  var s7=useState(false),expertAsc=s7[0],setExpertAsc=s7[1];
+  var s8=useState(false),showAllExperts=s8[0],setShowAllExperts=s8[1];
+
+  var search=async function(){
+    var t=(input||'').trim().toUpperCase();
+    if(!t)return;
+    setLoading(true);setErr(null);setData(null);setTicker(t);setShowAllExperts(false);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/rpc/tipranks_fetch',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},getSbHeaders()),
+        body:JSON.stringify({tkr:t})
+      });
+      var d=await r.json();
+      if(d&&d.error){setErr('TipRanks returned error: '+(d.body||d.status));setLoading(false);return;}
+      if(!d||!d.ticker){setErr('No data returned for '+t);setLoading(false);return;}
+      setData(d);
+    }catch(e){setErr('Fetch failed: '+e.message);}
+    finally{setLoading(false);}
+  };
+
+  // ── helpers ──
+  var fmtDol=function(v){if(v==null||!isFinite(v))return '\u2014';var n=Number(v);if(Math.abs(n)>=1e9)return '$'+(n/1e9).toFixed(2)+'B';if(Math.abs(n)>=1e6)return '$'+(n/1e6).toFixed(1)+'M';if(Math.abs(n)>=1e3)return '$'+(n/1e3).toFixed(0)+'K';return '$'+n.toFixed(2);};
+  var fmtPct=function(v){if(v==null||!isFinite(v))return '\u2014';return (v*100).toFixed(1)+'%';};
+  var fmtPctRaw=function(v){if(v==null||!isFinite(v))return '\u2014';return v.toFixed(1)+'%';};
+  var fmtCap=function(v){if(v==null||!isFinite(v))return '\u2014';var n=Number(v);if(n>=1e12)return '$'+(n/1e12).toFixed(2)+'T';if(n>=1e9)return '$'+(n/1e9).toFixed(1)+'B';return '$'+(n/1e6).toFixed(0)+'M';};
+  var ratingLabel=function(id){return id===1?'Buy':id===2?'Hold':id===3?'Sell':'N/A';};
+  var ratingColor=function(id){return id===1?C.accent:id===2?C.gold:id===3?C.warn:C.txtDim;};
+  var scoreColor=function(s){if(s>=8)return C.accent;if(s>=5)return C.gold;return C.warn;};
+
+  // ── card style ──
+  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:12};
+  var cardTitle={color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:10};
+  var dim={color:C.txtDim,fontSize:10,fontFamily:F};
+  var val={color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F};
+  var sep={borderBottom:'1px solid '+C.border,margin:'10px 0'};
+
+  // ── parse experts for table ──
+  var experts=[];
+  if(data&&data.experts){
+    data.experts.forEach(function(ex){
+      if(!ex.ratings||!ex.ratings.length)return;
+      var latest=ex.ratings[0];
+      experts.push({
+        name:ex.name||'Unknown',
+        firm:ex.firm||'\u2014',
+        stars:(ex.rankings&&ex.rankings.stars)||0,
+        successRate:(ex.rankings&&ex.rankings.successRate)||0,
+        avgReturn:(ex.rankings&&ex.rankings.avgReturn)||0,
+        totalRecs:(ex.rankings&&ex.rankings.totalRecommendations)||0,
+        rating:latest.actionId,
+        pt:latest.priceTarget,
+        date:latest.date?(latest.date||'').slice(0,10):'\u2014'
+      });
+    });
+    experts.sort(function(a,b){
+      var va=a[expertSort],vb=b[expertSort];
+      if(va==null)return 1;if(vb==null)return -1;
+      return expertAsc?(va>vb?1:-1):(va<vb?1:-1);
+    });
+  }
+
+  // ── consensus from latest ──
+  var con=null;
+  if(data&&data.consensuses){
+    var latest=data.consensuses.filter(function(c){return c.isLatest===1&&c.mStars===1;});
+    if(latest.length)con=latest[0];
+  }
+  var ptData=null;
+  if(data&&data.ptConsensus&&data.ptConsensus.length){ptData=data.ptConsensus[0];}
+  var blog=data&&data.bloggerSentiment;
+  var hf=data&&data.hedgeFundData;
+  var news=data&&data.newsSentiment;
+  var ss=data&&data.tipranksStockScore;
+
+  return <div>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>TipRanks Intelligence</div>
+    </div>
+
+    {/* Search */}
+    <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center'}}>
+      <input value={input}
+        onChange={function(e){setInput(e.target.value.toUpperCase());setErr(null);}}
+        onKeyDown={function(e){if(e.key==='Enter')search();}}
+        placeholder="Enter ticker (e.g. NVDA)"
+        style={{flex:1,maxWidth:260,background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,padding:'10px 14px',color:C.txtBright,fontSize:13,fontFamily:F,outline:'none',letterSpacing:1}}/>
+      <button onClick={search} disabled={loading||!input.trim()}
+        style={{padding:'10px 24px',background:C.accent,border:'none',borderRadius:6,color:C.bg,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:1,cursor:'pointer',opacity:(loading||!input.trim())?0.4:1,whiteSpace:'nowrap'}}>
+        {loading?'Loading\u2026':'Search'}
+      </button>
+    </div>
+
+    {err&&<div style={{padding:'10px 14px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:8,color:C.warn,fontSize:11,fontFamily:F,marginBottom:14}}>{err}</div>}
+
+    {loading&&<div style={{padding:40,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:12}}>Fetching TipRanks data for {ticker}{'\u2026'}</div>}
+
+    {!loading&&!data&&!err&&<div style={{padding:'32px 16px',textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11,lineHeight:1.8}}>
+      Search for any stock ticker to see TipRanks analyst consensus, Smart Score, price targets, insider activity, hedge fund sentiment, and news buzz.
+    </div>}
+
+    {data&&<div>
+      {/* ── COMPANY HEADER + SMART SCORE ──────────────────────────────────── */}
+      <div style={Object.assign({},card,{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12})}>
+        <div>
+          <div style={{color:C.txtBright,fontSize:18,fontWeight:700,fontFamily:F}}>{data.companyName||data.ticker}</div>
+          <div style={{display:'flex',gap:16,marginTop:6,flexWrap:'wrap'}}>
+            <div style={dim}>Ticker: <span style={{color:C.txtBright,fontWeight:700}}>{data.ticker}</span></div>
+            {data.marketCap&&<div style={dim}>Mkt Cap: <span style={{color:C.txtBright,fontWeight:600}}>{fmtCap(data.marketCap)}</span></div>}
+            {data.numOfAnalysts&&<div style={dim}>Analysts: <span style={{color:C.txtBright}}>{data.numOfAnalysts}</span></div>}
+          </div>
+        </div>
+        {ss&&ss.score!=null&&<div style={{textAlign:'center'}}>
+          <div style={{width:64,height:64,borderRadius:'50%',border:'3px solid '+scoreColor(ss.score),display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
+            <span style={{fontSize:24,fontWeight:700,fontFamily:F,color:scoreColor(ss.score)}}>{ss.score}</span>
+          </div>
+          <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginTop:4,letterSpacing:1,textTransform:'uppercase'}}>Smart Score</div>
+        </div>}
+      </div>
+
+      {/* ── ANALYST CONSENSUS ──────────────────────────────────────────────── */}
+      {con&&<div style={card}>
+        <div style={cardTitle}>Analyst Consensus</div>
+        <div style={{display:'flex',gap:20,flexWrap:'wrap',alignItems:'flex-start'}}>
+          {/* B/H/S bar */}
+          <div style={{flex:'1 1 200px'}}>
+            <div style={{display:'flex',height:24,borderRadius:6,overflow:'hidden',gap:2,marginBottom:8}}>
+              <div style={{flex:con.nB,background:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.bg,minWidth:con.nB?8:0}}>{con.nB>0?con.nB:''}</div>
+              <div style={{flex:con.nH,background:C.gold,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.bg,minWidth:con.nH?8:0}}>{con.nH>0?con.nH:''}</div>
+              <div style={{flex:con.nS,background:C.warn,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.bg,minWidth:con.nS?8:0}}>{con.nS>0?con.nS:''}</div>
+            </div>
+            <div style={{display:'flex',gap:14,fontSize:10,fontFamily:F}}>
+              <span style={{color:C.accent,fontWeight:700}}>{'\u25B2'} {con.nB} Buy</span>
+              <span style={{color:C.gold,fontWeight:700}}>{'\u25C6'} {con.nH} Hold</span>
+              <span style={{color:C.warn,fontWeight:700}}>{'\u25BC'} {con.nS} Sell</span>
+            </div>
+            <div style={{marginTop:8,fontSize:9,fontFamily:F,color:C.txtDim}}>
+              Consensus: <span style={{color:C.accent,fontWeight:700}}>Strong Buy</span> ({con.consensusRate} analysts)
+            </div>
+          </div>
+          {/* Price targets */}
+          {ptData&&<div style={{flex:'1 1 200px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase'}}>Low</div>
+                <div style={{fontSize:16,fontWeight:700,fontFamily:F,color:C.warn}}>{fmtDol(ptData.low)}</div>
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase'}}>Average</div>
+                <div style={{fontSize:20,fontWeight:700,fontFamily:F,color:C.txtBright}}>{fmtDol(ptData.priceTarget)}</div>
+                {data.prices&&data.prices.length>0&&<div style={{fontSize:10,fontFamily:F,color:((ptData.priceTarget-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p)>=0?C.accent:C.warn}}>
+                  {((ptData.priceTarget-data.prices[data.prices.length-1].p)/data.prices[data.prices.length-1].p*100).toFixed(1)}% upside
+                </div>}
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase'}}>High</div>
+                <div style={{fontSize:16,fontWeight:700,fontFamily:F,color:C.accent}}>{fmtDol(ptData.high)}</div>
+              </div>
+            </div>
+          </div>}
+        </div>
+      </div>}
+
+      {/* ── SMART SCORE COMPONENTS ─────────────────────────────────────────── */}
+      {ss&&<div style={card}>
+        <div style={cardTitle}>Smart Score Components</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:10}}>
+          {[
+            {label:'Score',val:ss.score,fmt:function(v){return v+'/10';}},
+            {label:'Asset Growth',val:ss.assetGrowth,fmt:fmtPctRaw},
+            {label:'Return on Equity',val:ss.returnOnEquity,fmt:fmtPctRaw},
+            {label:'6M Momentum',val:ss.sixMonthsMomentum,fmt:function(v){return v?fmtPctRaw(v*100):'N/A';}},
+            {label:'12M Momentum',val:ss.twelveMonthsMomentum,fmt:fmtPctRaw},
+            {label:'SMA Signal',val:ss.simpleMovingAverage,fmt:function(v){return v===1?'Positive':'Negative';}},
+          ].map(function(item){
+            return <div key={item.label} style={{padding:'8px 10px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+              <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>{item.label}</div>
+              <div style={{fontSize:14,fontFamily:F,fontWeight:700,color:C.txtBright}}>{item.fmt(item.val)}</div>
+            </div>;
+          })}
+        </div>
+      </div>}
+
+      {/* ── TOP ANALYSTS TABLE ─────────────────────────────────────────────── */}
+      {experts.length>0&&<div style={card}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div style={cardTitle}>Top Analysts ({experts.length})</div>
+          {experts.length>10&&<button onClick={function(){setShowAllExperts(!showAllExperts);}}
+            style={{padding:'4px 12px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
+            {showAllExperts?'Show Top 10':'Show All '+experts.length}
+          </button>}
+        </div>
+        <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:650}}>
+            <thead><tr>
+              {[
+                {k:'name',l:'Analyst',al:'left'},
+                {k:'firm',l:'Firm',al:'left'},
+                {k:'rating',l:'Rating'},
+                {k:'pt',l:'Price Target'},
+                {k:'stars',l:'Stars'},
+                {k:'successRate',l:'Success Rate'},
+                {k:'avgReturn',l:'Avg Return'},
+                {k:'totalRecs',l:'Total Recs'},
+              ].map(function(col){
+                var active=expertSort===col.k;
+                return <th key={col.k} onClick={function(){if(expertSort===col.k)setExpertAsc(!expertAsc);else{setExpertSort(col.k);setExpertAsc(false);}}}
+                  style={{padding:'7px 10px',textAlign:col.al||'right',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:active?C.accent:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,cursor:'pointer',whiteSpace:'nowrap',userSelect:'none'}}>
+                  {col.l}{active?(expertAsc?' \u25B2':' \u25BC'):''}
+                </th>;
+              })}
+            </tr></thead>
+            <tbody>
+              {(showAllExperts?experts:experts.slice(0,10)).map(function(ex,i){
+                var stripe=i%2===0?'transparent':C.bgDeep+'55';
+                return <tr key={i}>
+                  <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{ex.name}</td>
+                  <td style={{padding:'7px 10px',textAlign:'left',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe,whiteSpace:'nowrap'}}>{ex.firm}</td>
+                  <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:10,fontWeight:700,color:ratingColor(ex.rating),borderBottom:'1px solid '+C.border,background:stripe}}>{ratingLabel(ex.rating)}</td>
+                  <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,background:stripe}}>{ex.pt?fmtDol(ex.pt):'\u2014'}</td>
+                  <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:10,color:C.gold,borderBottom:'1px solid '+C.border,background:stripe}}>
+                    {ex.stars>0?'\u2605'.repeat(Math.round(ex.stars)):'\u2014'}
+                  </td>
+                  <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:11,fontWeight:600,color:ex.successRate>=0.7?C.accent:ex.successRate>=0.5?C.gold:C.warn,borderBottom:'1px solid '+C.border,background:stripe}}>{fmtPct(ex.successRate)}</td>
+                  <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:11,color:ex.avgReturn>=0?C.accent:C.warn,borderBottom:'1px solid '+C.border,background:stripe}}>{ex.avgReturn!=null?ex.avgReturn.toFixed(1)+'%':'\u2014'}</td>
+                  <td style={{padding:'7px 10px',textAlign:'right',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe}}>{ex.totalRecs}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>}
+
+      {/* ── SENTIMENT ROW ──────────────────────────────────────────────────── */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:12,marginBottom:12}}>
+        {/* Blogger Sentiment */}
+        {blog&&<div style={card}>
+          <div style={cardTitle}>Blogger Sentiment</div>
+          <div style={{display:'flex',height:16,borderRadius:4,overflow:'hidden',gap:1,marginBottom:8}}>
+            <div style={{flex:blog.bullish||blog.bullishCount,background:C.accent,minWidth:2}}/>
+            <div style={{flex:blog.bearish||blog.bearishCount,background:C.warn,minWidth:2}}/>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,fontFamily:F}}>
+            <span style={{color:C.accent,fontWeight:700}}>{'\u25B2'} {blog.bullishCount||blog.bullish} Bullish</span>
+            <span style={{color:C.warn,fontWeight:700}}>{'\u25BC'} {blog.bearishCount||blog.bearish} Bearish</span>
+          </div>
+          {blog.neutralCount>0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:4}}>{blog.neutralCount} Neutral</div>}
+        </div>}
+
+        {/* News Sentiment */}
+        {news&&<div style={card}>
+          <div style={cardTitle}>News Sentiment</div>
+          {news.sentiment&&<div>
+            <div style={{display:'flex',height:16,borderRadius:4,overflow:'hidden',gap:1,marginBottom:8}}>
+              <div style={{flex:news.sentiment.bullishPercent||0,background:C.accent,minWidth:2}}/>
+              <div style={{flex:news.sentiment.bearishPercent||0,background:C.warn,minWidth:2}}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,fontFamily:F}}>
+              <span style={{color:C.accent,fontWeight:700}}>{fmtPctRaw((news.sentiment.bullishPercent||0)*100)} Bullish</span>
+              <span style={{color:C.warn,fontWeight:700}}>{fmtPctRaw((news.sentiment.bearishPercent||0)*100)} Bearish</span>
+            </div>
+          </div>}
+          {news.buzz&&<div style={{marginTop:8}}>
+            <div style={{fontSize:9,fontFamily:F,color:C.txtDim,marginBottom:3}}>News Buzz</div>
+            <div style={{fontSize:14,fontWeight:700,fontFamily:F,color:news.buzz.buzz>1?C.accent:C.txtBright}}>{news.buzz.buzz?news.buzz.buzz.toFixed(2)+'x':'\u2014'}</div>
+            <div style={{fontSize:8,fontFamily:F,color:C.txtDim}}>{news.buzz.articlesInLastWeek} articles this week (avg {news.buzz.weeklyAverage?Math.round(news.buzz.weeklyAverage):'?'})</div>
+          </div>}
+        </div>}
+
+        {/* Hedge Fund Activity */}
+        {hf&&<div style={card}>
+          <div style={cardTitle}>Hedge Fund Activity</div>
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:9,fontFamily:F,color:C.txtDim,marginBottom:3}}>Sentiment</div>
+            <div style={{display:'flex',height:10,borderRadius:3,overflow:'hidden',background:C.bgInput,marginBottom:4}}>
+              <div style={{width:(hf.sentiment||0)*100+'%',background:C.accent,borderRadius:3}}/>
+            </div>
+            <div style={{fontSize:12,fontWeight:700,fontFamily:F,color:hf.sentiment>0.5?C.accent:hf.sentiment>0.3?C.gold:C.warn}}>{hf.sentiment!=null?(hf.sentiment*100).toFixed(1)+'%':'\u2014'}</div>
+          </div>
+          <div style={{fontSize:9,fontFamily:F,color:C.txtDim}}>Trend: <span style={{color:hf.trendAction===1||hf.trendAction==='Increased'?C.accent:C.warn,fontWeight:700}}>{hf.trendAction===1?'Increased':hf.trendAction===2?'Decreased':hf.trendAction||'\u2014'}</span></div>
+        </div>}
+
+        {/* Insider Activity */}
+        <div style={card}>
+          <div style={cardTitle}>Insider Activity (3M)</div>
+          <div style={{fontSize:18,fontWeight:700,fontFamily:F,color:data&&data.insiderslast3MonthsSum>0?C.accent:C.warn}}>
+            {data?fmtDol(data.insiderslast3MonthsSum):'\u2014'}
+          </div>
+          <div style={{fontSize:9,fontFamily:F,color:C.txtDim,marginTop:4}}>Net {data&&data.insiderslast3MonthsSum>0?'buying':'selling'} over last 3 months</div>
+          {data&&data.insiders&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim,marginTop:2}}>{data.insiders.length} insider transactions on file</div>}
+        </div>
+      </div>
+
+      {/* ── FOOTER ─────────────────────────────────────────────────────────── */}
+      <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.6,fontStyle:'italic',marginTop:4}}>
+        Data: TipRanks public API via Supabase proxy. Smart Score is TipRanks' proprietary 1-10 rating based on analyst consensus, insider activity, hedge fund trends, blogger sentiment, institutional ownership, and technical factors. Not financial advice.
+      </div>
+    </div>}
+  </div>;
+}
+
 function StocksAtGlancePage(p){
   var SB=p.sb; var pgKey=p.apiKey; var supaUrl=p.supaUrl;
 
@@ -23829,7 +24143,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'tipranks',label:'TipRanks Intelligence',icon:'\u2606'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -23900,6 +24214,7 @@ function App(){
     {page==='theproblem'&&<HomePage onNav={function(k){setPage(k);}} onBack={function(){setPage('home');}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL}/>}
+    {page==='tipranks'&&<TipRanksPage onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
