@@ -12811,9 +12811,9 @@ function StocksAtGlancePage(p){
       if(Array.isArray(d)){
         var ts=d.map(function(x){return x.ticker;});
         setTickers(ts);
-        // Phase 1: Fire ALL Polygon fetches in parallel (fast, no rate limit)
-        ts.forEach(function(t){fetchPolygon(t);});
-        // Phase 2: Queue TipRanks calls sequentially with 1.5s delay (rate limit safe)
+        // Phase 1: Polygon in batches of 10 (3 calls each = 30/batch, avoids rate limit)
+        fetchPolygonBatch(ts);
+        // Phase 2: TipRanks sequential with 2.5s delay
         fetchTipRanksBatch(ts);
       }
     }catch(e){setErr('Could not load tickers');}
@@ -12870,6 +12870,21 @@ function StocksAtGlancePage(p){
     }finally{
       setLoadingTkr(function(prev){var n=Object.assign({},prev);delete n[tkr];return n;});
     }
+  };
+
+  // ── Polygon batch — groups of 10, 1s delay between batches ──────────
+  var fetchPolygonBatch=function(tickerList){
+    (async function(){
+      var batchSize=10;
+      for(var i=0;i<tickerList.length;i+=batchSize){
+        var batch=tickerList.slice(i,i+batchSize);
+        batch.forEach(function(t){fetchPolygon(t);});
+        // Wait 1s between batches (10 tickers × 3 calls = 30 calls/batch)
+        if(i+batchSize<tickerList.length){
+          await new Promise(function(resolve){setTimeout(resolve,1000);});
+        }
+      }
+    })();
   };
 
   // ── Phase 2: TipRanks data (Smart Score, PT, B/H/S) ───────────────────
@@ -13199,7 +13214,7 @@ function StocksAtGlancePage(p){
           cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
         {showBulk?'Hide Bulk':'+ Bulk Add'}
       </button>
-      <button onClick={function(){setRowData({});tickers.forEach(function(t){fetchPolygon(t);});fetchTipRanksBatch(tickers);}}
+      <button onClick={function(){setRowData({});fetchPolygonBatch(tickers);fetchTipRanksBatch(tickers);}}
         disabled={activeId==null}
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
           color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
