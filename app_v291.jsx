@@ -12813,30 +12813,32 @@ function StocksAtGlancePage(p){
         setTickers(ts);
 
         // ── Phase 0: Load ALL tickers from stocks_glance_cache in one query ──
-        // This gives instant data for all users — no API calls needed if fresh.
         if(ts.length>0){
           var cacheR=await fetch(supaUrl+'/rest/v1/stocks_glance_cache?ticker=in.('+ts.join(',')+')',{headers:SB()});
           var cached=cacheR.ok?await cacheR.json():[];
           var stale=[];
           var now=Date.now();
           var freshMap={};
+          var initData={};
+
           cached.forEach(function(row){
             freshMap[row.ticker]=true;
+            initData[row.ticker]={
+              mc:row.market_cap?Number(row.market_cap):null,
+              price:row.price?Number(row.price):null,
+              w52h:row.w52h?Number(row.w52h):null,w52l:row.w52l?Number(row.w52l):null,
+              d90h:row.d90h?Number(row.d90h):null,d90l:row.d90l?Number(row.d90l):null,
+              smartScore:row.smart_score,
+              ptHi:row.pt_hi?Number(row.pt_hi):null,
+              ptAvg:row.pt_avg?Number(row.pt_avg):null,ptLo:row.pt_lo?Number(row.pt_lo):null,
+              buy:row.buy||0,hold:row.hold||0,sell:row.sell||0
+            };
             var age=now-new Date(row.fetched_at).getTime();
-            // Load cached data into rowData immediately
-            setRowData(function(prev){
-              var n=Object.assign({},prev);
-              n[row.ticker]={mc:row.market_cap?Number(row.market_cap):null,price:row.price?Number(row.price):null,
-                w52h:row.w52h?Number(row.w52h):null,w52l:row.w52l?Number(row.w52l):null,
-                d90h:row.d90h?Number(row.d90h):null,d90l:row.d90l?Number(row.d90l):null,
-                smartScore:row.smart_score,ptHi:row.pt_hi?Number(row.pt_hi):null,
-                ptAvg:row.pt_avg?Number(row.pt_avg):null,ptLo:row.pt_lo?Number(row.pt_lo):null,
-                buy:row.buy||0,hold:row.hold||0,sell:row.sell||0};
-              return n;
-            });
-            // If older than 24 hours OR TipRanks data missing, mark for refresh
             if(age>=24*60*60*1000||row.smart_score==null)stale.push(row.ticker);
           });
+
+          // Single state update — all cached data at once (no re-render storm)
+          setRowData(initData);
           // Tickers that need TipRanks refresh (stale or missing smart_score)
           var missing=ts.filter(function(t){return !freshMap[t];});
           var trRefresh=stale.concat(missing);
