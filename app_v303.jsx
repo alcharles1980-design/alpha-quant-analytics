@@ -13183,6 +13183,7 @@ function StocksAtGlancePage(p){
 
   // ── sort ──────────────────────────────────────────────────────────────────
   var sortedTickers=tickers.slice().sort(function(a,b){
+    if(sortBy==='ticker')return sortAsc?a.localeCompare(b):b.localeCompare(a);
     var ra=rowData[a]||{},rb=rowData[b]||{};
     var va=ra[sortBy],vb=rb[sortBy];
     if(va==null&&vb==null)return 0;
@@ -13466,7 +13467,10 @@ function StocksAtGlancePage(p){
           <thead>
             <tr>
               {colH('#','_idx')}
-              <th style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep}}>Ticker</th>
+              <th onClick={function(){if(sortBy==='ticker')setSortAsc(!sortAsc);else{setSortBy('ticker');setSortAsc(true);}}}
+                style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:sortBy==='ticker'?C.accent:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep,cursor:'pointer',userSelect:'none'}}>
+                Ticker{sortBy==='ticker'?(' '+(sortAsc?'\u25B2':'\u25BC')):''}
+              </th>
               {colH('Score','smartScore')}
               {colH('Price','price')}
               {colH('Mkt Cap','mc')}
