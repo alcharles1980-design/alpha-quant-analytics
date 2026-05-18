@@ -12836,9 +12836,9 @@ function StocksAtGlancePage(p){
         // Only fetch Polygon if not already refreshed this session
         if(!polyRefreshed.current[row.ticker])needPoly.push(row.ticker);
 
-        // Only fetch TipRanks if stale (>24h) or missing
+        // Only fetch TipRanks if >24h stale or never fetched
         var age=row.fetched_at?now-new Date(row.fetched_at).getTime():Infinity;
-        if(age>=24*60*60*1000||row.smart_score==null||(row.buy==null&&row.pt_avg==null))needTR.push(row.ticker);
+        if(age>=24*60*60*1000)needTR.push(row.ticker);
       });
 
       setTickers(ts);
