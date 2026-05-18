@@ -1543,48 +1543,13 @@ function StockProfileCheatSheetPage(p){
       // Don't fail if reference fetch fails - market cap will show as null
 
       setProgMsg('Fetching upcoming earnings...');
-      // FETCH 4a: Benzinga earnings (primary source - exact dates with confirmation status)
-      // Pull multiple upcoming records, filter out invalid dates, take the soonest.
+      // Benzinga earnings API is 403 since May 2026. Use Polygon financials
+      // to infer the next earnings date (~3 months after last filing).
       var earnings=null;
       var todayDateStr=todayStr;
-      try{
-        var bzUrl='https://api.polygon.io/benzinga/v1/earnings?ticker='+tkEnc+'&date.gte='+todayDateStr+'&order=asc&sort=date&limit=20&apiKey='+p.apiKey;
-        var bzR=await fetch(bzUrl,{signal:aborter.signal});
-        if(bzR.ok){
-          var bzBody=await bzR.json();
-          var bzResults=bzBody.results||[];
-          // Filter for valid dates within 220 days (covers semi-annual ADR reporters too)
-          var valid=bzResults.filter(function(r){
-            if(!r.date)return false;
-            var d=new Date(r.date+'T00:00:00Z').getTime();
-            var t=new Date(todayDateStr+'T00:00:00Z').getTime();
-            var daysAway=(d-t)/86400000;
-            return daysAway>=0 && daysAway<=220;
-          }).sort(function(a,b){return (a.date<b.date?-1:a.date>b.date?1:0);});
 
-          if(valid.length>0){
-            var ev=valid[0];
-            // Polygon Benzinga earnings actual API fields are 'estimated_eps' /
-            // 'estimated_revenue' (NOT 'eps_estimate' / 'revenue_estimate' as I
-            // previously assumed). The internal data structure keys remain the
-            // same for backward compat with render code.
-            earnings={
-              date: ev.date,
-              source: 'benzinga',
-              status: ev.date_status||null,
-              fiscal_period: ev.fiscal_period||null,
-              fiscal_year: ev.fiscal_year||null,
-              time: ev.time||null,
-              eps_estimate: ev.estimated_eps!=null?ev.estimated_eps:null,
-              revenue_estimate: ev.estimated_revenue!=null?ev.estimated_revenue:null
-            };
-          }
-        }
-      }catch(bzErr){if(bzErr.name==='AbortError')throw bzErr;}
-      checkAbort();
-
-      // FETCH 4b: Financials fallback - if Benzinga returned nothing, infer from most recent filing
-      if(!earnings){
+      // Infer next earnings from most recent Polygon filing
+      {
         try{
           var finUrl='https://api.polygon.io/vX/reference/financials?ticker='+tkEnc+'&order=desc&sort=period_of_report_date&limit=1&apiKey='+p.apiKey;
           var finR=await fetch(finUrl,{signal:aborter.signal});
@@ -1637,13 +1602,6 @@ function StockProfileCheatSheetPage(p){
       // News from Polygon's reference endpoint (Benzinga-sourced), 10 most recent.
       // Includes per-ticker sentiment + reasoning when available.
       var urlNews='https://api.polygon.io/v2/reference/news?ticker='+tkEnc+'&limit=15&order=desc&sort=published_utc&apiKey='+p.apiKey;
-      // Analyst ratings from Polygon's Benzinga ratings endpoint.
-      // Pull 50 most recent so we capture roughly last 90 days of activity.
-      var urlRatings='https://api.polygon.io/benzinga/v1/ratings?ticker='+tkEnc+'&limit=50&order=desc&sort=date&apiKey='+p.apiKey;
-      // Past earnings (with reported actuals) for EPS history chart.
-      // Existing earnings fetch above (line ~1446) gets FUTURE earnings - this
-      // is a separate fetch for HISTORICAL ones.
-      var urlPastEarnings='https://api.polygon.io/benzinga/v1/earnings?ticker='+tkEnc+'&date.lte='+todayStr+'&order=desc&sort=date&limit=8&apiKey='+p.apiKey;
       // Financials: quarterly (last 8 quarters) + annual (last 5 fiscal years).
       // Used for the Revenue vs Earnings chart with Annual/Quarterly toggle.
       var urlFinQ='https://api.polygon.io/vX/reference/financials?ticker='+tkEnc+'&timeframe=quarterly&limit=8&order=desc&sort=period_of_report_date&apiKey='+p.apiKey;
@@ -1661,19 +1619,16 @@ function StockProfileCheatSheetPage(p){
           return [];
         }
       };
-      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[],ratingsRaw=[],pastEarningsRaw=[],finQRaw=[],finARaw=[];
+      var bars5m=[],bars30m=[],bars1h=[],newsRaw=[],finQRaw=[],finARaw=[];
       try{
-        var oct=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews),safeFetchBars(urlRatings),safeFetchBars(urlPastEarnings),safeFetchBars(urlFinQ),safeFetchBars(urlFinA)]);
-        bars5m=oct[0];bars30m=oct[1];bars1h=oct[2];newsRaw=oct[3];ratingsRaw=oct[4];pastEarningsRaw=oct[5];finQRaw=oct[6];finARaw=oct[7];
+        var oct=await Promise.all([safeFetchBars(url5m),safeFetchBars(url30m),safeFetchBars(url1h),safeFetchBars(urlNews),safeFetchBars(urlFinQ),safeFetchBars(urlFinA)]);
+        bars5m=oct[0];bars30m=oct[1];bars1h=oct[2];newsRaw=oct[3];finQRaw=oct[4];finARaw=oct[5];
       }catch(eAll){
         if(eAll.name==='AbortError')throw eAll;
-        // Other errors: keep arrays empty, all dependent cards will silently skip.
       }
       checkAbort();
 
       // Process news: extract ticker-specific sentiment + reasoning.
-      // Each article may have insights[] keyed by ticker. We pick the entry
-      // matching our ticker, fall back to first insight if no match.
       var news=newsRaw.map(function(a){
         var insight=null;
         if(a.insights&&a.insights.length){
@@ -1696,116 +1651,141 @@ function StockProfileCheatSheetPage(p){
         };
       });
 
-      // Process analyst ratings. Polygon's Benzinga ratings endpoint returns:
-      //   date, time, firm, analyst, rating_action (downgrades/maintains/reinstates/
-      //   reiterates/upgrades/assumes/initiates_coverage_on/terminates_coverage_on/etc.,
-      //   lowercase snake_case), price_target_action (raises/lowers/maintains/announces/sets),
-      //   rating (current rating string), previous_rating, adjusted_price_target,
-      //   previous_adjusted_price_target, price_target (unadjusted), previous_price_target,
-      //   importance.
-      // We compute: aggregated consensus + range + buy/hold/sell distribution from
-      // the last ~90 days, plus a chronological list of recent changes for display.
+      // ── TipRanks: check caches, only fetch from proxy if stale ──────────
+      setProgMsg('Loading TipRanks data...');
+      var trFullJson=null;
+      var trSmartScore=null;
+      var trSummary=null; // from stocks_glance_cache
+      try{
+        // Check stocks_glance_cache for summary
+        var sgR=await fetch(SB_URL+'/rest/v1/stocks_glance_cache?ticker=eq.'+tkEnc+'&select=smart_score,pt_hi,pt_avg,pt_lo,buy,hold,sell,fetched_at',{headers:getSbHeaders()});
+        if(sgR.ok){var sgD=await sgR.json();if(sgD.length>0)trSummary=sgD[0];}
+
+        // Check tipranks_cache for full JSON (for changes timeline)
+        var tcR=await fetch(SB_URL+'/rest/v1/tipranks_cache?ticker=eq.'+tkEnc+'&select=data,fetched_at',{headers:getSbHeaders()});
+        if(tcR.ok){var tcD=await tcR.json();if(tcD.length>0){
+          var tcAge=Date.now()-new Date(tcD[0].fetched_at).getTime();
+          if(tcAge<24*60*60*1000){trFullJson=tcD[0].data;}
+        }}
+
+        // If full JSON missing/stale, fetch from proxy
+        if(!trFullJson){
+          var proxyBase='https://tipranks-proxy.alcharles1980.workers.dev';
+          var trR=await fetch(proxyBase+'?ticker='+tkEnc+'&endpoint=getData');
+          if(trR.ok){
+            var freshD=await trR.json();
+            if(freshD&&freshD.experts&&!freshD.error){
+              trFullJson=freshD;
+              // Save to both caches (fire-and-forget)
+              fetch(SB_URL+'/rest/v1/tipranks_cache?on_conflict=ticker',{
+                method:'POST',
+                headers:Object.assign({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},getSbHeaders()),
+                body:JSON.stringify({ticker:tk,data:trFullJson,fetched_at:new Date().toISOString()})
+              }).catch(function(){});
+            }
+          }
+        }
+
+        if(trFullJson&&trFullJson.tipranksStockScore){
+          trSmartScore=trFullJson.tipranksStockScore.score;
+        }
+      }catch(trErr){if(trErr.name==='AbortError')throw trErr;}
+      checkAbort();
+
+      // ── Build analyst object from TipRanks data ──────────────────────────
       var analyst=null;
-      if(ratingsRaw.length>0){
-        var ninetyDaysAgo=Date.now()-90*86400000;
-        // Active = ratings issued in the last 90 days (older ones are stale)
-        var activeRatings=ratingsRaw.filter(function(r){
-          if(!r.date)return false;
-          var t=new Date(r.date+'T00:00:00Z').getTime();
-          return !isNaN(t)&&t>=ninetyDaysAgo;
-        });
-        // Aggregate: dedupe to one rating per firm (keep most recent per firm)
-        // since multiple updates from same firm in 90d would over-count consensus.
-        var perFirm={};
-        activeRatings.forEach(function(r){
-          var firm=r.firm||'';
-          if(!firm)return;
-          if(!perFirm[firm]||r.date>perFirm[firm].date)perFirm[firm]=r;
-        });
-        var firmKeys=Object.keys(perFirm);
+      if(trFullJson&&trFullJson.experts){
+        var cutoff12m=new Date();cutoff12m.setFullYear(cutoff12m.getFullYear()-1);
+        var cutStr12m=cutoff12m.toISOString().slice(0,10);
+        var ptMaxFilter=lastClose?lastClose*5:Infinity;
         var validTargets=[];
         var dist={buy:0,hold:0,sell:0};
-        // Helper: get current price target, prefer adjusted, fallback to unadjusted.
-        // (inner var named `pt` to avoid shadowing the outer `p` = component props)
-        var ptCurrent=function(r){
-          var pt=r.adjusted_price_target!=null?r.adjusted_price_target:r.price_target;
-          if(pt==null)return null;
-          var n=typeof pt==='number'?pt:parseFloat(pt);
-          return (!isNaN(n)&&n>0)?n:null;
-        };
-        var ptPrevious=function(r){
-          var pt=r.previous_adjusted_price_target!=null?r.previous_adjusted_price_target:r.previous_price_target;
-          if(pt==null)return null;
-          var n=typeof pt==='number'?pt:parseFloat(pt);
-          return (!isNaN(n)&&n>0)?n:null;
-        };
-        firmKeys.forEach(function(k){
-          var r=perFirm[k];
-          var pt=ptCurrent(r);
-          if(pt!=null)validTargets.push(pt);
-          // Bucket the rating
-          var rt=(r.rating||'').toLowerCase();
-          if(/(strong\s*buy|^buy|outperform|overweight|positive|accumulate)/.test(rt))dist.buy++;
-          else if(/(strong\s*sell|^sell|underperform|underweight|negative|reduce)/.test(rt))dist.sell++;
-          else if(/(hold|neutral|equal[\s-]?weight|market\s*perform|sector\s*perform|in[\s-]?line|peer\s*perform)/.test(rt))dist.hold++;
-        });
-        var consensus=validTargets.length>0?validTargets.reduce(function(a,b){return a+b;},0)/validTargets.length:null;
-        var minPT=validTargets.length>0?Math.min.apply(null,validTargets):null;
-        var maxPT=validTargets.length>0?Math.max.apply(null,validTargets):null;
-        // Build "recent changes" list - all returned ratings, with sentiment derived
-        // from action+target movement. Filter out pure no-op maintains for clarity.
-        var changes=ratingsRaw.map(function(r){
-          var act=(r.rating_action||'').toLowerCase();
-          var actPT=(r.price_target_action||'').toLowerCase();
-          var ptNow=ptCurrent(r);
-          var ptPrev=ptPrevious(r);
-          var sent='neutral';
-          var verb='';
-          if(act.indexOf('upgrade')>=0){sent='positive';verb='upgraded';}
-          else if(act.indexOf('downgrade')>=0){sent='negative';verb='downgraded';}
-          else if(act.indexOf('initiate')>=0){sent='neutral';verb='initiated coverage';}
-          else if(act.indexOf('reinstate')>=0){sent='neutral';verb='reinstated';}
-          else if(act.indexOf('assume')>=0){sent='neutral';verb='assumed coverage';}
-          else if(actPT.indexOf('raise')>=0){sent='positive';verb='target raised';}
-          else if(actPT.indexOf('lower')>=0){sent='negative';verb='target lowered';}
-          else if(act.indexOf('maintain')>=0||act.indexOf('reiterate')>=0){sent='neutral';verb='maintained';}
-          // Target delta override (strongest signal)
-          if(ptNow&&ptPrev){
-            if(ptNow>ptPrev*1.001)sent='positive';
-            else if(ptNow<ptPrev*0.999)sent='negative';
+        var changes=[];
+        trFullJson.experts.forEach(function(ex){
+          if(!ex.includedInConsensus)return;
+          if(ex.aiModel&&typeof ex.aiModel==='object'&&ex.aiModel.modelName)return;
+          if(!ex.ratings||!ex.ratings.length)return;
+          // Find latest rating within 12 months
+          var latestInWindow=null;
+          for(var ri=0;ri<ex.ratings.length;ri++){
+            var rd=(ex.ratings[ri].date||ex.ratings[ri].rD||'').slice(0,10);
+            if(rd>=cutStr12m){
+              if(!latestInWindow||rd>((latestInWindow.date||latestInWindow.rD||'').slice(0,10)))latestInWindow=ex.ratings[ri];
+            }
           }
-          return {
-            date: r.date||'',
-            firm: r.firm||'',
-            analyst: r.analyst||'',
-            action: r.rating_action||'',
-            action_pt: r.price_target_action||'',
-            rating_now: r.rating||'',
-            rating_prev: r.previous_rating||'',
-            pt_now: ptNow,
-            pt_prev: ptPrev,
-            sentiment: sent,
-            verb: verb,
-            // Filter flag: skip pure maintains where rating + target both unchanged
-            is_change: (act.indexOf('upgrade')>=0||act.indexOf('downgrade')>=0
-                      ||act.indexOf('initiate')>=0||act.indexOf('reinstate')>=0||act.indexOf('assume')>=0
-                      ||actPT.indexOf('raise')>=0||actPT.indexOf('lower')>=0||actPT.indexOf('set')>=0
-                      ||(ptNow&&ptPrev&&Math.abs(ptNow-ptPrev)>0.001))
-          };
-        }).filter(function(r){return r.is_change&&r.firm;});
+          if(!latestInWindow)return;
+          var rid=latestInWindow.ratingId;
+          if(rid===1)dist.buy++;else if(rid===2)dist.hold++;else if(rid===3)dist.sell++;
+          var pt=latestInWindow.priceTarget||latestInWindow.convertedPriceTarget||null;
+          if(pt&&pt>ptMaxFilter)pt=null;
+          if(pt&&pt>0)validTargets.push(pt);
+          // Build change entry for timeline
+          var actionMap={1:'Downgrade',2:'Maintain',3:'Initiate',4:'Upgrade',5:'Buy',6:'Maintain',7:'Downgrade',8:'Reiterate'};
+          var ratingMap={1:'Buy',2:'Hold',3:'Sell'};
+          var oldPt=latestInWindow.oldPriceTarget||latestInWindow.convertedOldPriceTarget||null;
+          var sent='neutral';
+          if(latestInWindow.actionId===4)sent='positive';
+          else if(latestInWindow.actionId===1||latestInWindow.actionId===7)sent='negative';
+          else if(pt&&oldPt){if(pt>oldPt*1.001)sent='positive';else if(pt<oldPt*0.999)sent='negative';}
+          changes.push({
+            date:(latestInWindow.date||'').slice(0,10),
+            firm:ex.firm||'',
+            analyst:ex.name||'',
+            action:actionMap[latestInWindow.actionId]||'Rating',
+            rating_now:ratingMap[rid]||'',
+            pt_now:pt,
+            pt_prev:oldPt,
+            sentiment:sent,
+            verb:actionMap[latestInWindow.actionId]||'rated',
+            is_change:true
+          });
+        });
+        changes.sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
+        var consensus=validTargets.length>0?validTargets.reduce(function(a,b){return a+b;},0)/validTargets.length:null;
         analyst={
-          consensus: consensus,
-          min_pt: minPT,
-          max_pt: maxPT,
-          target_count: validTargets.length,
-          firm_count: firmKeys.length,
-          distribution: dist,
-          total_active: dist.buy+dist.hold+dist.sell,
-          changes: changes
+          consensus:consensus?Math.round(consensus*100)/100:null,
+          min_pt:validTargets.length>0?Math.min.apply(null,validTargets):null,
+          max_pt:validTargets.length>0?Math.max.apply(null,validTargets):null,
+          target_count:validTargets.length,
+          firm_count:dist.buy+dist.hold+dist.sell,
+          distribution:dist,
+          total_active:dist.buy+dist.hold+dist.sell,
+          changes:changes,
+          smart_score:trSmartScore
+        };
+        // Save summary to stocks_glance_cache via RPC
+        fetch(SB_URL+'/rest/v1/rpc/save_glance_tipranks',{
+          method:'POST',
+          headers:Object.assign({'Content-Type':'application/json'},getSbHeaders()),
+          body:JSON.stringify({
+            p_ticker:tk,
+            p_smart_score:trSmartScore,
+            p_pt_hi:validTargets.length>0?Math.max.apply(null,validTargets):null,
+            p_pt_avg:consensus?Math.round(consensus*100)/100:null,
+            p_pt_lo:validTargets.length>0?Math.min.apply(null,validTargets):null,
+            p_buy:dist.buy,p_hold:dist.hold,p_sell:dist.sell
+          })
+        }).catch(function(){});
+      } else if(trSummary&&trSummary.smart_score!=null){
+        // Fallback: build minimal analyst from glance cache summary
+        analyst={
+          consensus:trSummary.pt_avg?Number(trSummary.pt_avg):null,
+          min_pt:trSummary.pt_lo?Number(trSummary.pt_lo):null,
+          max_pt:trSummary.pt_hi?Number(trSummary.pt_hi):null,
+          target_count:(trSummary.buy||0)+(trSummary.hold||0)+(trSummary.sell||0),
+          firm_count:(trSummary.buy||0)+(trSummary.hold||0)+(trSummary.sell||0),
+          distribution:{buy:trSummary.buy||0,hold:trSummary.hold||0,sell:trSummary.sell||0},
+          total_active:(trSummary.buy||0)+(trSummary.hold||0)+(trSummary.sell||0),
+          changes:[],
+          smart_score:trSummary.smart_score
         };
       }
 
       // Process past earnings into EPS history.
+      // pastEarningsRaw: Benzinga past earnings (403 since May 2026).
+      // Kept as empty array so the EPS history processing below doesn't crash.
+      // The EPS card will silently skip when this is empty.
+      var pastEarningsRaw=[];
       // pastEarningsRaw is sorted desc by date. We want last 3 reported quarters
       // (with actual_eps present), then we'll combine with future estimate (existing
       // 'earnings' object) to make a 4-quarter chart: 3 past + 1 next.
@@ -2812,6 +2792,7 @@ function StockProfileCheatSheetPage(p){
         earnings: earnings,
         news: news,
         analyst: analyst,
+        smart_score: trSmartScore,
         eps_history: epsHistory,
         financials: financials,
         rolling_stats: rollingStats,
@@ -3079,6 +3060,12 @@ function StockProfileCheatSheetPage(p){
         </div>}
         {data.name&&<div style={{marginTop:8,color:C.txt,fontSize:9,fontFamily:F}}>{data.name}</div>}
         {data.sic_description&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>{data.sic_description}</div>}
+        {data.smart_score!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
+          <div style={{width:40,height:40,borderRadius:'50%',border:'3px solid '+(data.smart_score>=8?C.accent:data.smart_score>=5?C.gold:C.warn),display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
+            <span style={{fontSize:18,fontWeight:700,fontFamily:F,color:data.smart_score>=8?C.accent:data.smart_score>=5?C.gold:C.warn}}>{data.smart_score}</span>
+          </div>
+          <div style={{fontSize:8,fontFamily:F,color:C.txtDim,letterSpacing:1.5,fontWeight:700}}>TIPRANKS<br/>SMART SCORE</div>
+        </div>}
         {data.atr14!=null&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
           <div style={{color:C.txt,fontSize:8,letterSpacing:2,fontWeight:700,marginBottom:3}}>ATR(14) — WILDER</div>
           <div><span style={{color:C.gold,fontSize:14,fontWeight:700}}>${data.atr14.toFixed(2)}</span>{data.atr14_pct!=null&&<span style={{color:C.txt,fontSize:11,marginLeft:6,fontWeight:700}}>({data.atr14_pct.toFixed(2)}%)</span>}</div>
