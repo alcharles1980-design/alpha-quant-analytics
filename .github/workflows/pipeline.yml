@@ -4,6 +4,8 @@ on:
   schedule:
     # Nightly: 1AM ET = 6AM UTC (Mon-Fri)
     - cron: '0 6 * * 1-5'
+    # TipRanks sync: 2AM ET = 7AM UTC (Mon-Fri, after nightly completes)
+    - cron: '0 7 * * 1-5'
     # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
     - cron: '5 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0 * * 1-5'
   workflow_dispatch:
@@ -26,6 +28,7 @@ on:
           - minute-osc
           - trade-analysis
           - atr-analysis
+          - tipranks-sync
       tickers:
         description: 'Comma-separated tickers'
         required: true
@@ -71,6 +74,8 @@ jobs:
             HOUR=$(date -u +%H)
             if [ "$HOUR" = "06" ]; then
               echo "mode=nightly" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "07" ]; then
+              echo "mode=tipranks-sync" >> $GITHUB_OUTPUT
             else
               echo "mode=hourly" >> $GITHUB_OUTPUT
             fi

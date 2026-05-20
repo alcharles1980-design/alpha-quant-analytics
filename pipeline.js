@@ -4919,13 +4919,158 @@ async function getLatestScreenerDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TipRanks Daily Sync — fetches TipRanks data for all watchlist tickers
+// via the CF Worker proxy, saves to stocks_glance_cache + tipranks_cache.
+// Runs with 2.5s delays between calls to avoid rate limiting.
+// ═══════════════════════════════════════════════════════════════════════════════
+async function runTipRanksSync() {
+  console.log('\n=== TIPRANKS DAILY SYNC ===\n');
+  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting TipRanks sync' });
+
+  // 1. Get all unique tickers across all watchlists
+  var allRows = [];
+  var offset = 0;
+  while (true) {
+    var r = await sbFetch('stocks_watchlist?select=ticker&order=ticker.asc&limit=1000&offset=' + offset);
+    if (!r.length) break;
+    allRows = allRows.concat(r);
+    if (r.length < 1000) break;
+    offset += 1000;
+  }
+
+  // Deduplicate
+  var seen = {};
+  var tickers = [];
+  allRows.forEach(function(row) {
+    if (!seen[row.ticker]) { seen[row.ticker] = true; tickers.push(row.ticker); }
+  });
+
+  console.log('Unique tickers to sync: ' + tickers.length);
+  if (tickers.length === 0) { console.log('No tickers found.'); return; }
+
+  var PROXY_URL = 'https://tipranks-proxy.alcharles1980.workers.dev';
+  var DELAY_MS = 2500;
+  var success = 0, failed = 0, skipped = 0;
+
+  for (var i = 0; i < tickers.length; i++) {
+    var tk = tickers[i];
+    var pct = Math.round((i / tickers.length) * 100);
+
+    try {
+      // Fetch from CF Worker proxy
+      var resp = await fetch(PROXY_URL + '?ticker=' + tk + '&endpoint=getData');
+      var data = await resp.json();
+
+      if (!data || data.error || !data.experts) {
+        console.log('  [' + (i+1) + '/' + tickers.length + '] ' + tk + ': SKIP (no data or error)');
+        skipped++;
+        // Still delay to avoid hammering
+        if (i < tickers.length - 1) await sleep(DELAY_MS);
+        continue;
+      }
+
+      // Extract Smart Score
+      var smartScore = (data.tipranksStockScore && data.tipranksStockScore.score != null) ? data.tipranksStockScore.score : null;
+
+      // Extract consensus: Wall Street analysts only, 12-month window, 1 per analyst
+      var cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - 1);
+      var cutStr = cutoff.toISOString().slice(0, 10);
+
+      // Get current price for outlier filter
+      var curPrice = (data.prices && data.prices.length > 0) ? data.prices[data.prices.length - 1].p : null;
+      var ptMaxFilter = curPrice ? curPrice * 5 : Infinity;
+
+      var buys = 0, holds = 0, sells = 0;
+      var ptHi = null, ptLo = null, ptSum = 0, ptN = 0;
+
+      data.experts.forEach(function(ex) {
+        if (!ex.includedInConsensus) return;
+        if (ex.aiModel && typeof ex.aiModel === 'object' && ex.aiModel.modelName) return;
+        if (!ex.ratings || !ex.ratings.length) return;
+
+        // Find most recent rating within 12 months
+        var latest = null;
+        for (var ri = 0; ri < ex.ratings.length; ri++) {
+          var rd = (ex.ratings[ri].date || ex.ratings[ri].rD || '').slice(0, 10);
+          if (rd >= cutStr) {
+            if (!latest || rd > ((latest.date || latest.rD || '').slice(0, 10))) latest = ex.ratings[ri];
+          }
+        }
+        if (!latest) return;
+
+        var rid = latest.ratingId;
+        if (rid === 1) buys++;
+        else if (rid === 2) holds++;
+        else if (rid === 3) sells++;
+
+        var pt = latest.priceTarget || latest.convertedPriceTarget || null;
+        if (pt && pt > ptMaxFilter) pt = null; // outlier filter
+        if (pt && pt > 0) {
+          ptN++; ptSum += pt;
+          if (ptHi == null || pt > ptHi) ptHi = pt;
+          if (ptLo == null || pt < ptLo) ptLo = pt;
+        }
+      });
+
+      var ptAvg = ptN > 0 ? Math.round(ptSum / ptN * 100) / 100 : null;
+
+      // Save to stocks_glance_cache via RPC
+      await fetch(SB_URL + '/rest/v1/rpc/save_glance_tipranks', {
+        method: 'POST',
+        headers: sbHeaders(),
+        body: JSON.stringify({
+          p_ticker: tk,
+          p_smart_score: smartScore,
+          p_pt_hi: ptHi,
+          p_pt_avg: ptAvg,
+          p_pt_lo: ptLo,
+          p_buy: buys,
+          p_hold: holds,
+          p_sell: sells
+        })
+      });
+
+      // Save full JSON to tipranks_cache
+      await fetch(SB_URL + '/rest/v1/tipranks_cache?on_conflict=ticker', {
+        method: 'POST',
+        headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates' }),
+        body: JSON.stringify({
+          ticker: tk,
+          data: data,
+          fetched_at: new Date().toISOString()
+        })
+      });
+
+      success++;
+      console.log('  [' + (i+1) + '/' + tickers.length + '] ' + tk + ': OK (score=' + smartScore + ', PT=' + ptAvg + ', B/H/S=' + buys + '/' + holds + '/' + sells + ')');
+
+    } catch (e) {
+      failed++;
+      console.log('  [' + (i+1) + '/' + tickers.length + '] ' + tk + ': ERROR ' + e.message);
+    }
+
+    // Progress update every 10 tickers
+    if (i % 10 === 0) {
+      await reportProgress({ mode: 'tipranks-sync', ticker: tk, status: 'running', progress_pct: pct, message: (i+1) + '/' + tickers.length + ' (' + success + ' ok, ' + failed + ' fail, ' + skipped + ' skip)' });
+    }
+
+    // Delay between calls
+    if (i < tickers.length - 1) await sleep(DELAY_MS);
+  }
+
+  console.log('\nTipRanks sync complete: ' + success + ' success, ' + failed + ' failed, ' + skipped + ' skipped out of ' + tickers.length);
+  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'done', progress_pct: 100, message: success + '/' + tickers.length + ' synced (' + failed + ' fail, ' + skipped + ' skip)' });
+}
+
 async function main() {
   if (!POLYGON_KEY) { console.error('Missing POLYGON_API_KEY'); process.exit(1); }
   if (!SB_URL) { console.error('Missing SUPABASE_URL'); process.exit(1); }
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
+  var mode = args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -4982,6 +5127,11 @@ async function main() {
     try { await runAtrAnalysis(); } catch (e) {
       console.error('ATR-ANALYSIS CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'atr-analysis', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'tipranks-sync') {
+    try { await runTipRanksSync(); } catch (e) {
+      console.error('TIPRANKS-SYNC CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'backfill-mcap') {
     await backfillMcap();
