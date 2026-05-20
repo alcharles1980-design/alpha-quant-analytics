@@ -12979,6 +12979,8 @@ function StocksAtGlancePage(p){
             price:row.price?Number(row.price):null,
             w52h:row.w52h?Number(row.w52h):null,w52l:row.w52l?Number(row.w52l):null,
             d90h:row.d90h?Number(row.d90h):null,d90l:row.d90l?Number(row.d90l):null,
+            d30h:row.d30h?Number(row.d30h):null,d30l:row.d30l?Number(row.d30l):null,
+            d7h:row.d7h?Number(row.d7h):null,d7l:row.d7l?Number(row.d7l):null,
             atr30p:row.atr30_pct?Number(row.atr30_pct):null,atr30d:row.atr30_dol?Number(row.atr30_dol):null,
             atr5p:row.atr5_pct?Number(row.atr5_pct):null,atr5d:row.atr5_dol?Number(row.atr5_dol):null,
             smartScore:row.smart_score,
@@ -13024,6 +13026,10 @@ function StocksAtGlancePage(p){
         p_w52l:obj.w52l!=null?obj.w52l:null,
         p_d90h:obj.d90h!=null?obj.d90h:null,
         p_d90l:obj.d90l!=null?obj.d90l:null,
+        p_d30h:obj.d30h!=null?obj.d30h:null,
+        p_d30l:obj.d30l!=null?obj.d30l:null,
+        p_d7h:obj.d7h!=null?obj.d7h:null,
+        p_d7l:obj.d7l!=null?obj.d7l:null,
         p_atr30_pct:obj.atr30p!=null?obj.atr30p:null,
         p_atr30_dol:obj.atr30d!=null?obj.atr30d:null,
         p_atr5_pct:obj.atr5p!=null?obj.atr5p:null,
@@ -13075,7 +13081,9 @@ function StocksAtGlancePage(p){
       var prevC=snapD.ticker&&snapD.ticker.prevDay?snapD.ticker.prevDay.c:null;
       var price=(dayC&&dayC>0)?dayC:(prevC||null);
       var bars=aggD.results||[];
-      var w52h=null,w52l=null,d90h=null,d90l=null;
+      var w52h=null,w52l=null,d90h=null,d90l=null,d30h=null,d30l=null,d7h=null,d7l=null;
+      var epoch30=new Date(today);epoch30.setDate(epoch30.getDate()-30);var ep30=epoch30.getTime();
+      var epoch7=new Date(today);epoch7.setDate(epoch7.getDate()-7);var ep7=epoch7.getTime();
       bars.forEach(function(b){
         if(b.h!=null){
           if(w52h==null||b.h>w52h)w52h=b.h;
@@ -13084,10 +13092,19 @@ function StocksAtGlancePage(p){
             if(d90h==null||b.h>d90h)d90h=b.h;
             if(d90l==null||b.l<d90l)d90l=b.l;
           }
+          if(b.t>=ep30){
+            if(d30h==null||b.h>d30h)d30h=b.h;
+            if(d30l==null||b.l<d30l)d30l=b.l;
+          }
+          if(b.t>=ep7){
+            if(d7h==null||b.h>d7h)d7h=b.h;
+            if(d7l==null||b.l<d7l)d7l=b.l;
+          }
         }
       });
 
       var polyData={mc:mc,price:price,w52h:w52h,w52l:w52l,d90h:d90h,d90l:d90l,
+        d30h:d30h,d30l:d30l,d7h:d7h,d7l:d7l,
         atr30p:null,atr30d:null,atr5p:null,atr5d:null};
 
       // Compute ATR from daily bars (True Range with gap-aware formula)
@@ -13348,7 +13365,7 @@ function StocksAtGlancePage(p){
 
   // ── CSV Export ───────────────────────────────────────────────────────────
   var exportCSV=function(tickerList,label){
-    var headers=['Ticker','Score','Price','Mkt Cap','52W Hi','52W Lo','90D Hi','90D Lo','ATR30%','ATR30$','ATR5%','ATR5$','PT Hi','PT Avg','PT Lo','Buy','Hold','Sell'];
+    var headers=['Ticker','Score','Price','Mkt Cap','52W Hi','52W Lo','90D Hi','90D Lo','30D Hi','30D Lo','7D Hi','7D Lo','ATR30%','ATR30$','ATR5%','ATR5$','PT Hi','PT Avg','PT Lo','Buy','Hold','Sell'];
     var rows=[headers.join(',')];
     tickerList.forEach(function(t){
       var r=rowData[t]||{};
@@ -13361,6 +13378,10 @@ function StocksAtGlancePage(p){
         r.w52l!=null?r.w52l:'',
         r.d90h!=null?r.d90h:'',
         r.d90l!=null?r.d90l:'',
+        r.d30h!=null?r.d30h:'',
+        r.d30l!=null?r.d30l:'',
+        r.d7h!=null?r.d7h:'',
+        r.d7l!=null?r.d7l:'',
         r.atr30p!=null?r.atr30p:'',
         r.atr30d!=null?r.atr30d:'',
         r.atr5p!=null?r.atr5p:'',
@@ -13396,7 +13417,7 @@ function StocksAtGlancePage(p){
       cached.forEach(function(c){cacheMap[c.ticker]=c;});
       var listMap={};
       lists.forEach(function(l){listMap[l.id]=l.name;});
-      var headers=['List','Ticker','Score','Price','Mkt Cap','52W Hi','52W Lo','90D Hi','90D Lo','ATR30%','ATR30$','ATR5%','ATR5$','PT Hi','PT Avg','PT Lo','Buy','Hold','Sell'];
+      var headers=['List','Ticker','Score','Price','Mkt Cap','52W Hi','52W Lo','90D Hi','90D Lo','30D Hi','30D Lo','7D Hi','7D Lo','ATR30%','ATR30$','ATR5%','ATR5$','PT Hi','PT Avg','PT Lo','Buy','Hold','Sell'];
       var rows=[headers.join(',')];
       allW.forEach(function(w){
         var c=cacheMap[w.ticker]||{};
@@ -13410,6 +13431,10 @@ function StocksAtGlancePage(p){
           c.w52l!=null?c.w52l:'',
           c.d90h!=null?c.d90h:'',
           c.d90l!=null?c.d90l:'',
+          c.d30h!=null?c.d30h:'',
+          c.d30l!=null?c.d30l:'',
+          c.d7h!=null?c.d7h:'',
+          c.d7l!=null?c.d7l:'',
           c.atr30_pct!=null?c.atr30_pct:'',
           c.atr30_dol!=null?c.atr30_dol:'',
           c.atr5_pct!=null?c.atr5_pct:'',
@@ -13618,7 +13643,7 @@ function StocksAtGlancePage(p){
     {/* ── TABLE ────────────────────────────────────────────────────────── */}
     <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,overflow:'hidden'}}>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:1100}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:1500}}>
           <thead>
             <tr>
               {colH('#','_idx')}
@@ -13633,6 +13658,10 @@ function StocksAtGlancePage(p){
               {colH('52W Lo','w52l')}
               {colH('90D Hi','d90h')}
               {colH('90D Lo','d90l')}
+              {colH('30D Hi','d30h')}
+              {colH('30D Lo','d30l')}
+              {colH('7D Hi','d7h')}
+              {colH('7D Lo','d7l')}
               {colH('ATR30%','atr30p')}
               {colH('ATR30$','atr30d')}
               {colH('ATR5%','atr5p')}
@@ -13645,8 +13674,8 @@ function StocksAtGlancePage(p){
             </tr>
           </thead>
           <tbody>
-            {activeId==null&&<tr><td colSpan={18} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Select or create a list above</td></tr>}
-            {activeId!=null&&sortedTickers.length===0&&<tr><td colSpan={18} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No tickers in this list yet — add one above</td></tr>}
+            {activeId==null&&<tr><td colSpan={22} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Select or create a list above</td></tr>}
+            {activeId!=null&&sortedTickers.length===0&&<tr><td colSpan={22} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No tickers in this list yet — add one above</td></tr>}
             {sortedTickers.map(function(t,i){
               var r=rowData[t]||{};
               var isLoad=!!loadingTkr[t];
@@ -13699,6 +13728,10 @@ function StocksAtGlancePage(p){
                 {cell(fv(r.w52l), C.warn)}
                 {cell(fv(r.d90h), C.purple)}
                 {cell(fv(r.d90l), C.blue)}
+                {cell(fv(r.d30h), C.purple)}
+                {cell(fv(r.d30l), C.blue)}
+                {cell(fv(r.d7h), C.purple)}
+                {cell(fv(r.d7l), C.blue)}
                 {cell(r.atr30p!=null?r.atr30p.toFixed(2)+'%':null, C.gold)}
                 {cell(r.atr30d!=null?'$'+r.atr30d.toFixed(2):null, C.gold)}
                 {cell(r.atr5p!=null?r.atr5p.toFixed(2)+'%':null, C.warn)}
