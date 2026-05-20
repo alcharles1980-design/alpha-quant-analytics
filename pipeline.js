@@ -4925,8 +4925,8 @@ async function getLatestScreenerDate() {
 // Runs with 2.5s delays between calls to avoid rate limiting.
 // ═══════════════════════════════════════════════════════════════════════════════
 async function runTipRanksSync() {
-  console.log('\n=== TIPRANKS DAILY SYNC ===\n');
-  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting TipRanks sync' });
+  console.log('\n=== DAILY DATA SYNC (Polygon + TipRanks) ===\n');
+  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting daily sync' });
 
   // 1. Get all unique tickers across all watchlists
   var allRows = [];
@@ -4949,13 +4949,125 @@ async function runTipRanksSync() {
   console.log('Unique tickers to sync: ' + tickers.length);
   if (tickers.length === 0) { console.log('No tickers found.'); return; }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // PHASE 1: POLYGON DATA (price, mkt cap, ranges, ATR)
+  // Batches of 10, 1s between batches. ~13 seconds for 130 tickers.
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n--- Phase 1: Polygon refresh ---');
+  var etFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+  var today = new Date();
+  var toStr = etFmt.format(today);
+  var d52 = new Date(today); d52.setDate(d52.getDate() - 365);
+  var from52 = etFmt.format(d52);
+  var epoch90 = new Date(today); epoch90.setDate(epoch90.getDate() - 90); var ep90 = epoch90.getTime();
+  var epoch30 = new Date(today); epoch30.setDate(epoch30.getDate() - 30); var ep30 = epoch30.getTime();
+  var epoch7 = new Date(today); epoch7.setDate(epoch7.getDate() - 7); var ep7 = epoch7.getTime();
+
+  var polyOk = 0, polyFail = 0;
+  var BATCH_SIZE = 10;
+
+  for (var bi = 0; bi < tickers.length; bi += BATCH_SIZE) {
+    var batch = tickers.slice(bi, bi + BATCH_SIZE);
+    var promises = batch.map(async function(tk) {
+      try {
+        var base = 'https://api.polygon.io';
+        var [refR, aggR, snapR] = await Promise.all([
+          fetch(base + '/v3/reference/tickers/' + tk + '?apiKey=' + POLYGON_KEY),
+          fetch(base + '/v2/aggs/ticker/' + tk + '/range/1/day/' + from52 + '/' + toStr + '?adjusted=true&sort=asc&limit=300&apiKey=' + POLYGON_KEY),
+          fetch(base + '/v2/snapshot/locale/us/markets/stocks/tickers/' + tk + '?apiKey=' + POLYGON_KEY)
+        ]);
+        var refD = await refR.json(), aggD = await aggR.json(), snapD = await snapR.json();
+
+        var mc = (refD.results && refD.results.market_cap) || null;
+        var dayC = snapD.ticker && snapD.ticker.day ? snapD.ticker.day.c : null;
+        var prevC = snapD.ticker && snapD.ticker.prevDay ? snapD.ticker.prevDay.c : null;
+        var price = (dayC && dayC > 0) ? dayC : (prevC || null);
+        var bars = aggD.results || [];
+
+        var w52h = null, w52l = null, d90h = null, d90l = null;
+        var d30h = null, d30l = null, d7h = null, d7l = null;
+        bars.forEach(function(b) {
+          if (b.h != null) {
+            if (w52h == null || b.h > w52h) w52h = b.h;
+            if (w52l == null || b.l < w52l) w52l = b.l;
+            if (b.t >= ep90) { if (d90h == null || b.h > d90h) d90h = b.h; if (d90l == null || b.l < d90l) d90l = b.l; }
+            if (b.t >= ep30) { if (d30h == null || b.h > d30h) d30h = b.h; if (d30l == null || b.l < d30l) d30l = b.l; }
+            if (b.t >= ep7) { if (d7h == null || b.h > d7h) d7h = b.h; if (d7l == null || b.l < d7l) d7l = b.l; }
+          }
+        });
+
+        // ATR computation
+        var atr30p = null, atr30d = null, atr5p = null, atr5d = null;
+        if (bars.length >= 2) {
+          var trVals = [];
+          for (var ti = 1; ti < bars.length; ti++) {
+            var hi = bars[ti].h, lo = bars[ti].l, pc = bars[ti - 1].c;
+            if (hi != null && lo != null && pc != null) {
+              trVals.push(Math.max(hi - lo, Math.abs(hi - pc), Math.abs(lo - pc)));
+            }
+          }
+          var lastC = bars[bars.length - 1].c;
+          if (trVals.length >= 5 && lastC > 0) {
+            var t5 = trVals.slice(-5);
+            var a5 = t5.reduce(function(a, b) { return a + b; }, 0) / t5.length;
+            atr5d = Math.round(a5 * 100) / 100;
+            atr5p = Math.round(a5 / lastC * 10000) / 100;
+          }
+          if (trVals.length >= 30 && lastC > 0) {
+            var t30 = trVals.slice(-30);
+            var a30 = t30.reduce(function(a, b) { return a + b; }, 0) / t30.length;
+            atr30d = Math.round(a30 * 100) / 100;
+            atr30p = Math.round(a30 / lastC * 10000) / 100;
+          } else if (trVals.length >= 5 && lastC > 0) {
+            var aAll = trVals.reduce(function(a, b) { return a + b; }, 0) / trVals.length;
+            atr30d = Math.round(aAll * 100) / 100;
+            atr30p = Math.round(aAll / lastC * 10000) / 100;
+          }
+        }
+
+        // Save via RPC
+        await fetch(SB_URL + '/rest/v1/rpc/save_glance_polygon', {
+          method: 'POST',
+          headers: sbHeaders(),
+          body: JSON.stringify({
+            p_ticker: tk, p_price: price, p_market_cap: mc,
+            p_w52h: w52h, p_w52l: w52l, p_d90h: d90h, p_d90l: d90l,
+            p_d30h: d30h, p_d30l: d30l, p_d7h: d7h, p_d7l: d7l,
+            p_atr30_pct: atr30p, p_atr30_dol: atr30d,
+            p_atr5_pct: atr5p, p_atr5_dol: atr5d
+          })
+        });
+
+        polyOk++;
+        return tk + ':OK';
+      } catch (e) {
+        polyFail++;
+        return tk + ':FAIL(' + e.message + ')';
+      }
+    });
+
+    var results = await Promise.all(promises);
+    console.log('  Batch ' + Math.floor(bi / BATCH_SIZE + 1) + ': ' + results.join(', '));
+
+    // 1s between batches
+    if (bi + BATCH_SIZE < tickers.length) await sleep(1000);
+  }
+
+  console.log('Polygon complete: ' + polyOk + ' ok, ' + polyFail + ' fail');
+  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'running', progress_pct: 30, message: 'Polygon done (' + polyOk + '/' + tickers.length + '). Starting TipRanks...' });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PHASE 2: TIPRANKS DATA (Smart Score, PT, B/H/S)
+  // Sequential, 2.5s delay. ~5 min for 130 tickers.
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n--- Phase 2: TipRanks refresh ---');
   var PROXY_URL = 'https://tipranks-proxy.alcharles1980.workers.dev';
   var DELAY_MS = 2500;
   var success = 0, failed = 0, skipped = 0;
 
   for (var i = 0; i < tickers.length; i++) {
     var tk = tickers[i];
-    var pct = Math.round((i / tickers.length) * 100);
+    var pct = 30 + Math.round((i / tickers.length) * 70);
 
     try {
       // Fetch from CF Worker proxy
@@ -5060,8 +5172,10 @@ async function runTipRanksSync() {
     if (i < tickers.length - 1) await sleep(DELAY_MS);
   }
 
-  console.log('\nTipRanks sync complete: ' + success + ' success, ' + failed + ' failed, ' + skipped + ' skipped out of ' + tickers.length);
-  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'done', progress_pct: 100, message: success + '/' + tickers.length + ' synced (' + failed + ' fail, ' + skipped + ' skip)' });
+  console.log('\nDaily sync complete:');
+  console.log('  Polygon:  ' + polyOk + ' ok, ' + polyFail + ' fail');
+  console.log('  TipRanks: ' + success + ' ok, ' + failed + ' fail, ' + skipped + ' skip');
+  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'done', progress_pct: 100, message: 'Polygon ' + polyOk + '/' + tickers.length + ' · TipRanks ' + success + '/' + tickers.length + ' (' + failed + ' fail, ' + skipped + ' skip)' });
 }
 
 async function main() {
