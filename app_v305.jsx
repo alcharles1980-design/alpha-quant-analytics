@@ -12901,6 +12901,166 @@ function TipRanksPage(p){
   </div>;
 }
 
+// ─── STOCKS AT GLANCE API DOCS ────────────────────────────────────────────────
+function GlanceApiDocsPage(p){
+  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
+  var secTitle={color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:10};
+  var code={background:C.bgDeep,border:'1px solid '+C.border,borderRadius:6,padding:'12px 14px',fontFamily:F,fontSize:11,color:C.accent,overflowX:'auto',WebkitOverflowScrolling:'touch',lineHeight:1.8,whiteSpace:'pre-wrap',wordBreak:'break-all'};
+  var label={color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:1,textTransform:'uppercase',marginBottom:4,marginTop:14};
+  var desc={color:C.txt,fontSize:11,fontFamily:F,lineHeight:1.6,marginBottom:8};
+  var BASE='https://alpha-quant-api.alcharles1980.workers.dev';
+
+  var linkBtn=function(url,text){
+    return <a href={url} target="_blank" rel="noopener noreferrer"
+      style={{display:'inline-block',padding:'6px 14px',background:C.bgInput,border:'1px solid '+C.border,
+        borderRadius:6,color:C.accent,fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',
+        marginRight:8,marginBottom:6}}>
+      {text} {'\u2197'}
+    </a>;
+  };
+
+  var copyBtn=function(text){
+    return <button onClick={function(){navigator.clipboard.writeText(text).catch(function(){});}}
+      style={{display:'inline-block',padding:'4px 10px',background:'transparent',border:'1px solid '+C.border,
+        borderRadius:4,color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer',marginLeft:8,verticalAlign:'middle'}}>
+      Copy
+    </button>;
+  };
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>API Documentation</div>
+    </div>
+
+    {/* Overview */}
+    <div style={card}>
+      <div style={secTitle}>Overview</div>
+      <div style={desc}>Pull all Stocks At Glance data via a simple REST API. No authentication required. JSON responses with CORS enabled — works from any browser, app, or script.</div>
+      <div style={label}>Base URL</div>
+      <div style={code}>{BASE}{copyBtn(BASE)}</div>
+    </div>
+
+    {/* Endpoint 1 */}
+    <div style={card}>
+      <div style={secTitle}>1. Get All Stocks</div>
+      <div style={desc}>Returns every ticker in the cache with all 22 data fields.</div>
+      <div style={label}>Endpoint</div>
+      <div style={code}>GET /api/glance{copyBtn(BASE+'/api/glance')}</div>
+      <div style={label}>Example</div>
+      <div style={code}>{BASE}/api/glance</div>
+      {linkBtn(BASE+'/api/glance','Try it live')}
+      <div style={label}>Response</div>
+      <div style={code}>{'{\n  "status": "ok",\n  "count": 126,\n  "generated_at": "2026-05-20T...",\n  "data": [\n    {\n      "ticker": "AAPL",\n      "price": 300.23,\n      "market_cap": 4409584891880,\n      "smart_score": 8,\n      "pt_avg": 299.79,\n      "buy": 23, "hold": 13, "sell": 1,\n      ...\n    },\n    ...\n  ]\n}'}</div>
+    </div>
+
+    {/* Endpoint 2 */}
+    <div style={card}>
+      <div style={secTitle}>2. Get Stocks by List</div>
+      <div style={desc}>Filter to a specific watchlist. Use the exact list name (URL-encoded if it has spaces).</div>
+      <div style={label}>Endpoint</div>
+      <div style={code}>GET /api/glance?list={'<list_name>'}{copyBtn(BASE+'/api/glance?list=Default+List')}</div>
+      <div style={label}>Examples</div>
+      <div style={code}>{BASE}/api/glance?list=Default+List{'\n'}{BASE}/api/glance?list=Already+Added{'\n'}{BASE}/api/glance?list=To+Consider</div>
+      {linkBtn(BASE+'/api/glance?list=Default+List','Default List')}
+      {linkBtn(BASE+'/api/glance?list=Already+Added','Already Added')}
+      {linkBtn(BASE+'/api/glance?list=To+Consider','To Consider')}
+    </div>
+
+    {/* Endpoint 3 */}
+    <div style={card}>
+      <div style={secTitle}>3. Get Single Ticker</div>
+      <div style={desc}>Look up one stock by ticker symbol. Returns the full data object directly (not wrapped in an array).</div>
+      <div style={label}>Endpoint</div>
+      <div style={code}>GET /api/glance?ticker={'<SYMBOL>'}{copyBtn(BASE+'/api/glance?ticker=NVDA')}</div>
+      <div style={label}>Examples</div>
+      <div style={code}>{BASE}/api/glance?ticker=NVDA{'\n'}{BASE}/api/glance?ticker=AAPL{'\n'}{BASE}/api/glance?ticker=TSLA</div>
+      {linkBtn(BASE+'/api/glance?ticker=NVDA','NVDA')}
+      {linkBtn(BASE+'/api/glance?ticker=AAPL','AAPL')}
+      {linkBtn(BASE+'/api/glance?ticker=TSLA','TSLA')}
+      <div style={label}>Response</div>
+      <div style={code}>{'{\n  "status": "ok",\n  "count": 1,\n  "ticker": "NVDA",\n  "data": {\n    "ticker": "NVDA",\n    "price": 225.32,\n    "market_cap": 5460000000000,\n    "w52h": 236.54, "w52l": 129.16,\n    "d90h": 236.54, "d90l": 164.27,\n    "d30h": 236.54, "d30l": 200.71,\n    "d7h": 231.50, "d7l": 224.24,\n    "atr30_pct": 3.45, "atr30_dol": 7.78,\n    "atr5_pct": 2.91, "atr5_dol": 6.56,\n    "smart_score": 9,\n    "pt_hi": 380.00, "pt_avg": 278.67, "pt_lo": 220.00,\n    "buy": 45, "hold": 1, "sell": 1,\n    "fetched_at": "2026-05-19T..."\n  }\n}'}</div>
+    </div>
+
+    {/* Endpoint 4 */}
+    <div style={card}>
+      <div style={secTitle}>4. Get All Lists</div>
+      <div style={desc}>Returns all watchlist names with ticker counts. Use the list name in the /api/glance?list= parameter.</div>
+      <div style={label}>Endpoint</div>
+      <div style={code}>GET /api/lists{copyBtn(BASE+'/api/lists')}</div>
+      {linkBtn(BASE+'/api/lists','Try it live')}
+      <div style={label}>Response</div>
+      <div style={code}>{'{\n  "status": "ok",\n  "count": 4,\n  "data": [\n    {"id": 1, "name": "Default List", "ticker_count": 34},\n    {"id": 3, "name": "Already Added", "ticker_count": 67},\n    {"id": 4, "name": "To Consider", "ticker_count": 36}\n  ]\n}'}</div>
+    </div>
+
+    {/* Data Fields */}
+    <div style={card}>
+      <div style={secTitle}>Data Fields (22 per ticker)</div>
+      <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:500}}>
+          <thead><tr>
+            <th style={{padding:'6px 10px',textAlign:'left',fontSize:8,fontFamily:F,fontWeight:700,color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,letterSpacing:1}}>FIELD</th>
+            <th style={{padding:'6px 10px',textAlign:'left',fontSize:8,fontFamily:F,fontWeight:700,color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,letterSpacing:1}}>TYPE</th>
+            <th style={{padding:'6px 10px',textAlign:'left',fontSize:8,fontFamily:F,fontWeight:700,color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,letterSpacing:1}}>SOURCE</th>
+            <th style={{padding:'6px 10px',textAlign:'left',fontSize:8,fontFamily:F,fontWeight:700,color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,letterSpacing:1}}>DESCRIPTION</th>
+          </tr></thead>
+          <tbody>
+            {[
+              ['ticker','string','—','Stock symbol'],
+              ['price','number','Polygon','Last close or prevDay close'],
+              ['market_cap','number','Polygon','Market capitalization'],
+              ['w52h / w52l','number','Polygon','52-week high / low'],
+              ['d90h / d90l','number','Polygon','90-day high / low'],
+              ['d30h / d30l','number','Polygon','30-day high / low'],
+              ['d7h / d7l','number','Polygon','7-day high / low'],
+              ['atr30_pct','number','Polygon','30-day ATR as % of price'],
+              ['atr30_dol','number','Polygon','30-day ATR in dollars'],
+              ['atr5_pct','number','Polygon','5-day ATR as % of price'],
+              ['atr5_dol','number','Polygon','5-day ATR in dollars'],
+              ['smart_score','integer','TipRanks','Smart Score (1-10)'],
+              ['pt_hi / pt_avg / pt_lo','number','TipRanks','Price target high / avg / low'],
+              ['buy / hold / sell','integer','TipRanks','Analyst consensus counts'],
+              ['fetched_at','timestamp','—','When TipRanks data was last refreshed'],
+            ].map(function(r,i){
+              var stripe=i%2===0?'transparent':C.bgDeep+'55';
+              return <tr key={i}>
+                <td style={{padding:'6px 10px',fontFamily:F,fontSize:10,fontWeight:600,color:C.accent,borderBottom:'1px solid '+C.border,background:stripe}}>{r[0]}</td>
+                <td style={{padding:'6px 10px',fontFamily:F,fontSize:10,color:C.txtDim,borderBottom:'1px solid '+C.border,background:stripe}}>{r[1]}</td>
+                <td style={{padding:'6px 10px',fontFamily:F,fontSize:10,color:C.gold,borderBottom:'1px solid '+C.border,background:stripe}}>{r[2]}</td>
+                <td style={{padding:'6px 10px',fontFamily:F,fontSize:10,color:C.txt,borderBottom:'1px solid '+C.border,background:stripe}}>{r[3]}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {/* Code Examples */}
+    <div style={card}>
+      <div style={secTitle}>Code Examples</div>
+      <div style={label}>JavaScript / Fetch</div>
+      <div style={code}>{'const resp = await fetch("'+BASE+'/api/glance?ticker=NVDA");\nconst data = await resp.json();\nconsole.log(data.data.price);      // 225.32\nconsole.log(data.data.smart_score); // 9'}</div>
+      <div style={label}>Python</div>
+      <div style={code}>{'import requests\nr = requests.get("'+BASE+'/api/glance?ticker=NVDA")\nd = r.json()["data"]\nprint(f"{d[\'ticker\']}: ${d[\'price\']} · Score {d[\'smart_score\']}")'}</div>
+      <div style={label}>cURL</div>
+      <div style={code}>{'curl "'+BASE+'/api/glance?ticker=NVDA" | python3 -m json.tool'}</div>
+    </div>
+
+    {/* Notes */}
+    <div style={card}>
+      <div style={secTitle}>Notes</div>
+      <div style={desc}>
+        {'\u2022'} No authentication required — public read-only API.{'\n'}
+        {'\u2022'} Responses cached at Cloudflare edge for 5 minutes.{'\n'}
+        {'\u2022'} Polygon data (price, ranges, ATR) refreshes on page load.{'\n'}
+        {'\u2022'} TipRanks data (score, PT, B/H/S) refreshes daily at 2AM ET via automated pipeline.{'\n'}
+        {'\u2022'} CORS enabled — call from any origin.{'\n'}
+        {'\u2022'} Rate limit: Cloudflare Workers free tier (100K requests/day).
+      </div>
+    </div>
+  </div>;
+}
+
 function StocksAtGlancePage(p){
   var SB=p.sb; var pgKey=p.apiKey; var supaUrl=p.supaUrl;
 
@@ -13607,6 +13767,11 @@ function StocksAtGlancePage(p){
           opacity:lists.length===0?0.4:1}}>
         Export All
       </button>
+      {p.onApiDocs&&<button onClick={p.onApiDocs}
+        style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.accent,borderRadius:6,
+          color:C.accent,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',fontWeight:700}}>
+        {'{ }'} API
+      </button>}
     </div>
 
     {/* ── BULK ADD PANEL ─────────────────────────────────────────────────── */}
@@ -24990,7 +25155,8 @@ function App(){
     {page==='home'&&<StockProfileCheatSheetPage apiKey={pgKey}/>}
     {page==='theproblem'&&<HomePage onNav={function(k){setPage(k);}} onBack={function(){setPage('home');}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
-    {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL}/>}
+    {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}}/>}
+    {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='tipranks'&&<TipRanksPage onBack={function(){setPage('home');}}/>}
     {page==='configsnap'&&<ConfigSnapshotPage onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
