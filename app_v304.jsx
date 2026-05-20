@@ -12195,9 +12195,10 @@ function StockClassificationPage(p){
 function ConfigSnapshotPage(p){
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
   var secTitle={color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:12};
-  var th={padding:'7px 10px',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',textAlign:'center'};
-  var td={padding:'8px 10px',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,textAlign:'center',whiteSpace:'nowrap'};
-  var tdE={padding:'8px 10px',fontFamily:F,fontSize:11,color:C.border,borderBottom:'1px solid '+C.border,textAlign:'center',fontStyle:'italic'};
+  var thGroup={padding:'6px 10px',fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',textAlign:'center',borderBottom:'1px solid '+C.border,background:C.bg};
+  var th={padding:'7px 8px',fontSize:7.5,fontFamily:F,fontWeight:700,letterSpacing:0.8,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',textAlign:'center'};
+  var td={padding:'8px 8px',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,textAlign:'center',whiteSpace:'nowrap'};
+  var tdE={padding:'8px 8px',fontFamily:F,fontSize:11,color:C.border,borderBottom:'1px solid '+C.border,textAlign:'center',fontStyle:'italic'};
   var em='\u2014';
 
   return <div>
@@ -12206,101 +12207,67 @@ function ConfigSnapshotPage(p){
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Configuration Snapshot</div>
     </div>
 
-    {/* ── SECTION 1: STOCK SETTINGS ────────────────────────────────────── */}
     <div style={card}>
-      <div style={secTitle}>Stock Settings</div>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
-          <thead><tr>
-            <th style={th}>Ticker</th>
-            <th style={th}>Top Price</th>
-            <th style={th}>Bottom Price</th>
-            <th style={th}>Qty / $ per Range</th>
-            <th style={th}>Range Covered</th>
-            <th style={th}>Increment</th>
-            <th style={th}>Profit Taker</th>
-            <th style={th}>Max Exposed</th>
-            <th style={th}>Currently Exposed</th>
-            <th style={th}>Days Active</th>
-          </tr></thead>
-          <tbody>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:2400}}>
+          {/* ── Group headers ──────────────────────────────────────────── */}
+          <thead>
             <tr>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
+              <th colSpan={10} style={Object.assign({},thGroup,{color:C.accent,borderRight:'2px solid '+C.border})}>Stock Settings</th>
+              <th colSpan={10} style={Object.assign({},thGroup,{color:C.gold,borderRight:'2px solid '+C.border})}>Stock Configuration Performance</th>
+              <th colSpan={8} style={Object.assign({},thGroup,{color:C.blue})}>Stock Price Stats</th>
             </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    {/* ── SECTION 2: STOCK CONFIGURATION PERFORMANCE ───────────────────── */}
-    <div style={card}>
-      <div style={secTitle}>Stock Configuration Performance</div>
-      <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:1100}}>
-          <thead><tr>
-            <th style={th}>Profit Today</th>
-            <th style={th}>Profit Yesterday</th>
-            <th style={th}>Profit 7D</th>
-            <th style={th}>Profit 30D</th>
-            <th style={th}>Total Profit</th>
-            <th style={th}>Avg Profit / Day</th>
-            <th style={th}>Profit % of Exposed</th>
-            <th style={th}>Profit % of Max Exposed</th>
-            <th style={th}>% / Day / Exposed</th>
-            <th style={th}>% / Day / Max Exposed</th>
-          </tr></thead>
-          <tbody>
+            {/* ── Column headers ────────────────────────────────────────── */}
             <tr>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
+              {/* Stock Settings (10) */}
+              <th style={th}>Ticker</th>
+              <th style={th}>Top Price</th>
+              <th style={th}>Bottom Price</th>
+              <th style={th}>Qty / $ per Range</th>
+              <th style={th}>Range Covered</th>
+              <th style={th}>Increment</th>
+              <th style={th}>Profit Taker</th>
+              <th style={th}>Max Exposed</th>
+              <th style={th}>Curr Exposed</th>
+              <th style={Object.assign({},th,{borderRight:'2px solid '+C.border})}>Days Active</th>
+              {/* Performance (10) */}
+              <th style={th}>P. Today</th>
+              <th style={th}>P. Yesterday</th>
+              <th style={th}>P. 7D</th>
+              <th style={th}>P. 30D</th>
+              <th style={th}>Total Profit</th>
+              <th style={th}>Avg P/Day</th>
+              <th style={th}>P% Exposed</th>
+              <th style={th}>P% Max Exp</th>
+              <th style={th}>%/Day/Exp</th>
+              <th style={Object.assign({},th,{borderRight:'2px solid '+C.border})}>%/Day/Max</th>
+              {/* Price Stats (8) */}
+              <th style={th}>Last Price</th>
+              <th style={th}>7D Hi/Lo</th>
+              <th style={th}>30D Hi/Lo</th>
+              <th style={th}>90D Hi/Lo</th>
+              <th style={th}>52W Hi/Lo</th>
+              <th style={th}>7D ATR %/$</th>
+              <th style={th}>30D ATR %/$</th>
+              <th style={th}>PT Hi/Avg/Lo</th>
             </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    {/* ── SECTION 3: STOCK PRICE STATS ─────────────────────────────────── */}
-    <div style={card}>
-      <div style={secTitle}>Stock Price Stats</div>
-      <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
-          <thead><tr>
-            <th style={th}>Last Price</th>
-            <th style={th}>7D Hi / Lo</th>
-            <th style={th}>30D Hi / Lo</th>
-            <th style={th}>90D Hi / Lo</th>
-            <th style={th}>52W Hi / Lo</th>
-            <th style={th}>7D ATR % / $</th>
-            <th style={th}>30D ATR % / $</th>
-            <th style={th}>PT Hi / Avg / Lo</th>
-          </tr></thead>
+          </thead>
           <tbody>
             <tr>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td>
+              {/* Stock Settings */}
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={Object.assign({},tdE,{borderRight:'2px solid '+C.border})}>{em}</td>
+              {/* Performance */}
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={Object.assign({},tdE,{borderRight:'2px solid '+C.border})}>{em}</td>
+              {/* Price Stats */}
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td><td style={tdE}>{em}</td>
             </tr>
           </tbody>
         </table>
@@ -12308,7 +12275,7 @@ function ConfigSnapshotPage(p){
     </div>
 
     <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.6,fontStyle:'italic'}}>
-      Configuration Snapshot template. All values to be populated by the trading bot integration layer.
+      Configuration Snapshot template — 28 columns across 3 groups. Scroll horizontally. Values to be populated by the trading bot integration layer.
     </div>
   </div>;
 }
