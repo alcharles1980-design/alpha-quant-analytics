@@ -12192,23 +12192,13 @@ function StockClassificationPage(p){
 // Displays Smart Score, analyst consensus, individual analysts, insiders,
 // hedge fund activity, blogger sentiment, and news sentiment — all from one call.
 // ─── CONFIGURATION SNAPSHOT PAGE ───────────────────────────────────────────────
-// Template page for dev reference. Shows the data structure for oscillation
-// trading bot configuration, performance tracking, and stock price stats.
 function ConfigSnapshotPage(p){
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
   var secTitle={color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:12};
-  var tbl={width:'100%',borderCollapse:'collapse'};
-  var thStyle={padding:'8px 12px',textAlign:'left',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep};
-  var tdLabel={padding:'8px 12px',fontFamily:F,fontSize:11,color:C.txtDim,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap',width:'55%'};
-  var tdVal={padding:'8px 12px',fontFamily:F,fontSize:12,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,textAlign:'right'};
-  var tdEmpty={padding:'8px 12px',fontFamily:F,fontSize:11,color:C.border,borderBottom:'1px solid '+C.border,textAlign:'right',fontStyle:'italic'};
-
-  var row=function(label,value,color){
-    return <tr key={label}>
-      <td style={tdLabel}>{label}</td>
-      <td style={value?Object.assign({},tdVal,color?{color:color}:{}):tdEmpty}>{value||'\u2014'}</td>
-    </tr>;
-  };
+  var th={padding:'7px 10px',fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',textAlign:'center'};
+  var td={padding:'8px 10px',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,textAlign:'center',whiteSpace:'nowrap'};
+  var tdE={padding:'8px 10px',fontFamily:F,fontSize:11,color:C.border,borderBottom:'1px solid '+C.border,textAlign:'center',fontStyle:'italic'};
+  var em='\u2014';
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -12220,22 +12210,32 @@ function ConfigSnapshotPage(p){
     <div style={card}>
       <div style={secTitle}>Stock Settings</div>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={tbl}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
           <thead><tr>
-            <th style={thStyle}>Parameter</th>
-            <th style={Object.assign({},thStyle,{textAlign:'right'})}>Value</th>
+            <th style={th}>Ticker</th>
+            <th style={th}>Top Price</th>
+            <th style={th}>Bottom Price</th>
+            <th style={th}>Qty / $ per Range</th>
+            <th style={th}>Range Covered</th>
+            <th style={th}>Increment</th>
+            <th style={th}>Profit Taker</th>
+            <th style={th}>Max Exposed</th>
+            <th style={th}>Currently Exposed</th>
+            <th style={th}>Days Active</th>
           </tr></thead>
           <tbody>
-            {row('Stock Ticker','',C.accent)}
-            {row('Top Price',null)}
-            {row('Bottom Price',null)}
-            {row('Qty per Range / $ per Range',null)}
-            {row('Range Covered ($ / %)',null)}
-            {row('Increment ($ or %)',null)}
-            {row('Profit Taker ($ or %)',null)}
-            {row('Max Possible Exposed ($)',null)}
-            {row('Currently Exposed ($)',null)}
-            {row('Days Active',null)}
+            <tr>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -12245,22 +12245,32 @@ function ConfigSnapshotPage(p){
     <div style={card}>
       <div style={secTitle}>Stock Configuration Performance</div>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={tbl}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:1100}}>
           <thead><tr>
-            <th style={thStyle}>Metric</th>
-            <th style={Object.assign({},thStyle,{textAlign:'right'})}>Value</th>
+            <th style={th}>Profit Today</th>
+            <th style={th}>Profit Yesterday</th>
+            <th style={th}>Profit 7D</th>
+            <th style={th}>Profit 30D</th>
+            <th style={th}>Total Profit</th>
+            <th style={th}>Avg Profit / Day</th>
+            <th style={th}>Profit % of Exposed</th>
+            <th style={th}>Profit % of Max Exposed</th>
+            <th style={th}>% / Day / Exposed</th>
+            <th style={th}>% / Day / Max Exposed</th>
           </tr></thead>
           <tbody>
-            {row('Profit Today',null,C.accent)}
-            {row('Profit Yesterday',null,C.accent)}
-            {row('Profit Last 7 Days',null,C.accent)}
-            {row('Profit Last 30 Days',null,C.accent)}
-            {row('Total Profit',null,C.accent)}
-            {row('Avg Profit / Day',null,C.gold)}
-            {row('Total Profit % of Exposed',null,C.blue)}
-            {row('Total Profit % of Max Possible Exposed',null,C.blue)}
-            {row('% Profit per Day / Exposed',null,C.purple)}
-            {row('% Profit per Day / Max Exposed',null,C.purple)}
+            <tr>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -12270,20 +12280,28 @@ function ConfigSnapshotPage(p){
     <div style={card}>
       <div style={secTitle}>Stock Price Stats</div>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={tbl}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
           <thead><tr>
-            <th style={thStyle}>Metric</th>
-            <th style={Object.assign({},thStyle,{textAlign:'right'})}>Value</th>
+            <th style={th}>Last Price</th>
+            <th style={th}>7D Hi / Lo</th>
+            <th style={th}>30D Hi / Lo</th>
+            <th style={th}>90D Hi / Lo</th>
+            <th style={th}>52W Hi / Lo</th>
+            <th style={th}>7D ATR % / $</th>
+            <th style={th}>30D ATR % / $</th>
+            <th style={th}>PT Hi / Avg / Lo</th>
           </tr></thead>
           <tbody>
-            {row('Last Price',null)}
-            {row('Last 7 Days High / Low',null)}
-            {row('Last 30 Days High / Low',null)}
-            {row('Last 90 Days High / Low',null)}
-            {row('Last 52 Weeks High / Low',null)}
-            {row('7 Days ATR % / $',null)}
-            {row('30 Days ATR % / $',null)}
-            {row('Price Targets High / Avg / Low',null)}
+            <tr>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+              <td style={tdE}>{em}</td>
+            </tr>
           </tbody>
         </table>
       </div>
