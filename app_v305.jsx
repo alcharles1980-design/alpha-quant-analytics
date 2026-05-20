@@ -12218,7 +12218,9 @@ function ConfigSnapshotPage(p){
     {key:'p_pct_exposed',label:'P% Exposed',group:1},
     {key:'p_pct_max',label:'P% Max Exp',group:1},
     {key:'pct_day_exp',label:'%/Day/Exp',group:1},
-    {key:'pct_day_max',label:'%/Day/Max',group:1,last:true},
+    {key:'pct_day_max',label:'%/Day/Max',group:1},
+    {key:'position_pnl',label:'Position P&L $',group:1},
+    {key:'config_net',label:'Config Net $',group:1,last:true},
     // Price Stats (group 2)
     {key:'last_price',label:'Last Price',group:2},
     {key:'hi_lo_7d',label:'7D Hi/Lo',group:2},
@@ -12295,11 +12297,11 @@ function ConfigSnapshotPage(p){
 
     <div style={card}>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:2500}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:2700}}>
           <thead>
             <tr>
               <th style={Object.assign({},thGroup,{color:C.accent,borderRight:'2px solid '+C.border})} colSpan={10}>Stock Settings</th>
-              <th style={Object.assign({},thGroup,{color:C.gold,borderRight:'2px solid '+C.border})} colSpan={10}>Stock Configuration Performance</th>
+              <th style={Object.assign({},thGroup,{color:C.gold,borderRight:'2px solid '+C.border})} colSpan={12}>Stock Configuration Performance</th>
               <th style={Object.assign({},thGroup,{color:C.blue,borderRight:'2px solid '+C.border})} colSpan={8}>Stock Price Stats</th>
               <th style={Object.assign({},thGroup,{width:40})}></th>
             </tr>
@@ -12311,8 +12313,8 @@ function ConfigSnapshotPage(p){
             </tr>
           </thead>
           <tbody>
-            {loading&&<tr><td colSpan={29} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading...</td></tr>}
-            {!loading&&rows.length===0&&<tr><td colSpan={29} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No configurations. Click + Add Row to start.</td></tr>}
+            {loading&&<tr><td colSpan={31} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading...</td></tr>}
+            {!loading&&rows.length===0&&<tr><td colSpan={31} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No configurations. Click + Add Row to start.</td></tr>}
             {rows.map(function(row,ri){
               var stripe=ri%2===0?'transparent':C.bgDeep+'55';
               return <tr key={row.id}>
