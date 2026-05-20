@@ -12193,89 +12193,155 @@ function StockClassificationPage(p){
 // hedge fund activity, blogger sentiment, and news sentiment — all from one call.
 // ─── CONFIGURATION SNAPSHOT PAGE ───────────────────────────────────────────────
 function ConfigSnapshotPage(p){
+  var s1=useState([]),rows=s1[0],setRows=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+
+  var COLS=[
+    // Stock Settings (group 0)
+    {key:'ticker',label:'Ticker',group:0},
+    {key:'top_price',label:'Top Price',group:0},
+    {key:'bottom_price',label:'Bottom Price',group:0},
+    {key:'qty_per_range',label:'Qty / $ per Range',group:0},
+    {key:'range_covered',label:'Range Covered',group:0},
+    {key:'increment',label:'Increment',group:0},
+    {key:'profit_taker',label:'Profit Taker',group:0},
+    {key:'max_exposed',label:'Max Exposed',group:0},
+    {key:'curr_exposed',label:'Curr Exposed',group:0},
+    {key:'days_active',label:'Days Active',group:0,last:true},
+    // Performance (group 1)
+    {key:'p_today',label:'P. Today',group:1},
+    {key:'p_yesterday',label:'P. Yesterday',group:1},
+    {key:'p_7d',label:'P. 7D',group:1},
+    {key:'p_30d',label:'P. 30D',group:1},
+    {key:'p_total',label:'Total Profit',group:1},
+    {key:'p_avg_day',label:'Avg P/Day',group:1},
+    {key:'p_pct_exposed',label:'P% Exposed',group:1},
+    {key:'p_pct_max',label:'P% Max Exp',group:1},
+    {key:'pct_day_exp',label:'%/Day/Exp',group:1},
+    {key:'pct_day_max',label:'%/Day/Max',group:1,last:true},
+    // Price Stats (group 2)
+    {key:'last_price',label:'Last Price',group:2},
+    {key:'hi_lo_7d',label:'7D Hi/Lo',group:2},
+    {key:'hi_lo_30d',label:'30D Hi/Lo',group:2},
+    {key:'hi_lo_90d',label:'90D Hi/Lo',group:2},
+    {key:'hi_lo_52w',label:'52W Hi/Lo',group:2},
+    {key:'atr_7d',label:'7D ATR %/$',group:2},
+    {key:'atr_30d',label:'30D ATR %/$',group:2},
+    {key:'price_targets',label:'PT Hi/Avg/Lo',group:2}
+  ];
+
+  // Load from DB
+  var loadRows=async function(){
+    setLoading(true);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/config_snapshots?order=created_at.asc',{headers:getSbHeaders()});
+      var d=await r.json();
+      if(Array.isArray(d))setRows(d);
+    }catch(e){}
+    setLoading(false);
+  };
+
+  var didMount=useRef(false);
+  if(!didMount.current){didMount.current=true;loadRows();}
+
+  // Add empty row
+  var addRow=async function(){
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/config_snapshots',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json','Prefer':'return=representation'},getSbHeaders()),
+        body:JSON.stringify({ticker:''})
+      });
+      var d=await r.json();
+      if(Array.isArray(d)&&d.length>0)setRows(function(prev){return prev.concat(d);});
+    }catch(e){}
+  };
+
+  // Delete row
+  var deleteRow=async function(id){
+    try{
+      await fetch(SB_URL+'/rest/v1/config_snapshots?id=eq.'+id,{method:'DELETE',headers:getSbHeaders()});
+      setRows(function(prev){return prev.filter(function(r){return r.id!==id;});});
+    }catch(e){}
+  };
+
+  // Update cell on blur — save to DB
+  var updateCell=function(id,key,value){
+    // Update local state immediately
+    setRows(function(prev){return prev.map(function(r){
+      if(r.id!==id)return r;
+      var n=Object.assign({},r);n[key]=value;return n;
+    });});
+    // Save to DB (fire-and-forget)
+    var body={};body[key]=value;body.updated_at=new Date().toISOString();
+    fetch(SB_URL+'/rest/v1/config_snapshots?id=eq.'+id,{
+      method:'PATCH',
+      headers:Object.assign({'Content-Type':'application/json'},getSbHeaders()),
+      body:JSON.stringify(body)
+    }).catch(function(){});
+  };
+
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
-  var secTitle={color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:12};
   var thGroup={padding:'6px 10px',fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',textAlign:'center',borderBottom:'1px solid '+C.border,background:C.bg};
-  var th={padding:'7px 8px',fontSize:7.5,fontFamily:F,fontWeight:700,letterSpacing:0.8,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',textAlign:'center'};
-  var td={padding:'8px 8px',fontFamily:F,fontSize:11,fontWeight:600,color:C.txtBright,borderBottom:'1px solid '+C.border,textAlign:'center',whiteSpace:'nowrap'};
-  var tdE={padding:'8px 8px',fontFamily:F,fontSize:11,color:C.border,borderBottom:'1px solid '+C.border,textAlign:'center',fontStyle:'italic'};
-  var em='\u2014';
+  var th={padding:'7px 6px',fontSize:7,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:C.txtDim,borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',textAlign:'center'};
+  var groupColors=[C.accent,C.gold,C.blue];
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Configuration Snapshot</div>
+      <button onClick={addRow} style={{marginLeft:'auto',padding:'6px 16px',background:C.accent,border:'none',borderRadius:6,color:C.bg,fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer'}}>+ Add Row</button>
     </div>
 
     <div style={card}>
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:2400}}>
-          {/* ── Group headers ──────────────────────────────────────────── */}
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:2500}}>
           <thead>
             <tr>
-              <th colSpan={10} style={Object.assign({},thGroup,{color:C.accent,borderRight:'2px solid '+C.border})}>Stock Settings</th>
-              <th colSpan={10} style={Object.assign({},thGroup,{color:C.gold,borderRight:'2px solid '+C.border})}>Stock Configuration Performance</th>
-              <th colSpan={8} style={Object.assign({},thGroup,{color:C.blue})}>Stock Price Stats</th>
+              <th style={Object.assign({},thGroup,{color:C.accent,borderRight:'2px solid '+C.border})} colSpan={10}>Stock Settings</th>
+              <th style={Object.assign({},thGroup,{color:C.gold,borderRight:'2px solid '+C.border})} colSpan={10}>Stock Configuration Performance</th>
+              <th style={Object.assign({},thGroup,{color:C.blue,borderRight:'2px solid '+C.border})} colSpan={8}>Stock Price Stats</th>
+              <th style={Object.assign({},thGroup,{width:40})}></th>
             </tr>
-            {/* ── Column headers ────────────────────────────────────────── */}
             <tr>
-              {/* Stock Settings (10) */}
-              <th style={th}>Ticker</th>
-              <th style={th}>Top Price</th>
-              <th style={th}>Bottom Price</th>
-              <th style={th}>Qty / $ per Range</th>
-              <th style={th}>Range Covered</th>
-              <th style={th}>Increment</th>
-              <th style={th}>Profit Taker</th>
-              <th style={th}>Max Exposed</th>
-              <th style={th}>Curr Exposed</th>
-              <th style={Object.assign({},th,{borderRight:'2px solid '+C.border})}>Days Active</th>
-              {/* Performance (10) */}
-              <th style={th}>P. Today</th>
-              <th style={th}>P. Yesterday</th>
-              <th style={th}>P. 7D</th>
-              <th style={th}>P. 30D</th>
-              <th style={th}>Total Profit</th>
-              <th style={th}>Avg P/Day</th>
-              <th style={th}>P% Exposed</th>
-              <th style={th}>P% Max Exp</th>
-              <th style={th}>%/Day/Exp</th>
-              <th style={Object.assign({},th,{borderRight:'2px solid '+C.border})}>%/Day/Max</th>
-              {/* Price Stats (8) */}
-              <th style={th}>Last Price</th>
-              <th style={th}>7D Hi/Lo</th>
-              <th style={th}>30D Hi/Lo</th>
-              <th style={th}>90D Hi/Lo</th>
-              <th style={th}>52W Hi/Lo</th>
-              <th style={th}>7D ATR %/$</th>
-              <th style={th}>30D ATR %/$</th>
-              <th style={th}>PT Hi/Avg/Lo</th>
+              {COLS.map(function(col){
+                return <th key={col.key} style={Object.assign({},th,col.last?{borderRight:'2px solid '+C.border}:{})}>{col.label}</th>;
+              })}
+              <th style={Object.assign({},th,{width:40})}>Del</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              {/* Stock Settings */}
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={Object.assign({},tdE,{borderRight:'2px solid '+C.border})}>{em}</td>
-              {/* Performance */}
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={Object.assign({},tdE,{borderRight:'2px solid '+C.border})}>{em}</td>
-              {/* Price Stats */}
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-              <td style={tdE}>{em}</td><td style={tdE}>{em}</td>
-            </tr>
+            {loading&&<tr><td colSpan={29} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>Loading...</td></tr>}
+            {!loading&&rows.length===0&&<tr><td colSpan={29} style={{padding:24,textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:11}}>No configurations. Click + Add Row to start.</td></tr>}
+            {rows.map(function(row,ri){
+              var stripe=ri%2===0?'transparent':C.bgDeep+'55';
+              return <tr key={row.id}>
+                {COLS.map(function(col){
+                  return <td key={col.key} style={Object.assign({padding:0,borderBottom:'1px solid '+C.border,background:stripe},col.last?{borderRight:'2px solid '+C.border}:{})}>
+                    <input
+                      defaultValue={row[col.key]||''}
+                      onBlur={function(e){var v=e.target.value.trim();if(v!==(row[col.key]||''))updateCell(row.id,col.key,v);}}
+                      onKeyDown={function(e){if(e.key==='Enter')e.target.blur();}}
+                      style={{width:'100%',padding:'8px 6px',background:'transparent',border:'none',color:col.key==='ticker'?C.accent:C.txtBright,fontFamily:F,fontSize:11,fontWeight:col.key==='ticker'?700:500,textAlign:'center',outline:'none',boxSizing:'border-box',minWidth:70}}
+                      placeholder={'\u2014'}
+                    />
+                  </td>;
+                })}
+                <td style={{padding:'4px',borderBottom:'1px solid '+C.border,background:stripe,textAlign:'center'}}>
+                  <button onClick={function(){deleteRow(row.id);}}
+                    style={{background:'transparent',border:'1px solid '+C.warn,borderRadius:4,color:C.warn,fontSize:10,fontFamily:F,padding:'4px 8px',cursor:'pointer',lineHeight:1}}>
+                    {'\u2715'}
+                  </button>
+                </td>
+              </tr>;
+            })}
           </tbody>
         </table>
       </div>
     </div>
 
     <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.6,fontStyle:'italic'}}>
-      Configuration Snapshot template — 28 columns across 3 groups. Scroll horizontally. Values to be populated by the trading bot integration layer.
+      Click any cell to edit. Changes save automatically. Scroll horizontally to see all 28 columns.
     </div>
   </div>;
 }
