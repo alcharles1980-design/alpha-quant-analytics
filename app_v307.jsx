@@ -12274,15 +12274,33 @@ function ChartPatternPage(p){
   var detectRegime=function(bars,swings,tf,overridePrice){
     if(bars.length<30)return {regime:'Insufficient Data',confidence:0,bias:'neutral',detail:'',stats:{}};
     var lastPrice=overridePrice||bars[bars.length-1].c;
-    // MAs: standard 20-bar and 50-bar SMA (matches charting convention)
-    // On daily: MA20 = 20 days. On hourly: MA20 = 20 hours. On 5m: MA20 = 100 minutes.
-    // This is what every charting platform shows.
+
+    // MAs: compute daily-equivalent moving averages for regime detection.
+    // On daily: MA20 = 20 bars. On intraday: estimate bars-per-day from data,
+    // then use 20 × bpd and 50 × bpd to approximate 20-day and 50-day SMAs.
+    // This is necessary because regime (trending/range-bound) is a multi-day
+    // concept — a 20-bar MA on 5-min chart (100 minutes) can't detect trends.
+    var bpd=1; // bars per trading day
+    if(tf!=='Daily'&&bars.length>=40){
+      // Count bars in the most recent 5 trading days worth of data
+      // Find the timestamp 5 trading days (~7 calendar days) back
+      var refT=bars[bars.length-1].t-7*24*60*60*1000;
+      var count=0;
+      for(var ci=bars.length-1;ci>=0;ci--){
+        if(bars[ci].t>=refT)count++;else break;
+      }
+      // ~5 trading days in 7 calendar days
+      bpd=Math.max(1,Math.round(count/5));
+    }
+    var ma20n=Math.min(20*bpd,Math.floor(bars.length*0.8));
+    var ma50n=Math.min(50*bpd,Math.floor(bars.length*0.9));
+
     var calcMA=function(n){
-      if(n<2||bars.length<n)return null;
+      if(n<5||bars.length<n)return null;
       var sum=0;for(var i=bars.length-n;i<bars.length;i++)sum+=bars[i].c;
       return sum/n;
     };
-    var ma20=calcMA(20),ma50=calcMA(50);
+    var ma20=calcMA(ma20n),ma50=calcMA(ma50n);
     // ATR (14-bar)
     var atrN=Math.min(14,bars.length-1);
     var atrSum=0;
@@ -12364,6 +12382,7 @@ function ChartPatternPage(p){
       stats:{atrPct:Math.round(atrPct*100)/100,
         ma20:ma20?Math.round(ma20*100)/100:null,
         ma50:ma50?Math.round(ma50*100)/100:null,
+        ma20n:ma20n,bpd:bpd,
         reversalRate:Math.round(reversalRate*100),
         volExpanding:volExpanding,volContracting:volContracting}};
   };
@@ -12740,7 +12759,7 @@ function ChartPatternPage(p){
               {reg.stats&&<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
                 {reg.stats.atrPct!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.gold}}>ATR {reg.stats.atrPct}%</span>}
                 {reg.stats.reversalRate!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.blue}}>Rev {reg.stats.reversalRate}%</span>}
-                {reg.stats.ma20!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.txtDim}}>MA20 ${reg.stats.ma20}</span>}
+                {reg.stats.ma20!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.txtDim}}>SMA({reg.stats.ma20n||20}) ${reg.stats.ma20}</span>}
               </div>}
             </div>;
           })}
