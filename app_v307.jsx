@@ -12356,6 +12356,33 @@ function ChartPatternPage(p){
         volExpanding:volExpanding,volContracting:volContracting}};
   };
 
+  // ── Pattern explanations ────────────────────────────────────────────────
+  var PATTERN_INFO={
+    'Double Bottom':'Two tests of the same support level that held. Buyers stepped in twice at this price, signaling a floor. A break above the neckline (peak between the two lows) confirms the reversal. Measured move target = neckline + (neckline − support).',
+    'Double Top':'Two tests of the same resistance level that held. Sellers rejected the price twice, signaling a ceiling. A break below the neckline (trough between the two highs) confirms the reversal. Target = neckline − (resistance − neckline).',
+    'Head & Shoulders':'Three peaks where the middle (head) is highest. The two shoulders form a neckline. A break below the neckline signals a trend reversal from bullish to bearish. Target = neckline − (head − neckline). One of the most reliable reversal patterns.',
+    'Inverse H&S':'Mirror of Head & Shoulders at a bottom. Three troughs where the middle is lowest. A break above the neckline confirms bullish reversal. Target = neckline + (neckline − head). Strong signal when forming after a downtrend.',
+    'Bull Flag':'A sharp upward move (the pole) followed by a tight downward-sloping consolidation (the flag). The flag represents a pause, not a reversal. Expect continuation in the pole direction. Target = flag breakout + pole length.',
+    'Bear Flag':'A sharp downward move (the pole) followed by a tight upward-sloping consolidation (the flag). Expect continuation downward. Target = flag breakdown − pole length.',
+    'Channel':'Price oscillating between parallel support and resistance levels. Ideal for grid trading — buy near support, sell near resistance. The wider the channel, the more profit per cycle. Breaks above/below signal trend continuation.',
+    'Ascending Triangle':'Flat resistance with rising support (higher lows). Buyers are increasingly aggressive. Typically breaks upward. Volume often declines during formation, then spikes on breakout. Target = resistance + triangle height.',
+    'Descending Triangle':'Flat support with falling resistance (lower highs). Sellers are increasingly aggressive. Typically breaks downward. Target = support − triangle height.',
+    'Symmetrical Triangle':'Converging trendlines — lower highs and higher lows. Represents compression and indecision. Can break either direction. The longer the formation, the more powerful the breakout.',
+    'Rising Wedge':'Both trendlines slope upward but converge. Despite the upward drift, this is bearish — momentum is weakening. Expect a breakdown. Often forms during the final phase of an uptrend.',
+    'Falling Wedge':'Both trendlines slope downward but converge. Despite the downward drift, this is bullish — selling pressure is fading. Expect a breakout upward. Often forms at the end of a correction.',
+    'Bullish Engulfing':'A green candle whose body completely covers the prior red candle. Indicates buyers overwhelmed sellers in one bar. Strongest when it appears at support or after a downtrend.',
+    'Bearish Engulfing':'A red candle whose body completely covers the prior green candle. Indicates sellers overwhelmed buyers in one bar. Strongest when it appears at resistance or after an uptrend.',
+    'Hammer':'Small body at the top of the bar with a long lower wick (2x+ body). Price dropped significantly but buyers pushed it back up. Bullish reversal signal, especially at support levels.',
+    'Shooting Star':'Small body at the bottom of the bar with a long upper wick (2x+ body). Price rallied but sellers pushed it back down. Bearish reversal signal, especially at resistance levels.',
+    'Doji':'Open and close are nearly equal, creating a cross shape. Represents indecision between buyers and sellers. The market is at an inflection point — watch the next bar for direction.',
+    'Morning Star':'Three-bar bullish reversal: (1) large red candle, (2) small-body candle (the star — indecision), (3) large green candle closing above the midpoint of bar 1. Strong bottom signal.',
+    'Evening Star':'Three-bar bearish reversal: (1) large green candle, (2) small-body candle (the star), (3) large red candle closing below the midpoint of bar 1. Strong top signal.',
+    'Fibonacci Retracement':'Key levels where pullbacks tend to pause or reverse. The 38.2% and 61.8% levels are the most significant. Price bouncing off a Fib level often resumes the prior trend. The 50% level is psychological, not mathematical.',
+    'Support':'A price level where buying pressure consistently prevents further decline. More touches = stronger support. A break below support often accelerates selling.',
+    'Resistance':'A price level where selling pressure consistently prevents further advance. More touches = stronger resistance. A break above resistance often triggers momentum buying.',
+    'S/R Zone':'A price level that has acted as both support and resistance at different times. These are the most significant levels — the market remembers them.'
+  };
+
   // ── Main scan function ────────────────────────────────────────────────
   var scan=async function(){
     var tk=ticker.trim().toUpperCase();
@@ -12418,6 +12445,8 @@ function ChartPatternPage(p){
           if(pat.endIdx!=null&&bars[pat.endIdx])pat.endTime=fmtTime(bars[pat.endIdx].t,isDaily);
           // For single-bar patterns (candlesticks), just show one time
           if(pat.startIdx===pat.endIdx)pat.endTime=null;
+          // Add explanation
+          pat.explain=PATTERN_INFO[pat.pattern]||'';
         });
 
         // Sort by confidence
@@ -12435,7 +12464,7 @@ function ChartPatternPage(p){
       }
     }
 
-    setResults({ticker:tk,data:allResults});
+    setResults({ticker:tk,data:allResults,lastPrice:allResults.daily?allResults.daily.lastPrice:allResults['1h']?allResults['1h'].lastPrice:null});
     setProg('');
     setLoading(false);
   };
@@ -12495,7 +12524,11 @@ function ChartPatternPage(p){
 
     {/* Results */}
     {results&&<div>
-      <div style={{color:C.txtBright,fontSize:12,fontWeight:700,fontFamily:F,marginBottom:12}}>{results.ticker} Pattern Scan Results</div>
+      <div style={{display:'flex',alignItems:'baseline',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+        <div style={{color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F}}>{results.ticker}</div>
+        {results.lastPrice&&<div style={{color:C.accent,fontSize:18,fontWeight:700,fontFamily:F}}>${results.lastPrice.toFixed(2)}</div>}
+        <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>Pattern Scan Results</div>
+      </div>
 
       {/* ── Regime Matrix ──────────────────────────────────────────────── */}
       <div style={card}>
@@ -12572,6 +12605,7 @@ function ChartPatternPage(p){
                   <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:'auto'}}>Confidence: <span style={{color:pat.confidence>=70?C.accent:pat.confidence>=50?C.gold:C.warn,fontWeight:700}}>{pat.confidence}%</span></span>
                 </div>
                 <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.5}}>{pat.desc}</div>
+                {pat.explain&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,lineHeight:1.5,marginTop:4,padding:'6px 10px',background:C.bg,borderRadius:4,borderLeft:'2px solid '+C.border}}>{pat.explain}</div>}
                 {pat.levels&&<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:6}}>
                   {Object.keys(pat.levels).map(function(k){
                     var v=pat.levels[k];
