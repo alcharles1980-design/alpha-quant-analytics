@@ -12334,7 +12334,7 @@ function ChartPatternPage(p){
       detail='Lower highs + lower lows. Price below MA20.';
     }else if(volExpanding&&reversalRate>0.55){
       regime='Volatile Chop';confidence=70;bias='neutral';
-      detail='High ATR + frequent reversals ('+(reversalRate*100).toFixed(0)+'%). Ideal for grid trading.';
+      detail='High ATR + frequent reversals ('+(reversalRate*100).toFixed(0)+'%). Ideal for oscillation trading.';
     }else if(reversalRate>0.45&&!higherHighs&&!lowerLows){
       regime='Range-Bound';confidence=75;bias='neutral';
       var rangeHi=0,rangeLo=Infinity;
@@ -12342,7 +12342,7 @@ function ChartPatternPage(p){
         if(bars[rbi].h>rangeHi)rangeHi=bars[rbi].h;
         if(bars[rbi].l<rangeLo)rangeLo=bars[rbi].l;
       }
-      detail='Oscillating in $'+rangeLo.toFixed(2)+' - $'+rangeHi.toFixed(2)+'. Grid trading zone.';
+      detail='Oscillating in $'+rangeLo.toFixed(2)+' - $'+rangeHi.toFixed(2)+'. Oscillation trading zone.';
     }else if(volExpanding&&(higherHighs||lowerLows)){
       regime='Breakout';confidence=65;bias=higherHighs?'bullish':'bearish';
       detail='Expanding volatility + directional swing structure. Trending move in progress.';
@@ -12364,7 +12364,7 @@ function ChartPatternPage(p){
     'Inverse H&S':'Mirror of Head & Shoulders at a bottom. Three troughs where the middle is lowest. A break above the neckline confirms bullish reversal. Target = neckline + (neckline − head). Strong signal when forming after a downtrend.',
     'Bull Flag':'A sharp upward move (the pole) followed by a tight downward-sloping consolidation (the flag). The flag represents a pause, not a reversal. Expect continuation in the pole direction. Target = flag breakout + pole length.',
     'Bear Flag':'A sharp downward move (the pole) followed by a tight upward-sloping consolidation (the flag). Expect continuation downward. Target = flag breakdown − pole length.',
-    'Channel':'Price oscillating between parallel support and resistance levels. Ideal for grid trading — buy near support, sell near resistance. The wider the channel, the more profit per cycle. Breaks above/below signal trend continuation.',
+    'Channel':'Price oscillating between parallel support and resistance levels. Ideal for oscillation trading — buy near support, sell near resistance. The wider the channel, the more profit per cycle. Breaks above/below signal trend continuation.',
     'Ascending Triangle':'Flat resistance with rising support (higher lows). Buyers are increasingly aggressive. Typically breaks upward. Volume often declines during formation, then spikes on breakout. Target = resistance + triangle height.',
     'Descending Triangle':'Flat support with falling resistance (lower highs). Sellers are increasingly aggressive. Typically breaks downward. Target = support − triangle height.',
     'Symmetrical Triangle':'Converging trendlines — lower highs and higher lows. Represents compression and indecision. Can break either direction. The longer the formation, the more powerful the breakout.',
@@ -12488,7 +12488,7 @@ function ChartPatternPage(p){
     'Inverse H&S':'Three troughs where the middle (head) is lower than the shoulders. Mirror of H&S — a bottoming pattern. Bullish when price breaks above the neckline. Measured move target = neckline + (neckline - head).',
     'Bull Flag':'A sharp upward move (pole) followed by a tight downward-sloping consolidation (flag). The flag is a pause, not a reversal. Expect a breakout upward equal to the pole length.',
     'Bear Flag':'A sharp downward move (pole) followed by a tight upward-sloping consolidation (flag). The flag is a relief rally within a downtrend. Expect continuation downward.',
-    'Channel':'Price oscillating between parallel support and resistance lines with multiple touches on each side. Ideal for grid trading — buy at support, sell at resistance. Breakout direction uncertain.',
+    'Channel':'Price oscillating between parallel support and resistance lines with multiple touches on each side. Ideal for oscillation trading — buy at support, sell at resistance. Breakout direction uncertain.',
     'Ascending Triangle':'Flat resistance with rising support (higher lows). Buyers are getting more aggressive. Usually breaks upward. Measured move = triangle height added to breakout point.',
     'Descending Triangle':'Flat support with falling resistance (lower highs). Sellers are getting more aggressive. Usually breaks downward.',
     'Symmetrical Triangle':'Converging trendlines — lower highs AND higher lows. Coiling action means a breakout is imminent but direction is uncertain. Volume usually declines before the breakout.',
@@ -12502,8 +12502,8 @@ function ChartPatternPage(p){
     'Morning Star':'Three-bar bullish reversal: (1) long red candle, (2) small-body candle (star), (3) long green candle closing above midpoint of bar 1. Strong bottom signal.',
     'Evening Star':'Three-bar bearish reversal: (1) long green candle, (2) small-body candle (star), (3) long red candle closing below midpoint of bar 1. Strong top signal.',
     'Fibonacci Retracement':'Key levels where pullbacks tend to stall: 23.6% (shallow), 38.2% (moderate), 50% (halfway), 61.8% (golden ratio — strongest), 78.6% (deep). Price bouncing off these levels confirms the trend.',
-    'Support':'A price level where buying pressure has historically prevented further decline. Multiple touches = stronger level. Good entry zone for grid buys.',
-    'Resistance':'A price level where selling pressure has historically prevented further advance. Multiple touches = stronger level. Good exit zone for grid sells.',
+    'Support':'A price level where buying pressure has historically prevented further decline. Multiple touches = stronger level. Good entry zone for oscillation buys.',
+    'Resistance':'A price level where selling pressure has historically prevented further advance. Multiple touches = stronger level. Good exit zone for oscillation sells.',
     'S/R Zone':'A price zone that has acted as both support and resistance at different times. Very significant — expect strong reaction when price approaches.'
   };
 
@@ -12548,7 +12548,7 @@ function ChartPatternPage(p){
       </div>
       <div style={{marginTop:12,color:C.txtDim,fontSize:9,fontFamily:F,lineHeight:1.6}}>
         Patterns: Double Bottom/Top, Head & Shoulders, Inverse H&S, Bull/Bear Flag, Channel, Ascending/Descending/Symmetrical Triangle, Rising/Falling Wedge, Bullish/Bearish Engulfing, Hammer, Shooting Star, Doji, Morning/Evening Star, Fibonacci Retracement, Support/Resistance Levels.
-        Plus regime detection: Trending Up/Down, Range-Bound, Breakout, Compression, Volatile Chop, Transitional — with grid trading strategy suggestions.
+        Plus regime detection: Trending Up/Down, Range-Bound, Breakout, Compression, Volatile Chop, Transitional — with oscillation trading strategy suggestions.
       </div>
     </div>}
 
@@ -12583,20 +12583,20 @@ function ChartPatternPage(p){
             </div>;
           })}
         </div>
-        {/* Grid trading suggestion */}
+        {/* Oscillation trading suggestion */}
         {(function(){
           var regimes=TIMEFRAMES.map(function(tf){return results.data[tf.key]&&results.data[tf.key].regime;}).filter(Boolean);
           var rangeBound=regimes.filter(function(r){return r.regime==='Range-Bound'||r.regime==='Volatile Chop';}).length;
           var trending=regimes.filter(function(r){return r.regime==='Trending Up'||r.regime==='Trending Down';}).length;
           var compression=regimes.filter(function(r){return r.regime==='Compression';}).length;
           var suggestion='';
-          if(rangeBound>=2)suggestion='Multiple timeframes in range/chop — strong grid trading setup. Deploy oscillation grid within detected ranges.';
+          if(rangeBound>=2)suggestion='Multiple timeframes in range/chop — strong oscillation trading setup. Deploy oscillation strategy within detected ranges.';
           else if(trending>=2&&rangeBound>=1)suggestion='Trending on higher timeframes with range on lower — grid the lower TF range, expect drift in trend direction.';
           else if(compression>=2)suggestion='Compression across timeframes — breakout imminent. Wait for direction before deploying grid.';
-          else if(trending>=3)suggestion='Strong trend across timeframes — grids will get directionally run over. Consider trend-following instead of mean-reversion.';
+          else if(trending>=3)suggestion='Strong trend across timeframes — oscillation strategies will get directionally run over. Consider trend-following instead of mean-reversion.';
           if(suggestion)return <div style={{marginTop:10,padding:'10px 14px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,
             color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.6}}>
-            <span style={{color:C.accent,fontWeight:700,fontSize:9,letterSpacing:1}}>GRID STRATEGY: </span>{suggestion}
+            <span style={{color:C.accent,fontWeight:700,fontSize:9,letterSpacing:1}}>OSCILLATION STRATEGY: </span>{suggestion}
           </div>;
           return null;
         })()}
