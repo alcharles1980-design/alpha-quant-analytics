@@ -12402,6 +12402,24 @@ function ChartPatternPage(p){
         // Regime detection
         var regime=detectRegime(bars,swings,tf.label);
 
+        // Enrich all patterns with timestamps from bar data
+        var fmtTime=function(t,isDaily){
+          if(!t)return '';
+          var d=new Date(t);
+          var mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          if(isDaily)return mon[d.getUTCMonth()]+' '+d.getUTCDate();
+          // Intraday: show date + time in ET
+          var etOpts={timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true};
+          try{return d.toLocaleString('en-US',etOpts);}catch(e){return d.toISOString().slice(0,16);}
+        };
+        var isDaily=tf.key==='daily';
+        patterns.forEach(function(pat){
+          if(pat.startIdx!=null&&bars[pat.startIdx])pat.startTime=fmtTime(bars[pat.startIdx].t,isDaily);
+          if(pat.endIdx!=null&&bars[pat.endIdx])pat.endTime=fmtTime(bars[pat.endIdx].t,isDaily);
+          // For single-bar patterns (candlesticks), just show one time
+          if(pat.startIdx===pat.endIdx)pat.endTime=null;
+        });
+
         // Sort by confidence
         patterns.sort(function(a,b){return b.confidence-a.confidence;});
 
@@ -12548,6 +12566,9 @@ function ChartPatternPage(p){
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                   <span style={badge(pat.type)}>{pat.type.toUpperCase()}</span>
                   <span style={{color:C.txtBright,fontSize:12,fontWeight:700,fontFamily:F}}>{pat.pattern}</span>
+                  {pat.startTime&&<span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:4}}>
+                    {pat.startTime}{pat.endTime?' → '+pat.endTime:''}
+                  </span>}
                   <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:'auto'}}>Confidence: <span style={{color:pat.confidence>=70?C.accent:pat.confidence>=50?C.gold:C.warn,fontWeight:700}}>{pat.confidence}%</span></span>
                 </div>
                 <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.5}}>{pat.desc}</div>
