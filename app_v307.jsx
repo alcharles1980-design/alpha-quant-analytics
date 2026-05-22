@@ -11891,8 +11891,10 @@ function ChartPatternPage(p){
         var broke=false;
         for(var k2=l2.idx;k2<bars.length;k2++){if(bars[k2].c>peakPrice){broke=true;break;}}
         var target=peakPrice+(peakPrice-Math.min(l1.price,l2.price));
+        var conf=Math.round(50+Math.min(30,(1-diff/0.03)*30)+Math.min(20,depth*500));
+        if(broke)conf=Math.min(95,conf+10);
         results.push({
-          pattern:'Double Bottom',type:'bullish',confidence:Math.round((1-diff)*100),
+          pattern:'Double Bottom',type:'bullish',confidence:conf,
           tf:tf,startIdx:l1.idx,endIdx:l2.idx,
           levels:{support:Math.min(l1.price,l2.price),neckline:peakPrice,target:target},
           confirmed:broke,
@@ -11921,8 +11923,10 @@ function ChartPatternPage(p){
         var broke=false;
         for(var k2=h2.idx;k2<bars.length;k2++){if(bars[k2].c<troughPrice){broke=true;break;}}
         var target=troughPrice-(Math.max(h1.price,h2.price)-troughPrice);
+        var conf=Math.round(50+Math.min(30,(1-diff/0.03)*30)+Math.min(20,depth*500));
+        if(broke)conf=Math.min(95,conf+10);
         results.push({
-          pattern:'Double Top',type:'bearish',confidence:Math.round((1-diff)*100),
+          pattern:'Double Top',type:'bearish',confidence:conf,
           tf:tf,startIdx:h1.idx,endIdx:h2.idx,
           levels:{resistance:Math.max(h1.price,h2.price),neckline:troughPrice,target:target},
           confirmed:broke,
@@ -12028,13 +12032,12 @@ function ChartPatternPage(p){
   };
 
   // ── Support / Resistance Levels ───────────────────────────────────────
-  var detectSupportResistance=function(bars,swings,tf){
+  var detectSupportResistance=function(bars,swings,tf,overridePrice){
     var results=[];
     var allLevels=[];
     swings.highs.forEach(function(h){allLevels.push({price:h.price,type:'R'});});
     swings.lows.forEach(function(l){allLevels.push({price:l.price,type:'S'});});
     if(allLevels.length<2)return results;
-    // Cluster nearby levels (within 1.5%)
     allLevels.sort(function(a,b){return a.price-b.price;});
     var clusters=[];
     var used={};
@@ -12058,7 +12061,7 @@ function ChartPatternPage(p){
       }
     }
     clusters.sort(function(a,b){return b.touches-a.touches;});
-    var lastPrice=bars[bars.length-1].c;
+    var lastPrice=overridePrice||bars[bars.length-1].c;
     clusters.slice(0,6).forEach(function(cl){
       var dist=((cl.price-lastPrice)/lastPrice*100).toFixed(1);
       results.push({
@@ -12185,43 +12188,43 @@ function ChartPatternPage(p){
       if(p1.c<p1.o&&b.c>b.o&&b.o<=p1.c&&b.c>=p1.o){
         results.push({pattern:'Bullish Engulfing',type:'bullish',confidence:75,tf:tf,
           startIdx:i-1,endIdx:i,levels:{},confirmed:false,
-          desc:'Bar '+i+': green body fully engulfs prior red body'});
+          desc:'Green candle body fully engulfs prior red body'});
       }
       // Bearish Engulfing: prev green, current red, body engulfs prev
       if(p1.c>p1.o&&b.c<b.o&&b.o>=p1.c&&b.c<=p1.o){
         results.push({pattern:'Bearish Engulfing',type:'bearish',confidence:75,tf:tf,
           startIdx:i-1,endIdx:i,levels:{},confirmed:false,
-          desc:'Bar '+i+': red body fully engulfs prior green body'});
+          desc:'Red candle body fully engulfs prior green body'});
       }
       // Hammer: small body at top, long lower wick (>2x body), near swing low
       if(range>0&&body/range<0.3&&lowerWick>body*2&&upperWick<body){
         results.push({pattern:'Hammer',type:'bullish',confidence:65,tf:tf,
           startIdx:i,endIdx:i,levels:{price:b.c},confirmed:false,
-          desc:'Bar '+i+': long lower wick, small body at top — reversal signal at $'+b.l.toFixed(2)});
+          desc:'Long lower wick, small body at top — reversal signal at $'+b.l.toFixed(2)});
       }
       // Shooting Star: small body at bottom, long upper wick
       if(range>0&&body/range<0.3&&upperWick>body*2&&lowerWick<body){
         results.push({pattern:'Shooting Star',type:'bearish',confidence:65,tf:tf,
           startIdx:i,endIdx:i,levels:{price:b.c},confirmed:false,
-          desc:'Bar '+i+': long upper wick, small body at bottom — reversal signal at $'+b.h.toFixed(2)});
+          desc:'Long upper wick, small body at bottom — reversal signal at $'+b.h.toFixed(2)});
       }
       // Doji: body < 10% of range
       if(range>0&&body/range<0.1){
         results.push({pattern:'Doji',type:'neutral',confidence:55,tf:tf,
           startIdx:i,endIdx:i,levels:{price:b.c},confirmed:false,
-          desc:'Bar '+i+': open ≈ close — indecision at $'+b.c.toFixed(2)});
+          desc:'Open \u2248 close \u2014 indecision at $'+b.c.toFixed(2)});
       }
       // Morning Star (3-bar bullish reversal)
       if(i>=2&&p2.c<p2.o&&Math.abs(p1.c-p1.o)<p1range*0.3&&b.c>b.o&&b.c>(p2.o+p2.c)/2){
         results.push({pattern:'Morning Star',type:'bullish',confidence:80,tf:tf,
           startIdx:i-2,endIdx:i,levels:{},confirmed:false,
-          desc:'Bars '+(i-2)+'-'+i+': three-bar bullish reversal'});
+          desc:'Three-bar bullish reversal pattern'});
       }
       // Evening Star (3-bar bearish reversal)
       if(i>=2&&p2.c>p2.o&&Math.abs(p1.c-p1.o)<p1range*0.3&&b.c<b.o&&b.c<(p2.o+p2.c)/2){
         results.push({pattern:'Evening Star',type:'bearish',confidence:80,tf:tf,
           startIdx:i-2,endIdx:i,levels:{},confirmed:false,
-          desc:'Bars '+(i-2)+'-'+i+': three-bar bearish reversal'});
+          desc:'Three-bar bearish reversal pattern'});
       }
     }
     // Keep most recent of each type
@@ -12233,18 +12236,16 @@ function ChartPatternPage(p){
   };
 
   // ── Fibonacci Retracement ─────────────────────────────────────────────
-  var detectFibonacci=function(bars,swings,tf){
+  var detectFibonacci=function(bars,swings,tf,overridePrice){
     var results=[];
     if(swings.highs.length<1||swings.lows.length<1)return results;
-    // Find the most significant recent swing (highest high to lowest low)
     var allSwings=swings.highs.concat(swings.lows).sort(function(a,b){return a.idx-b.idx;});
     if(allSwings.length<2)return results;
-    // Use last major high and low
     var recentHi=swings.highs.reduce(function(best,h){return h.price>best.price?h:best;},swings.highs[0]);
     var recentLo=swings.lows.reduce(function(best,l){return l.price<best.price?l:best;},swings.lows[0]);
     if(recentHi.price<=recentLo.price)return results;
     var range=recentHi.price-recentLo.price;
-    var lastPrice=bars[bars.length-1].c;
+    var lastPrice=overridePrice||bars[bars.length-1].c;
     var isUpswing=recentHi.idx>recentLo.idx;
     var fibs=[0.236,0.382,0.5,0.618,0.786];
     var fibLevels={};
@@ -12596,8 +12597,8 @@ function ChartPatternPage(p){
         patterns=patterns.concat(detectTriangles(bars,swings,tf.label));
         patterns=patterns.concat(detectWedges(bars,swings,tf.label));
         patterns=patterns.concat(detectCandlesticks(bars,tf.label));
-        patterns=patterns.concat(detectFibonacci(bars,swings,tf.label));
-        patterns=patterns.concat(detectSupportResistance(bars,swings,tf.label));
+        patterns=patterns.concat(detectFibonacci(bars,swings,tf.label,livePrice));
+        patterns=patterns.concat(detectSupportResistance(bars,swings,tf.label,livePrice));
 
         // Regime detection
         var regime=detectRegime(bars,swings,tf.label,livePrice);
