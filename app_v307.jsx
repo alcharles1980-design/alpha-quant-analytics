@@ -12270,16 +12270,29 @@ function ChartPatternPage(p){
   };
 
   // ── Regime Detection ──────────────────────────────────────────────────
-  var detectRegime=function(bars,swings,tf){
-    if(bars.length<30)return {regime:'Insufficient Data',confidence:0,bias:'neutral',detail:''};
-    var lastPrice=bars[bars.length-1].c;
-    // MAs
+  var detectRegime=function(bars,swings,tf,overridePrice){
+    if(bars.length<30)return {regime:'Insufficient Data',confidence:0,bias:'neutral',detail:'',stats:{}};
+    var lastPrice=overridePrice||bars[bars.length-1].c;
+    // MAs — adjust period for intraday to approximate daily equivalents
+    // Daily: MA20 = 20 bars. Hourly: ~7 RTH hrs/day → 140 bars ≈ 20 days.
+    // 15min: ~26 bars/hr × 7 hrs = 182/day → 3640 bars (use what we have).
+    // 5min: ~78 bars/hr × 7 hrs = 546/day → too many. Use available bars.
+    var barsPerDay=1;
+    if(tf==='1 Hour')barsPerDay=7;
+    else if(tf==='15 Min')barsPerDay=28;
+    else if(tf==='5 Min')barsPerDay=78;
+    var ma20Period=Math.min(20*barsPerDay,Math.floor(bars.length*0.7));
+    var ma50Period=Math.min(50*barsPerDay,Math.floor(bars.length*0.9));
+
     var calcMA=function(n){
-      if(bars.length<n)return null;
-      var sum=0;for(var i=bars.length-n;i<bars.length;i++)sum+=bars[i].c;
-      return sum/n;
+      if(n<5||bars.length<n)return null;
+      var sum=0,count=0;
+      for(var i=bars.length-n;i<bars.length;i++){
+        if(bars[i].c>0){sum+=bars[i].c;count++;}
+      }
+      return count>0?sum/count:null;
     };
-    var ma20=calcMA(20),ma50=calcMA(50);
+    var ma20=calcMA(ma20Period),ma50=calcMA(ma50Period);
     // ATR (14-bar)
     var atrN=Math.min(14,bars.length-1);
     var atrSum=0;
@@ -12302,25 +12315,31 @@ function ChartPatternPage(p){
     }
     var volExpanding=atrRecent>atrPrior*1.15;
     var volContracting=atrRecent<atrPrior*0.85;
-    // Swing structure
+    // Swing structure — need at least 2 swings of each type
     var recentHighs=swings.highs.slice(-4);
     var recentLows=swings.lows.slice(-4);
-    var higherHighs=true,higherLows=true,lowerHighs=true,lowerLows=true;
-    for(var si=1;si<recentHighs.length;si++){
-      if(recentHighs[si].price<=recentHighs[si-1].price)higherHighs=false;
-      if(recentHighs[si].price>=recentHighs[si-1].price)lowerHighs=false;
+    var higherHighs=false,higherLows=false,lowerHighs=false,lowerLows=false;
+    if(recentHighs.length>=2){
+      higherHighs=true;lowerHighs=true;
+      for(var si=1;si<recentHighs.length;si++){
+        if(recentHighs[si].price<=recentHighs[si-1].price)higherHighs=false;
+        if(recentHighs[si].price>=recentHighs[si-1].price)lowerHighs=false;
+      }
     }
-    for(var sj=1;sj<recentLows.length;sj++){
-      if(recentLows[sj].price<=recentLows[sj-1].price)higherLows=false;
-      if(recentLows[sj].price>=recentLows[sj-1].price)lowerLows=false;
+    if(recentLows.length>=2){
+      higherLows=true;lowerLows=true;
+      for(var sj=1;sj<recentLows.length;sj++){
+        if(recentLows[sj].price<=recentLows[sj-1].price)higherLows=false;
+        if(recentLows[sj].price>=recentLows[sj-1].price)lowerLows=false;
+      }
     }
     // Hurst proxy: count direction changes in recent 20 bars
     var changes=0;
-    var lookN=Math.min(20,bars.length-1);
+    var lookN=Math.min(20,bars.length-2);
     for(var ci=bars.length-lookN;ci<bars.length-1;ci++){
-      if((bars[ci+1].c-bars[ci].c)*(bars[ci].c-bars[ci-1].c)<0)changes++;
+      if(ci>=1&&(bars[ci+1].c-bars[ci].c)*(bars[ci].c-bars[ci-1].c)<0)changes++;
     }
-    var reversalRate=changes/(lookN-1);
+    var reversalRate=lookN>1?changes/(lookN-1):0;
 
     // Classify
     var regime,confidence,bias,detail;
@@ -12352,8 +12371,11 @@ function ChartPatternPage(p){
       detail='Mixed signals. No clear regime.';
     }
     return {regime:regime,confidence:confidence,bias:bias,detail:detail,
-      stats:{atrPct:Math.round(atrPct*100)/100,ma20:ma20?Math.round(ma20*100)/100:null,
-        ma50:ma50?Math.round(ma50*100)/100:null,reversalRate:Math.round(reversalRate*100),
+      stats:{atrPct:Math.round(atrPct*100)/100,
+        ma20:ma20?Math.round(ma20*100)/100:null,
+        ma50:ma50?Math.round(ma50*100)/100:null,
+        ma20Period:ma20Period,
+        reversalRate:Math.round(reversalRate*100),
         volExpanding:volExpanding,volContracting:volContracting}};
   };
 
@@ -12574,7 +12596,7 @@ function ChartPatternPage(p){
         patterns=patterns.concat(detectSupportResistance(bars,swings,tf.label));
 
         // Regime detection
-        var regime=detectRegime(bars,swings,tf.label);
+        var regime=detectRegime(bars,swings,tf.label,livePrice);
 
         // Range prediction based on patterns + regime + ATR
         var prediction=predictRange(bars,patterns,regime,tf.label,livePrice);
