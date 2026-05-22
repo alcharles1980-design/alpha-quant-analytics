@@ -12521,6 +12521,19 @@ function ChartPatternPage(p){
     if(!tk||!p.apiKey)return;
     setLoading(true);setErr(null);setResults(null);setProg('');
     var allResults={};
+    var livePrice=null;
+
+    // Fetch live price from Polygon snapshot (most accurate)
+    try{
+      setProg('Fetching live price...');
+      var snapR=await fetch('https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/'+tk+'?apiKey='+p.apiKey);
+      var snapD=await snapR.json();
+      if(snapD.ticker){
+        var dayC=snapD.ticker.day?snapD.ticker.day.c:null;
+        var prevC=snapD.ticker.prevDay?snapD.ticker.prevDay.c:null;
+        livePrice=(dayC&&dayC>0)?dayC:(prevC||null);
+      }
+    }catch(e){}
 
     for(var ti=0;ti<TIMEFRAMES.length;ti++){
       var tf=TIMEFRAMES[ti];
@@ -12600,7 +12613,7 @@ function ChartPatternPage(p){
       }
     }
 
-    setResults({ticker:tk,data:allResults,lastPrice:
+    setResults({ticker:tk,data:allResults,lastPrice:livePrice||
       (allResults['5m']&&allResults['5m'].lastPrice)||
       (allResults['15m']&&allResults['15m'].lastPrice)||
       (allResults['1h']&&allResults['1h'].lastPrice)||
