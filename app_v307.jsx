@@ -12103,6 +12103,259 @@ function ChartPatternPage(p){
     return results;
   };
 
+  // ── Ascending / Descending / Symmetrical Triangle ─────────────────────
+  var detectTriangles=function(bars,swings,tf){
+    var results=[];
+    var rH=swings.highs.slice(-5),rL=swings.lows.slice(-5);
+    if(rH.length<3||rL.length<3)return results;
+    // Linear regression slope on recent highs and lows
+    var slopeOf=function(pts){
+      var n=pts.length,sx=0,sy=0,sxy=0,sx2=0;
+      pts.forEach(function(p2,i){sx+=i;sy+=p2.price;sxy+=i*p2.price;sx2+=i*i;});
+      return (n*sxy-sx*sy)/(n*sx2-sx*sx);
+    };
+    var hSlope=slopeOf(rH),lSlope=slopeOf(rL);
+    var avgPrice=(rH[rH.length-1].price+rL[rL.length-1].price)/2;
+    var hPct=hSlope/avgPrice*100,lPct=lSlope/avgPrice*100;
+    // Classify
+    var flat=0.15; // threshold for "flat"
+    if(Math.abs(hPct)<flat&&lPct>0.05){
+      results.push({pattern:'Ascending Triangle',type:'bullish',confidence:75,tf:tf,
+        startIdx:Math.min(rH[0].idx,rL[0].idx),endIdx:Math.max(rH[rH.length-1].idx,rL[rL.length-1].idx),
+        levels:{resistance:rH[rH.length-1].price,risingSupport:rL[rL.length-1].price},confirmed:false,
+        desc:'Flat resistance $'+rH[rH.length-1].price.toFixed(2)+', rising support'});
+    }else if(Math.abs(lPct)<flat&&hPct<-0.05){
+      results.push({pattern:'Descending Triangle',type:'bearish',confidence:75,tf:tf,
+        startIdx:Math.min(rH[0].idx,rL[0].idx),endIdx:Math.max(rH[rH.length-1].idx,rL[rL.length-1].idx),
+        levels:{fallingResistance:rH[rH.length-1].price,support:rL[rL.length-1].price},confirmed:false,
+        desc:'Falling resistance, flat support $'+rL[rL.length-1].price.toFixed(2)});
+    }else if(hPct<-0.05&&lPct>0.05){
+      results.push({pattern:'Symmetrical Triangle',type:'neutral',confidence:70,tf:tf,
+        startIdx:Math.min(rH[0].idx,rL[0].idx),endIdx:Math.max(rH[rH.length-1].idx,rL[rL.length-1].idx),
+        levels:{convergingHi:rH[rH.length-1].price,convergingLo:rL[rL.length-1].price},confirmed:false,
+        desc:'Converging trendlines — breakout imminent'});
+    }
+    return results;
+  };
+
+  // ── Rising / Falling Wedge ───────────────────────────────────────────
+  var detectWedges=function(bars,swings,tf){
+    var results=[];
+    var rH=swings.highs.slice(-4),rL=swings.lows.slice(-4);
+    if(rH.length<3||rL.length<3)return results;
+    var slopeOf=function(pts){
+      var n=pts.length,sx=0,sy=0,sxy=0,sx2=0;
+      pts.forEach(function(p2,i){sx+=i;sy+=p2.price;sxy+=i*p2.price;sx2+=i*i;});
+      return (n*sxy-sx*sy)/(n*sx2-sx*sx);
+    };
+    var hSlope=slopeOf(rH),lSlope=slopeOf(rL);
+    var avgP=(rH[rH.length-1].price+rL[rL.length-1].price)/2;
+    // Both slopes same direction but converging
+    if(hSlope>0&&lSlope>0&&hSlope<lSlope*0.8){
+      results.push({pattern:'Rising Wedge',type:'bearish',confidence:70,tf:tf,
+        startIdx:rL[0].idx,endIdx:rH[rH.length-1].idx,
+        levels:{upperTrend:rH[rH.length-1].price,lowerTrend:rL[rL.length-1].price},confirmed:false,
+        desc:'Both trendlines rising but converging — bearish breakdown expected'});
+    }else if(hSlope<0&&lSlope<0&&Math.abs(hSlope)<Math.abs(lSlope)*0.8){
+      results.push({pattern:'Falling Wedge',type:'bullish',confidence:70,tf:tf,
+        startIdx:rH[0].idx,endIdx:rL[rL.length-1].idx,
+        levels:{upperTrend:rH[rH.length-1].price,lowerTrend:rL[rL.length-1].price},confirmed:false,
+        desc:'Both trendlines falling but converging — bullish breakout expected'});
+    }
+    return results;
+  };
+
+  // ── Candlestick Patterns (1-3 bar) ────────────────────────────────────
+  var detectCandlesticks=function(bars,tf){
+    var results=[];
+    if(bars.length<5)return results;
+    // Only scan last 20 bars for relevance
+    var start=Math.max(0,bars.length-20);
+    for(var i=start+2;i<bars.length;i++){
+      var b=bars[i],p1=bars[i-1],p2=bars[i-2];
+      var body=Math.abs(b.c-b.o);
+      var range=b.h-b.l;
+      var upperWick=b.h-Math.max(b.c,b.o);
+      var lowerWick=Math.min(b.c,b.o)-b.l;
+      var p1body=Math.abs(p1.c-p1.o);
+      var p1range=p1.h-p1.l;
+
+      // Bullish Engulfing: prev red, current green, body engulfs prev
+      if(p1.c<p1.o&&b.c>b.o&&b.o<=p1.c&&b.c>=p1.o){
+        results.push({pattern:'Bullish Engulfing',type:'bullish',confidence:75,tf:tf,
+          startIdx:i-1,endIdx:i,levels:{},confirmed:false,
+          desc:'Bar '+i+': green body fully engulfs prior red body'});
+      }
+      // Bearish Engulfing: prev green, current red, body engulfs prev
+      if(p1.c>p1.o&&b.c<b.o&&b.o>=p1.c&&b.c<=p1.o){
+        results.push({pattern:'Bearish Engulfing',type:'bearish',confidence:75,tf:tf,
+          startIdx:i-1,endIdx:i,levels:{},confirmed:false,
+          desc:'Bar '+i+': red body fully engulfs prior green body'});
+      }
+      // Hammer: small body at top, long lower wick (>2x body), near swing low
+      if(range>0&&body/range<0.3&&lowerWick>body*2&&upperWick<body){
+        results.push({pattern:'Hammer',type:'bullish',confidence:65,tf:tf,
+          startIdx:i,endIdx:i,levels:{price:b.c},confirmed:false,
+          desc:'Bar '+i+': long lower wick, small body at top — reversal signal at $'+b.l.toFixed(2)});
+      }
+      // Shooting Star: small body at bottom, long upper wick
+      if(range>0&&body/range<0.3&&upperWick>body*2&&lowerWick<body){
+        results.push({pattern:'Shooting Star',type:'bearish',confidence:65,tf:tf,
+          startIdx:i,endIdx:i,levels:{price:b.c},confirmed:false,
+          desc:'Bar '+i+': long upper wick, small body at bottom — reversal signal at $'+b.h.toFixed(2)});
+      }
+      // Doji: body < 10% of range
+      if(range>0&&body/range<0.1){
+        results.push({pattern:'Doji',type:'neutral',confidence:55,tf:tf,
+          startIdx:i,endIdx:i,levels:{price:b.c},confirmed:false,
+          desc:'Bar '+i+': open ≈ close — indecision at $'+b.c.toFixed(2)});
+      }
+      // Morning Star (3-bar bullish reversal)
+      if(i>=2&&p2.c<p2.o&&Math.abs(p1.c-p1.o)<p1range*0.3&&b.c>b.o&&b.c>(p2.o+p2.c)/2){
+        results.push({pattern:'Morning Star',type:'bullish',confidence:80,tf:tf,
+          startIdx:i-2,endIdx:i,levels:{},confirmed:false,
+          desc:'Bars '+(i-2)+'-'+i+': three-bar bullish reversal'});
+      }
+      // Evening Star (3-bar bearish reversal)
+      if(i>=2&&p2.c>p2.o&&Math.abs(p1.c-p1.o)<p1range*0.3&&b.c<b.o&&b.c<(p2.o+p2.c)/2){
+        results.push({pattern:'Evening Star',type:'bearish',confidence:80,tf:tf,
+          startIdx:i-2,endIdx:i,levels:{},confirmed:false,
+          desc:'Bars '+(i-2)+'-'+i+': three-bar bearish reversal'});
+      }
+    }
+    // Keep most recent of each type
+    var seen={};var filtered=[];
+    for(var fi=results.length-1;fi>=0;fi--){
+      if(!seen[results[fi].pattern]){seen[results[fi].pattern]=true;filtered.unshift(results[fi]);}
+    }
+    return filtered;
+  };
+
+  // ── Fibonacci Retracement ─────────────────────────────────────────────
+  var detectFibonacci=function(bars,swings,tf){
+    var results=[];
+    if(swings.highs.length<1||swings.lows.length<1)return results;
+    // Find the most significant recent swing (highest high to lowest low)
+    var allSwings=swings.highs.concat(swings.lows).sort(function(a,b){return a.idx-b.idx;});
+    if(allSwings.length<2)return results;
+    // Use last major high and low
+    var recentHi=swings.highs.reduce(function(best,h){return h.price>best.price?h:best;},swings.highs[0]);
+    var recentLo=swings.lows.reduce(function(best,l){return l.price<best.price?l:best;},swings.lows[0]);
+    if(recentHi.price<=recentLo.price)return results;
+    var range=recentHi.price-recentLo.price;
+    var lastPrice=bars[bars.length-1].c;
+    var isUpswing=recentHi.idx>recentLo.idx;
+    var fibs=[0.236,0.382,0.5,0.618,0.786];
+    var fibLevels={};
+    fibs.forEach(function(f){
+      var level=isUpswing?recentHi.price-range*f:recentLo.price+range*f;
+      fibLevels[Math.round(f*1000)/10+'%']=Math.round(level*100)/100;
+    });
+    // Find which fib level price is nearest
+    var nearestFib=null,nearestDist=Infinity;
+    fibs.forEach(function(f){
+      var level=isUpswing?recentHi.price-range*f:recentLo.price+range*f;
+      var dist=Math.abs(lastPrice-level)/lastPrice;
+      if(dist<nearestDist){nearestDist=dist;nearestFib=Math.round(f*1000)/10+'%';}
+    });
+    results.push({
+      pattern:'Fibonacci Retracement',type:'neutral',confidence:60,tf:tf,
+      startIdx:Math.min(recentHi.idx,recentLo.idx),endIdx:Math.max(recentHi.idx,recentLo.idx),
+      levels:Object.assign({swing_high:recentHi.price,swing_low:recentLo.price},fibLevels),
+      confirmed:true,
+      desc:(isUpswing?'Upswing':'Downswing')+' $'+recentLo.price.toFixed(2)+' to $'+recentHi.price.toFixed(2)+'. Price nearest '+nearestFib+' retracement'
+    });
+    return results;
+  };
+
+  // ── Regime Detection ──────────────────────────────────────────────────
+  var detectRegime=function(bars,swings,tf){
+    if(bars.length<30)return {regime:'Insufficient Data',confidence:0,bias:'neutral',detail:''};
+    var lastPrice=bars[bars.length-1].c;
+    // MAs
+    var calcMA=function(n){
+      if(bars.length<n)return null;
+      var sum=0;for(var i=bars.length-n;i<bars.length;i++)sum+=bars[i].c;
+      return sum/n;
+    };
+    var ma20=calcMA(20),ma50=calcMA(50);
+    // ATR (14-bar)
+    var atrN=Math.min(14,bars.length-1);
+    var atrSum=0;
+    for(var ai=bars.length-atrN;ai<bars.length;ai++){
+      var hi=bars[ai].h,lo=bars[ai].l,pc=bars[ai-1].c;
+      atrSum+=Math.max(hi-lo,Math.abs(hi-pc),Math.abs(lo-pc));
+    }
+    var atr=atrSum/atrN;
+    var atrPct=atr/lastPrice*100;
+    // ATR trend: compare recent 7-bar ATR to prior 7-bar ATR
+    var atrRecent=0,atrPrior=0;
+    if(bars.length>=28){
+      for(var ri=bars.length-7;ri<bars.length;ri++){
+        atrRecent+=Math.max(bars[ri].h-bars[ri].l,Math.abs(bars[ri].h-bars[ri-1].c),Math.abs(bars[ri].l-bars[ri-1].c));
+      }
+      for(var pi=bars.length-14;pi<bars.length-7;pi++){
+        atrPrior+=Math.max(bars[pi].h-bars[pi].l,Math.abs(bars[pi].h-bars[pi-1].c),Math.abs(bars[pi].l-bars[pi-1].c));
+      }
+      atrRecent/=7;atrPrior/=7;
+    }
+    var volExpanding=atrRecent>atrPrior*1.15;
+    var volContracting=atrRecent<atrPrior*0.85;
+    // Swing structure
+    var recentHighs=swings.highs.slice(-4);
+    var recentLows=swings.lows.slice(-4);
+    var higherHighs=true,higherLows=true,lowerHighs=true,lowerLows=true;
+    for(var si=1;si<recentHighs.length;si++){
+      if(recentHighs[si].price<=recentHighs[si-1].price)higherHighs=false;
+      if(recentHighs[si].price>=recentHighs[si-1].price)lowerHighs=false;
+    }
+    for(var sj=1;sj<recentLows.length;sj++){
+      if(recentLows[sj].price<=recentLows[sj-1].price)higherLows=false;
+      if(recentLows[sj].price>=recentLows[sj-1].price)lowerLows=false;
+    }
+    // Hurst proxy: count direction changes in recent 20 bars
+    var changes=0;
+    var lookN=Math.min(20,bars.length-1);
+    for(var ci=bars.length-lookN;ci<bars.length-1;ci++){
+      if((bars[ci+1].c-bars[ci].c)*(bars[ci].c-bars[ci-1].c)<0)changes++;
+    }
+    var reversalRate=changes/(lookN-1);
+
+    // Classify
+    var regime,confidence,bias,detail;
+    if(volContracting&&!higherHighs&&!lowerHighs){
+      regime='Compression';confidence=75;bias='neutral';
+      detail='Declining ATR + no trend. Squeeze building — expect breakout.';
+    }else if(higherHighs&&higherLows&&ma20&&lastPrice>ma20){
+      regime='Trending Up';confidence=80;bias='bullish';
+      detail='Higher highs + higher lows. Price above MA20.';
+    }else if(lowerHighs&&lowerLows&&ma20&&lastPrice<ma20){
+      regime='Trending Down';confidence=80;bias='bearish';
+      detail='Lower highs + lower lows. Price below MA20.';
+    }else if(volExpanding&&reversalRate>0.55){
+      regime='Volatile Chop';confidence=70;bias='neutral';
+      detail='High ATR + frequent reversals ('+(reversalRate*100).toFixed(0)+'%). Ideal for grid trading.';
+    }else if(reversalRate>0.45&&!higherHighs&&!lowerLows){
+      regime='Range-Bound';confidence=75;bias='neutral';
+      var rangeHi=0,rangeLo=Infinity;
+      for(var rbi=bars.length-lookN;rbi<bars.length;rbi++){
+        if(bars[rbi].h>rangeHi)rangeHi=bars[rbi].h;
+        if(bars[rbi].l<rangeLo)rangeLo=bars[rbi].l;
+      }
+      detail='Oscillating in $'+rangeLo.toFixed(2)+' - $'+rangeHi.toFixed(2)+'. Grid trading zone.';
+    }else if(volExpanding&&(higherHighs||lowerLows)){
+      regime='Breakout';confidence=65;bias=higherHighs?'bullish':'bearish';
+      detail='Expanding volatility + directional swing structure. Trending move in progress.';
+    }else{
+      regime='Transitional';confidence=50;bias='neutral';
+      detail='Mixed signals. No clear regime.';
+    }
+    return {regime:regime,confidence:confidence,bias:bias,detail:detail,
+      stats:{atrPct:Math.round(atrPct*100)/100,ma20:ma20?Math.round(ma20*100)/100:null,
+        ma50:ma50?Math.round(ma50*100)/100:null,reversalRate:Math.round(reversalRate*100),
+        volExpanding:volExpanding,volContracting:volContracting}};
+  };
+
   // ── Main scan function ────────────────────────────────────────────────
   var scan=async function(){
     var tk=ticker.trim().toUpperCase();
@@ -12140,7 +12393,14 @@ function ChartPatternPage(p){
         patterns=patterns.concat(detectInvHeadShoulders(bars,swings,tf.label));
         patterns=patterns.concat(detectFlags(bars,swings,tf.label));
         patterns=patterns.concat(detectChannel(bars,swings,tf.label));
+        patterns=patterns.concat(detectTriangles(bars,swings,tf.label));
+        patterns=patterns.concat(detectWedges(bars,swings,tf.label));
+        patterns=patterns.concat(detectCandlesticks(bars,tf.label));
+        patterns=patterns.concat(detectFibonacci(bars,swings,tf.label));
         patterns=patterns.concat(detectSupportResistance(bars,swings,tf.label));
+
+        // Regime detection
+        var regime=detectRegime(bars,swings,tf.label);
 
         // Sort by confidence
         patterns.sort(function(a,b){return b.confidence-a.confidence;});
@@ -12149,6 +12409,7 @@ function ChartPatternPage(p){
           bars:bars.length,
           swings:{highs:swings.highs.length,lows:swings.lows.length},
           patterns:patterns,
+          regime:regime,
           lastPrice:bars[bars.length-1].c
         };
       }catch(e){
@@ -12209,7 +12470,8 @@ function ChartPatternPage(p){
         })}
       </div>
       <div style={{marginTop:12,color:C.txtDim,fontSize:9,fontFamily:F,lineHeight:1.6}}>
-        Patterns detected: Double Bottom, Double Top, Head & Shoulders, Inverse H&S, Bull Flag, Bear Flag, Channels, Support/Resistance Levels
+        Patterns: Double Bottom/Top, Head & Shoulders, Inverse H&S, Bull/Bear Flag, Channel, Ascending/Descending/Symmetrical Triangle, Rising/Falling Wedge, Bullish/Bearish Engulfing, Hammer, Shooting Star, Doji, Morning/Evening Star, Fibonacci Retracement, Support/Resistance Levels.
+        Plus regime detection: Trending Up/Down, Range-Bound, Breakout, Compression, Volatile Chop, Transitional — with grid trading strategy suggestions.
       </div>
     </div>}
 
@@ -12217,17 +12479,64 @@ function ChartPatternPage(p){
     {results&&<div>
       <div style={{color:C.txtBright,fontSize:12,fontWeight:700,fontFamily:F,marginBottom:12}}>{results.ticker} Pattern Scan Results</div>
 
+      {/* ── Regime Matrix ──────────────────────────────────────────────── */}
+      <div style={card}>
+        <div style={{color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:10}}>Multi-Timeframe Regime Matrix</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {TIMEFRAMES.map(function(tf){
+            var tfData=results.data[tf.key];
+            if(!tfData||!tfData.regime)return null;
+            var reg=tfData.regime;
+            var regColor=reg.bias==='bullish'?C.accent:reg.bias==='bearish'?C.warn:C.gold;
+            return <div key={tf.key} style={{flex:'1 1 120px',padding:'10px 12px',background:C.bgDeep,borderRadius:8,
+              border:'1px solid '+regColor,minWidth:120}}>
+              <div style={{color:C.txtDim,fontSize:8,fontFamily:F,letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>{tf.label}</div>
+              <div style={{color:regColor,fontSize:13,fontWeight:700,fontFamily:F}}>{reg.regime}</div>
+              <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:2}}>Confidence: {reg.confidence}%</div>
+              <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:4,lineHeight:1.4}}>{reg.detail}</div>
+              {reg.stats&&<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
+                {reg.stats.atrPct!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.gold}}>ATR {reg.stats.atrPct}%</span>}
+                {reg.stats.reversalRate!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.blue}}>Rev {reg.stats.reversalRate}%</span>}
+                {reg.stats.ma20!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.txtDim}}>MA20 ${reg.stats.ma20}</span>}
+              </div>}
+            </div>;
+          })}
+        </div>
+        {/* Grid trading suggestion */}
+        {(function(){
+          var regimes=TIMEFRAMES.map(function(tf){return results.data[tf.key]&&results.data[tf.key].regime;}).filter(Boolean);
+          var rangeBound=regimes.filter(function(r){return r.regime==='Range-Bound'||r.regime==='Volatile Chop';}).length;
+          var trending=regimes.filter(function(r){return r.regime==='Trending Up'||r.regime==='Trending Down';}).length;
+          var compression=regimes.filter(function(r){return r.regime==='Compression';}).length;
+          var suggestion='';
+          if(rangeBound>=2)suggestion='Multiple timeframes in range/chop — strong grid trading setup. Deploy oscillation grid within detected ranges.';
+          else if(trending>=2&&rangeBound>=1)suggestion='Trending on higher timeframes with range on lower — grid the lower TF range, expect drift in trend direction.';
+          else if(compression>=2)suggestion='Compression across timeframes — breakout imminent. Wait for direction before deploying grid.';
+          else if(trending>=3)suggestion='Strong trend across timeframes — grids will get directionally run over. Consider trend-following instead of mean-reversion.';
+          if(suggestion)return <div style={{marginTop:10,padding:'10px 14px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,
+            color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.6}}>
+            <span style={{color:C.accent,fontWeight:700,fontSize:9,letterSpacing:1}}>GRID STRATEGY: </span>{suggestion}
+          </div>;
+          return null;
+        })()}
+      </div>
+
       {TIMEFRAMES.map(function(tf){
         var tfData=results.data[tf.key];
         if(!tfData)return null;
         var patterns=tfData.patterns||[];
         var sAndR=patterns.filter(function(p2){return p2.pattern==='Support'||p2.pattern==='Resistance'||p2.pattern==='S/R Zone';});
         var chartPatterns=patterns.filter(function(p2){return p2.pattern!=='Support'&&p2.pattern!=='Resistance'&&p2.pattern!=='S/R Zone';});
+        var reg=tfData.regime;
+        var regColor=reg&&reg.bias==='bullish'?C.accent:reg&&reg.bias==='bearish'?C.warn:C.gold;
 
         return <div key={tf.key} style={card}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-            <div style={{color:C.accent,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F}}>{tf.label}</div>
-            <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{tfData.bars} bars {tfData.swings?' \u2022 '+tfData.swings.highs+' swing highs \u2022 '+tfData.swings.lows+' swing lows':''}</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{color:C.accent,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F}}>{tf.label}</div>
+              {reg&&<span style={{padding:'2px 8px',borderRadius:4,fontSize:8,fontWeight:700,fontFamily:F,color:C.bg,background:regColor}}>{reg.regime}</span>}
+            </div>
+            <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{tfData.bars} bars {tfData.swings?'\u2022 '+tfData.swings.highs+' highs \u2022 '+tfData.swings.lows+' lows':''}</div>
           </div>
 
           {tfData.note&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,fontStyle:'italic'}}>{tfData.note}</div>}
