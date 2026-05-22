@@ -11846,6 +11846,7 @@ function ChartPatternPage(p){
   var s3=useState(null),results=s3[0],setResults=s3[1];
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState(''),prog=s5[0],setProg=s5[1];
+  var s6=useState({}),expanded=s6[0],setExpanded=s6[1];
 
   var TIMEFRAMES=[
     {key:'daily',label:'Daily',interval:'day',multi:1,from:365,limit:300},
@@ -12757,88 +12758,68 @@ function ChartPatternPage(p){
         if(!tfData)return null;
         var patterns=tfData.patterns||[];
         var sAndR=patterns.filter(function(p2){return p2.pattern==='Support'||p2.pattern==='Resistance'||p2.pattern==='S/R Zone';});
-        var chartPatterns=patterns.filter(function(p2){return p2.pattern!=='Support'&&p2.pattern!=='Resistance'&&p2.pattern!=='S/R Zone';});
+        var chartPatterns=patterns.filter(function(p2){return p2.pattern!=='Support'&&p2.pattern!=='Resistance'&&p2.pattern!=='S/R Zone'&&p2.pattern!=='Fibonacci Retracement';});
+        var fibPattern=patterns.find(function(p2){return p2.pattern==='Fibonacci Retracement';});
         var reg=tfData.regime;
         var regColor=reg&&reg.bias==='bullish'?C.accent:reg&&reg.bias==='bearish'?C.warn:C.gold;
+        var isExp=expanded[tf.key];
+        var latestPattern=chartPatterns.length>0?chartPatterns[0]:null; // highest confidence
+        var moreCount=chartPatterns.length>1?chartPatterns.length-1:0;
+
+        // Render a single pattern card
+        var renderPat=function(pat,pi,showExplain){
+          return <div key={pi} style={{padding:'10px 14px',background:C.bgDeep,borderRadius:8,border:'1px solid '+C.border,marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+              <span style={badge(pat.type)}>{pat.type.toUpperCase()}</span>
+              <span style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{pat.pattern}</span>
+              {pat.startTime&&<span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{pat.startTime}{pat.endTime?' \u2192 '+pat.endTime:''}</span>}
+              <span style={{marginLeft:'auto',fontSize:8,fontFamily:F,color:pat.confidence>=70?C.accent:pat.confidence>=50?C.gold:C.warn,fontWeight:700}}>{pat.confidence}%</span>
+            </div>
+            <div style={{color:C.txt,fontSize:9,fontFamily:F,marginTop:4,lineHeight:1.4}}>{pat.desc}</div>
+            {showExplain&&EXPLAIN[pat.pattern]&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.4,marginTop:4,paddingTop:4,borderTop:'1px solid '+C.border}}>{EXPLAIN[pat.pattern]}</div>}
+            {pat.levels&&<div style={{marginTop:4,display:'flex',flexWrap:'wrap',gap:4}}>
+              {Object.keys(pat.levels).map(function(k){
+                var v=pat.levels[k];if(v==null)return null;
+                return <span key={k} style={{padding:'2px 6px',background:C.bg,borderRadius:3,border:'1px solid '+C.border,fontSize:8,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>{k}: </span><span style={{color:C.txtBright,fontWeight:600}}>{typeof v==='number'?'$'+v.toFixed(2):v}</span>
+                </span>;
+              })}
+            </div>}
+            {pat.confirmed!=null&&<div style={{marginTop:3,fontSize:8,fontFamily:F,color:pat.confirmed?C.accent:C.gold}}>
+              {pat.confirmed?'\u2714 Confirmed':'\u23F3 Pending'}
+            </div>}
+          </div>;
+        };
 
         return <div key={tf.key} style={card}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:6}}>
-            <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {/* Header */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:4}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
               <div style={{color:C.accent,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F}}>{tf.label}</div>
-              {reg&&<span style={{padding:'2px 8px',borderRadius:4,fontSize:8,fontWeight:700,fontFamily:F,color:C.bg,background:regColor}}>{reg.regime}</span>}
+              {reg&&<span style={{padding:'2px 6px',borderRadius:4,fontSize:7,fontWeight:700,fontFamily:F,color:C.bg,background:regColor}}>{reg.regime}</span>}
             </div>
-            <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{tfData.lastPrice?'$'+tfData.lastPrice.toFixed(2)+' \u2022 ':''}{tfData.bars} bars {tfData.swings?'\u2022 '+tfData.swings.highs+' highs \u2022 '+tfData.swings.lows+' lows':''}</div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{tfData.lastPrice?'$'+tfData.lastPrice.toFixed(2):''} {'\u2022'} {tfData.bars} bars</div>
           </div>
 
-          {tfData.note&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,fontStyle:'italic'}}>{tfData.note}</div>}
+          {tfData.note&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,fontStyle:'italic',marginBottom:8}}>{tfData.note}</div>}
 
-          {/* Chart Patterns */}
-          {chartPatterns.length>0&&<div style={{marginBottom:12}}>
-            {chartPatterns.map(function(pat,pi){
-              return <div key={pi} style={{padding:'10px 14px',background:C.bgDeep,borderRadius:8,border:'1px solid '+C.border,marginBottom:8}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                  <span style={badge(pat.type)}>{pat.type.toUpperCase()}</span>
-                  <span style={{color:C.txtBright,fontSize:12,fontWeight:700,fontFamily:F}}>{pat.pattern}</span>
-                  {pat.startTime&&<span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:4}}>
-                    {pat.startTime}{pat.endTime?' → '+pat.endTime:''}
-                  </span>}
-                  <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:'auto'}}>Confidence: <span style={{color:pat.confidence>=70?C.accent:pat.confidence>=50?C.gold:C.warn,fontWeight:700}}>{pat.confidence}%</span></span>
-                </div>
-                <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.5}}>{pat.desc}</div>
-                {EXPLAIN[pat.pattern]&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,lineHeight:1.5,marginTop:4,paddingTop:4,borderTop:'1px solid '+C.border}}>{EXPLAIN[pat.pattern]}</div>}
-                {pat.explain&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,lineHeight:1.5,marginTop:4,padding:'6px 10px',background:C.bg,borderRadius:4,borderLeft:'2px solid '+C.border}}>{pat.explain}</div>}
-                {pat.levels&&<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:6}}>
-                  {Object.keys(pat.levels).map(function(k){
-                    var v=pat.levels[k];
-                    if(v==null)return null;
-                    return <div key={k} style={{padding:'3px 8px',background:C.bg,borderRadius:4,border:'1px solid '+C.border,fontSize:9,fontFamily:F}}>
-                      <span style={{color:C.txtDim}}>{k}: </span>
-                      <span style={{color:C.txtBright,fontWeight:600}}>{typeof v==='number'?'$'+v.toFixed(2):v}</span>
-                    </div>;
-                  })}
-                </div>}
-                {pat.confirmed!=null&&<div style={{marginTop:4,fontSize:9,fontFamily:F,color:pat.confirmed?C.accent:C.gold}}>
-                  {pat.confirmed?'\u2714 Confirmed (breakout occurred)':'\u23F3 Pending confirmation'}
-                </div>}
-              </div>;
-            })}
-          </div>}
-
-          {chartPatterns.length===0&&!tfData.note&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,fontStyle:'italic',marginBottom:8}}>No chart patterns detected on this timeframe</div>}
-
-          {/* Support / Resistance */}
-          {sAndR.length>0&&<div>
-            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1.5,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Key Levels</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              {sAndR.map(function(sr,si){
-                return <div key={si} style={{padding:'6px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+(sr.type==='bullish'?C.accent:sr.type==='bearish'?C.warn:C.gold),fontSize:10,fontFamily:F}}>
-                  <span style={{color:sr.type==='bullish'?C.accent:sr.type==='bearish'?C.warn:C.gold,fontWeight:700}}>{sr.levels.price?'$'+sr.levels.price.toFixed(2):''}</span>
-                  <span style={{color:C.txtDim,fontSize:8,marginLeft:4}}>{sr.pattern} ({sr.levels.touches}x)</span>
-                </div>;
-              })}
-            </div>
-          </div>}
-
-          {/* ── Range Prediction ──────────────────────────────────────── */}
+          {/* ── Predicted Range (prominent) ───────────────────────────── */}
           {tfData.prediction&&(function(){
             var pr=tfData.prediction;
             var biasColor=pr.bias==='bullish'?C.accent:pr.bias==='bearish'?C.warn:C.gold;
-            return <div style={{marginTop:12,padding:'12px 14px',background:C.bg,borderRadius:8,border:'1px solid '+C.border}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                <div style={{color:C.txtBright,fontSize:9,fontWeight:700,letterSpacing:1.5,fontFamily:F,textTransform:'uppercase'}}>Predicted Range</div>
-                <span style={{padding:'2px 8px',borderRadius:4,fontSize:8,fontWeight:700,fontFamily:F,color:C.bg,background:biasColor}}>{pr.bias.toUpperCase()} {pr.biasStrength}%</span>
+            return <div style={{padding:'10px 12px',background:C.bg,borderRadius:8,border:'1px solid '+C.border,marginBottom:8}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                <span style={{color:C.txtBright,fontSize:8,fontWeight:700,letterSpacing:1.5,fontFamily:F,textTransform:'uppercase'}}>Next Period Range</span>
+                <span style={{padding:'2px 6px',borderRadius:3,fontSize:7,fontWeight:700,fontFamily:F,color:C.bg,background:biasColor}}>{pr.bias.toUpperCase()} {pr.biasStrength}%</span>
               </div>
-
-              {/* Range bar visualization */}
-              <div style={{position:'relative',height:36,background:C.bgDeep,borderRadius:6,marginBottom:8,border:'1px solid '+C.border,overflow:'hidden'}}>
-                {pr.extendedLo&&<div style={{position:'absolute',left:0,top:0,bottom:0,width:'8%',background:C.warn+'15',borderRight:'1px dashed '+C.warn}}></div>}
-                {pr.extendedHi&&<div style={{position:'absolute',right:0,top:0,bottom:0,width:'8%',background:C.accent+'15',borderLeft:'1px dashed '+C.accent}}></div>}
+              {/* Range bar */}
+              <div style={{position:'relative',height:28,background:C.bgDeep,borderRadius:5,marginBottom:6,border:'1px solid '+C.border,overflow:'hidden'}}>
                 {(function(){
                   var fullRange=pr.predictedHi-pr.predictedLo;
                   if(fullRange<=0)return null;
                   var oscLeft=((pr.oscZone.lo-pr.predictedLo)/fullRange*100);
                   var oscWidth=((pr.oscZone.hi-pr.oscZone.lo)/fullRange*100);
-                  return <div style={{position:'absolute',left:Math.max(0,oscLeft)+'%',width:Math.min(100,oscWidth)+'%',top:4,bottom:4,background:C.accent+'20',borderRadius:4,border:'1px solid '+C.accent+'40'}}></div>;
+                  return <div style={{position:'absolute',left:Math.max(0,oscLeft)+'%',width:Math.min(100,oscWidth)+'%',top:3,bottom:3,background:C.accent+'20',borderRadius:3,border:'1px solid '+C.accent+'40'}}></div>;
                 })()}
                 {(function(){
                   var fullRange=pr.predictedHi-pr.predictedLo;
@@ -12846,47 +12827,61 @@ function ChartPatternPage(p){
                   var pos=((pr.currentPrice-pr.predictedLo)/fullRange*100);
                   return <div style={{position:'absolute',left:Math.max(2,Math.min(98,pos))+'%',top:2,bottom:2,width:2,background:C.txtBright,borderRadius:1}}></div>;
                 })()}
-                <div style={{position:'absolute',left:4,top:'50%',transform:'translateY(-50%)',fontSize:9,fontFamily:F,color:C.warn,fontWeight:700}}>${pr.predictedLo}</div>
-                <div style={{position:'absolute',right:4,top:'50%',transform:'translateY(-50%)',fontSize:9,fontFamily:F,color:C.accent,fontWeight:700}}>${pr.predictedHi}</div>
+                <div style={{position:'absolute',left:4,top:'50%',transform:'translateY(-50%)',fontSize:8,fontFamily:F,color:C.warn,fontWeight:700}}>${pr.predictedLo}</div>
+                <div style={{position:'absolute',right:4,top:'50%',transform:'translateY(-50%)',fontSize:8,fontFamily:F,color:C.accent,fontWeight:700}}>${pr.predictedHi}</div>
               </div>
-
-              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
-                <div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
-                  <span style={{color:C.txtDim}}>Range: </span><span style={{color:C.txtBright,fontWeight:600}}>{pr.rangeWidth}%</span>
-                </div>
-                <div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
-                  <span style={{color:C.txtDim}}>ATR: </span><span style={{color:C.gold,fontWeight:600}}>${pr.atr} ({pr.atrPct}%)</span>
-                </div>
-                <div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
-                  <span style={{color:C.txtDim}}>Bull/Bear: </span><span style={{color:C.accent,fontWeight:600}}>{pr.bullSignals}</span><span style={{color:C.txtDim}}> / </span><span style={{color:C.warn,fontWeight:600}}>{pr.bearSignals}</span>
-                </div>
-                {pr.oscZone&&<div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
-                  <span style={{color:C.txtDim}}>Osc Zone: </span><span style={{color:C.accent,fontWeight:600}}>${pr.oscZone.lo} - ${pr.oscZone.hi}</span><span style={{color:C.txtDim}}> ({pr.oscZone.width}%)</span>
-                </div>}
+              <div style={{display:'flex',flexWrap:'wrap',gap:4,fontSize:8,fontFamily:F}}>
+                <span style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3}}><span style={{color:C.txtDim}}>Range </span><span style={{color:C.txtBright,fontWeight:600}}>{pr.rangeWidth}%</span></span>
+                <span style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3}}><span style={{color:C.txtDim}}>ATR </span><span style={{color:C.gold,fontWeight:600}}>${pr.atr}</span></span>
+                {pr.oscZone&&<span style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3}}><span style={{color:C.txtDim}}>Osc </span><span style={{color:C.accent,fontWeight:600}}>${pr.oscZone.lo}-${pr.oscZone.hi}</span></span>}
+                {pr.extendedHi&&<span style={{padding:'2px 6px',background:C.accent+'15',borderRadius:3,border:'1px solid '+C.accent+'30'}}><span style={{color:C.accent,fontWeight:700}}>{'\u2191'}${pr.extendedHi}</span></span>}
+                {pr.extendedLo&&<span style={{padding:'2px 6px',background:C.warn+'15',borderRadius:3,border:'1px solid '+C.warn+'30'}}><span style={{color:C.warn,fontWeight:700}}>{'\u2193'}${pr.extendedLo}</span></span>}
               </div>
-
-              {(pr.extendedHi||pr.extendedLo)&&<div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
-                {pr.extendedHi&&<div style={{padding:'4px 10px',background:C.accent+'15',borderRadius:4,border:'1px solid '+C.accent+'40',fontSize:9,fontFamily:F}}>
-                  <span style={{color:C.txtDim}}>Bull Target: </span><span style={{color:C.accent,fontWeight:700}}>${pr.extendedHi}</span>
-                </div>}
-                {pr.extendedLo&&<div style={{padding:'4px 10px',background:C.warn+'15',borderRadius:4,border:'1px solid '+C.warn+'40',fontSize:9,fontFamily:F}}>
-                  <span style={{color:C.txtDim}}>Bear Target: </span><span style={{color:C.warn,fontWeight:700}}>${pr.extendedLo}</span>
-                </div>}
-              </div>}
-
-              {pr.watchLevels&&pr.watchLevels.length>0&&<div>
-                <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:4,textTransform:'uppercase'}}>Levels to Watch</div>
-                {pr.watchLevels.map(function(wl,wi){
-                  var wColor=wl.type==='Support'||wl.type==='Bull Target'?C.accent:wl.type==='Resistance'||wl.type==='Bear Target'?C.warn:C.gold;
-                  return <div key={wi} style={{display:'flex',alignItems:'center',gap:8,padding:'3px 0',fontSize:9,fontFamily:F}}>
-                    <span style={{color:wColor,fontWeight:700,minWidth:55}}>${wl.price.toFixed(2)}</span>
-                    <span style={{color:C.txtDim,minWidth:65}}>{wl.type}</span>
-                    <span style={{color:C.txt,fontSize:8}}>{wl.action}</span>
-                  </div>;
-                })}
-              </div>}
             </div>;
           })()}
+
+          {/* ── Latest Pattern (always visible) ──────────────────────── */}
+          {latestPattern&&renderPat(latestPattern,0,!isExp)}
+
+          {/* ── Expand button ────────────────────────────────────────── */}
+          {moreCount>0&&<button onClick={function(){setExpanded(function(prev){var n=Object.assign({},prev);n[tf.key]=!n[tf.key];return n;});}}
+            style={{width:'100%',padding:'6px',background:'transparent',border:'1px solid '+C.border,borderRadius:6,
+              color:C.txtDim,fontSize:9,fontFamily:F,cursor:'pointer',marginBottom:6,textAlign:'center'}}>
+            {isExp?'\u2212 Hide '+moreCount+' more pattern'+(moreCount>1?'s':''):'\u002B Show '+moreCount+' more pattern'+(moreCount>1?'s':'')}
+          </button>}
+
+          {/* ── Expanded patterns ─────────────────────────────────────── */}
+          {isExp&&chartPatterns.slice(1).map(function(pat,pi){return renderPat(pat,pi+1,true);})}
+
+          {/* ── Fibonacci (compact) ──────────────────────────────────── */}
+          {fibPattern&&fibPattern.levels&&<div style={{marginBottom:6}}>
+            <div style={{color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,fontFamily:F,marginBottom:4,textTransform:'uppercase'}}>Fibonacci Levels</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              {Object.keys(fibPattern.levels).map(function(k){
+                if(k==='swing_high'||k==='swing_low')return null;
+                var v=fibPattern.levels[k];if(v==null)return null;
+                return <span key={k} style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3,border:'1px solid '+C.gold+'40',fontSize:8,fontFamily:F}}>
+                  <span style={{color:C.gold}}>{k}</span> <span style={{color:C.txtBright,fontWeight:600}}>${v.toFixed(2)}</span>
+                </span>;
+              })}
+            </div>
+          </div>}
+
+          {/* ── S/R Key Levels (compact pills) ───────────────────────── */}
+          {sAndR.length>0&&<div style={{marginBottom:4}}>
+            <div style={{color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,fontFamily:F,marginBottom:4,textTransform:'uppercase'}}>Key Levels</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              {sAndR.map(function(sr,si){
+                var srColor=sr.type==='bullish'?C.accent:sr.type==='bearish'?C.warn:C.gold;
+                return <span key={si} style={{padding:'2px 8px',background:C.bgDeep,borderRadius:4,border:'1px solid '+srColor+'60',fontSize:8,fontFamily:F}}>
+                  <span style={{color:srColor,fontWeight:700}}>${sr.levels.price.toFixed(2)}</span>
+                  <span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{sr.pattern.charAt(0)} {sr.levels.touches}x</span>
+                </span>;
+              })}
+            </div>
+          </div>}
+
+          {chartPatterns.length===0&&!tfData.note&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,fontStyle:'italic'}}>No chart patterns detected</div>}
         </div>;
       })}
     </div>}
