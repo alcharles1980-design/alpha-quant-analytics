@@ -11849,8 +11849,8 @@ function ChartPatternPage(p){
 
   var TIMEFRAMES=[
     {key:'daily',label:'Daily',interval:'day',multi:1,from:365,limit:300},
-    {key:'1h',label:'1 Hour',interval:'hour',multi:1,from:30,limit:720},
-    {key:'15m',label:'15 Min',interval:'minute',multi:15,from:10,limit:960},
+    {key:'1h',label:'1 Hour',interval:'hour',multi:1,from:90,limit:2000},
+    {key:'15m',label:'15 Min',interval:'minute',multi:15,from:15,limit:2000},
     {key:'5m',label:'5 Min',interval:'minute',multi:5,from:5,limit:1440}
   ];
 
@@ -12377,7 +12377,7 @@ function ChartPatternPage(p){
         var d=await r.json();
         var bars=d.results||[];
         if(bars.length<20){
-          allResults[tf.key]={bars:bars.length,patterns:[],note:'Too few bars ('+bars.length+')'};
+          allResults[tf.key]={bars:bars.length,patterns:[],note:'Too few bars ('+bars.length+'). API status: '+(d.status||'unknown')+', count: '+(d.resultsCount||0)};
           continue;
         }
 
