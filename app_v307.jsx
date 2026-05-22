@@ -12383,6 +12383,138 @@ function ChartPatternPage(p){
     'S/R Zone':'A price level that has acted as both support and resistance at different times. These are the most significant levels — the market remembers them.'
   };
 
+  // ── Range Prediction ───────────────────────────────────────────────────
+  // Combines patterns + regime + ATR + S/R to predict next-period range
+  var predictRange=function(bars,patterns,regime,tf){
+    if(bars.length<10)return null;
+    var lastPrice=bars[bars.length-1].c;
+    var lastHigh=bars[bars.length-1].h;
+    var lastLow=bars[bars.length-1].l;
+
+    // 1. ATR-based baseline range
+    var atrN=Math.min(14,bars.length-1);
+    var atrSum=0;
+    for(var i=bars.length-atrN;i<bars.length;i++){
+      var hi=bars[i].h,lo=bars[i].l,pc=bars[i-1].c;
+      atrSum+=Math.max(hi-lo,Math.abs(hi-pc),Math.abs(lo-pc));
+    }
+    var atr=atrSum/atrN;
+    var baseHi=lastPrice+atr;
+    var baseLo=lastPrice-atr;
+
+    // 2. Collect all pattern targets and key levels
+    var bullTargets=[],bearTargets=[],supportLevels=[],resistLevels=[];
+    patterns.forEach(function(p2){
+      if(p2.levels){
+        if(p2.levels.target){
+          if(p2.type==='bullish')bullTargets.push(p2.levels.target);
+          if(p2.type==='bearish')bearTargets.push(p2.levels.target);
+        }
+        if(p2.levels.neckline){
+          if(p2.type==='bullish')supportLevels.push(p2.levels.neckline);
+          if(p2.type==='bearish')resistLevels.push(p2.levels.neckline);
+        }
+        if(p2.levels.support)supportLevels.push(p2.levels.support);
+        if(p2.levels.resistance)resistLevels.push(p2.levels.resistance);
+        if(p2.levels.risingSupport)supportLevels.push(p2.levels.risingSupport);
+        if(p2.levels.fallingResistance)resistLevels.push(p2.levels.fallingResistance);
+        if(p2.levels.flagHi)resistLevels.push(p2.levels.flagHi);
+        if(p2.levels.flagLo)supportLevels.push(p2.levels.flagLo);
+        if(p2.pattern==='Support'&&p2.levels.price)supportLevels.push(p2.levels.price);
+        if(p2.pattern==='Resistance'&&p2.levels.price)resistLevels.push(p2.levels.price);
+      }
+    });
+
+    // Fibonacci levels as S/R
+    patterns.forEach(function(p2){
+      if(p2.pattern==='Fibonacci Retracement'&&p2.levels){
+        Object.keys(p2.levels).forEach(function(k){
+          if(k.indexOf('%')>0){
+            var lv=p2.levels[k];
+            if(lv<lastPrice)supportLevels.push(lv);
+            else resistLevels.push(lv);
+          }
+        });
+      }
+    });
+
+    // Filter to nearby levels (within 2x ATR)
+    supportLevels=supportLevels.filter(function(s){return s<lastPrice&&s>lastPrice-atr*3;}).sort(function(a,b){return b-a;});
+    resistLevels=resistLevels.filter(function(r){return r>lastPrice&&r<lastPrice+atr*3;}).sort(function(a,b){return a-b;});
+
+    // 3. Determine directional bias from patterns + regime
+    var bullScore=0,bearScore=0;
+    patterns.forEach(function(p2){
+      var w=p2.confidence/100;
+      if(p2.type==='bullish')bullScore+=w;
+      if(p2.type==='bearish')bearScore+=w;
+    });
+    if(regime){
+      if(regime.bias==='bullish')bullScore+=regime.confidence/100;
+      if(regime.bias==='bearish')bearScore+=regime.confidence/100;
+    }
+    var totalBias=bullScore+bearScore;
+    var biasDir=bullScore>bearScore*1.3?'bullish':bearScore>bullScore*1.3?'bearish':'neutral';
+    var biasStrength=totalBias>0?Math.round(Math.abs(bullScore-bearScore)/totalBias*100):0;
+
+    // 4. Adjust range based on bias + regime
+    var predHi=baseHi,predLo=baseLo;
+    if(biasDir==='bullish'){
+      predHi=baseHi+atr*0.3; // extend upside
+      predLo=baseLo+atr*0.2; // raise floor
+    }else if(biasDir==='bearish'){
+      predHi=baseHi-atr*0.2; // lower ceiling
+      predLo=baseLo-atr*0.3; // extend downside
+    }
+
+    // If range-bound regime, tighten to S/R levels
+    if(regime&&(regime.regime==='Range-Bound'||regime.regime==='Channel')){
+      if(resistLevels.length>0)predHi=Math.min(predHi,resistLevels[0]);
+      if(supportLevels.length>0)predLo=Math.max(predLo,supportLevels[0]);
+    }
+
+    // If compression, expect wider breakout
+    if(regime&&regime.regime==='Compression'){
+      predHi=baseHi+atr*0.5;
+      predLo=baseLo-atr*0.5;
+    }
+
+    // Clamp extremes — pattern targets as extended targets
+    var extendedHi=bullTargets.length>0?Math.max.apply(null,bullTargets):null;
+    var extendedLo=bearTargets.length>0?Math.min.apply(null,bearTargets):null;
+
+    // Key levels to watch
+    var watchLevels=[];
+    if(resistLevels.length>0)watchLevels.push({price:resistLevels[0],type:'Resistance',action:'Breakout above = bullish continuation'});
+    if(supportLevels.length>0)watchLevels.push({price:supportLevels[0],type:'Support',action:'Breakdown below = bearish continuation'});
+    if(extendedHi)watchLevels.push({price:extendedHi,type:'Bull Target',action:'Pattern-projected upside target'});
+    if(extendedLo)watchLevels.push({price:extendedLo,type:'Bear Target',action:'Pattern-projected downside target'});
+
+    // Oscillation zone (best range for oscillation strategy)
+    var oscHi=resistLevels.length>0?resistLevels[0]:predHi;
+    var oscLo=supportLevels.length>0?supportLevels[0]:predLo;
+
+    return {
+      currentPrice:lastPrice,
+      predictedHi:Math.round(predHi*100)/100,
+      predictedLo:Math.round(predLo*100)/100,
+      rangeWidth:Math.round((predHi-predLo)/lastPrice*10000)/100,
+      bias:biasDir,
+      biasStrength:biasStrength,
+      bullSignals:Math.round(bullScore*10)/10,
+      bearSignals:Math.round(bearScore*10)/10,
+      atr:Math.round(atr*100)/100,
+      atrPct:Math.round(atr/lastPrice*10000)/100,
+      extendedHi:extendedHi?Math.round(extendedHi*100)/100:null,
+      extendedLo:extendedLo?Math.round(extendedLo*100)/100:null,
+      oscZone:{hi:Math.round(oscHi*100)/100,lo:Math.round(oscLo*100)/100,
+        width:Math.round((oscHi-oscLo)/lastPrice*10000)/100},
+      watchLevels:watchLevels,
+      nearestSupport:supportLevels.length>0?Math.round(supportLevels[0]*100)/100:null,
+      nearestResist:resistLevels.length>0?Math.round(resistLevels[0]*100)/100:null
+    };
+  };
+
   // ── Main scan function ────────────────────────────────────────────────
   var scan=async function(){
     var tk=ticker.trim().toUpperCase();
@@ -12429,6 +12561,9 @@ function ChartPatternPage(p){
         // Regime detection
         var regime=detectRegime(bars,swings,tf.label);
 
+        // Range prediction based on patterns + regime + ATR
+        var prediction=predictRange(bars,patterns,regime,tf.label);
+
         // Enrich all patterns with timestamps from bar data
         var fmtTime=function(t,isDaily){
           if(!t)return '';
@@ -12457,6 +12592,7 @@ function ChartPatternPage(p){
           swings:{highs:swings.highs.length,lows:swings.lows.length},
           patterns:patterns,
           regime:regime,
+          prediction:prediction,
           lastPrice:bars[bars.length-1].c
         };
       }catch(e){
@@ -12668,6 +12804,75 @@ function ChartPatternPage(p){
               })}
             </div>
           </div>}
+
+          {/* ── Range Prediction ──────────────────────────────────────── */}
+          {tfData.prediction&&(function(){
+            var pr=tfData.prediction;
+            var biasColor=pr.bias==='bullish'?C.accent:pr.bias==='bearish'?C.warn:C.gold;
+            return <div style={{marginTop:12,padding:'12px 14px',background:C.bg,borderRadius:8,border:'1px solid '+C.border}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{color:C.txtBright,fontSize:9,fontWeight:700,letterSpacing:1.5,fontFamily:F,textTransform:'uppercase'}}>Predicted Range</div>
+                <span style={{padding:'2px 8px',borderRadius:4,fontSize:8,fontWeight:700,fontFamily:F,color:C.bg,background:biasColor}}>{pr.bias.toUpperCase()} {pr.biasStrength}%</span>
+              </div>
+
+              {/* Range bar visualization */}
+              <div style={{position:'relative',height:36,background:C.bgDeep,borderRadius:6,marginBottom:8,border:'1px solid '+C.border,overflow:'hidden'}}>
+                {pr.extendedLo&&<div style={{position:'absolute',left:0,top:0,bottom:0,width:'8%',background:C.warn+'15',borderRight:'1px dashed '+C.warn}}></div>}
+                {pr.extendedHi&&<div style={{position:'absolute',right:0,top:0,bottom:0,width:'8%',background:C.accent+'15',borderLeft:'1px dashed '+C.accent}}></div>}
+                {(function(){
+                  var fullRange=pr.predictedHi-pr.predictedLo;
+                  if(fullRange<=0)return null;
+                  var oscLeft=((pr.oscZone.lo-pr.predictedLo)/fullRange*100);
+                  var oscWidth=((pr.oscZone.hi-pr.oscZone.lo)/fullRange*100);
+                  return <div style={{position:'absolute',left:Math.max(0,oscLeft)+'%',width:Math.min(100,oscWidth)+'%',top:4,bottom:4,background:C.accent+'20',borderRadius:4,border:'1px solid '+C.accent+'40'}}></div>;
+                })()}
+                {(function(){
+                  var fullRange=pr.predictedHi-pr.predictedLo;
+                  if(fullRange<=0)return null;
+                  var pos=((pr.currentPrice-pr.predictedLo)/fullRange*100);
+                  return <div style={{position:'absolute',left:Math.max(2,Math.min(98,pos))+'%',top:2,bottom:2,width:2,background:C.txtBright,borderRadius:1}}></div>;
+                })()}
+                <div style={{position:'absolute',left:4,top:'50%',transform:'translateY(-50%)',fontSize:9,fontFamily:F,color:C.warn,fontWeight:700}}>${pr.predictedLo}</div>
+                <div style={{position:'absolute',right:4,top:'50%',transform:'translateY(-50%)',fontSize:9,fontFamily:F,color:C.accent,fontWeight:700}}>${pr.predictedHi}</div>
+              </div>
+
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+                <div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>Range: </span><span style={{color:C.txtBright,fontWeight:600}}>{pr.rangeWidth}%</span>
+                </div>
+                <div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>ATR: </span><span style={{color:C.gold,fontWeight:600}}>${pr.atr} ({pr.atrPct}%)</span>
+                </div>
+                <div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>Bull/Bear: </span><span style={{color:C.accent,fontWeight:600}}>{pr.bullSignals}</span><span style={{color:C.txtDim}}> / </span><span style={{color:C.warn,fontWeight:600}}>{pr.bearSignals}</span>
+                </div>
+                {pr.oscZone&&<div style={{padding:'4px 10px',background:C.bgDeep,borderRadius:4,fontSize:9,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>Osc Zone: </span><span style={{color:C.accent,fontWeight:600}}>${pr.oscZone.lo} - ${pr.oscZone.hi}</span><span style={{color:C.txtDim}}> ({pr.oscZone.width}%)</span>
+                </div>}
+              </div>
+
+              {(pr.extendedHi||pr.extendedLo)&&<div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+                {pr.extendedHi&&<div style={{padding:'4px 10px',background:C.accent+'15',borderRadius:4,border:'1px solid '+C.accent+'40',fontSize:9,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>Bull Target: </span><span style={{color:C.accent,fontWeight:700}}>${pr.extendedHi}</span>
+                </div>}
+                {pr.extendedLo&&<div style={{padding:'4px 10px',background:C.warn+'15',borderRadius:4,border:'1px solid '+C.warn+'40',fontSize:9,fontFamily:F}}>
+                  <span style={{color:C.txtDim}}>Bear Target: </span><span style={{color:C.warn,fontWeight:700}}>${pr.extendedLo}</span>
+                </div>}
+              </div>}
+
+              {pr.watchLevels&&pr.watchLevels.length>0&&<div>
+                <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:4,textTransform:'uppercase'}}>Levels to Watch</div>
+                {pr.watchLevels.map(function(wl,wi){
+                  var wColor=wl.type==='Support'||wl.type==='Bull Target'?C.accent:wl.type==='Resistance'||wl.type==='Bear Target'?C.warn:C.gold;
+                  return <div key={wi} style={{display:'flex',alignItems:'center',gap:8,padding:'3px 0',fontSize:9,fontFamily:F}}>
+                    <span style={{color:wColor,fontWeight:700,minWidth:55}}>${wl.price.toFixed(2)}</span>
+                    <span style={{color:C.txtDim,minWidth:65}}>{wl.type}</span>
+                    <span style={{color:C.txt,fontSize:8}}>{wl.action}</span>
+                  </div>;
+                })}
+              </div>}
+            </div>;
+          })()}
         </div>;
       })}
     </div>}
