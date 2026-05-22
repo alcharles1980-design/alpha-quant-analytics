@@ -12591,8 +12591,8 @@ function ChartPatternPage(p){
           var compression=regimes.filter(function(r){return r.regime==='Compression';}).length;
           var suggestion='';
           if(rangeBound>=2)suggestion='Multiple timeframes in range/chop — strong oscillation trading setup. Deploy oscillation strategy within detected ranges.';
-          else if(trending>=2&&rangeBound>=1)suggestion='Trending on higher timeframes with range on lower — grid the lower TF range, expect drift in trend direction.';
-          else if(compression>=2)suggestion='Compression across timeframes — breakout imminent. Wait for direction before deploying grid.';
+          else if(trending>=2&&rangeBound>=1)suggestion='Trending on higher timeframes with range on lower — oscillate the lower TF range, expect drift in trend direction.';
+          else if(compression>=2)suggestion='Compression across timeframes — breakout imminent. Wait for direction before deploying oscillation strategy.';
           else if(trending>=3)suggestion='Strong trend across timeframes — oscillation strategies will get directionally run over. Consider trend-following instead of mean-reversion.';
           if(suggestion)return <div style={{marginTop:10,padding:'10px 14px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,
             color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.6}}>
