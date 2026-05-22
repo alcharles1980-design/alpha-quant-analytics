@@ -12273,14 +12273,18 @@ function ChartPatternPage(p){
   var detectRegime=function(bars,swings,tf,overridePrice){
     if(bars.length<30)return {regime:'Insufficient Data',confidence:0,bias:'neutral',detail:'',stats:{}};
     var lastPrice=overridePrice||bars[bars.length-1].c;
-    // MAs — adjust period for intraday to approximate daily equivalents
-    // Daily: MA20 = 20 bars. Hourly: ~7 RTH hrs/day → 140 bars ≈ 20 days.
-    // 15min: ~26 bars/hr × 7 hrs = 182/day → 3640 bars (use what we have).
-    // 5min: ~78 bars/hr × 7 hrs = 546/day → too many. Use available bars.
+    // MAs — estimate actual bars-per-day from data
+    // Count how many bars are in the last 5 calendar days to get real density
     var barsPerDay=1;
-    if(tf==='1 Hour')barsPerDay=7;
-    else if(tf==='15 Min')barsPerDay=28;
-    else if(tf==='5 Min')barsPerDay=78;
+    if(tf!=='Daily'&&bars.length>=20){
+      var fiveDaysAgo=bars[bars.length-1].t-5*24*60*60*1000;
+      var recentBars=0;
+      for(var bi=bars.length-1;bi>=0;bi--){
+        if(bars[bi].t>=fiveDaysAgo)recentBars++;else break;
+      }
+      // Divide by trading days (weekdays only, ~3.5 out of 5 calendar days)
+      barsPerDay=Math.max(1,Math.round(recentBars/3.5));
+    }
     var ma20Period=Math.min(20*barsPerDay,Math.floor(bars.length*0.7));
     var ma50Period=Math.min(50*barsPerDay,Math.floor(bars.length*0.9));
 
@@ -12751,7 +12755,7 @@ function ChartPatternPage(p){
               {reg.stats&&<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
                 {reg.stats.atrPct!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.gold}}>ATR {reg.stats.atrPct}%</span>}
                 {reg.stats.reversalRate!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.blue}}>Rev {reg.stats.reversalRate}%</span>}
-                {reg.stats.ma20!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.txtDim}}>MA20 ${reg.stats.ma20}</span>}
+                {reg.stats.ma20!=null&&<span style={{padding:'2px 6px',background:C.bg,borderRadius:3,fontSize:8,fontFamily:F,color:C.txtDim}}>MA{reg.stats.ma20Period||20} ${reg.stats.ma20}</span>}
               </div>}
             </div>;
           })}
