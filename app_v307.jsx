@@ -12385,9 +12385,9 @@ function ChartPatternPage(p){
 
   // ── Range Prediction ───────────────────────────────────────────────────
   // Combines patterns + regime + ATR + S/R to predict next-period range
-  var predictRange=function(bars,patterns,regime,tf){
+  var predictRange=function(bars,patterns,regime,tf,overridePrice){
     if(bars.length<10)return null;
-    var lastPrice=bars[bars.length-1].c;
+    var lastPrice=overridePrice||bars[bars.length-1].c;
     var lastHigh=bars[bars.length-1].h;
     var lastLow=bars[bars.length-1].l;
 
@@ -12576,7 +12576,7 @@ function ChartPatternPage(p){
         var regime=detectRegime(bars,swings,tf.label);
 
         // Range prediction based on patterns + regime + ATR
-        var prediction=predictRange(bars,patterns,regime,tf.label);
+        var prediction=predictRange(bars,patterns,regime,tf.label,livePrice);
 
         // Enrich all patterns with timestamps from bar data
         var fmtTime=function(t,isDaily){
@@ -12607,7 +12607,7 @@ function ChartPatternPage(p){
           patterns:patterns,
           regime:regime,
           prediction:prediction,
-          lastPrice:bars[bars.length-1].c
+          lastPrice:livePrice||bars[bars.length-1].c
         };
       }catch(e){
         allResults[tf.key]={bars:0,patterns:[],note:'Error: '+e.message};
