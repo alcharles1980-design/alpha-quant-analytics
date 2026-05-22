@@ -12531,7 +12531,8 @@ function ChartPatternPage(p){
       if(snapD.ticker){
         var dayC=snapD.ticker.day?snapD.ticker.day.c:null;
         var prevC=snapD.ticker.prevDay?snapD.ticker.prevDay.c:null;
-        livePrice=(dayC&&dayC>0)?dayC:(prevC||null);
+        var lastTrade=snapD.ticker.lastTrade?snapD.ticker.lastTrade.p:null;
+        livePrice=lastTrade||(dayC&&dayC>0?dayC:null)||(prevC||null);
       }
     }catch(e){}
 
