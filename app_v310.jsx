@@ -13318,9 +13318,8 @@ function OptionsChainPage(p){
     try{
       setProg('Fetching trades for '+contract.symbol+'...');
       var all=[];var pt=null;var pages=0;
-      var tradeLookback=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
-      while(pages<50){
-        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&start='+tradeLookback+'T00:00:00Z&limit=1000&sort=desc';
+      while(pages<100){
+        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&limit=1000&sort=desc';
         if(pt)path+='&page_token='+pt;
         var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
@@ -13622,6 +13621,46 @@ function OptionsChainPage(p){
             </table>
           </div>
           {contractTrades.length>2000&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>Showing first 2,000 of {contractTrades.length.toLocaleString()} trades</div>}
+
+          {/* ── LEGEND ─────────────────────────────────────────────── */}
+          <div style={{marginTop:12,borderTop:'1px solid '+C.border,paddingTop:10}}>
+            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:8}}>Trade Conditions (OPRA)</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:12}}>
+              {[['A','Cancel'],['B','Late/Out of Seq'],['C','Contingent'],['E','Opening/Reopening'],['F','Intermarket Sweep'],['G','Cross Trade'],['H','Combo/QCT'],['I','Electronic Stop'],['L','Pre/Post Session'],['N','Negotiated'],['P','Prior Ref Price'],['Q','Official Open'],['R','Official Close'],['T','Multi-Leg Auto'],['U','Multi-Leg Auction'],['V','Multi-Leg Floor'],['W','Multi-Leg Cross'],['X','Canceled'],['','Regular (blank)']].map(function(pair){
+                return <span key={pair[0]||'blank'} style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3,fontSize:7,fontFamily:F}}>
+                  <span style={{color:C.gold,fontWeight:700}}>{pair[0]||'\u2205'}</span>
+                  <span style={{color:C.txtDim,marginLeft:3}}>{pair[1]}</span>
+                </span>;
+              })}
+            </div>
+
+            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Options Exchanges</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:12}}>
+              {[[1,'AMEX'],[2,'BOX'],[3,'CBOE'],[4,'C2'],[5,'ISE'],[6,'PHLX'],[7,'ARCA'],[8,'EDGX'],[9,'BATS'],[10,'ISE GEMINI'],[11,'ISE MERCURY'],[12,'MIAX'],[13,'MIAX PEARL'],[14,'MIAX EMERALD'],[15,'EDGA'],[16,'NASDAQ'],[17,'NSDQ BX'],[18,'NSDQ PSX'],[19,'MEMX'],[20,'MPRL']].map(function(pair){
+                return <span key={pair[0]} style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3,fontSize:7,fontFamily:F}}>
+                  <span style={{color:C.gold,fontWeight:700}}>{pair[0]}</span>
+                  <span style={{color:C.txtDim,marginLeft:3}}>{pair[1]}</span>
+                </span>;
+              })}
+            </div>
+
+            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Table Columns</div>
+            <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F,marginBottom:8}}>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Time</span><span style={{color:C.txtDim}}> {'\u2014'} Execution timestamp in ET (HH:MM:SS).</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Price</span><span style={{color:C.txtDim}}> {'\u2014'} Premium paid per contract (multiply by 100 for total cost per contract).</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Size</span><span style={{color:C.txtDim}}> {'\u2014'} Number of contracts traded. Each contract = 100 shares of underlying.</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Exchange</span><span style={{color:C.txtDim}}> {'\u2014'} Options exchange where the trade executed (numeric OPRA code).</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Conditions</span><span style={{color:C.txtDim}}> {'\u2014'} OPRA trade condition codes. Blank = regular trade.</span></div>
+            </div>
+
+            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Summary Metrics</div>
+            <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F}}>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Trades</span><span style={{color:C.txtDim}}> {'\u2014'} Total individual trade executions for this contract.</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Contracts</span><span style={{color:C.txtDim}}> {'\u2014'} Total contracts traded (sum of all trade sizes).</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Lo / Hi</span><span style={{color:C.txtDim}}> {'\u2014'} Lowest and highest premium prices traded.</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Spread</span><span style={{color:C.txtDim}}> {'\u2014'} Difference between highest and lowest trade price (Hi - Lo).</span></div>
+            </div>
+          </div>
         </div>}
       </div>}
 
