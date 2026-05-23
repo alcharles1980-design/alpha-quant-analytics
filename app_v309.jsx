@@ -24995,16 +24995,16 @@ function Alpaca24AtrPage(p){
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
-  var fetchBars=async function(feed,tk,start,end){
+  var fetchTrades=async function(feed,tk,start,end,onProg){
     var all=[];var pt=null;
     while(true){
-      // Use 1Min bars — hourly bars may exclude extended hours on some plans
-      var path='/v2/stocks/'+tk+'/bars?timeframe=1Min&start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
+      var path='/v2/stocks/'+tk+'/trades?start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
       if(pt)path+='&page_token='+pt;
       var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
       if(!r.ok){var t=await r.text();throw new Error(t);}
       var d=await r.json();
-      if(d.bars)all=all.concat(d.bars);
+      if(d.trades)all=all.concat(d.trades);
+      if(onProg)onProg(all.length);
       if(d.next_page_token)pt=d.next_page_token;else break;
     }
     return all;
@@ -25014,71 +25014,75 @@ function Alpaca24AtrPage(p){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
     var tk=ticker.trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
-    setLoading(true);setErr(null);setResults(null);setFeedStatus({});setProg('Calculating date range...');
+    setLoading(true);setErr(null);setResults(null);setFeedStatus({});setProg('Building date range...');
 
-    // Build date range: last N trading days
-    var endD=new Date();
-    var startD=new Date();
-    startD.setDate(startD.getDate()-(days*2+5)); // extra buffer for weekends
-    var fmt=function(d){return d.toISOString().slice(0,10);};
-    var tsStart=fmt(startD)+'T00:00:00Z';
-    var tsEnd=fmt(endD)+'T23:59:59Z';
+    // Build list of trading days (skip weekends)
+    var tradingDays=[];
+    var d2=new Date();
+    for(var di=0;tradingDays.length<days&&di<days*3;di++){
+      var chk=new Date(d2);chk.setDate(chk.getDate()-di-1);
+      var dow=chk.getDay();
+      if(dow!==0&&dow!==6)tradingDays.push(chk.toISOString().slice(0,10));
+    }
+    tradingDays.reverse();
+
+    var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
+    var etDateFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'2-digit',day:'2-digit'});
 
     try{
-      // Scan SIP + IEX + BOATS feeds, merge
+      // For each trading day, scan all feeds, merge trades into hourly OHLCV
       var feeds=['sip','iex','boats'];
-      var allBars=[];
-      var seen={};
-      var fStatus={};
+      var fStatus={sip:{ok:true,count:0,added:0},iex:{ok:true,count:0,added:0},boats:{ok:true,count:0,added:0}};
+      var hourlyAgg={}; // key: "date|hour" → {high, low, volume, tradeCount, boats}
+      var totalTrades=0;
 
-      for(var fi=0;fi<feeds.length;fi++){
-        var f=feeds[fi];
-        setProg('Scanning '+f.toUpperCase()+' 1-min bars... ('+allBars.length+' total)');
-        try{
-          var bars=await fetchBars(f,tk,tsStart,tsEnd);
-          var added=0;
-          for(var bi=0;bi<bars.length;bi++){
-            var b=bars[bi];
-            var key=b.t;
-            if(!seen[key]){seen[key]=true;b._feed=f;allBars.push(b);added++;}
+      for(var dayIdx=0;dayIdx<tradingDays.length;dayIdx++){
+        var dayStr=tradingDays[dayIdx];
+        // Each day: 8PM previous day through 8PM this day (full 24hr cycle)
+        // But simpler: just fetch the full calendar day in UTC
+        var dayStart=dayStr+'T00:00:00Z';
+        var dayEnd=dayStr+'T23:59:59Z';
+
+        for(var fi=0;fi<feeds.length;fi++){
+          var f=feeds[fi];
+          if(!fStatus[f].ok&&fStatus[f].err)continue; // skip feeds that already failed
+          setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' ('+totalTrades.toLocaleString()+' trades)');
+          try{
+            var trades=await fetchTrades(f,tk,dayStart,dayEnd,function(n){
+              setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' '+n.toLocaleString()+' trades');
+            });
+            fStatus[f].count+=trades.length;
+            // Aggregate trades into hourly buckets
+            for(var ti=0;ti<trades.length;ti++){
+              var tr=trades[ti];
+              var dt=new Date(tr.t);
+              var etParts=etHourFmt.formatToParts(dt);
+              var etHour=-1;
+              for(var pi=0;pi<etParts.length;pi++){if(etParts[pi].type==='hour'){etHour=parseInt(etParts[pi].value);break;}}
+              if(etHour<0||etHour>23)continue;
+              var dateKey=etDateFmt.format(dt);
+              var aggKey=dateKey+'|'+etHour;
+              if(!hourlyAgg[aggKey]){hourlyAgg[aggKey]={hour:etHour,date:dateKey,high:-Infinity,low:Infinity,volume:0,tradeCount:0,boats:0};}
+              var agg=hourlyAgg[aggKey];
+              if(tr.p>agg.high)agg.high=tr.p;
+              if(tr.p<agg.low)agg.low=tr.p;
+              agg.volume+=(tr.s||0);
+              agg.tradeCount++;
+              if(f==='boats')agg.boats++;
+            }
+            totalTrades+=trades.length;
+            fStatus[f].added+=trades.length;
+          }catch(e){
+            var errMsg=(e.message||'').substring(0,80);
+            if(!fStatus[f].err)fStatus[f]={ok:false,count:fStatus[f].count,added:fStatus[f].added,err:errMsg};
           }
-          fStatus[f]={ok:true,count:bars.length,added:added};
-        }catch(e){
-          fStatus[f]={ok:false,err:(e.message||'').substring(0,80)};
         }
       }
       setFeedStatus(fStatus);
 
-      if(allBars.length===0){setErr('No bars found for '+tk);setLoading(false);return;}
-      allBars.sort(function(a,b){return a.t<b.t?-1:1;});
+      if(Object.keys(hourlyAgg).length===0){setErr('No trades found for '+tk+' across '+tradingDays.length+' days');setLoading(false);return;}
 
-      // Robust ET hour extraction using Intl.DateTimeFormat
-      var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
-      var etDateFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'2-digit',day:'2-digit'});
-
-      // Step 1: Aggregate 1-minute bars into hourly OHLCV
-      // Key: "dateStr|hour" → {high, low, volume, count, feed}
-      var hourlyAgg={};
-      for(var i=0;i<allBars.length;i++){
-        var bar=allBars[i];
-        var dt=new Date(bar.t);
-        var etParts=etHourFmt.formatToParts(dt);
-        var etHour=-1;
-        for(var pi=0;pi<etParts.length;pi++){if(etParts[pi].type==='hour'){etHour=parseInt(etParts[pi].value);break;}}
-        if(etHour<0||etHour>23)continue;
-        var dateKey=etDateFmt.format(dt);
-        var aggKey=dateKey+'|'+etHour;
-        if(!hourlyAgg[aggKey]){hourlyAgg[aggKey]={hour:etHour,date:dateKey,high:-Infinity,low:Infinity,volume:0,count:0,boats:0,close:bar.c};}
-        var agg=hourlyAgg[aggKey];
-        if(bar.h>agg.high)agg.high=bar.h;
-        if(bar.l<agg.low)agg.low=bar.l;
-        agg.volume+=(bar.v||0);
-        agg.count++;
-        agg.close=bar.c;
-        if(bar._feed==='boats')agg.boats++;
-      }
-
-      // Step 2: Group aggregated hourly bars by ET hour (0-23)
+      // Group aggregated hourly data by ET hour (0-23)
       var hourly={};
       for(var h=0;h<24;h++)hourly[h]={ranges:[],volumes:[],counts:0,boats:0,dates:{}};
 
@@ -25111,14 +25115,19 @@ function Alpaca24AtrPage(p){
         hourData.push({hour:hr,atrDollar:avgD,atrPct:avgP,avgVol:avgV,count:hd.counts,days:Object.keys(hd.dates).length,boats:hd.boats});
       }
 
-      // Get latest price for context
-      var lastBar=allBars[allBars.length-1];
-      var lastPrice=lastBar.c;
+      // Get latest price
+      var lastPrice=0;
+      var latestAgg=null;
+      for(var lk=0;lk<aggKeys.length;lk++){
+        var la=hourlyAgg[aggKeys[lk]];
+        if(!latestAgg||aggKeys[lk]>latestAgg)latestAgg=aggKeys[lk];
+      }
+      if(latestAgg&&hourlyAgg[latestAgg])lastPrice=(hourlyAgg[latestAgg].high+hourlyAgg[latestAgg].low)/2;
 
-      setResults({ticker:tk,hourData:hourData,maxAtrPct:maxAtrPct,totalBars:allBars.length,lastPrice:lastPrice,
-        daysScanned:Object.keys(allBars.reduce(function(s,b){var d=new Date(b.t).toISOString().slice(0,10);s[d]=true;return s;},{})).length,
+      setResults({ticker:tk,hourData:hourData,maxAtrPct:maxAtrPct,totalTrades:totalTrades,lastPrice:lastPrice,
+        daysScanned:tradingDays.length,
         hourCoverage:debugHours,hourlyCount:aggKeys.length,
-        firstBar:allBars[0]?allBars[0].t:'',lastBarTime:allBars[allBars.length-1]?allBars[allBars.length-1].t:''});
+        firstDay:tradingDays[0],lastDay:tradingDays[tradingDays.length-1]});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
@@ -25184,7 +25193,7 @@ function Alpaca24AtrPage(p){
           var r=feedStatus[f];if(!r)return null;
           return <div key={f} style={{padding:'4px 8px',background:C.bgDeep,borderRadius:4,border:'1px solid '+(r.ok?(r.added>0?C.accent+'44':C.border):C.warn+'44'),fontSize:8,fontFamily:F}}>
             <span style={{fontWeight:700,color:r.ok?(r.added>0?C.accent:C.txtDim):C.warn}}>{f.toUpperCase()}</span>
-            <span style={{color:C.txtDim,marginLeft:4}}>{r.ok?r.count+' bars ('+r.added+' unique)':'N/A'}</span>
+            <span style={{color:C.txtDim,marginLeft:4}}>{r.ok?(r.count||0).toLocaleString()+' trades':'N/A'}</span>
             {!r.ok&&<span style={{color:C.warn,fontSize:6,marginLeft:3}}>{r.err||'failed'}</span>}
           </div>;
         })}
@@ -25197,7 +25206,7 @@ function Alpaca24AtrPage(p){
         <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:10,flexWrap:'wrap'}}>
           <div style={{color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F}}>{results.ticker}</div>
           <div style={{color:C.accent,fontSize:16,fontWeight:700,fontFamily:F}}>${results.lastPrice.toFixed(2)}</div>
-          <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{results.totalBars.toLocaleString()} min bars {'\u2192'} {results.hourlyCount||0} hourly across {results.daysScanned} days</div>
+          <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{(results.totalTrades||0).toLocaleString()} trades {'\u2192'} {results.hourlyCount||0} hourly across {results.daysScanned} days</div>
           <button onClick={exportCsv} style={{marginLeft:'auto',padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>CSV</button>
         </div>
 
@@ -25221,7 +25230,7 @@ function Alpaca24AtrPage(p){
             </div>;
           })}
         </div>
-        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:8}}>First bar: {results.firstBar?new Date(results.firstBar).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}):''} | Last bar: {results.lastBarTime?new Date(results.lastBarTime).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}):''}</div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:8}}>Trading days: {results.firstDay||''} to {results.lastDay||''}</div>
 
         {/* Hourly ATR table */}
         <div style={{overflowX:'auto'}}>
