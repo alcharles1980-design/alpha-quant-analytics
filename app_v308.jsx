@@ -26184,7 +26184,7 @@ function App(){
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
   var s15=useState('all'),session=s15[0],setSession=s15[1];
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
-  var s7a=useState('PK5CA67VMMJMBXT6XHQIM5GVS4'),alpKey=s7a[0],setAlpKey=s7a[1];
+  var s7a=useState(''),alpKey=s7a[0],setAlpKey=s7a[1];
   var s7b=useState(''),alpSecret=s7b[0],setAlpSecret=s7b[1];
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
@@ -26193,6 +26193,8 @@ function App(){
   useEffect(function(){
     if(!SB_URL||!SB_KEY)return;
     fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setGhToken(d[0].value);}).catch(function(){});
+    fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_key&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setAlpKey(d[0].value);}).catch(function(){});
+    fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_secret&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setAlpSecret(d[0].value);}).catch(function(){});
   },[]);
   var s8=useState(false),ld=s8[0],setLd=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
@@ -26505,7 +26507,7 @@ function App(){
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
-    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} alpKey={alpKey} alpSecret={alpSecret} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onSaveAlp={function(k,s){setAlpKey(k);setAlpSecret(s);}} onBack={function(){setPage('main');}}/>}
+    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} alpKey={alpKey} alpSecret={alpSecret} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onSaveAlp={function(k,s){setAlpKey(k);setAlpSecret(s);fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_key',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'alpaca_key',value:k})});}).catch(function(){});fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_secret',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'alpaca_secret',value:s})});}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}
