@@ -24996,14 +24996,15 @@ function Alpaca24AtrPage(p){
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
   var fetchTrades=async function(feed,tk,start,end,onProg){
-    var all=[];var pt=null;
-    while(true){
+    var all=[];var pt=null;var pages=0;
+    while(pages<200){
       var path='/v2/stocks/'+tk+'/trades?start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
       if(pt)path+='&page_token='+pt;
       var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
       if(!r.ok){var t=await r.text();throw new Error(t);}
       var d=await r.json();
       if(d.trades)all=all.concat(d.trades);
+      pages++;
       if(onProg)onProg(all.length);
       if(d.next_page_token)pt=d.next_page_token;else break;
     }
@@ -25035,12 +25036,14 @@ function Alpaca24AtrPage(p){
       var fStatus={sip:{ok:true,count:0,added:0},iex:{ok:true,count:0,added:0},boats:{ok:true,count:0,added:0}};
       var hourlyAgg={}; // key: "date|hour" → {high, low, volume, tradeCount, boats}
       var totalTrades=0;
-      var seenTrades={}; // dedup across feeds: "timestamp|price|size" → true
+      var lastTradePrice=0;
+      var lastTradeTs=0;
 
       for(var dayIdx=0;dayIdx<tradingDays.length;dayIdx++){
         var dayStr=tradingDays[dayIdx];
         var dayStart=dayStr+'T00:00:00Z';
         var dayEnd=dayStr+'T23:59:59Z';
+        var seenTrades={}; // dedup across feeds WITHIN same day only (reset per day to save memory)
 
         for(var fi=0;fi<feeds.length;fi++){
           var f=feeds[fi];
@@ -25073,21 +25076,28 @@ function Alpaca24AtrPage(p){
               agg.volume+=(tr.s||0);
               agg.notional+=tr.p*(tr.s||0);
               agg.tradeCount++;
+              // Track last trade price chronologically
+              if(trTs>lastTradeTs){lastTradePrice=tr.p;lastTradeTs=trTs;}
               // Track per-minute first/last price for avg move calculations
+              // Store timestamp to ensure chronological ordering across feeds
               var rawMin=dt.getMinutes();
+              var trTs=dt.getTime();
               var k1=rawMin;
               var k3=Math.floor(rawMin/3);
               var k5=Math.floor(rawMin/5);
-              if(!agg.min1[k1]){agg.min1[k1]={first:tr.p,last:tr.p};}else{agg.min1[k1].last=tr.p;}
-              if(!agg.min3[k3]){agg.min3[k3]={first:tr.p,last:tr.p};}else{agg.min3[k3].last=tr.p;}
-              if(!agg.min5[k5]){agg.min5[k5]={first:tr.p,last:tr.p};}else{agg.min5[k5].last=tr.p;}
+              if(!agg.min1[k1]){agg.min1[k1]={first:tr.p,firstTs:trTs,last:tr.p,lastTs:trTs};}
+              else{if(trTs<agg.min1[k1].firstTs){agg.min1[k1].first=tr.p;agg.min1[k1].firstTs=trTs;}if(trTs>agg.min1[k1].lastTs){agg.min1[k1].last=tr.p;agg.min1[k1].lastTs=trTs;}}
+              if(!agg.min3[k3]){agg.min3[k3]={first:tr.p,firstTs:trTs,last:tr.p,lastTs:trTs};}
+              else{if(trTs<agg.min3[k3].firstTs){agg.min3[k3].first=tr.p;agg.min3[k3].firstTs=trTs;}if(trTs>agg.min3[k3].lastTs){agg.min3[k3].last=tr.p;agg.min3[k3].lastTs=trTs;}}
+              if(!agg.min5[k5]){agg.min5[k5]={first:tr.p,firstTs:trTs,last:tr.p,lastTs:trTs};}
+              else{if(trTs<agg.min5[k5].firstTs){agg.min5[k5].first=tr.p;agg.min5[k5].firstTs=trTs;}if(trTs>agg.min5[k5].lastTs){agg.min5[k5].last=tr.p;agg.min5[k5].lastTs=trTs;}}
               if(f==='boats')agg.boats++;
             }
             totalTrades+=feedAdded;
             fStatus[f].added+=feedAdded;
           }catch(e){
             var errMsg=(e.message||'').substring(0,80);
-            if(!fStatus[f].err)fStatus[f]={ok:false,count:fStatus[f].count,added:fStatus[f].added,err:errMsg};
+            fStatus[f]={ok:false,count:fStatus[f].count||0,added:fStatus[f].added||0,err:errMsg,failures:(fStatus[f].failures||0)+1};
           }
         }
       }
@@ -25143,17 +25153,8 @@ function Alpaca24AtrPage(p){
         hourData.push({hour:hr,atrDollar:avgD,atrPct:avgP,avgVol:avgV,avgTrades:avgT,avgNotional:avgN,avg1m:a1m,avg3m:a3m,avg5m:a5m,count:hd.counts,days:Object.keys(hd.dates).length,boats:hd.boats});
       }
 
-      // Get latest price from most recent hourly bucket
-      var lastPrice=0;
-      var sortedAggs=aggKeys.slice().sort(function(a,b){
-        var pa=a.split('|'),pb=b.split('|');
-        if(pa[0]!==pb[0])return pa[0]<pb[0]?-1:1;
-        return parseInt(pa[1])-parseInt(pb[1]);
-      });
-      if(sortedAggs.length>0){
-        var lastAgg=hourlyAgg[sortedAggs[sortedAggs.length-1]];
-        if(lastAgg)lastPrice=(lastAgg.high+lastAgg.low)/2;
-      }
+      // Use actual last trade price (tracked chronologically during aggregation)
+      var lastPrice=lastTradePrice||0;
 
       setResults({ticker:tk,hourData:hourData,maxAtrPct:maxAtrPct,totalTrades:totalTrades,lastPrice:lastPrice,
         daysScanned:tradingDays.length,
@@ -25225,7 +25226,7 @@ function Alpaca24AtrPage(p){
           return <div key={f} style={{padding:'4px 8px',background:C.bgDeep,borderRadius:4,border:'1px solid '+(r.ok?(r.added>0?C.accent+'44':C.border):C.warn+'44'),fontSize:8,fontFamily:F}}>
             <span style={{fontWeight:700,color:r.ok?(r.added>0?C.accent:C.txtDim):C.warn}}>{f.toUpperCase()}</span>
             <span style={{color:C.txtDim,marginLeft:4}}>{r.ok?(r.count||0).toLocaleString()+' raw, '+(r.added||0).toLocaleString()+' unique':'N/A'}</span>
-            {!r.ok&&<span style={{color:C.warn,fontSize:6,marginLeft:3}}>{r.err||'failed'}</span>}
+            {!r.ok&&<span style={{color:C.warn,fontSize:6,marginLeft:3}}>{r.err||'failed'}{r.failures>1?' ('+r.failures+'x)':''}</span>}
           </div>;
         })}
       </div>
