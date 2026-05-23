@@ -24647,7 +24647,7 @@ function AlpacaTradeFinderPage(p){
     {label:'RTH',desc:'Regular 9:30-4',sh:9,sm:30,ss:0,eh:16,em:0,es:0,feed:'sip'},
     {label:'Pre',desc:'Pre 4-9:30',sh:4,sm:0,ss:0,eh:9,em:30,es:0,feed:'sip'},
     {label:'Post',desc:'Post 4-8PM',sh:16,sm:0,ss:0,eh:20,em:0,es:0,feed:'sip'},
-    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true,feed:'overnight'},
+    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true,feed:'boats'},
     {label:'Full',desc:'All hours 4AM-8PM',sh:4,sm:0,ss:0,eh:20,em:0,es:0,feed:'sip'},
     {label:'24hr',desc:'Full 24hr (SIP+BOATS)',sh:0,sm:0,ss:0,eh:23,em:59,es:59,feed:'both'}
   ];
@@ -24701,7 +24701,7 @@ function AlpacaTradeFinderPage(p){
         setProg('Fetching SIP feed...');
         var sipTrades=await fetchFeed('sip',tsStart,tsEnd);
         setProg('Fetching overnight (BOATS) feed...');
-        var overnightTrades=await fetchFeed('overnight',tsStart,tsEnd);
+        var overnightTrades=await fetchFeed('boats',tsStart,tsEnd);
         // Merge and sort by timestamp
         allTrades=sipTrades.concat(overnightTrades);
         // Mark overnight trades
@@ -24716,7 +24716,7 @@ function AlpacaTradeFinderPage(p){
         allTrades.sort(function(a,b){return a.t<b.t?-1:a.t>b.t?1:0;});
       }else{
         allTrades=await fetchFeed(activeFeed,tsStart,tsEnd);
-        if(activeFeed==='overnight')allTrades.forEach(function(t){t._boats=true;});
+        if(activeFeed==='boats')allTrades.forEach(function(t){t._boats=true;});
       }
       if(!allTrades.length){setErr('No trades found for '+ticker.toUpperCase()+' on '+date+' '+fmtStart+'-'+fmtEnd+' ET');setLoading(false);return;}
       // Convert timestamps to ET and map exchanges/conditions
