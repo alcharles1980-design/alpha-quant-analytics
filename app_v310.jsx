@@ -13538,7 +13538,7 @@ function OptionsChainPage(p){
           var expCalls=expContracts.filter(function(c){return c.type==='call';});
           var expPuts=expContracts.filter(function(c){return c.type==='put';});
           var totalOI=0;var callOI=0;var putOI=0;var highOI=null;var highOIval=0;
-          var mostTraded=null;var mostTradedVol=0;var totalDayVol=0;
+          var mostTraded=null;var mostTradedVol=0;var mostTradedN=0;var totalDayVol=0;
           var unusual=[];
           for(var ei=0;ei<expContracts.length;ei++){
             var ec=expContracts[ei];
@@ -13551,7 +13551,7 @@ function OptionsChainPage(p){
             if(snap3&&snap3.dailyBar){
               dv=snap3.dailyBar.v||0;
               totalDayVol+=dv;
-              if(dv>mostTradedVol){mostTradedVol=dv;mostTraded=ec;mostTraded._dayVol=dv;mostTraded._dayN=snap3.dailyBar.n||0;}
+              if(dv>mostTradedVol){mostTradedVol=dv;mostTradedN=snap3.dailyBar.n||0;mostTraded=ec;}
             }
             // Unusual activity: volume > OI
             if(dv>0&&oi>0&&dv>oi)unusual.push({symbol:ec.symbol,type:ec.type,strike:+ec.strike_price,vol:dv,oi:oi,ratio:(dv/oi).toFixed(1)});
@@ -13615,10 +13615,15 @@ function OptionsChainPage(p){
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               {/* Put/Call Ratio */}
-              <div style={panelS(pcRatio>1?C.warn+'40':C.accent+'40')}>
+              <div style={panelS(callOI===0?C.border:(pcRatio>1.2?C.warn+'40':pcRatio<0.7?C.accent+'40':C.border))}>
                 <div style={sml}>PUT/CALL RATIO</div>
-                <div style={Object.assign({},val,{color:pcRatio>1?C.warn:pcRatio<0.7?C.accent:C.txtBright})}>{pcRatio.toFixed(2)}</div>
-                <div style={sml}>{pcRatio>1.2?'Bearish positioning':pcRatio<0.7?'Bullish positioning':'Neutral'}</div>
+                {callOI===0?<div>
+                  <div style={Object.assign({},val,{color:C.border})}>N/A</div>
+                  <div style={sml}>No call open interest</div>
+                </div>:<div>
+                  <div style={Object.assign({},val,{color:pcRatio>1.2?C.warn:pcRatio<0.7?C.accent:C.txtBright})}>{pcRatio.toFixed(2)}</div>
+                  <div style={sml}>{pcRatio>1.2?'Bearish positioning':pcRatio<0.7?'Bullish positioning':'Neutral'}</div>
+                </div>}
                 <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>Put OI: {putOI.toLocaleString()} | Call OI: {callOI.toLocaleString()}</div>
               </div>
               {/* Implied Move */}
@@ -13633,7 +13638,7 @@ function OptionsChainPage(p){
               {/* Max Pain */}
               <div style={panelS(C.purple+'40')}>
                 <div style={sml}>MAX PAIN</div>
-                {maxPainStrike?<div>
+                {maxPainStrike&&totalOI>0?<div>
                   <div style={Object.assign({},val,{color:C.purple||'#a855f7'})}>${fmt(maxPainStrike)}</div>
                   <div style={sml}>{lastPrice?'Distance: '+(lastPrice>maxPainStrike?'-':'+')+('$'+Math.abs(lastPrice-maxPainStrike).toFixed(2))+' ('+Math.abs((maxPainStrike-lastPrice)/lastPrice*100).toFixed(1)+'%)':''}</div>
                   <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>Price tends to gravitate here at expiry</div>
@@ -13900,7 +13905,7 @@ function OptionsChainPage(p){
               <div><span style={{color:C.txtBright,fontWeight:700}}>Time</span><span style={{color:C.txtDim}}> {'\u2014'} Execution timestamp in ET (HH:MM:SS).</span></div>
               <div><span style={{color:C.txtBright,fontWeight:700}}>Price</span><span style={{color:C.txtDim}}> {'\u2014'} Premium paid per contract (multiply by 100 for total cost per contract).</span></div>
               <div><span style={{color:C.txtBright,fontWeight:700}}>Size</span><span style={{color:C.txtDim}}> {'\u2014'} Number of contracts traded. Each contract = 100 shares of underlying.</span></div>
-              <div><span style={{color:C.txtBright,fontWeight:700}}>Exchange</span><span style={{color:C.txtDim}}> {'\u2014'} Options exchange where the trade executed (numeric OPRA code).</span></div>
+              <div><span style={{color:C.txtBright,fontWeight:700}}>Exchange</span><span style={{color:C.txtDim}}> {'\u2014'} Options exchange where the trade executed (OPRA letter code).</span></div>
               <div><span style={{color:C.txtBright,fontWeight:700}}>Conditions</span><span style={{color:C.txtDim}}> {'\u2014'} OPRA trade condition codes. Blank = regular trade.</span></div>
             </div>
 
