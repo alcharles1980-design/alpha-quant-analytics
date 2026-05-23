@@ -13297,6 +13297,7 @@ function HedgeCalcPage(p){
   var s5=useState('1'),sharesPerLevel=s5[0],setSharesPerLevel=s5[1];
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
+  var s5d=useState(null),selectedPut=s5d[0],setSelectedPut=s5d[1];
   var s6=useState(null),lastPrice=s6[0],setLastPrice=s6[1];
   var s7=useState([]),putOptions=s7[0],setPutOptions=s7[1];
   var s8=useState(false),loading=s8[0],setLoading=s8[1];
@@ -13599,8 +13600,10 @@ function HedgeCalcPage(p){
                   {grp.map(function(put,pi2){
                     var isNearMoney=lastPrice&&Math.abs(put.strike-lastPrice)/lastPrice<0.05;
                     var goodValue=put.costRatio>0&&put.costRatio<0.15;
-                    return <tr key={pi2} style={{borderBottom:'1px solid '+C.border+'20',
-                      background:isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
+                    var isSelected=selectedPut&&selectedPut.symbol===put.symbol;
+                    return <tr key={pi2} onClick={function(){setSelectedPut(put);}}
+                      style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
+                      background:isSelected?C.purple+'18':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
                       <td style={{padding:'4px 3px',color:C.txtBright,fontWeight:700}}>${fmt2(put.strike)}</td>
                       <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>{fmt2(put.bid)}</td>
                       <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>{fmt2(put.ask)}</td>
@@ -13633,9 +13636,112 @@ function HedgeCalcPage(p){
           <div style={{marginTop:6,fontSize:8,color:C.txtDim}}>
             <span style={{display:'inline-block',width:12,height:8,background:C.gold+'20',borderRadius:2,marginRight:4,verticalAlign:'middle'}}></span> Near the money ({'\u00B1'}5%)
             <span style={{display:'inline-block',width:12,height:8,background:C.accent+'15',borderRadius:2,marginLeft:10,marginRight:4,verticalAlign:'middle'}}></span> Good value (cost/$prot {'<'} $0.15)
+            <span style={{display:'inline-block',width:12,height:8,background:(C.purple||'#a855f7')+'20',borderRadius:2,marginLeft:10,marginRight:4,verticalAlign:'middle'}}></span> Selected for hedge analysis
           </div>
+          <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:4}}>Tap a row to select it for hedged P/L analysis below.</div>
         </div>
       </div>
+    </div>}
+
+    {/* Hedged Position Analysis */}
+    {selectedPut&&rp>0&&<div style={card}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:6}}>
+        <div>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase'}}>Hedged Position Analysis</div>
+          <div style={{color:C.purple||'#a855f7',fontSize:10,fontWeight:700,fontFamily:F,marginTop:2}}>
+            PUT ${fmt2(selectedPut.strike)} | {selectedPut.expiration} | Mid: ${fmt2(selectedPut.mid)} | Cost: ${selectedPut.totalHedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}
+          </div>
+        </div>
+        <button onClick={function(){setSelectedPut(null);}}
+          style={{padding:'4px 10px',background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear</button>
+      </div>
+
+      {(function(){
+        var hedgeCost=selectedPut.totalHedgeCost;
+        var nContracts=selectedPut.contractsNeeded;
+        var putStrike=selectedPut.strike;
+
+        // Max hedged loss: loss from levels above strike + hedge cost (below strike put covers)
+        var flAtStrike=Math.min(lvls,Math.max(0,Math.round((top-putStrike)/increment)+1));
+        if(putStrike>top)flAtStrike=0;if(putStrike<bot)flAtStrike=lvls;
+        var cdAtStrike=0;for(var mx=0;mx<flAtStrike;mx++)cdAtStrike+=(top-mx*increment)*spl;
+        var valAtStrike=flAtStrike*spl*putStrike;
+        var maxHedgedLoss=(cdAtStrike-valAtStrike)+hedgeCost;
+
+        return <div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:10}}>
+            <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6}}>
+              <div style={sml}>HEDGE COST</div>
+              <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.gold}}>${hedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+              <div style={sml}>{nContracts} contracts</div>
+            </div>
+            <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6}}>
+              <div style={sml}>PROTECTED BELOW</div>
+              <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.accent}}>${fmt2(putStrike)}</div>
+              <div style={sml}>{capitalDeployed>0?(hedgeCost/capitalDeployed*100).toFixed(1):'0'}% of capital</div>
+            </div>
+            <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6}}>
+              <div style={sml}>MAX HEDGED LOSS</div>
+              <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.warn}}>${maxHedgedLoss.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+              <div style={sml}>vs ${maxLoss.toLocaleString(undefined,{maximumFractionDigits:0})} unhedged</div>
+            </div>
+          </div>
+
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Hedged P/L Ladder (${Math.floor(rp)} {'\u2192'} ${Math.ceil(parseFloat(bottomRef)||bot)})</div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:580}}>
+              <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+                <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>PRICE</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>STOCK P/L</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PUT VALUE</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>COST</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>NET P/L</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>NET %</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>SAVED</th>
+              </tr></thead>
+              <tbody>
+                {(function(){
+                  var bRef2=parseFloat(bottomRef)||bot;
+                  var rows3=[];
+                  var startP2=Math.floor(rp);
+                  var endP2=Math.max(Math.ceil(bRef2),Math.ceil(bot));
+                  for(var pr2=startP2;pr2>=endP2;pr2--){
+                    var fl3=Math.min(lvls,Math.max(0,Math.round((top-pr2)/increment)+1));
+                    if(pr2>top)fl3=0;if(pr2<bot)fl3=lvls;
+                    var ts3=fl3*spl;
+                    var cd3=0;for(var lx2=0;lx2<fl3;lx2++)cd3+=(top-lx2*increment)*spl;
+                    var cv3=ts3*pr2;
+                    var stockPL=cv3-cd3;
+                    var putIntrinsic=Math.max(0,putStrike-pr2);
+                    var putTotalValue=putIntrinsic*nContracts*100;
+                    var netPL=stockPL+putTotalValue-hedgeCost;
+                    var netPct=cd3>0?(netPL/cd3*100):0;
+                    var saved=putTotalValue-hedgeCost;
+                    var isRef2=pr2===Math.floor(rp);
+                    var isStrike=pr2===Math.floor(putStrike);
+                    rows3.push(<tr key={pr2} style={{borderBottom:'1px solid '+C.border+'20',
+                      background:isRef2?C.gold+'10':isStrike?(C.purple||'#a855f7')+'12':'transparent'}}>
+                      <td style={{padding:'4px 3px',color:isRef2?C.gold:isStrike?(C.purple||'#a855f7'):C.txtBright,fontWeight:isRef2||isStrike?700:400}}>
+                        ${pr2}{isStrike?' \u25C0 STRIKE':''}
+                      </td>
+                      <td style={{padding:'4px 3px',textAlign:'right',color:stockPL>=0?C.accent:C.warn}}>{stockPL>=0?'+':''}{stockPL.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                      <td style={{padding:'4px 3px',textAlign:'right',color:putTotalValue>0?C.accent:C.txtDim}}>{putTotalValue>0?'+$'+putTotalValue.toLocaleString(undefined,{maximumFractionDigits:0}):'\u2014'}</td>
+                      <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>-${hedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                      <td style={{padding:'4px 3px',textAlign:'right',color:netPL>=0?C.accent:C.warn,fontWeight:700}}>{netPL>=0?'+':''}{netPL.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                      <td style={{padding:'4px 3px',textAlign:'right',color:netPL>=0?C.accent:C.warn}}>{netPct.toFixed(1)}%</td>
+                      <td style={{padding:'4px 3px',textAlign:'right',color:saved>0?C.accent:C.warn}}>{saved>0?'+$'+saved.toLocaleString(undefined,{maximumFractionDigits:0}):saved.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                    </tr>);
+                  }
+                  return rows3;
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <div style={{marginTop:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
+            Gold = ref price. Purple = put strike (protection activates below). Saved = put payout minus hedge cost. Below strike, further drops are fully offset by put gains.
+          </div>
+        </div>;
+      })()}
     </div>}
 
     {!loading&&putOptions.length===0&&!err&&lastPrice==null&&<div style={card}>
