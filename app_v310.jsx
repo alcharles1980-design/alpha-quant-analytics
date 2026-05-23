@@ -13318,8 +13318,9 @@ function OptionsChainPage(p){
     try{
       setProg('Fetching trades for '+contract.symbol+'...');
       var all=[];var pt=null;var pages=0;
+      var tradeLookback=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
       while(pages<50){
-        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&limit=1000&sort=asc';
+        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&start='+tradeLookback+'T00:00:00Z&limit=1000&sort=desc';
         if(pt)path+='&page_token='+pt;
         var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
@@ -13341,12 +13342,12 @@ function OptionsChainPage(p){
       }
       setContractTrades(all);
       setProg('');
-    }catch(e){setTradeErr(e.message);setProg('');}
+    }catch(e){setProg('');setTradeErr(e.message);}
     setTradeLoading(false);
   };
 
   var exportContractCsv=function(){
-    if(!contractTrades||!contractTrades.length)return;
+    if(!contractTrades||!contractTrades.length||!selectedContract)return;
     var rows=['time_et,price,size,exchange,exchange_name,conditions,timestamp'];
     for(var i=0;i<contractTrades.length;i++){
       var t=contractTrades[i];
@@ -13513,7 +13514,7 @@ function OptionsChainPage(p){
                 for(var i=0;i<filtered.length;i++){
                   var c=filtered[i];
                   var strikeVal=+c.strike_price;
-                  if(!priceInserted&&lastPrice&&strikeVal>lastPrice){
+                  if(!priceInserted&&lastPrice&&strikeVal>=lastPrice){
                     rows.push(priceRow);
                     priceInserted=true;
                   }
