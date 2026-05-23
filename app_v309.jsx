@@ -25045,7 +25045,6 @@ function Alpaca24AtrPage(p){
 
         for(var fi=0;fi<feeds.length;fi++){
           var f=feeds[fi];
-          if(!fStatus[f].ok&&fStatus[f].err)continue; // skip feeds that already failed
           setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' ('+totalTrades.toLocaleString()+' trades)');
           try{
             var trades=await fetchTrades(f,tk,dayStart,dayEnd,function(n){
