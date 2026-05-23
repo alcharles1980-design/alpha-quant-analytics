@@ -13319,8 +13319,9 @@ function OptionsChainPage(p){
     try{
       setProg('Fetching trades for '+contract.symbol+'...');
       var all=[];var pt=null;var pages=0;
+      var tradeLookback=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
       while(pages<100){
-        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&limit=1000&sort=desc';
+        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&start='+tradeLookback+'T00:00:00Z&limit=1000&sort=desc';
         if(pt)path+='&page_token='+pt;
         var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
@@ -13370,7 +13371,10 @@ function OptionsChainPage(p){
           await new Promise(function(res){setTimeout(res,pages%10===0?200:50);});
         }else break;
       }
-      var optExchMap={0:'UNKNOWN',1:'AMEX',2:'BOX',3:'CBOE',4:'C2',5:'ISE',6:'PHLX',7:'ARCA',8:'EDGX',9:'BATS',10:'ISE GEMINI',11:'ISE MERCURY',12:'MIAX',13:'MIAX PEARL',14:'MIAX EMERALD',15:'EDGA',16:'NASDAQ',17:'NSDQ BX',18:'NSDQ PSX',19:'MEMX',20:'MPRL'};
+      // Options exchange codes: API returns single LETTERS (OPRA exchange codes), NOT integers
+      var optExchMap={A:'AMEX',B:'BOX',C:'CBOE',D:'ISE MERCURY',E:'EDGX',H:'ISE GEMINI',I:'ISE',J:'SAPPHIRE',K:'MIAMI2',M:'MIAX',N:'ARCA',O:'NYSE AMER',P:'MIAX PEARL',Q:'NASDAQ OM',T:'NSDQ BX',W:'C2',X:'PHLX',Z:'BATS',
+        // Integer fallback (some APIs may return numbers)
+        0:'UNKNOWN',1:'AMEX',2:'BOX',3:'CBOE',4:'C2',5:'ISE',6:'PHLX',7:'ARCA',8:'EDGX',9:'BATS',10:'ISE GEMINI',11:'ISE MERCURY',12:'MIAX',13:'MIAX PEARL',14:'MIAX EMERALD',15:'EDGA',16:'NASDAQ',17:'NSDQ BX',18:'NSDQ PSX',19:'MEMX',20:'MPRL'};
       var badTrades=0;
       for(var j=0;j<all.length;j++){
         var tr=all[j];
@@ -13691,9 +13695,9 @@ function OptionsChainPage(p){
               })}
             </div>
 
-            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Options Exchanges</div>
+            <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Options Exchanges (OPRA Codes)</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:12}}>
-              {[[1,'AMEX'],[2,'BOX'],[3,'CBOE'],[4,'C2'],[5,'ISE'],[6,'PHLX'],[7,'ARCA'],[8,'EDGX'],[9,'BATS'],[10,'ISE GEMINI'],[11,'ISE MERCURY'],[12,'MIAX'],[13,'MIAX PEARL'],[14,'MIAX EMERALD'],[15,'EDGA'],[16,'NASDAQ'],[17,'NSDQ BX'],[18,'NSDQ PSX'],[19,'MEMX'],[20,'MPRL']].map(function(pair){
+              {[['A','AMEX'],['B','BOX'],['C','CBOE'],['D','ISE MERCURY'],['E','EDGX'],['H','ISE GEMINI'],['I','ISE'],['J','SAPPHIRE'],['M','MIAX'],['N','ARCA'],['O','NYSE AMER'],['P','MIAX PEARL'],['Q','NASDAQ OM'],['T','NSDQ BX'],['W','C2'],['X','PHLX'],['Z','BATS']].map(function(pair){
                 return <span key={pair[0]} style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3,fontSize:7,fontFamily:F}}>
                   <span style={{color:C.gold,fontWeight:700}}>{pair[0]}</span>
                   <span style={{color:C.txtDim,marginLeft:3}}>{pair[1]}</span>
