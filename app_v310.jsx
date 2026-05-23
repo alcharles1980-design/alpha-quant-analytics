@@ -13337,8 +13337,14 @@ function OptionsChainPage(p){
       for(var j=0;j<all.length;j++){
         var tr=all[j];
         tr._etTime=new Date(tr.t).toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-        tr._exchName=optExchMap[tr.x]||('E'+tr.x);
-        tr._condStr=(tr.c&&tr.c.length>0)?tr.c.join(', '):'';
+        tr._exchName=optExchMap[tr.x]||optExchMap[String(tr.x)]||('E'+tr.x);
+        // Conditions can be: array, string, null, undefined, or number
+        if(Array.isArray(tr.c))tr._condStr=tr.c.join(', ');
+        else if(tr.c!=null)tr._condStr=String(tr.c);
+        else tr._condStr='';
+        // Ensure price and size are numbers
+        tr.p=Number(tr.p)||0;
+        tr.s=Number(tr.s)||0;
       }
       setContractTrades(all);
       setProg('');
@@ -25076,7 +25082,7 @@ function AlpacaTradeFinderPage(p){
         var t=allTrades[j];
         t._etTime=new Date(t.t).toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3,hour12:false});
         t._exchName=exchMap[t.x]||t.x||'';
-        t._condStr=(t.c&&t.c.length>0)?t.c.map(function(cd){return condMap[cd]||cd;}).join(', '):'';
+        t._condStr=Array.isArray(t.c)?(t.c.map(function(cd){return condMap[cd]||cd;}).join(', ')):(t.c!=null?String(t.c):'');
         t._price=t.p;
         t._size=t.s||0;
       }
@@ -25091,7 +25097,7 @@ function AlpacaTradeFinderPage(p){
     var rows=[headers.join(',')];
     for(var i=0;i<trades.length;i++){
       var t=trades[i];
-      rows.push([t._etTime,t._price,t._size,t.x||'',t._exchName||'','"'+(t.c||[]).join(';')+'"','"'+(t._condStr||'')+'"',t.t||'',t.i||'',t.z||''].join(','));
+      rows.push([t._etTime,t._price,t._size,t.x||'',t._exchName||'','"'+(Array.isArray(t.c)?t.c.join(';'):(t.c!=null?String(t.c):''))+'"','"'+(t._condStr||'')+'"',t.t||'',t.i||'',t.z||''].join(','));
     }
     var blob=new Blob([rows.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download='alpaca_trades_'+ticker.toUpperCase()+'_'+date+'_'+fmtStart.replace(/:/g,'')+'-'+fmtEnd.replace(/:/g,'')+'.csv';a.click();URL.revokeObjectURL(u);
   };
@@ -25189,7 +25195,7 @@ function AlpacaTradeFinderPage(p){
           var boatsCount=0;var extCount=0;
           for(var i=0;i<trades.length;i++){
             if(trades[i]._feed==='boats'||trades[i].x==='O')boatsCount++;
-            if(trades[i].c&&trades[i].c.indexOf('T')>=0)extCount++;
+            if(trades[i].c&&String(trades[i].c).indexOf('T')>=0)extCount++;
           }
           if(boatsCount===0&&extCount===0)return null;
           return <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
@@ -25236,8 +25242,8 @@ function AlpacaTradeFinderPage(p){
                   <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Conditions</th>
                 </tr></thead>
                 <tbody>{ft.slice(0,5000).map(function(t,idx){
-                  var isOddLot=t.c&&t.c.indexOf('I')>=0;
-                  var isExtHrs=t.c&&(t.c.indexOf('T')>=0);
+                  var isOddLot=t.c&&String(t.c).indexOf('I')>=0;
+                  var isExtHrs=t.c&&String(t.c).indexOf('T')>=0;
                   var isBoats=t._feed==='boats'||t.x==='O';
                   return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBoats?C.blue+'15':isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
                     <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
