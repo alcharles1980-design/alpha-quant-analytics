@@ -13325,7 +13325,6 @@ function OptionsChainPage(p){
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
         if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
         var d=await r.json();
-        // Response shape: { trades: { "SYMBOL": [ {t, p, s, x, c}, ... ] } }
         if(d.trades&&d.trades[contract.symbol]){
           var arr=d.trades[contract.symbol];
           for(var i=0;i<arr.length;i++)all.push(arr[i]);
@@ -13333,7 +13332,6 @@ function OptionsChainPage(p){
         pages++;
         if(d.next_page_token)pt=d.next_page_token;else break;
       }
-      // Format timestamps to ET
       var optExchMap={0:'UNKNOWN',1:'AMEX',2:'BOX',3:'CBOE',4:'C2',5:'ISE',6:'PHLX',7:'ARCA',8:'EDGX',9:'BATS',10:'ISE GEMINI',11:'ISE MERCURY',12:'MIAX',13:'MIAX PEARL',14:'MIAX EMERALD',15:'EDGA',16:'NASDAQ',17:'NSDQ BX',18:'NSDQ PSX',19:'MEMX',20:'MPRL'};
       for(var j=0;j<all.length;j++){
         var tr=all[j];
@@ -13362,7 +13360,7 @@ function OptionsChainPage(p){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
     var sym=symbol.trim().toUpperCase();
     if(!sym){setErr('Enter a symbol');return;}
-    setLoading(true);setErr(null);setContracts([]);setSnapshots({});setExpirations([]);setSelectedExp(null);setLastPrice(null);
+    setLoading(true);setErr(null);setContracts([]);setSnapshots({});setExpirations([]);setSelectedExp(null);setLastPrice(null);setSelectedContract(null);setContractTrades(null);setTradeErr(null);
 
     try{
       // Get current price
@@ -13452,7 +13450,7 @@ function OptionsChainPage(p){
           {expirations.map(function(exp){
             var d=new Date(exp+'T12:00:00');
             var dte=Math.ceil((d-Date.now())/86400000);
-            return <button key={exp} onClick={function(){setSelectedExp(exp);}}
+            return <button key={exp} onClick={function(){setSelectedExp(exp);setSelectedContract(null);setContractTrades(null);}}
               style={{padding:'5px 8px',borderRadius:4,border:'1px solid '+(selectedExp===exp?C.gold+'66':C.border),
                 background:selectedExp===exp?C.gold+'10':'transparent',color:selectedExp===exp?C.gold:C.txtDim,
                 fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>
@@ -13464,14 +13462,14 @@ function OptionsChainPage(p){
 
       {/* Call / Put toggle */}
       <div style={{display:'flex',gap:6,marginBottom:14}}>
-        <button onClick={function(){setOptType('call');}}
+        <button onClick={function(){setOptType('call');setSelectedContract(null);setContractTrades(null);}}
           style={{flex:1,padding:'10px 0',borderRadius:8,textAlign:'center',fontSize:10,fontFamily:F,cursor:'pointer',
             border:'1px solid '+(optType==='call'?C.accent+'66':C.border),
             background:optType==='call'?C.accent+'10':'transparent',
             color:optType==='call'?C.accent:C.txtDim,fontWeight:optType==='call'?700:400}}>
           CALLS ({callCount})
         </button>
-        <button onClick={function(){setOptType('put');}}
+        <button onClick={function(){setOptType('put');setSelectedContract(null);setContractTrades(null);}}
           style={{flex:1,padding:'10px 0',borderRadius:8,textAlign:'center',fontSize:10,fontFamily:F,cursor:'pointer',
             border:'1px solid '+(optType==='put'?C.warn+'66':C.border),
             background:optType==='put'?C.warn+'10':'transparent',
