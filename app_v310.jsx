@@ -13554,7 +13554,7 @@ function OptionsChainPage(p){
               if(dv>mostTradedVol){mostTradedVol=dv;mostTradedN=snap3.dailyBar.n||0;mostTraded=ec;}
             }
             // Unusual activity: volume > OI
-            if(dv>0&&oi>0&&dv>oi)unusual.push({symbol:ec.symbol,type:ec.type,strike:+ec.strike_price,vol:dv,oi:oi,ratio:(dv/oi).toFixed(1)});
+            if(dv>0&&(oi===0||dv>oi))unusual.push({symbol:ec.symbol,type:ec.type,strike:+ec.strike_price,vol:dv,oi:oi,ratio:oi>0?(dv/oi).toFixed(1):'NEW'});
           }
           unusual.sort(function(a,b){return b.vol-a.vol;});
           // ATM strike + implied move
@@ -13602,7 +13602,7 @@ function OptionsChainPage(p){
             }
             if(totalPayout<maxPainMinCost){maxPainMinCost=totalPayout;maxPainStrike=testStrike;}
           }
-          var pcRatio=callOI>0?(putOI/callOI):0;
+          var pcRatio=callOI>0?(putOI/callOI):null;
           var dte2=Math.ceil((new Date(selectedExp+'T12:00:00')-Date.now())/86400000);
           var sml={fontSize:7,color:C.txtDim,fontFamily:F};
           var val={fontSize:11,fontWeight:700,fontFamily:F};
