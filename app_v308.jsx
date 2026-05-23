@@ -24644,15 +24644,16 @@ function AlpacaTradeFinderPage(p){
 
   // Session presets (ET)
   var sessions=[
-    {label:'RTH',desc:'Regular 9:30-4',sh:9,sm:30,ss:0,eh:16,em:0,es:0,feed:'sip'},
-    {label:'Pre',desc:'Pre 4-9:30',sh:4,sm:0,ss:0,eh:9,em:30,es:0,feed:'sip'},
-    {label:'Post',desc:'Post 4-8PM',sh:16,sm:0,ss:0,eh:20,em:0,es:0,feed:'sip'},
-    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true,feed:'boats'},
-    {label:'Full',desc:'All hours 4AM-8PM',sh:4,sm:0,ss:0,eh:20,em:0,es:0,feed:'sip'},
-    {label:'24hr',desc:'Full 24hr (SIP+BOATS)',sh:0,sm:0,ss:0,eh:23,em:59,es:59,feed:'both'}
+    {label:'RTH',desc:'Regular 9:30-4',sh:9,sm:30,ss:0,eh:16,em:0,es:0},
+    {label:'Pre',desc:'Pre 4-9:30',sh:4,sm:0,ss:0,eh:9,em:30,es:0},
+    {label:'Post',desc:'Post 4-8PM',sh:16,sm:0,ss:0,eh:20,em:0,es:0},
+    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true},
+    {label:'Full',desc:'All hours 4AM-8PM',sh:4,sm:0,ss:0,eh:20,em:0,es:0},
+    {label:'24hr',desc:'Full 24hr',sh:0,sm:0,ss:0,eh:23,em:59,es:59}
   ];
-  var s14=useState('sip'),activeFeed=s14[0],setActiveFeed=s14[1];
-  var setSessionPreset=function(s){setStH(s.sh);setStM(s.sm);setStS(s.ss);setEtH(s.eh);setEtM(s.em);setEtS(s.es);setActiveFeed(s.feed);};
+  var s14=useState({sip:true,iex:true,boats:true}),feedFilter=s14[0],setFeedFilter=s14[1];
+  var s15=useState({}),feedResults=s15[0],setFeedResults=s15[1];
+  var setSessionPreset=function(s){setStH(s.sh);setStM(s.sm);setStS(s.ss);setEtH(s.eh);setEtM(s.em);setEtS(s.es);};
 
   var run=async function(){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API Key and Secret in Settings');return;}
@@ -24676,7 +24677,7 @@ function AlpacaTradeFinderPage(p){
         tsEnd=endHr<24?(date+'T'+pad(endHr)+':'+pad(etM)+':'+pad(etS)+'Z'):(nextDay+'T'+pad(endHr-24)+':'+pad(etM)+':'+pad(etS)+'Z');
       }
 
-      var allTrades=[];var pages=0;var pageToken=null;
+      var allTrades=[];
 
       // Helper to fetch trades with a specific feed
       var fetchFeed=async function(feed,start,end){
@@ -24685,40 +24686,39 @@ function AlpacaTradeFinderPage(p){
           var path='/v2/stocks/'+ticker.toUpperCase()+'/trades?start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
           if(pt2)path+='&page_token='+pt2;
           var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
-          if(!r.ok){var errTxt=await r.text();throw new Error('Alpaca '+r.status+' ('+feed+'): '+errTxt);}
+          if(!r.ok){var errTxt=await r.text();throw new Error(errTxt);}
           var d=await r.json();
           if(d.trades)for(var i=0;i<d.trades.length;i++)result.push(d.trades[i]);
           pg++;
-          setProg('Fetching '+feed+'... '+result.length.toLocaleString()+' trades (page '+pg+')');
           if(d.next_page_token)pt2=d.next_page_token;else break;
         }
         return result;
       };
 
-      // Fetch based on active feed
-      if(activeFeed==='both'){
-        // 24hr mode: fetch SIP + overnight, merge and deduplicate
-        setProg('Fetching SIP feed...');
-        var sipTrades=await fetchFeed('sip',tsStart,tsEnd);
-        setProg('Fetching overnight (BOATS) feed...');
-        var overnightTrades=await fetchFeed('boats',tsStart,tsEnd);
-        // Merge and sort by timestamp
-        allTrades=sipTrades.concat(overnightTrades);
-        // Mark overnight trades
-        overnightTrades.forEach(function(t){t._boats=true;});
-        // Deduplicate by trade ID (i field) if both feeds return same trade
-        var seen2={};
-        allTrades=allTrades.filter(function(t){
-          var id=t.i||t.t;
-          if(seen2[id])return false;
-          seen2[id]=true;return true;
-        });
-        allTrades.sort(function(a,b){return a.t<b.t?-1:a.t>b.t?1:0;});
-      }else{
-        allTrades=await fetchFeed(activeFeed,tsStart,tsEnd);
-        if(activeFeed==='boats')allTrades.forEach(function(t){t._boats=true;});
+      // Scan all enabled feeds, merge and dedup (same approach as mbot)
+      var feeds=['sip','iex','boats'].filter(function(f){return feedFilter[f];});
+      var seen2={};
+      var results2={};
+
+      for(var fi=0;fi<feeds.length;fi++){
+        var f=feeds[fi];
+        setProg('Scanning '+f.toUpperCase()+'... ('+allTrades.length.toLocaleString()+' trades so far)');
+        try{
+          var feedTrades=await fetchFeed(f,tsStart,tsEnd);
+          var added=0;
+          for(var fti=0;fti<feedTrades.length;fti++){
+            var ft2=feedTrades[fti];
+            var key2=ft2.t+'|'+ft2.p+'|'+(ft2.s||0);
+            if(!seen2[key2]){seen2[key2]=true;ft2._feed=f;allTrades.push(ft2);added++;}
+          }
+          results2[f]={count:feedTrades.length,added:added,ok:true};
+        }catch(e){
+          results2[f]={count:0,added:0,ok:false,err:(e.message||'').substring(0,100)};
+        }
       }
-      if(!allTrades.length){setErr('No trades found for '+ticker.toUpperCase()+' on '+date+' '+fmtStart+'-'+fmtEnd+' ET');setLoading(false);return;}
+      setFeedResults(results2);
+      if(!allTrades.length){setErr('No trades found across any feed for '+ticker.toUpperCase()+' on '+date+' '+fmtStart+'-'+fmtEnd+' ET');setLoading(false);return;}
+      allTrades.sort(function(a,b){return a.t<b.t?-1:a.t>b.t?1:0;});
       // Convert timestamps to ET and map exchanges/conditions
       for(var j=0;j<allTrades.length;j++){
         var t=allTrades[j];
@@ -24770,6 +24770,21 @@ function AlpacaTradeFinderPage(p){
           })}
         </div>
       </div>
+      <div style={{marginTop:6}}>
+        <label style={lS}>Data Feeds</label>
+        <div style={{display:'flex',gap:4}}>
+          {[['sip','SIP'],['iex','IEX'],['boats','BOATS']].map(function(pair){
+            var f=pair[0],label=pair[1];
+            var active=feedFilter[f];
+            return <button key={f} onClick={function(){setFeedFilter(function(prev){var n=Object.assign({},prev);n[f]=!n[f];return n;});}}
+              style={{padding:'5px 10px',borderRadius:4,border:'1px solid '+(active?C.accent+'66':C.border+'44'),
+                background:active?C.accent+'10':'transparent',color:active?C.accent:C.txtDim,
+                fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer',textDecoration:active?'none':'line-through'}}>
+              {label}
+            </button>;
+          })}
+        </div>
+      </div>
       <div style={{marginTop:8,marginBottom:12}}>
         <label style={lS}>Start Time (ET)</label>
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
@@ -24795,7 +24810,19 @@ function AlpacaTradeFinderPage(p){
     </Cd>
     {trades&&<div>
       <Cd glow={true}>
-        <div style={{display:'inline-block',background:C.gold+'15',border:'1px solid '+C.gold,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{ticker.toUpperCase()+' | '+date+' | '+fmtStart+'-'+fmtEnd+' ET | ALPACA '+activeFeed.toUpperCase()}</div>
+        <div style={{display:'inline-block',background:C.gold+'15',border:'1px solid '+C.gold,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{ticker.toUpperCase()+' | '+date+' | '+fmtStart+'-'+fmtEnd+' ET | ALPACA'}</div>
+        {/* Feed scan results */}
+        {Object.keys(feedResults).length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:8}}>
+          {['sip','iex','boats'].map(function(f){
+            var r=feedResults[f];if(!r)return null;
+            return <div key={f} style={{padding:'4px 8px',background:C.bgDeep,borderRadius:4,textAlign:'center',
+              border:'1px solid '+(r.ok?(r.added>0?C.accent+'44':C.border):C.warn+'44'),fontSize:8,fontFamily:F}}>
+              <span style={{fontWeight:700,color:r.ok?(r.added>0?C.accent:C.txtDim):C.warn}}>{f.toUpperCase()}</span>
+              <span style={{color:C.txtDim,marginLeft:4}}>{r.ok?r.count.toLocaleString():'N/A'}</span>
+              <span style={{color:C.txtDim,fontSize:6,marginLeft:3}}>{r.ok?(r.added+' unique'):(r.err||'failed')}</span>
+            </div>;
+          })}
+        </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
           <Mt label="Total Trades" value={trades.length.toLocaleString()} color={C.accent} size="lg"/>
           <Mt label="Total Volume" value={(function(){var v=0;for(var i=0;i<trades.length;i++)v+=trades[i]._size;return v.toLocaleString();})()} color={C.gold} size="md"/>
@@ -24809,7 +24836,7 @@ function AlpacaTradeFinderPage(p){
         {(function(){
           var boatsCount=0;var extCount=0;
           for(var i=0;i<trades.length;i++){
-            if(trades[i]._boats||trades[i].x==='O')boatsCount++;
+            if(trades[i]._feed==='boats'||trades[i].x==='O')boatsCount++;
             if(trades[i].c&&trades[i].c.indexOf('T')>=0)extCount++;
           }
           if(boatsCount===0&&extCount===0)return null;
@@ -24859,7 +24886,7 @@ function AlpacaTradeFinderPage(p){
                 <tbody>{ft.slice(0,5000).map(function(t,idx){
                   var isOddLot=t.c&&t.c.indexOf('I')>=0;
                   var isExtHrs=t.c&&(t.c.indexOf('T')>=0);
-                  var isBoats=t._boats||t.x==='O';
+                  var isBoats=t._feed==='boats'||t.x==='O';
                   return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBoats?C.blue+'15':isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
                     <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
                     <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t._price.toFixed(4)}</td>
