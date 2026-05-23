@@ -13323,6 +13323,16 @@ function OptionsChainPage(p){
         if(pt)path+='&page_token='+pt;
         var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+        // 429 rate limit retry
+        if(r.status===429){
+          for(var retry=1;retry<=5;retry++){
+            setProg('Rate limited, waiting... ('+all.length.toLocaleString()+' trades so far)');
+            await new Promise(function(res){setTimeout(res,Math.min(retry*5000,25000));});
+            r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+              'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+            if(r.status!==429)break;
+          }
+        }
         if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
         var d=await r.json();
         if(d.trades&&d.trades[contract.symbol]){
@@ -13330,21 +13340,31 @@ function OptionsChainPage(p){
           for(var i=0;i<arr.length;i++)all.push(arr[i]);
         }
         pages++;
-        if(d.next_page_token)pt=d.next_page_token;else break;
+        setProg(all.length.toLocaleString()+' trades loaded (page '+pages+')...');
+        if(d.next_page_token){
+          pt=d.next_page_token;
+          // Pace between pages
+          await new Promise(function(res){setTimeout(res,pages%10===0?200:50);});
+        }else break;
       }
       var optExchMap={0:'UNKNOWN',1:'AMEX',2:'BOX',3:'CBOE',4:'C2',5:'ISE',6:'PHLX',7:'ARCA',8:'EDGX',9:'BATS',10:'ISE GEMINI',11:'ISE MERCURY',12:'MIAX',13:'MIAX PEARL',14:'MIAX EMERALD',15:'EDGA',16:'NASDAQ',17:'NSDQ BX',18:'NSDQ PSX',19:'MEMX',20:'MPRL'};
+      var badTrades=0;
       for(var j=0;j<all.length;j++){
         var tr=all[j];
-        tr._etTime=new Date(tr.t).toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+        // Sanity: skip trades with no timestamp or price
+        if(!tr.t||tr.p==null){badTrades++;continue;}
+        try{
+          tr._etTime=new Date(tr.t).toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+        }catch(e2){tr._etTime='??:??:??';}
         tr._exchName=optExchMap[tr.x]||optExchMap[String(tr.x)]||('E'+tr.x);
-        // Conditions can be: array, string, null, undefined, or number
         if(Array.isArray(tr.c))tr._condStr=tr.c.join(', ');
         else if(tr.c!=null)tr._condStr=String(tr.c);
         else tr._condStr='';
-        // Ensure price and size are numbers
         tr.p=Number(tr.p)||0;
         tr.s=Number(tr.s)||0;
       }
+      // Remove bad trades
+      if(badTrades>0)all=all.filter(function(tr3){return tr3.t&&tr3.p!=null;});
       setContractTrades(all);
       setProg('');
     }catch(e){setProg('');setTradeErr(e.message);}
