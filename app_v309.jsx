@@ -25051,16 +25051,23 @@ function Alpaca24AtrPage(p){
       if(allBars.length===0){setErr('No bars found for '+tk);setLoading(false);return;}
       allBars.sort(function(a,b){return a.t<b.t?-1:1;});
 
+      // Robust ET hour extraction using Intl.DateTimeFormat
+      var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
+
       // Group by ET hour (0-23)
       var hourly={};
       for(var h=0;h<24;h++)hourly[h]={ranges:[],volumes:[],counts:0,boats:0,dates:{}};
 
+      var debugHours={};
       for(var i=0;i<allBars.length;i++){
         var bar=allBars[i];
         var dt=new Date(bar.t);
-        var etStr=dt.toLocaleString('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false});
-        var etHour=parseInt(etStr);
-        if(isNaN(etHour))continue;
+        // Extract just the hour number (0-23) using hourCycle:'h23'
+        var etParts=etHourFmt.formatToParts(dt);
+        var etHour=-1;
+        for(var pi=0;pi<etParts.length;pi++){if(etParts[pi].type==='hour'){etHour=parseInt(etParts[pi].value);break;}}
+        if(etHour<0||etHour>23)continue;
+        debugHours[etHour]=(debugHours[etHour]||0)+1;
         var range=bar.h-bar.l;
         var mid=(bar.h+bar.l)/2;
         var pct=mid>0?(range/mid*100):0;
@@ -25090,7 +25097,9 @@ function Alpaca24AtrPage(p){
       var lastPrice=lastBar.c;
 
       setResults({ticker:tk,hourData:hourData,maxAtrPct:maxAtrPct,totalBars:allBars.length,lastPrice:lastPrice,
-        daysScanned:Object.keys(allBars.reduce(function(s,b){var d=new Date(b.t).toISOString().slice(0,10);s[d]=true;return s;},{})).length});
+        daysScanned:Object.keys(allBars.reduce(function(s,b){var d=new Date(b.t).toISOString().slice(0,10);s[d]=true;return s;},{})).length,
+        hourCoverage:debugHours,
+        firstBar:allBars[0]?allBars[0].t:'',lastBarTime:allBars[allBars.length-1]?allBars[allBars.length-1].t:''});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
@@ -25174,7 +25183,7 @@ function Alpaca24AtrPage(p){
         </div>
 
         {/* Session legend */}
-        <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:8,marginBottom:6,flexWrap:'wrap'}}>
           {[['BOATS','8PM-4AM',C.blue],['Pre','4-9:30AM',C.gold],['RTH','9:30AM-4PM',C.accent],['Post','4-8PM',C.purple]].map(function(s){
             return <div key={s[0]} style={{display:'flex',alignItems:'center',gap:4,fontSize:8,fontFamily:F}}>
               <div style={{width:10,height:10,borderRadius:2,background:s[2]+'30',border:'1px solid '+s[2]}}></div>
@@ -25182,6 +25191,18 @@ function Alpaca24AtrPage(p){
             </div>;
           })}
         </div>
+
+        {/* Hour coverage strip — shows which hours have data */}
+        <div style={{display:'flex',gap:1,marginBottom:10}}>
+          {Array.from({length:24},function(_,h){
+            var count=results.hourCoverage&&results.hourCoverage[h]||0;
+            return <div key={h} style={{flex:1,height:14,borderRadius:2,background:count>0?sessionColor(h)+'60':C.border+'30',
+              position:'relative',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <span style={{fontSize:5,fontFamily:F,color:count>0?C.txtBright:C.border,fontWeight:700}}>{h}</span>
+            </div>;
+          })}
+        </div>
+        <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginBottom:8}}>First bar: {results.firstBar?new Date(results.firstBar).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}):''} | Last bar: {results.lastBarTime?new Date(results.lastBarTime).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}):''}</div>
 
         {/* Hourly ATR table */}
         <div style={{overflowX:'auto'}}>
