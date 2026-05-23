@@ -25061,13 +25061,17 @@ function Alpaca24AtrPage(p){
               if(etHour<0||etHour>23)continue;
               var dateKey=etDateFmt.format(dt);
               var aggKey=dateKey+'|'+etHour;
-              if(!hourlyAgg[aggKey]){hourlyAgg[aggKey]={hour:etHour,date:dateKey,high:-Infinity,low:Infinity,volume:0,tradeCount:0,notional:0,boats:0};}
+              if(!hourlyAgg[aggKey]){hourlyAgg[aggKey]={hour:etHour,date:dateKey,high:-Infinity,low:Infinity,volume:0,tradeCount:0,notional:0,boats:0,minutes:{}};}
               var agg=hourlyAgg[aggKey];
               if(tr.p>agg.high)agg.high=tr.p;
               if(tr.p<agg.low)agg.low=tr.p;
               agg.volume+=(tr.s||0);
               agg.notional+=tr.p*(tr.s||0);
               agg.tradeCount++;
+              // Track per-minute first/last price for avg 1-min move
+              var minKey=dt.getMinutes();
+              if(!agg.minutes[minKey]){agg.minutes[minKey]={first:tr.p,last:tr.p};}
+              else{agg.minutes[minKey].last=tr.p;}
               if(f==='boats')agg.boats++;
             }
             totalTrades+=trades.length;
@@ -25084,7 +25088,7 @@ function Alpaca24AtrPage(p){
 
       // Group aggregated hourly data by ET hour (0-23)
       var hourly={};
-      for(var h=0;h<24;h++)hourly[h]={ranges:[],volumes:[],trades:[],notionals:[],counts:0,boats:0,dates:{}};
+      for(var h=0;h<24;h++)hourly[h]={ranges:[],volumes:[],trades:[],notionals:[],minMoves:[],counts:0,boats:0,dates:{}};
 
       var debugHours={};
       var aggKeys=Object.keys(hourlyAgg);
@@ -25094,11 +25098,21 @@ function Alpaca24AtrPage(p){
         var range=agg2.high-agg2.low;
         var mid=(agg2.high+agg2.low)/2;
         var pct=mid>0?(range/mid*100):0;
+        // Compute avg 1-min move for this hourly bucket
+        var minKeys=Object.keys(agg2.minutes);
+        var minMoveSum=0;var minMoveCount=0;
+        for(var mk=0;mk<minKeys.length;mk++){
+          var mn=agg2.minutes[minKeys[mk]];
+          minMoveSum+=Math.abs(mn.last-mn.first);
+          minMoveCount++;
+        }
+        var avgMinMove=minMoveCount>0?minMoveSum/minMoveCount:0;
         debugHours[agg2.hour]=(debugHours[agg2.hour]||0)+1;
         hourly[agg2.hour].ranges.push({dollar:range,pct:pct});
         hourly[agg2.hour].volumes.push(agg2.volume);
         hourly[agg2.hour].trades.push(agg2.tradeCount);
         hourly[agg2.hour].notionals.push(agg2.notional);
+        hourly[agg2.hour].minMoves.push(avgMinMove);
         hourly[agg2.hour].counts++;
         hourly[agg2.hour].dates[agg2.date]=true;
         if(agg2.boats>0)hourly[agg2.hour].boats++;
@@ -25109,14 +25123,15 @@ function Alpaca24AtrPage(p){
       var hourData=[];
       for(var hr=0;hr<24;hr++){
         var hd=hourly[hr];
-        if(hd.counts===0){hourData.push({hour:hr,atrDollar:0,atrPct:0,avgVol:0,avgTrades:0,avgNotional:0,count:0,days:0,boats:0});continue;}
+        if(hd.counts===0){hourData.push({hour:hr,atrDollar:0,atrPct:0,avgVol:0,avgTrades:0,avgNotional:0,avgMinMove:0,count:0,days:0,boats:0});continue;}
         var avgD=hd.ranges.reduce(function(s,r){return s+r.dollar;},0)/hd.counts;
         var avgP=hd.ranges.reduce(function(s,r){return s+r.pct;},0)/hd.counts;
         var avgV=hd.volumes.reduce(function(s,v){return s+v;},0)/hd.counts;
         var avgT=hd.trades.reduce(function(s,t2){return s+t2;},0)/hd.counts;
         var avgN=hd.notionals.reduce(function(s,n){return s+n;},0)/hd.counts;
+        var avgMM=hd.minMoves.reduce(function(s,m){return s+m;},0)/hd.counts;
         if(avgP>maxAtrPct)maxAtrPct=avgP;
-        hourData.push({hour:hr,atrDollar:avgD,atrPct:avgP,avgVol:avgV,avgTrades:avgT,avgNotional:avgN,count:hd.counts,days:Object.keys(hd.dates).length,boats:hd.boats});
+        hourData.push({hour:hr,atrDollar:avgD,atrPct:avgP,avgVol:avgV,avgTrades:avgT,avgNotional:avgN,avgMinMove:avgMM,count:hd.counts,days:Object.keys(hd.dates).length,boats:hd.boats});
       }
 
       // Get latest price
@@ -25138,9 +25153,9 @@ function Alpaca24AtrPage(p){
 
   var exportCsv=function(){
     if(!results)return;
-    var rows=['Hour_ET,ATR_Dollar,ATR_Pct,Avg_Trades,Avg_Volume,Avg_Notional,Bar_Count,Trading_Days,BOATS_Bars'];
+    var rows=['Hour_ET,ATR_Dollar,ATR_Pct,Avg_1Min_Move,Avg_Trades,Avg_Volume,Avg_Notional,Bar_Count,Trading_Days,BOATS_Bars'];
     results.hourData.forEach(function(h){
-      rows.push(h.hour+','+h.atrDollar.toFixed(4)+','+h.atrPct.toFixed(4)+','+Math.round(h.avgTrades)+','+Math.round(h.avgVol)+','+Math.round(h.avgNotional)+','+h.count+','+h.days+','+h.boats);
+      rows.push(h.hour+','+h.atrDollar.toFixed(4)+','+h.atrPct.toFixed(4)+','+h.avgMinMove.toFixed(4)+','+Math.round(h.avgTrades)+','+Math.round(h.avgVol)+','+Math.round(h.avgNotional)+','+h.count+','+h.days+','+h.boats);
     });
     var blob=new Blob([rows.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download='alpaca_24atr_'+results.ticker+'_'+days+'d.csv';a.click();URL.revokeObjectURL(u);
   };
@@ -25244,7 +25259,8 @@ function Alpaca24AtrPage(p){
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'left'}}>SESSION</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>ATR $</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>ATR %</th>
-              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'left',width:'30%'}}>RANGE</th>
+              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>1M MOVE</th>
+              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'left',width:'25%'}}>RANGE</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>TRADES</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>AVG VOL</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>NOTIONAL</th>
@@ -25255,7 +25271,7 @@ function Alpaca24AtrPage(p){
                 if(h.count===0)return <tr key={h.hour} style={{borderBottom:'1px solid '+C.border+'40'}}>
                   <td style={{padding:'4px',color:C.txtDim}}>{h.hour.toString().padStart(2,'0')+':00'}</td>
                   <td style={{padding:'4px',color:sessionColor(h.hour),fontSize:7}}>{sessionLabel(h.hour)}</td>
-                  <td colSpan="7" style={{padding:'4px',color:C.border,textAlign:'center',fontStyle:'italic'}}>No data</td>
+                  <td colSpan="8" style={{padding:'4px',color:C.border,textAlign:'center',fontStyle:'italic'}}>No data</td>
                 </tr>;
                 var barW=results.maxAtrPct>0?(h.atrPct/results.maxAtrPct*100):0;
                 var sColor=sessionColor(h.hour);
@@ -25264,6 +25280,7 @@ function Alpaca24AtrPage(p){
                   <td style={{padding:'4px',color:sColor,fontSize:7,fontWeight:600}}>{sessionLabel(h.hour)}</td>
                   <td style={{padding:'4px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+h.atrDollar.toFixed(2)}</td>
                   <td style={{padding:'4px',color:C.gold,textAlign:'right',fontWeight:700}}>{h.atrPct.toFixed(2)+'%'}</td>
+                  <td style={{padding:'4px',color:C.blue,textAlign:'right',fontWeight:600}}>{'$'+h.avgMinMove.toFixed(4)}</td>
                   <td style={{padding:'4px'}}>
                     <div style={{height:12,background:C.bgDeep,borderRadius:3,overflow:'hidden',position:'relative'}}>
                       <div style={{height:'100%',width:Math.max(1,barW)+'%',background:sColor,borderRadius:3,opacity:0.7}}></div>
