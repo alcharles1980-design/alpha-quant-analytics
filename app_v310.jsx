@@ -13299,6 +13299,10 @@ function OptionsChainPage(p){
   var s8=useState(null),err=s8[0],setErr=s8[1];
   var s9=useState(null),lastPrice=s9[0],setLastPrice=s9[1];
   var s10=useState(''),prog=s10[0],setProg=s10[1];
+  var s11=useState(null),selectedContract=s11[0],setSelectedContract=s11[1];
+  var s12=useState(null),contractTrades=s12[0],setContractTrades=s12[1];
+  var s13=useState(false),tradeLoading=s13[0],setTradeLoading=s13[1];
+  var s14=useState(null),tradeErr=s14[0],setTradeErr=s14[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13307,6 +13311,51 @@ function OptionsChainPage(p){
       'X-Alpaca-Path':path,'X-Alpaca-Base':isData?'data':''}});
     if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
     return r.json();
+  };
+
+  var fetchContractTrades=async function(contract){
+    setSelectedContract(contract);setContractTrades(null);setTradeLoading(true);setTradeErr(null);
+    try{
+      setProg('Fetching trades for '+contract.symbol+'...');
+      var all=[];var pt=null;var pages=0;
+      while(pages<50){
+        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&limit=1000&sort=asc';
+        if(pt)path+='&page_token='+pt;
+        var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+        if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
+        var d=await r.json();
+        // Response shape: { trades: { "SYMBOL": [ {t, p, s, x, c}, ... ] } }
+        if(d.trades&&d.trades[contract.symbol]){
+          var arr=d.trades[contract.symbol];
+          for(var i=0;i<arr.length;i++)all.push(arr[i]);
+        }
+        pages++;
+        if(d.next_page_token)pt=d.next_page_token;else break;
+      }
+      // Format timestamps to ET
+      var optExchMap={0:'UNKNOWN',1:'AMEX',2:'BOX',3:'CBOE',4:'C2',5:'ISE',6:'PHLX',7:'ARCA',8:'EDGX',9:'BATS',10:'ISE GEMINI',11:'ISE MERCURY',12:'MIAX',13:'MIAX PEARL',14:'MIAX EMERALD',15:'EDGA',16:'NASDAQ',17:'NSDQ BX',18:'NSDQ PSX',19:'MEMX',20:'MPRL'};
+      for(var j=0;j<all.length;j++){
+        var tr=all[j];
+        tr._etTime=new Date(tr.t).toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+        tr._exchName=optExchMap[tr.x]||('E'+tr.x);
+        tr._condStr=(tr.c&&tr.c.length>0)?tr.c.join(', '):'';
+      }
+      setContractTrades(all);
+      setProg('');
+    }catch(e){setTradeErr(e.message);setProg('');}
+    setTradeLoading(false);
+  };
+
+  var exportContractCsv=function(){
+    if(!contractTrades||!contractTrades.length)return;
+    var rows=['time_et,price,size,exchange,exchange_name,conditions,timestamp'];
+    for(var i=0;i<contractTrades.length;i++){
+      var t=contractTrades[i];
+      rows.push([t._etTime,t.p,t.s||0,t.x||'','"'+(t._exchName||'')+'"','"'+(t._condStr||'')+'"',t.t||''].join(','));
+    }
+    var blob=new Blob([rows.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;
+    a.download='options_trades_'+selectedContract.symbol+'.csv';a.click();URL.revokeObjectURL(u);
   };
 
   var fetchChain=async function(){
@@ -13465,19 +13514,20 @@ function OptionsChainPage(p){
                 </tr>:null;
                 for(var i=0;i<filtered.length;i++){
                   var c=filtered[i];
-                  var strike=+c.strike_price;
-                  // Insert price marker between strikes where it falls
-                  if(!priceInserted&&lastPrice&&strike>lastPrice){
+                  var strikeVal=+c.strike_price;
+                  if(!priceInserted&&lastPrice&&strikeVal>lastPrice){
                     rows.push(priceRow);
                     priceInserted=true;
                   }
-                  var snap2=snapshots[c.symbol]||{};
+                  rows.push((function(cc,idx){
+                  var snap2=snapshots[cc.symbol]||{};
                   var quote=snap2.latestQuote||{};
                   var trade2=snap2.latestTrade||{};
                   var greeks=snap2.greeks||{};
+                  var strike=+cc.strike_price;
                   var itm=lastPrice&&((optType==='call'&&lastPrice>strike)||(optType==='put'&&lastPrice<strike));
-                  rows.push(<tr key={i} style={{borderBottom:'1px solid '+C.border+'20',
-                    background:itm?(optType==='call'?C.accent+'0d':C.warn+'0d'):'transparent'}}>
+                  return <tr key={idx} onClick={function(){fetchContractTrades(cc);}} style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
+                    background:selectedContract&&selectedContract.symbol===cc.symbol?C.gold+'15':itm?(optType==='call'?C.accent+'0d':C.warn+'0d'):'transparent'}}>
                     <td style={{padding:'4px 3px',color:itm?C.gold:C.txtBright,fontWeight:700}}>{'$'+fmt(strike)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>{fmt(quote.bp)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>{fmt(quote.ap)}</td>
@@ -13486,8 +13536,9 @@ function OptionsChainPage(p){
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt(greeks.gamma,4)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>{fmt(greeks.theta,3)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.purple||'#a855f7'}}>{greeks.implied_volatility?(greeks.implied_volatility*100).toFixed(1)+'%':'\u2014'}</td>
-                    <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{c.open_interest||'\u2014'}</td>
-                  </tr>);
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{cc.open_interest||'\u2014'}</td>
+                  </tr>;
+                  })(c,i));
                 }
                 // If price is above all strikes, insert at end
                 if(!priceInserted&&priceRow)rows.push(priceRow);
@@ -13497,9 +13548,77 @@ function OptionsChainPage(p){
           </table>
         </div>
         {filtered.length>0&&lastPrice&&<div style={{marginTop:8,fontSize:8,color:C.txtDim,fontFamily:F}}>
-          Highlighted rows are in-the-money. {optType==='call'?'ITM = strike < $'+fmt(lastPrice):'ITM = strike > $'+fmt(lastPrice)}
+          Highlighted = in-the-money. {optType==='call'?'ITM = strike < $'+fmt(lastPrice):'ITM = strike > $'+fmt(lastPrice)}. Tap a strike to view trades.
         </div>}
       </div>
+
+      {/* ── TRADE DRILL-DOWN ─────────────────────────────────────────── */}
+      {selectedContract&&<div style={card}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:6}}>
+          <div>
+            <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F}}>{selectedContract.symbol}</div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>
+              {optType.toUpperCase()} ${fmt(+selectedContract.strike_price)} exp {selectedContract.expiration_date}
+            </div>
+          </div>
+          <button onClick={function(){setSelectedContract(null);setContractTrades(null);}}
+            style={{padding:'4px 10px',background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Close</button>
+        </div>
+
+        {tradeLoading&&<div style={{color:C.gold,fontSize:9,fontFamily:F,padding:12,textAlign:'center'}}>{prog||'Loading trades...'}</div>}
+        {tradeErr&&<div style={{color:C.warn,fontSize:9,fontFamily:F,padding:8,background:C.warn+'12',borderRadius:6}}>{tradeErr}</div>}
+
+        {contractTrades&&contractTrades.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:16}}>No trades found for this contract</div>}
+
+        {contractTrades&&contractTrades.length>0&&<div>
+          {/* Summary */}
+          {(function(){
+            var totalVol=0,lo=Infinity,hi=-Infinity;
+            for(var i=0;i<contractTrades.length;i++){
+              totalVol+=(contractTrades[i].s||0);
+              if(contractTrades[i].p<lo)lo=contractTrades[i].p;
+              if(contractTrades[i].p>hi)hi=contractTrades[i].p;
+            }
+            var exch={};for(var j=0;j<contractTrades.length;j++)exch[contractTrades[j]._exchName]=true;
+            return <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+              <span style={{padding:'3px 8px',background:C.bgDeep,borderRadius:4,fontSize:8,fontFamily:F}}><span style={{color:C.accent,fontWeight:700}}>{contractTrades.length.toLocaleString()}</span><span style={{color:C.txtDim}}> trades</span></span>
+              <span style={{padding:'3px 8px',background:C.bgDeep,borderRadius:4,fontSize:8,fontFamily:F}}><span style={{color:C.gold,fontWeight:700}}>{totalVol.toLocaleString()}</span><span style={{color:C.txtDim}}> contracts</span></span>
+              <span style={{padding:'3px 8px',background:C.bgDeep,borderRadius:4,fontSize:8,fontFamily:F}}><span style={{color:C.txtDim}}>Lo </span><span style={{color:C.txt,fontWeight:600}}>${fmt(lo)}</span></span>
+              <span style={{padding:'3px 8px',background:C.bgDeep,borderRadius:4,fontSize:8,fontFamily:F}}><span style={{color:C.txtDim}}>Hi </span><span style={{color:C.txt,fontWeight:600}}>${fmt(hi)}</span></span>
+              <span style={{padding:'3px 8px',background:C.bgDeep,borderRadius:4,fontSize:8,fontFamily:F}}><span style={{color:C.txtDim}}>Spread </span><span style={{color:C.gold,fontWeight:600}}>${(hi-lo).toFixed(2)}</span></span>
+              <span style={{padding:'3px 8px',background:C.bgDeep,borderRadius:4,fontSize:8,fontFamily:F}}><span style={{color:C.txtDim}}>{Object.keys(exch).length} exchanges</span></span>
+            </div>;
+          })()}
+
+          {/* Export */}
+          <button onClick={exportContractCsv} style={{marginBottom:8,padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Export CSV ({contractTrades.length} trades)</button>
+
+          {/* Trade log */}
+          <div style={{overflowX:'auto',maxHeight:400}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:400}}>
+              <thead><tr style={{borderBottom:'2px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+                <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>TIME (ET)</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
+                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>SIZE</th>
+                <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>EXCHANGE</th>
+                <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>CONDITIONS</th>
+              </tr></thead>
+              <tbody>
+                {contractTrades.slice(0,2000).map(function(tr2,ti){
+                  return <tr key={ti} style={{borderBottom:'1px solid '+C.border+'20'}}>
+                    <td style={{padding:'3px',color:C.txtBright}}>{tr2._etTime}</td>
+                    <td style={{padding:'3px',textAlign:'right',color:C.accent,fontWeight:600}}>{'$'+fmt(tr2.p)}</td>
+                    <td style={{padding:'3px',textAlign:'right',color:C.txt}}>{(tr2.s||0).toLocaleString()}</td>
+                    <td style={{padding:'3px',color:C.gold}}>{tr2._exchName}</td>
+                    <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{tr2._condStr}</td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+          {contractTrades.length>2000&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:6}}>Showing first 2,000 of {contractTrades.length.toLocaleString()} trades</div>}
+        </div>}
+      </div>}
 
       {/* Contract info summary */}
       <div style={card}>
