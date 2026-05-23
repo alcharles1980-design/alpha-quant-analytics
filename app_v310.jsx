@@ -13451,26 +13451,48 @@ function OptionsChainPage(p){
             </tr></thead>
             <tbody>
               {filtered.length===0&&<tr><td colSpan="9" style={{textAlign:'center',padding:16,color:C.txtDim,fontSize:10}}>No contracts found</td></tr>}
-              {filtered.map(function(c,i){
-                var snap=snapshots[c.symbol]||{};
-                var quote=snap.latestQuote||{};
-                var trade=snap.latestTrade||{};
-                var greeks=snap.greeks||{};
-                var strike=+c.strike_price;
-                var itm=lastPrice&&((optType==='call'&&lastPrice>strike)||(optType==='put'&&lastPrice<strike));
-                return <tr key={i} style={{borderBottom:'1px solid '+C.border+'20',
-                  background:itm?(optType==='call'?C.accent+'0d':C.warn+'0d'):'transparent'}}>
-                  <td style={{padding:'4px 3px',color:itm?C.gold:C.txtBright,fontWeight:700}}>{'$'+fmt(strike)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>{fmt(quote.bp)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>{fmt(quote.ap)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt(trade.p)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.blue}}>{fmt(greeks.delta,3)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt(greeks.gamma,4)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>{fmt(greeks.theta,3)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.purple||'#a855f7'}}>{greeks.implied_volatility?(greeks.implied_volatility*100).toFixed(1)+'%':'\u2014'}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{c.open_interest||'\u2014'}</td>
-                </tr>;
-              })}
+              {(function(){
+                var rows=[];
+                var priceInserted=false;
+                var priceRow=lastPrice?<tr key="price-marker" style={{background:C.gold+'18'}}>
+                  <td colSpan="9" style={{padding:'3px 6px',borderTop:'2px solid '+C.gold,borderBottom:'2px solid '+C.gold}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{color:C.gold,fontSize:10,fontWeight:700,fontFamily:F}}>{'\u25B6'} {symbol.toUpperCase()} ${fmt(lastPrice)}</span>
+                      <div style={{flex:1,height:1,background:C.gold}}></div>
+                      <span style={{color:C.gold,fontSize:7,fontFamily:F,fontWeight:600}}>CURRENT PRICE</span>
+                    </div>
+                  </td>
+                </tr>:null;
+                for(var i=0;i<filtered.length;i++){
+                  var c=filtered[i];
+                  var strike=+c.strike_price;
+                  // Insert price marker between strikes where it falls
+                  if(!priceInserted&&lastPrice&&strike>lastPrice){
+                    rows.push(priceRow);
+                    priceInserted=true;
+                  }
+                  var snap2=snapshots[c.symbol]||{};
+                  var quote=snap2.latestQuote||{};
+                  var trade2=snap2.latestTrade||{};
+                  var greeks=snap2.greeks||{};
+                  var itm=lastPrice&&((optType==='call'&&lastPrice>strike)||(optType==='put'&&lastPrice<strike));
+                  rows.push(<tr key={i} style={{borderBottom:'1px solid '+C.border+'20',
+                    background:itm?(optType==='call'?C.accent+'0d':C.warn+'0d'):'transparent'}}>
+                    <td style={{padding:'4px 3px',color:itm?C.gold:C.txtBright,fontWeight:700}}>{'$'+fmt(strike)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>{fmt(quote.bp)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>{fmt(quote.ap)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt(trade2.p)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.blue}}>{fmt(greeks.delta,3)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt(greeks.gamma,4)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>{fmt(greeks.theta,3)}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.purple||'#a855f7'}}>{greeks.implied_volatility?(greeks.implied_volatility*100).toFixed(1)+'%':'\u2014'}</td>
+                    <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{c.open_interest||'\u2014'}</td>
+                  </tr>);
+                }
+                // If price is above all strikes, insert at end
+                if(!priceInserted&&priceRow)rows.push(priceRow);
+                return rows;
+              })()}
             </tbody>
           </table>
         </div>
