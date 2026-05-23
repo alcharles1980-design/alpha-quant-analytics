@@ -13624,8 +13624,8 @@ function OptionsChainPage(p){
           <div style={{marginTop:6,fontSize:7,color:C.border}}>Contract: {selectedContract.symbol}</div>
         </div>}
 
-        {/* API debug — always show when data attempted */}
-        {debugResp&&!tradeLoading&&<div style={{marginTop:8,padding:8,background:C.bgDeep,borderRadius:6,fontSize:7,fontFamily:F,wordBreak:'break-all',border:'1px solid '+C.border}}>
+        {/* Debug panel — only shows when 0 trades to help diagnose */}
+        {debugResp&&!tradeLoading&&contractTrades&&contractTrades.length===0&&<div style={{marginTop:8,padding:8,background:C.bgDeep,borderRadius:6,fontSize:7,fontFamily:F,wordBreak:'break-all',border:'1px solid '+C.border}}>
           <div style={{color:C.gold,fontWeight:700,marginBottom:4}}>API Response Debug</div>
           <div style={{color:C.txtDim}}>Response keys: {debugResp.keys}</div>
           <div style={{color:C.txtDim}}>trades type: {debugResp.tradesType} | isArray: {String(debugResp.isArray)}</div>
