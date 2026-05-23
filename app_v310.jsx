@@ -13293,7 +13293,9 @@ function HedgeCalcPage(p){
   var s2=useState('200'),gridTop=s2[0],setGridTop=s2[1];
   var s3=useState('50'),gridBottom=s3[0],setGridBottom=s3[1];
   var s4=useState('15000'),levels=s4[0],setLevels=s4[1];
+  var s4b=useState('0.01'),gridIncrement=s4b[0],setGridIncrement=s4b[1];
   var s5=useState('1'),sharesPerLevel=s5[0],setSharesPerLevel=s5[1];
+  var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s6=useState(null),lastPrice=s6[0],setLastPrice=s6[1];
   var s7=useState([]),putOptions=s7[0],setPutOptions=s7[1];
   var s8=useState(false),loading=s8[0],setLoading=s8[1];
@@ -13309,26 +13311,45 @@ function HedgeCalcPage(p){
     return r.json();
   };
 
-  // Calculations
+  // Auto-calc: when increment changes, recalculate levels
+  var onIncrementChange=function(val){
+    setGridIncrement(val);
+    var inc=parseFloat(val)||0;
+    var t2=parseFloat(gridTop)||0;var b2=parseFloat(gridBottom)||0;
+    if(inc>0&&t2>b2)setLevels(String(Math.floor((t2-b2)/inc)+1));
+  };
+  // When levels change, recalculate increment
+  var onLevelsChange=function(val){
+    setLevels(val);
+    var lv=parseInt(val)||0;
+    var t2=parseFloat(gridTop)||0;var b2=parseFloat(gridBottom)||0;
+    if(lv>1&&t2>b2)setGridIncrement(((t2-b2)/(lv-1)).toFixed(4));
+  };
+
+  // Calculations — use refPrice (user-entered) for exposure analysis
   var top=parseFloat(gridTop)||0;
   var bot=parseFloat(gridBottom)||0;
   var lvls=parseInt(levels)||0;
   var spl=parseFloat(sharesPerLevel)||0;
   var increment=lvls>1?(top-bot)/(lvls-1):0;
+  var rp=parseFloat(refPrice)||0; // reference price for drawdown calc
 
-  // How many levels are filled (price between top and current)
+  // How many levels are filled (between grid top and reference price)
   var filledLevels=0;
-  if(lastPrice&&top>bot&&lvls>1){
-    filledLevels=Math.min(lvls,Math.max(0,Math.floor((top-lastPrice)/increment)+1));
+  if(rp>0&&rp<=top&&top>bot&&lvls>1){
+    filledLevels=Math.min(lvls,Math.max(0,Math.floor((top-rp)/increment)+1));
+  }else if(rp>0&&rp<bot&&top>bot&&lvls>1){
+    filledLevels=lvls; // price below grid bottom = all levels filled
   }
   var totalShares=filledLevels*spl;
-  // Average fill price: midpoint of filled range
-  var avgFillPrice=filledLevels>0?(top-(filledLevels-1)*increment/2):0;
-  // Capital deployed
+  // Capital deployed: sum of each filled level's price × shares
   var capitalDeployed=0;
   for(var li=0;li<filledLevels;li++){
     capitalDeployed+=(top-li*increment)*spl;
   }
+  // Drawdown from reference price
+  var currentValue=totalShares*rp;
+  var unrealizedPL=currentValue-capitalDeployed;
   // Max loss if stock goes to grid bottom
   var valueAtBottom=totalShares*bot;
   var maxLoss=capitalDeployed-valueAtBottom;
@@ -13345,7 +13366,7 @@ function HedgeCalcPage(p){
       setProg('Fetching current price...');
       try{
         var trade=await alpFetch('/v2/stocks/'+encodeURIComponent(sym)+'/trades/latest',true);
-        if(trade&&trade.trade&&trade.trade.p)setLastPrice(trade.trade.p);
+        if(trade&&trade.trade&&trade.trade.p){setLastPrice(trade.trade.p);if(!refPrice)setRefPrice(String(trade.trade.p));}
       }catch(e){}
 
       // Fetch put contracts (next 90 days)
@@ -13436,10 +13457,14 @@ function HedgeCalcPage(p){
           <input value={gridTop} onChange={function(e){setGridTop(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Grid Bottom ($)</label>
           <input value={gridBottom} onChange={function(e){setGridBottom(e.target.value);}} style={iS} type="number" step="0.01"/></div>
-        <div><label style={lS}>Levels</label>
-          <input value={levels} onChange={function(e){setLevels(e.target.value);}} style={iS} type="number"/></div>
+        <div><label style={lS}>Increment ($)</label>
+          <input value={gridIncrement} onChange={function(e){onIncrementChange(e.target.value);}} style={iS} type="number" step="0.0001"/></div>
+        <div><label style={lS}>Levels (auto)</label>
+          <input value={levels} onChange={function(e){onLevelsChange(e.target.value);}} style={iS} type="number"/></div>
         <div><label style={lS}>Shares/Level</label>
           <input value={sharesPerLevel} onChange={function(e){setSharesPerLevel(e.target.value);}} style={iS} type="number" step="0.01"/></div>
+        <div><label style={lS}>Reference Price ($)</label>
+          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Price to calc exposure at"/></div>
         <div style={{display:'flex',alignItems:'flex-end'}}>
           <button onClick={fetchPuts} disabled={loading}
             style={{width:'100%',padding:'10px',border:'none',borderRadius:8,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
@@ -13453,34 +13478,35 @@ function HedgeCalcPage(p){
     </div>
 
     {/* Exposure Summary */}
-    {lastPrice&&<div style={card}>
+    {(rp>0||lastPrice)&&<div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Exposure Analysis</div>
-      <div style={{marginBottom:8,color:C.accent,fontSize:12,fontWeight:700,fontFamily:F}}>{symbol.toUpperCase()} ${fmt2(lastPrice)} | Grid: ${fmt2(top)} {'\u2192'} ${fmt2(bot)} | {lvls.toLocaleString()} levels</div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+      <div style={{marginBottom:4,color:C.accent,fontSize:12,fontWeight:700,fontFamily:F}}>{symbol.toUpperCase()} {lastPrice?'Market: $'+fmt2(lastPrice):''}{rp>0?' | Ref: $'+fmt2(rp):''}</div>
+      <div style={{marginBottom:8,fontSize:9,fontFamily:F,color:C.txtDim}}>Grid: ${fmt2(top)} {'\u2192'} ${fmt2(bot)} | {lvls.toLocaleString()} levels | ${gridIncrement} increment</div>
+      {rp>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'30'}}>
-          <div style={sml}>LEVELS FILLED</div>
+          <div style={sml}>LEVELS FILLED AT ${fmt2(rp)}</div>
           <div style={Object.assign({},val2,{color:C.accent})}>{filledLevels.toLocaleString()} / {lvls.toLocaleString()}</div>
-          <div style={sml}>{totalShares.toLocaleString()} shares held</div>
+          <div style={sml}>{totalShares.toLocaleString()} shares | Avg: ${fmt2(filledLevels>0?capitalDeployed/totalShares:0)}</div>
         </div>
         <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.gold+'30'}}>
           <div style={sml}>CAPITAL DEPLOYED</div>
           <div style={Object.assign({},val2,{color:C.gold})}>${capitalDeployed.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-          <div style={sml}>Avg fill: ${fmt2(filledLevels>0?capitalDeployed/totalShares:0)}</div>
+          <div style={sml}>Current value: ${currentValue.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+        <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+(unrealizedPL>=0?C.accent:C.warn)+'30'}}>
+          <div style={sml}>UNREALIZED P/L AT ${fmt2(rp)}</div>
+          <div style={Object.assign({},val2,{color:unrealizedPL>=0?C.accent:C.warn})}>{unrealizedPL>=0?'+':''}${unrealizedPL.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div style={sml}>{capitalDeployed>0?(unrealizedPL/capitalDeployed*100).toFixed(1):0}% of capital</div>
         </div>
         <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.warn+'30'}}>
-          <div style={sml}>MAX LOSS TO GRID BOTTOM (${fmt2(bot)})</div>
+          <div style={sml}>DRAWDOWN TO GRID BOTTOM (${fmt2(bot)})</div>
           <div style={Object.assign({},val2,{color:C.warn})}>${maxLoss.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           <div style={sml}>{capitalDeployed>0?(maxLoss/capitalDeployed*100).toFixed(1):0}% of capital</div>
         </div>
-        <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.warn+'40'}}>
-          <div style={sml}>MAX LOSS TO $0 (TOTAL WIPEOUT)</div>
-          <div style={Object.assign({},val2,{color:C.warn})}>${totalLossToZero.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-          <div style={sml}>100% of capital</div>
-        </div>
-      </div>
-      <div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
-        Grid increment: ${increment>0?increment.toFixed(4):'0'} per level | Position per level: {spl} shares {'\u00D7'} avg ${fmt2(filledLevels>0?capitalDeployed/filledLevels:0)} = ${fmt2(filledLevels>0?(capitalDeployed/filledLevels)*spl:0)} notional
-      </div>
+      </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:8}}>Enter a Reference Price to see exposure analysis.</div>}
+      {rp>0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
+        Increment: ${increment>0?increment.toFixed(4):'0'} | Max capital if all {lvls.toLocaleString()} levels fill: ${(function(){var mc=0;for(var x=0;x<lvls;x++)mc+=(top-x*increment)*spl;return mc.toLocaleString(undefined,{maximumFractionDigits:0})})()}
+      </div>}
     </div>}
 
     {/* Protective Put Options */}
