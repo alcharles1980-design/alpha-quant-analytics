@@ -13618,15 +13618,17 @@ function OptionsChainPage(p){
         {contractTrades&&contractTrades.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:16}}>
           No trades found for this contract.
           <div style={{marginTop:6,fontSize:7,color:C.border}}>Contract: {selectedContract.symbol}</div>
-          {debugResp&&<div style={{marginTop:8,textAlign:'left',padding:8,background:C.bgDeep,borderRadius:6,fontSize:7,fontFamily:F,wordBreak:'break-all'}}>
-            <div style={{color:C.gold,fontWeight:700,marginBottom:4}}>API Debug:</div>
-            <div style={{color:C.txtDim}}>Response keys: {debugResp.keys}</div>
-            <div style={{color:C.txtDim}}>trades type: {debugResp.tradesType} | isArray: {String(debugResp.isArray)}</div>
-            <div style={{color:C.txtDim}}>trades keys: {debugResp.tradesKeys||'(none)'}</div>
-            <div style={{color:C.txtDim}}>symbol match: {String(debugResp.matchesSymbol)}</div>
-            <div style={{color:C.txtDim}}>queried: {debugResp.symbol}</div>
-            <div style={{color:C.border,marginTop:4,maxHeight:100,overflow:'auto'}}>Raw: {debugResp.raw}</div>
-          </div>}
+        </div>}
+
+        {/* API debug — always show when data attempted */}
+        {debugResp&&!tradeLoading&&<div style={{marginTop:8,padding:8,background:C.bgDeep,borderRadius:6,fontSize:7,fontFamily:F,wordBreak:'break-all',border:'1px solid '+C.border}}>
+          <div style={{color:C.gold,fontWeight:700,marginBottom:4}}>API Response Debug</div>
+          <div style={{color:C.txtDim}}>Response keys: {debugResp.keys}</div>
+          <div style={{color:C.txtDim}}>trades type: {debugResp.tradesType} | isArray: {String(debugResp.isArray)}</div>
+          <div style={{color:C.txtDim}}>trades keys: {debugResp.tradesKeys||'(none)'}</div>
+          <div style={{color:C.txtDim}}>symbol queried: {debugResp.symbol}</div>
+          <div style={{color:debugResp.matchesSymbol?C.accent:C.warn}}>symbol match: {String(debugResp.matchesSymbol)}</div>
+          <div style={{color:C.border,marginTop:4,maxHeight:120,overflow:'auto',fontSize:6}}>Raw: {debugResp.raw}</div>
         </div>}
 
         {contractTrades&&contractTrades.length>0&&<div>
