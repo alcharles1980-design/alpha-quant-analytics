@@ -24644,14 +24644,15 @@ function AlpacaTradeFinderPage(p){
 
   // Session presets (ET)
   var sessions=[
-    {label:'RTH',desc:'Regular 9:30-4',sh:9,sm:30,ss:0,eh:16,em:0,es:0},
-    {label:'Pre',desc:'Pre 4-9:30',sh:4,sm:0,ss:0,eh:9,em:30,es:0},
-    {label:'Post',desc:'Post 4-8PM',sh:16,sm:0,ss:0,eh:20,em:0,es:0},
-    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true},
-    {label:'Full',desc:'All hours 4AM-8PM',sh:4,sm:0,ss:0,eh:20,em:0,es:0},
-    {label:'24hr',desc:'Full 24hr',sh:0,sm:0,ss:0,eh:23,em:59,es:59}
+    {label:'RTH',desc:'Regular 9:30-4',sh:9,sm:30,ss:0,eh:16,em:0,es:0,feed:'sip'},
+    {label:'Pre',desc:'Pre 4-9:30',sh:4,sm:0,ss:0,eh:9,em:30,es:0,feed:'sip'},
+    {label:'Post',desc:'Post 4-8PM',sh:16,sm:0,ss:0,eh:20,em:0,es:0,feed:'sip'},
+    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true,feed:'overnight'},
+    {label:'Full',desc:'All hours 4AM-8PM',sh:4,sm:0,ss:0,eh:20,em:0,es:0,feed:'sip'},
+    {label:'24hr',desc:'Full 24hr (SIP+BOATS)',sh:0,sm:0,ss:0,eh:23,em:59,es:59,feed:'both'}
   ];
-  var setSession=function(s){setStH(s.sh);setStM(s.sm);setStS(s.ss);setEtH(s.eh);setEtM(s.em);setEtS(s.es);};
+  var s14=useState('sip'),activeFeed=s14[0],setActiveFeed=s14[1];
+  var setSessionPreset=function(s){setStH(s.sh);setStM(s.sm);setStS(s.ss);setEtH(s.eh);setEtM(s.em);setEtS(s.es);setActiveFeed(s.feed);};
 
   var run=async function(){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API Key and Secret in Settings');return;}
@@ -24676,16 +24677,46 @@ function AlpacaTradeFinderPage(p){
       }
 
       var allTrades=[];var pages=0;var pageToken=null;
-      while(true){
-        var path='/v2/stocks/'+ticker.toUpperCase()+'/trades?start='+tsStart+'&end='+tsEnd+'&limit=10000&sort=asc';
-        if(pageToken)path+='&page_token='+pageToken;
-        var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
-        if(!r.ok){var errTxt=await r.text();throw new Error('Alpaca '+r.status+': '+errTxt);}
-        var d=await r.json();
-        if(d.trades)for(var i=0;i<d.trades.length;i++)allTrades.push(d.trades[i]);
-        pages++;
-        setProg('Fetching... '+allTrades.length.toLocaleString()+' trades (page '+pages+')');
-        if(d.next_page_token)pageToken=d.next_page_token;else break;
+
+      // Helper to fetch trades with a specific feed
+      var fetchFeed=async function(feed,start,end){
+        var result=[];var pt2=null;var pg=0;
+        while(true){
+          var path='/v2/stocks/'+ticker.toUpperCase()+'/trades?start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
+          if(pt2)path+='&page_token='+pt2;
+          var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+          if(!r.ok){var errTxt=await r.text();throw new Error('Alpaca '+r.status+' ('+feed+'): '+errTxt);}
+          var d=await r.json();
+          if(d.trades)for(var i=0;i<d.trades.length;i++)result.push(d.trades[i]);
+          pg++;
+          setProg('Fetching '+feed+'... '+result.length.toLocaleString()+' trades (page '+pg+')');
+          if(d.next_page_token)pt2=d.next_page_token;else break;
+        }
+        return result;
+      };
+
+      // Fetch based on active feed
+      if(activeFeed==='both'){
+        // 24hr mode: fetch SIP + overnight, merge and deduplicate
+        setProg('Fetching SIP feed...');
+        var sipTrades=await fetchFeed('sip',tsStart,tsEnd);
+        setProg('Fetching overnight (BOATS) feed...');
+        var overnightTrades=await fetchFeed('overnight',tsStart,tsEnd);
+        // Merge and sort by timestamp
+        allTrades=sipTrades.concat(overnightTrades);
+        // Mark overnight trades
+        overnightTrades.forEach(function(t){t._boats=true;});
+        // Deduplicate by trade ID (i field) if both feeds return same trade
+        var seen2={};
+        allTrades=allTrades.filter(function(t){
+          var id=t.i||t.t;
+          if(seen2[id])return false;
+          seen2[id]=true;return true;
+        });
+        allTrades.sort(function(a,b){return a.t<b.t?-1:a.t>b.t?1:0;});
+      }else{
+        allTrades=await fetchFeed(activeFeed,tsStart,tsEnd);
+        if(activeFeed==='overnight')allTrades.forEach(function(t){t._boats=true;});
       }
       if(!allTrades.length){setErr('No trades found for '+ticker.toUpperCase()+' on '+date+' '+fmtStart+'-'+fmtEnd+' ET');setLoading(false);return;}
       // Convert timestamps to ET and map exchanges/conditions
@@ -24730,7 +24761,7 @@ function AlpacaTradeFinderPage(p){
           {sessions.map(function(s){
             var isActive=stH===s.sh&&stM===s.sm&&etH===s.eh&&etM===s.em;
             var clr=s.label==='BOATS'?C.blue:s.label==='RTH'?C.accent:C.gold;
-            return <button key={s.label} onClick={function(){setSession(s);}}
+            return <button key={s.label} onClick={function(){setSessionPreset(s);}}
               style={{padding:'5px 10px',borderRadius:4,border:'1px solid '+(isActive?clr:C.border),
                 background:isActive?clr+'15':'transparent',color:isActive?clr:C.txtDim,
                 fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>
@@ -24764,7 +24795,7 @@ function AlpacaTradeFinderPage(p){
     </Cd>
     {trades&&<div>
       <Cd glow={true}>
-        <div style={{display:'inline-block',background:C.gold+'15',border:'1px solid '+C.gold,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{ticker.toUpperCase()+' | '+date+' | '+fmtStart+'-'+fmtEnd+' ET | ALPACA'}</div>
+        <div style={{display:'inline-block',background:C.gold+'15',border:'1px solid '+C.gold,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{ticker.toUpperCase()+' | '+date+' | '+fmtStart+'-'+fmtEnd+' ET | ALPACA '+activeFeed.toUpperCase()}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
           <Mt label="Total Trades" value={trades.length.toLocaleString()} color={C.accent} size="lg"/>
           <Mt label="Total Volume" value={(function(){var v=0;for(var i=0;i<trades.length;i++)v+=trades[i]._size;return v.toLocaleString();})()} color={C.gold} size="md"/>
@@ -24778,7 +24809,7 @@ function AlpacaTradeFinderPage(p){
         {(function(){
           var boatsCount=0;var extCount=0;
           for(var i=0;i<trades.length;i++){
-            if(trades[i].x==='O')boatsCount++;
+            if(trades[i]._boats||trades[i].x==='O')boatsCount++;
             if(trades[i].c&&trades[i].c.indexOf('T')>=0)extCount++;
           }
           if(boatsCount===0&&extCount===0)return null;
@@ -24828,7 +24859,7 @@ function AlpacaTradeFinderPage(p){
                 <tbody>{ft.slice(0,5000).map(function(t,idx){
                   var isOddLot=t.c&&t.c.indexOf('I')>=0;
                   var isExtHrs=t.c&&(t.c.indexOf('T')>=0);
-                  var isBoats=t.x==='O'||(t._exchName&&t._exchName.indexOf('BOATS')>=0);
+                  var isBoats=t._boats||t.x==='O';
                   return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBoats?C.blue+'15':isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
                     <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
                     <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t._price.toFixed(4)}</td>
