@@ -13531,6 +13531,80 @@ function OptionsChainPage(p){
         </button>
       </div>
 
+      {/* Expiration Summary */}
+      {selectedExp&&<div style={card}>
+        {(function(){
+          var expContracts=contracts.filter(function(c){return c.expiration_date===selectedExp;});
+          var expCalls=expContracts.filter(function(c){return c.type==='call';});
+          var expPuts=expContracts.filter(function(c){return c.type==='put';});
+          var totalOI=0;var highOI=null;var highOIval=0;
+          var mostTraded=null;var mostTradedVol=0;var totalDayVol=0;
+          for(var ei=0;ei<expContracts.length;ei++){
+            var ec=expContracts[ei];
+            var oi=parseInt(ec.open_interest)||0;
+            totalOI+=oi;
+            if(oi>highOIval){highOIval=oi;highOI=ec;}
+            // Check snapshot for daily volume
+            var snap3=snapshots[ec.symbol];
+            if(snap3&&snap3.dailyBar){
+              var dv=snap3.dailyBar.v||0;
+              totalDayVol+=dv;
+              if(dv>mostTradedVol){mostTradedVol=dv;mostTraded=ec;mostTraded._dayVol=dv;mostTraded._dayN=snap3.dailyBar.n||0;}
+            }
+          }
+          // ATM strike
+          var atmStrike=null;var atmDist=Infinity;
+          if(lastPrice){
+            for(var ai2=0;ai2<expContracts.length;ai2++){
+              var dist=Math.abs((+expContracts[ai2].strike_price)-lastPrice);
+              if(dist<atmDist){atmDist=dist;atmStrike=+expContracts[ai2].strike_price;}
+            }
+          }
+          var dte2=Math.ceil((new Date(selectedExp+'T12:00:00')-Date.now())/86400000);
+          var sml={fontSize:7,color:C.txtDim,fontFamily:F};
+          var val={fontSize:11,fontWeight:700,fontFamily:F};
+          return <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+              <span style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F}}>{selectedExp}</span>
+              <span style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{dte2} DTE</span>
+              <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{expContracts.length} contracts ({expCalls.length}C / {expPuts.length}P)</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {/* Highest OI */}
+              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'30'}}>
+                <div style={sml}>HIGHEST OPEN INTEREST</div>
+                {highOI?<div>
+                  <div style={Object.assign({},val,{color:C.accent})}>{highOIval.toLocaleString()} OI</div>
+                  <div style={{fontSize:8,fontFamily:F,color:C.txtBright}}>{highOI.type==='call'?'CALL':'PUT'} ${fmt(+highOI.strike_price)}</div>
+                  <div style={sml}>Close: ${fmt(+highOI.close_price)}</div>
+                </div>:<div style={Object.assign({},val,{color:C.border})}>N/A</div>}
+              </div>
+              {/* Most Traded Today */}
+              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.gold+'30'}}>
+                <div style={sml}>MOST TRADED (TODAY)</div>
+                {mostTraded?<div>
+                  <div style={Object.assign({},val,{color:C.gold})}>{mostTradedVol.toLocaleString()} vol</div>
+                  <div style={{fontSize:8,fontFamily:F,color:C.txtBright}}>{mostTraded.type==='call'?'CALL':'PUT'} ${fmt(+mostTraded.strike_price)}</div>
+                  <div style={sml}>{mostTraded._dayN} trades</div>
+                </div>:<div style={Object.assign({},val,{color:C.border})}>No data</div>}
+              </div>
+              {/* Total OI */}
+              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.border}}>
+                <div style={sml}>TOTAL OPEN INTEREST</div>
+                <div style={Object.assign({},val,{color:C.txtBright})}>{totalOI.toLocaleString()}</div>
+                <div style={sml}>across {expContracts.length} contracts</div>
+              </div>
+              {/* Today's Volume + ATM */}
+              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.border}}>
+                <div style={sml}>TODAY'S VOLUME</div>
+                <div style={Object.assign({},val,{color:C.txtBright})}>{totalDayVol.toLocaleString()}</div>
+                {atmStrike&&<div style={sml}>ATM Strike: ${fmt(atmStrike)}</div>}
+              </div>
+            </div>
+          </div>;
+        })()}
+      </div>}
+
       {/* Chain table */}
       <div style={card}>
         <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
