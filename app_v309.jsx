@@ -24998,7 +24998,8 @@ function Alpaca24AtrPage(p){
   var fetchBars=async function(feed,tk,start,end){
     var all=[];var pt=null;
     while(true){
-      var path='/v2/stocks/'+tk+'/bars?timeframe=1Hour&start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
+      // Use 1Min bars — hourly bars may exclude extended hours on some plans
+      var path='/v2/stocks/'+tk+'/bars?timeframe=1Min&start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
       if(pt)path+='&page_token='+pt;
       var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
       if(!r.ok){var t=await r.text();throw new Error(t);}
@@ -25032,7 +25033,7 @@ function Alpaca24AtrPage(p){
 
       for(var fi=0;fi<feeds.length;fi++){
         var f=feeds[fi];
-        setProg('Scanning '+f.toUpperCase()+' bars... ('+allBars.length+' total)');
+        setProg('Scanning '+f.toUpperCase()+' 1-min bars... ('+allBars.length+' total)');
         try{
           var bars=await fetchBars(f,tk,tsStart,tsEnd);
           var added=0;
@@ -25053,30 +25054,48 @@ function Alpaca24AtrPage(p){
 
       // Robust ET hour extraction using Intl.DateTimeFormat
       var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
+      var etDateFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'2-digit',day:'2-digit'});
 
-      // Group by ET hour (0-23)
-      var hourly={};
-      for(var h=0;h<24;h++)hourly[h]={ranges:[],volumes:[],counts:0,boats:0,dates:{}};
-
-      var debugHours={};
+      // Step 1: Aggregate 1-minute bars into hourly OHLCV
+      // Key: "dateStr|hour" → {high, low, volume, count, feed}
+      var hourlyAgg={};
       for(var i=0;i<allBars.length;i++){
         var bar=allBars[i];
         var dt=new Date(bar.t);
-        // Extract just the hour number (0-23) using hourCycle:'h23'
         var etParts=etHourFmt.formatToParts(dt);
         var etHour=-1;
         for(var pi=0;pi<etParts.length;pi++){if(etParts[pi].type==='hour'){etHour=parseInt(etParts[pi].value);break;}}
         if(etHour<0||etHour>23)continue;
-        debugHours[etHour]=(debugHours[etHour]||0)+1;
-        var range=bar.h-bar.l;
-        var mid=(bar.h+bar.l)/2;
+        var dateKey=etDateFmt.format(dt);
+        var aggKey=dateKey+'|'+etHour;
+        if(!hourlyAgg[aggKey]){hourlyAgg[aggKey]={hour:etHour,date:dateKey,high:-Infinity,low:Infinity,volume:0,count:0,boats:0,close:bar.c};}
+        var agg=hourlyAgg[aggKey];
+        if(bar.h>agg.high)agg.high=bar.h;
+        if(bar.l<agg.low)agg.low=bar.l;
+        agg.volume+=(bar.v||0);
+        agg.count++;
+        agg.close=bar.c;
+        if(bar._feed==='boats')agg.boats++;
+      }
+
+      // Step 2: Group aggregated hourly bars by ET hour (0-23)
+      var hourly={};
+      for(var h=0;h<24;h++)hourly[h]={ranges:[],volumes:[],counts:0,boats:0,dates:{}};
+
+      var debugHours={};
+      var aggKeys=Object.keys(hourlyAgg);
+      for(var ai=0;ai<aggKeys.length;ai++){
+        var agg2=hourlyAgg[aggKeys[ai]];
+        if(agg2.high===-Infinity||agg2.low===Infinity)continue;
+        var range=agg2.high-agg2.low;
+        var mid=(agg2.high+agg2.low)/2;
         var pct=mid>0?(range/mid*100):0;
-        var dateKey=dt.toLocaleString('en-US',{timeZone:'America/New_York',month:'2-digit',day:'2-digit'});
-        hourly[etHour].ranges.push({dollar:range,pct:pct});
-        hourly[etHour].volumes.push(bar.v||0);
-        hourly[etHour].counts++;
-        hourly[etHour].dates[dateKey]=true;
-        if(bar._feed==='boats')hourly[etHour].boats++;
+        debugHours[agg2.hour]=(debugHours[agg2.hour]||0)+1;
+        hourly[agg2.hour].ranges.push({dollar:range,pct:pct});
+        hourly[agg2.hour].volumes.push(agg2.volume);
+        hourly[agg2.hour].counts++;
+        hourly[agg2.hour].dates[agg2.date]=true;
+        if(agg2.boats>0)hourly[agg2.hour].boats++;
       }
 
       // Compute averages
@@ -25098,7 +25117,7 @@ function Alpaca24AtrPage(p){
 
       setResults({ticker:tk,hourData:hourData,maxAtrPct:maxAtrPct,totalBars:allBars.length,lastPrice:lastPrice,
         daysScanned:Object.keys(allBars.reduce(function(s,b){var d=new Date(b.t).toISOString().slice(0,10);s[d]=true;return s;},{})).length,
-        hourCoverage:debugHours,
+        hourCoverage:debugHours,hourlyCount:aggKeys.length,
         firstBar:allBars[0]?allBars[0].t:'',lastBarTime:allBars[allBars.length-1]?allBars[allBars.length-1].t:''});
       setProg('');setLoading(false);
     }catch(e){setErr(e.message);setProg('');setLoading(false);}
@@ -25178,7 +25197,7 @@ function Alpaca24AtrPage(p){
         <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:10,flexWrap:'wrap'}}>
           <div style={{color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F}}>{results.ticker}</div>
           <div style={{color:C.accent,fontSize:16,fontWeight:700,fontFamily:F}}>${results.lastPrice.toFixed(2)}</div>
-          <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{results.totalBars} bars across {results.daysScanned} days</div>
+          <div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{results.totalBars.toLocaleString()} min bars {'\u2192'} {results.hourlyCount||0} hourly across {results.daysScanned} days</div>
           <button onClick={exportCsv} style={{marginLeft:'auto',padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>CSV</button>
         </div>
 
