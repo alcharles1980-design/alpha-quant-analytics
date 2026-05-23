@@ -24901,6 +24901,84 @@ function AlpacaTradeFinderPage(p){
           </div>;
         })()}
       </Cd>
+
+      {/* ── LEGEND & REFERENCE ─────────────────────────────────────────── */}
+      <Cd>
+        <SectionHead title="Legend & Reference" sub="Understanding the data"/>
+        <div style={{marginTop:8,marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Row Colors</div>
+          <div style={{display:'flex',flexDirection:'column',gap:4}}>
+            {[[C.blue+'15',C.blue,'Blue','BOATS (Blue Ocean ATS) overnight trade'],
+              [C.blue+'0d',C.blue,'Light blue','Extended hours trade (Form T condition)'],
+              [C.purple+'0d',C.purple,'Purple','Odd lot trade (less than 100 shares)']
+            ].map(function(r,i){
+              return <div key={i} style={{display:'flex',alignItems:'center',gap:8,fontSize:9,fontFamily:F}}>
+                <div style={{width:16,height:10,borderRadius:2,background:r[0],border:'1px solid '+r[1]+'40'}}></div>
+                <span style={{color:r[1],fontWeight:600}}>{r[2]}</span><span style={{color:C.txtDim}}>{r[3]}</span>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Data Feeds</div>
+          <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F}}>
+            <div><span style={{color:C.accent,fontWeight:700}}>SIP</span><span style={{color:C.txtDim}}> {'\u2014'} Consolidated tape from all US exchanges. Regular + pre/post market (4AM-8PM ET).</span></div>
+            <div><span style={{color:C.accent,fontWeight:700}}>IEX</span><span style={{color:C.txtDim}}> {'\u2014'} IEX Exchange only. Free tier. Subset of SIP.</span></div>
+            <div><span style={{color:C.accent,fontWeight:700}}>BOATS</span><span style={{color:C.txtDim}}> {'\u2014'} Blue Ocean ATS overnight 8PM-4AM ET. Requires Algo Trader Plus ($99/mo).</span></div>
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Table Columns</div>
+          <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F}}>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Time</span><span style={{color:C.txtDim}}> {'\u2014'} Execution timestamp in ET with millisecond precision.</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Price</span><span style={{color:C.txtDim}}> {'\u2014'} Actual fill price (4 decimal places). Sub-penny precision from exchanges.</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Size</span><span style={{color:C.txtDim}}> {'\u2014'} Shares traded. 0 = fractional share execution.</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Exchange</span><span style={{color:C.txtDim}}> {'\u2014'} Venue where the trade executed (see codes below).</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Conditions</span><span style={{color:C.txtDim}}> {'\u2014'} CTA/UTP trade condition codes from the consolidated tape.</span></div>
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Exchange Codes</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+            {Object.keys(exchMap).sort().map(function(k){
+              return <span key={k} style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3,fontSize:7,fontFamily:F}}>
+                <span style={{color:k==='O'?C.blue:C.gold,fontWeight:700}}>{k}</span>
+                <span style={{color:C.txtDim,marginLeft:3}}>{exchMap[k]}</span>
+              </span>;
+            })}
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Trade Conditions</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+            {Object.keys(condMap).map(function(k){
+              return <span key={k} style={{padding:'2px 6px',background:C.bgDeep,borderRadius:3,fontSize:7,fontFamily:F}}>
+                <span style={{color:C.gold,fontWeight:700}}>{k}</span>
+                <span style={{color:C.txtDim,marginLeft:3}}>{condMap[k]}</span>
+              </span>;
+            })}
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Trading Sessions (ET)</div>
+          <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F}}>
+            <div><span style={{color:C.blue,fontWeight:700}}>Pre-Market</span><span style={{color:C.txtDim}}> {'\u2014'} 4:00-9:30 AM. Lower volume, wider spreads. Form T condition.</span></div>
+            <div><span style={{color:C.accent,fontWeight:700}}>Regular (RTH)</span><span style={{color:C.txtDim}}> {'\u2014'} 9:30 AM-4:00 PM. Highest volume and liquidity. Regular (@) condition.</span></div>
+            <div><span style={{color:C.purple,fontWeight:700}}>Post-Market</span><span style={{color:C.txtDim}}> {'\u2014'} 4:00-8:00 PM. Moderate volume. Form T. Earnings reactions.</span></div>
+            <div><span style={{color:C.blue,fontWeight:700}}>BOATS</span><span style={{color:C.txtDim}}> {'\u2014'} 8:00 PM-4:00 AM. Blue Ocean ATS overnight. Lowest liquidity. Global news.</span></div>
+          </div>
+        </div>
+        <div>
+          <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>Summary Metrics</div>
+          <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F}}>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Total Trades</span><span style={{color:C.txtDim}}> {'\u2014'} All individual executions across enabled feeds (deduplicated).</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Volume</span><span style={{color:C.txtDim}}> {'\u2014'} Total shares exchanged.</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Exchanges</span><span style={{color:C.txtDim}}> {'\u2014'} Distinct venues where trades executed.</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Spread</span><span style={{color:C.txtDim}}> {'\u2014'} Price High minus Price Low for the time range.</span></div>
+            <div><span style={{color:C.txtBright,fontWeight:700}}>Feed Results</span><span style={{color:C.txtDim}}> {'\u2014'} Per-feed breakdown. Count = raw trades returned. Unique = after dedup across feeds.</span></div>
+          </div>
+        </div>
+      </Cd>
     </div>}
   </div>;
 }
