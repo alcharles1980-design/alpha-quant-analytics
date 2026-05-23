@@ -24589,6 +24589,290 @@ function TradeFinderPage(p){
   </div>;
 }
 
+// ─── ALPACA TRADE FINDER ──────────────────────────────────────────────────────
+function AlpacaTradeFinderPage(p){
+  var s1=useState(function(){return sessionStorage.getItem('alpaca_key')||'';}),alpKey=s1[0],setAlpKey=s1[1];
+  var s2=useState(function(){return sessionStorage.getItem('alpaca_secret')||'';}),alpSecret=s2[0],setAlpSecret=s2[1];
+  var s3=useState(''),ticker=s3[0],setTicker=s3[1];
+  var s4=useState(''),dateFrom=s4[0],setDateFrom=s4[1];
+  var s5=useState(''),dateTo=s5[0],setDateTo=s5[1];
+  var s6=useState('all'),statusFilter=s6[0],setStatusFilter=s6[1];
+  var s7=useState(false),loading=s7[0],setLoading=s7[1];
+  var s8=useState(null),err=s8[0],setErr=s8[1];
+  var s9=useState(null),orders=s9[0],setOrders=s9[1];
+  var s10=useState(''),prog=s10[0],setProg=s10[1];
+  var s11=useState('orders'),tab=s11[0],setTab=s11[1];
+  var s12=useState(null),fills=s12[0],setFills=s12[1];
+  var s13=useState(null),account=s13[0],setAccount=s13[1];
+
+  var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+
+  var saveKeys=function(){
+    sessionStorage.setItem('alpaca_key',alpKey);
+    sessionStorage.setItem('alpaca_secret',alpSecret);
+  };
+
+  var alpFetch=async function(path){
+    var r=await fetch(PROXY,{
+      headers:{'APCA-API-KEY-ID':alpKey,'APCA-API-SECRET-KEY':alpSecret,'X-Alpaca-Path':path}
+    });
+    if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
+    return r.json();
+  };
+
+  // Fetch account on first valid key
+  var didMount=useRef(false);
+  useEffect(function(){
+    if(alpKey&&alpSecret&&!didMount.current){
+      didMount.current=true;
+      saveKeys();
+      alpFetch('/v2/account').then(function(d){setAccount(d);}).catch(function(){});
+    }
+  },[]);
+
+  var fetchOrders=async function(){
+    if(!alpKey||!alpSecret){setErr('Enter Alpaca API Key and Secret');return;}
+    saveKeys();
+    setLoading(true);setErr(null);setOrders(null);setFills(null);setProg('Fetching orders...');
+    try{
+      var path='/v2/orders?status='+statusFilter+'&limit=500&direction=desc';
+      if(ticker)path+='&symbols='+ticker.toUpperCase();
+      if(dateFrom)path+='&after='+dateFrom+'T00:00:00Z';
+      if(dateTo)path+='&until='+dateTo+'T23:59:59Z';
+      var data=await alpFetch(path);
+      if(!Array.isArray(data)){throw new Error('Unexpected response');}
+      // Format timestamps to ET
+      data.forEach(function(o){
+        if(o.created_at)o._created=new Date(o.created_at).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+        if(o.filled_at)o._filled=new Date(o.filled_at).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+        if(o.submitted_at)o._submitted=new Date(o.submitted_at).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+      });
+      setOrders(data);
+      setProg('');
+    }catch(e){setErr(e.message);setProg('');}
+    setLoading(false);
+  };
+
+  var fetchFills=async function(){
+    if(!alpKey||!alpSecret){setErr('Enter Alpaca API Key and Secret');return;}
+    saveKeys();
+    setLoading(true);setErr(null);setOrders(null);setFills(null);setProg('Fetching fills...');
+    try{
+      var path='/v2/account/activities/FILL?direction=desc&page_size=500';
+      if(dateFrom)path+='&after='+dateFrom+'T00:00:00Z';
+      if(dateTo)path+='&until='+dateTo+'T23:59:59Z';
+      var data=await alpFetch(path);
+      if(!Array.isArray(data)){throw new Error('Unexpected response');}
+      // Filter by ticker if specified
+      if(ticker){var tk=ticker.toUpperCase();data=data.filter(function(f){return f.symbol===tk;});}
+      data.forEach(function(f){
+        if(f.transaction_time)f._time=new Date(f.transaction_time).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+      });
+      setFills(data);
+      setProg('');
+    }catch(e){setErr(e.message);setProg('');}
+    setLoading(false);
+  };
+
+  var run=function(){if(tab==='orders')fetchOrders();else fetchFills();};
+
+  var exportCsv=function(){
+    if(tab==='orders'&&orders){
+      var h=['created_at','symbol','side','type','qty','filled_qty','filled_avg_price','limit_price','stop_price','status','time_in_force','extended_hours','order_class','id'];
+      var rows=[h.join(',')];
+      orders.forEach(function(o){rows.push(h.map(function(k){return '"'+(o[k]!=null?o[k]:'')+'"';}).join(','));});
+      var blob=new Blob([rows.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download='alpaca_orders_'+(ticker||'all')+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(u);
+    }
+    if(tab==='fills'&&fills){
+      var h2=['transaction_time','symbol','side','qty','price','order_id','id'];
+      var rows2=[h2.join(',')];
+      fills.forEach(function(f){rows2.push(h2.map(function(k){return '"'+(f[k]!=null?f[k]:'')+'"';}).join(','));});
+      var blob2=new Blob([rows2.join('\n')],{type:'text/csv'});var u2=URL.createObjectURL(blob2);var a2=document.createElement('a');a2.href=u2;a2.download='alpaca_fills_'+(ticker||'all')+'_'+new Date().toISOString().slice(0,10)+'.csv';a2.click();URL.revokeObjectURL(u2);
+    }
+  };
+
+  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none',boxSizing:'border-box'};
+  var th={padding:'5px 6px',fontSize:7,fontFamily:F,fontWeight:700,color:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',letterSpacing:0.5,textTransform:'uppercase'};
+  var td={padding:'4px 6px',fontSize:8,fontFamily:F,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap'};
+  var statusColor=function(s){return s==='filled'?C.accent:s==='partially_filled'?C.blue:s==='new'||s==='accepted'?C.gold:s==='canceled'||s==='expired'?C.txtDim:s==='rejected'?C.warn:C.txt;};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Alpaca Trade Finder</div>
+      {account&&<div style={{marginLeft:'auto',padding:'4px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'40'}}>
+        <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>Paper </span>
+        <span style={{color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>${Number(account.portfolio_value||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+      </div>}
+    </div>
+
+    {/* API Keys */}
+    <div style={card}>
+      <div style={{color:C.txtBright,fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:8}}>Alpaca API Credentials</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        <div><label style={lS}>API Key</label><input value={alpKey} onChange={function(e){setAlpKey(e.target.value);}} style={iS} placeholder="PK..." type="password"/></div>
+        <div><label style={lS}>API Secret</label><input value={alpSecret} onChange={function(e){setAlpSecret(e.target.value);}} style={iS} placeholder="Secret..." type="password"/></div>
+      </div>
+      <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:6}}>Keys stored in browser session only. PK* keys use paper trading API.</div>
+    </div>
+
+    {/* Search */}
+    <div style={card}>
+      {/* Tab toggle */}
+      <div style={{display:'flex',gap:6,marginBottom:10}}>
+        {['orders','fills'].map(function(t){
+          return <button key={t} onClick={function(){setTab(t);}} style={{padding:'6px 16px',borderRadius:6,border:'1px solid '+(tab===t?C.accent:C.border),
+            background:tab===t?C.accent+'15':'transparent',color:tab===t?C.accent:C.txtDim,fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer',
+            textTransform:'uppercase',letterSpacing:1}}>{t}</button>;
+        })}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+        <div><label style={lS}>Ticker (optional)</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS} placeholder="e.g. NVDA"/></div>
+        <div><label style={lS}>From Date</label><input type="date" value={dateFrom} onChange={function(e){setDateFrom(e.target.value);}} style={iS}/></div>
+        <div><label style={lS}>To Date</label><input type="date" value={dateTo} onChange={function(e){setDateTo(e.target.value);}} style={iS}/></div>
+      </div>
+      {tab==='orders'&&<div style={{marginTop:8}}>
+        <label style={lS}>Status</label>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+          {['all','open','closed','filled','canceled'].map(function(st){
+            return <button key={st} onClick={function(){setStatusFilter(st);}} style={{padding:'4px 10px',borderRadius:4,
+              border:'1px solid '+(statusFilter===st?C.accent:C.border),background:statusFilter===st?C.accent+'15':'transparent',
+              color:statusFilter===st?C.accent:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>{st}</button>;
+          })}
+        </div>
+      </div>}
+      <button onClick={run} disabled={loading||!alpKey||!alpSecret} style={{width:'100%',marginTop:10,padding:'12px',border:'none',borderRadius:8,
+        background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,
+        letterSpacing:1.5,textTransform:'uppercase',cursor:loading?'default':'pointer',opacity:!alpKey||!alpSecret?0.4:1}}>
+        {loading?'Fetching...':'Search '+tab.charAt(0).toUpperCase()+tab.slice(1)}
+      </button>
+      {prog&&<div style={{marginTop:6,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
+      {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
+    </div>
+
+    {/* ── ORDERS RESULTS ──────────────────────────────────────────────── */}
+    {orders&&<div>
+      <div style={card}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{orders.length} Orders</div>
+          <button onClick={exportCsv} style={{padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Export CSV</button>
+        </div>
+        {/* Summary stats */}
+        {(function(){
+          var byStatus={};
+          orders.forEach(function(o){byStatus[o.status]=(byStatus[o.status]||0)+1;});
+          var filledOrders=orders.filter(function(o){return o.status==='filled';});
+          var buys=filledOrders.filter(function(o){return o.side==='buy';});
+          var sells=filledOrders.filter(function(o){return o.side==='sell';});
+          var totalBuyVal=buys.reduce(function(s,o){return s+(Number(o.filled_avg_price||0)*Number(o.filled_qty||0));},0);
+          var totalSellVal=sells.reduce(function(s,o){return s+(Number(o.filled_avg_price||0)*Number(o.filled_qty||0));},0);
+          return <div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+              {Object.keys(byStatus).map(function(st){
+                return <span key={st} style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}>
+                  <span style={{color:statusColor(st),fontWeight:700}}>{st}</span> <span style={{color:C.txtDim}}>{byStatus[st]}</span>
+                </span>;
+              })}
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.accent}}>Buys</span> <span style={{color:C.txtDim}}>{buys.length} (${totalBuyVal.toFixed(2)})</span></span>
+              <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.warn}}>Sells</span> <span style={{color:C.txtDim}}>{sells.length} (${totalSellVal.toFixed(2)})</span></span>
+            </div>
+          </div>;
+        })()}
+      </div>
+      <div style={card}>
+        <div style={{overflowX:'auto',maxHeight:600,WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
+            <thead><tr>
+              <th style={th}>Time</th>
+              <th style={th}>Symbol</th>
+              <th style={th}>Side</th>
+              <th style={th}>Type</th>
+              <th style={th}>Qty</th>
+              <th style={th}>Filled</th>
+              <th style={th}>Avg Price</th>
+              <th style={th}>Limit</th>
+              <th style={th}>Status</th>
+              <th style={th}>TIF</th>
+              <th style={th}>Ext Hrs</th>
+            </tr></thead>
+            <tbody>
+              {orders.map(function(o,i){
+                return <tr key={o.id||i} style={{background:i%2===0?'transparent':C.bgDeep+'55'}}>
+                  <td style={Object.assign({},td,{color:C.txtDim,fontSize:7})}>{o._created||''}</td>
+                  <td style={Object.assign({},td,{color:C.txtBright,fontWeight:700})}>{o.symbol}</td>
+                  <td style={Object.assign({},td,{color:o.side==='buy'?C.accent:C.warn,fontWeight:700,textTransform:'uppercase'})}>{o.side}</td>
+                  <td style={Object.assign({},td,{color:C.txtDim})}>{o.type}</td>
+                  <td style={Object.assign({},td,{color:C.txt,textAlign:'right'})}>{o.qty||o.notional||''}</td>
+                  <td style={Object.assign({},td,{color:C.txt,textAlign:'right'})}>{o.filled_qty||'0'}</td>
+                  <td style={Object.assign({},td,{color:C.accent,fontWeight:600,textAlign:'right'})}>{o.filled_avg_price?'$'+Number(o.filled_avg_price).toFixed(4):''}</td>
+                  <td style={Object.assign({},td,{color:C.gold,textAlign:'right'})}>{o.limit_price?'$'+Number(o.limit_price).toFixed(2):''}</td>
+                  <td style={Object.assign({},td,{color:statusColor(o.status),fontWeight:700,textTransform:'uppercase',fontSize:7})}>{o.status}</td>
+                  <td style={Object.assign({},td,{color:C.txtDim})}>{o.time_in_force||''}</td>
+                  <td style={Object.assign({},td,{color:o.extended_hours?C.blue:C.txtDim,textAlign:'center'})}>{o.extended_hours?'Y':'N'}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>}
+
+    {/* ── FILLS RESULTS ───────────────────────────────────────────────── */}
+    {fills&&<div>
+      <div style={card}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{fills.length} Fills</div>
+          <button onClick={exportCsv} style={{padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Export CSV</button>
+        </div>
+        {(function(){
+          var buys=fills.filter(function(f){return f.side==='buy';});
+          var sells=fills.filter(function(f){return f.side==='sell';});
+          var totalBuyVal=buys.reduce(function(s,f){return s+(Number(f.price||0)*Number(f.qty||0));},0);
+          var totalSellVal=sells.reduce(function(s,f){return s+(Number(f.price||0)*Number(f.qty||0));},0);
+          var tickers={};fills.forEach(function(f){tickers[f.symbol]=true;});
+          return <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.txtDim}}>Tickers: </span><span style={{color:C.txtBright}}>{Object.keys(tickers).length}</span></span>
+            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.accent}}>Buys</span> <span style={{color:C.txtDim}}>{buys.length} (${totalBuyVal.toFixed(2)})</span></span>
+            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.warn}}>Sells</span> <span style={{color:C.txtDim}}>{sells.length} (${totalSellVal.toFixed(2)})</span></span>
+            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.gold}}>Net</span> <span style={{color:totalSellVal-totalBuyVal>=0?C.accent:C.warn,fontWeight:700}}>${(totalSellVal-totalBuyVal).toFixed(2)}</span></span>
+          </div>;
+        })()}
+      </div>
+      <div style={card}>
+        <div style={{overflowX:'auto',maxHeight:600,WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:500}}>
+            <thead><tr>
+              <th style={th}>Time (ET)</th>
+              <th style={th}>Symbol</th>
+              <th style={th}>Side</th>
+              <th style={th}>Qty</th>
+              <th style={th}>Price</th>
+              <th style={th}>Value</th>
+            </tr></thead>
+            <tbody>
+              {fills.map(function(f,i){
+                var val=Number(f.price||0)*Number(f.qty||0);
+                return <tr key={f.id||i} style={{background:i%2===0?'transparent':C.bgDeep+'55'}}>
+                  <td style={Object.assign({},td,{color:C.txtDim,fontSize:7})}>{f._time||''}</td>
+                  <td style={Object.assign({},td,{color:C.txtBright,fontWeight:700})}>{f.symbol}</td>
+                  <td style={Object.assign({},td,{color:f.side==='buy'?C.accent:C.warn,fontWeight:700,textTransform:'uppercase'})}>{f.side}</td>
+                  <td style={Object.assign({},td,{color:C.txt,textAlign:'right'})}>{f.qty}</td>
+                  <td style={Object.assign({},td,{color:C.accent,fontWeight:600,textAlign:'right'})}>${Number(f.price).toFixed(4)}</td>
+                  <td style={Object.assign({},td,{color:C.gold,textAlign:'right'})}>${val.toFixed(2)}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function RawDataPage(p){
   var s1=useState('NIO'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(''),startDate=s2[0],setStartDate=s2[1];
@@ -26156,7 +26440,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'tipranks',label:'TipRanks Intelligence',icon:'\u2606'},{key:'configsnap',label:'Configuration Snapshot',icon:'\u2B1A'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'tipranks',label:'TipRanks Intelligence',icon:'\u2606'},{key:'configsnap',label:'Configuration Snapshot',icon:'\u2B1A'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -26191,6 +26475,7 @@ function App(){
     {page==='trends'&&<TrendPage onBack={function(){setPage('main');}}/>}
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
+    {page==='alpacafinder'&&<AlpacaTradeFinderPage onBack={function(){setPage('home');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
