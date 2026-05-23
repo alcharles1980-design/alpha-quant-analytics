@@ -24639,8 +24639,19 @@ function AlpacaTradeFinderPage(p){
     setEtH(Math.floor(totalSec/3600));setEtM(Math.floor((totalSec%3600)/60));setEtS(totalSec%60);
   };
 
-  var exchMap={A:'AMEX',B:'BZX',C:'NSX',D:'FINRA',E:'EDGA',H:'MIAX',J:'EDGX',K:'IEXG',L:'LTSE',M:'NYSE CHI',N:'NYSE',P:'ARCA',Q:'NASDAQ',S:'MEMX',T:'NASDAQ BX',U:'CTA',V:'IEX',W:'CBOE',X:'NASDAQ PSX',Y:'BYX',Z:'BATS'};
+  var exchMap={A:'AMEX',B:'BZX',C:'NSX',D:'FINRA/ADF',E:'EDGA',H:'MIAX',J:'EDGX',K:'IEXG',L:'LTSE',M:'NYSE CHI',N:'NYSE',O:'BOATS',P:'ARCA',Q:'NASDAQ',S:'MEMX',T:'NASDAQ BX',U:'CTA',V:'IEX',W:'CBOE',X:'NASDAQ PSX',Y:'BYX',Z:'BATS'};
   var condMap={'@':'Regular',T:'Form T (Ext Hrs)',I:'Odd Lot',X:'Intermarket Sweep',F:'Intermarket Sweep',W:'Avg Price',C:'Cash Sale',E:'Auto Exec',H:'Price Variation',L:'Sold Last',N:'Next Day',O:'Opening',R:'Seller',S:'Split',Z:'Out of Seq',4:'Derivatively Priced',5:'Reopen',6:'Closing',7:'Qualified Contingent',8:'Placeholder',9:'Corrected Consolidated'};
+
+  // Session presets (ET)
+  var sessions=[
+    {label:'RTH',desc:'Regular 9:30-4',sh:9,sm:30,ss:0,eh:16,em:0,es:0},
+    {label:'Pre',desc:'Pre 4-9:30',sh:4,sm:0,ss:0,eh:9,em:30,es:0},
+    {label:'Post',desc:'Post 4-8PM',sh:16,sm:0,ss:0,eh:20,em:0,es:0},
+    {label:'BOATS',desc:'Overnight 8PM-4AM',sh:20,sm:0,ss:0,eh:4,em:0,es:0,overnight:true},
+    {label:'Full',desc:'All hours 4AM-8PM',sh:4,sm:0,ss:0,eh:20,em:0,es:0},
+    {label:'24hr',desc:'Full 24hr',sh:0,sm:0,ss:0,eh:23,em:59,es:59}
+  ];
+  var setSession=function(s){setStH(s.sh);setStM(s.sm);setStS(s.ss);setEtH(s.eh);setEtM(s.em);setEtS(s.es);};
 
   var run=async function(){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API Key and Secret in Settings');return;}
@@ -24652,7 +24663,17 @@ function AlpacaTradeFinderPage(p){
       var startHr=stH+etOff;var endHr=etH+etOff;
       var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
       var tsStart=startHr<24?(date+'T'+pad(startHr)+':'+pad(stM)+':'+pad(stS)+'Z'):(nextDay+'T'+pad(startHr-24)+':'+pad(stM)+':'+pad(stS)+'Z');
-      var tsEnd=endHr<24?(date+'T'+pad(endHr)+':'+pad(etM)+':'+pad(etS)+'Z'):(nextDay+'T'+pad(endHr-24)+':'+pad(etM)+':'+pad(etS)+'Z');
+      // Handle overnight: if end time is earlier than start, it crosses midnight
+      var isOvernight=etH<stH||(etH===stH&&etM<stM);
+      var tsEnd;
+      if(isOvernight){
+        // End time is on the next day
+        var endHrAdj=etH+etOff;
+        var dayAfter=startHr>=24?new Date(new Date(nextDay+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10):nextDay;
+        tsEnd=endHrAdj<24?(dayAfter+'T'+pad(endHrAdj)+':'+pad(etM)+':'+pad(etS)+'Z'):(new Date(new Date(dayAfter+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10)+'T'+pad(endHrAdj-24)+':'+pad(etM)+':'+pad(etS)+'Z');
+      }else{
+        tsEnd=endHr<24?(date+'T'+pad(endHr)+':'+pad(etM)+':'+pad(etS)+'Z'):(nextDay+'T'+pad(endHr-24)+':'+pad(etM)+':'+pad(etS)+'Z');
+      }
 
       var allTrades=[];var pages=0;var pageToken=null;
       while(true){
@@ -24698,10 +24719,25 @@ function AlpacaTradeFinderPage(p){
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Alpaca Trade Finder</div>
     </div>
     <Cd>
-      <SectionHead title="Search Trades" sub="Find specific trades from Alpaca market data" info="Fetches all trade executions from Alpaca's historical market data API for a ticker, date, and time range. Same exchange-level tick data as Polygon but from Alpaca's feed. All times are in Eastern Time."/>
+      <SectionHead title="Search Trades" sub="Find specific trades from Alpaca market data" info="Fetches all trade executions from Alpaca's historical market data API for a ticker, date, and time range. Includes BOATS (Blue Ocean ATS) overnight session 8PM-4AM ET. All times are in Eastern Time."/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
         <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
+      </div>
+      <div style={{marginTop:8}}>
+        <label style={lS}>Session Presets</label>
+        <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+          {sessions.map(function(s){
+            var isActive=stH===s.sh&&stM===s.sm&&etH===s.eh&&etM===s.em;
+            var clr=s.label==='BOATS'?C.blue:s.label==='RTH'?C.accent:C.gold;
+            return <button key={s.label} onClick={function(){setSession(s);}}
+              style={{padding:'5px 10px',borderRadius:4,border:'1px solid '+(isActive?clr:C.border),
+                background:isActive?clr+'15':'transparent',color:isActive?clr:C.txtDim,
+                fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>
+              {s.label}<span style={{fontSize:6,marginLeft:3,opacity:0.7}}>{s.desc}</span>
+            </button>;
+          })}
+        </div>
       </div>
       <div style={{marginTop:8,marginBottom:12}}>
         <label style={lS}>Start Time (ET)</label>
@@ -24739,6 +24775,22 @@ function AlpacaTradeFinderPage(p){
           <Mt label="Price High" value={'$'+(function(){var m=-Infinity;for(var i=0;i<trades.length;i++)if(trades[i]._price>m)m=trades[i]._price;return m.toFixed(4);})()} color={C.txt} size="md"/>
           <Mt label="Spread" value={'$'+(function(){var mn=Infinity,mx=-Infinity;for(var i=0;i<trades.length;i++){if(trades[i]._price<mn)mn=trades[i]._price;if(trades[i]._price>mx)mx=trades[i]._price;}return (mx-mn).toFixed(4);})()} color={C.gold} size="md"/>
         </div>
+        {(function(){
+          var boatsCount=0;var extCount=0;
+          for(var i=0;i<trades.length;i++){
+            if(trades[i].x==='O')boatsCount++;
+            if(trades[i].c&&trades[i].c.indexOf('T')>=0)extCount++;
+          }
+          if(boatsCount===0&&extCount===0)return null;
+          return <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
+            {boatsCount>0&&<div style={{padding:'4px 10px',background:C.blue+'15',borderRadius:4,border:'1px solid '+C.blue+'30',fontSize:8,fontFamily:F}}>
+              <span style={{color:C.blue,fontWeight:700}}>BOATS</span> <span style={{color:C.txtDim}}>{boatsCount.toLocaleString()} trades ({(boatsCount/trades.length*100).toFixed(1)}%)</span>
+            </div>}
+            {extCount>0&&<div style={{padding:'4px 10px',background:C.blue+'10',borderRadius:4,border:'1px solid '+C.border,fontSize:8,fontFamily:F}}>
+              <span style={{color:C.blue,fontWeight:600}}>Ext Hrs (Form T)</span> <span style={{color:C.txtDim}}>{extCount.toLocaleString()}</span>
+            </div>}
+          </div>;
+        })()}
         <button onClick={exportCsv} style={Object.assign({},bB,{marginTop:10,background:'transparent',border:'1px solid '+C.accent,color:C.accent,fontSize:9})}>Export CSV ({trades.length.toLocaleString()} trades)</button>
       </Cd>
       <Cd>
@@ -24776,11 +24828,12 @@ function AlpacaTradeFinderPage(p){
                 <tbody>{ft.slice(0,5000).map(function(t,idx){
                   var isOddLot=t.c&&t.c.indexOf('I')>=0;
                   var isExtHrs=t.c&&(t.c.indexOf('T')>=0);
-                  return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
+                  var isBoats=t.x==='O'||(t._exchName&&t._exchName.indexOf('BOATS')>=0);
+                  return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isBoats?C.blue+'15':isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
                     <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
                     <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t._price.toFixed(4)}</td>
                     <td style={{padding:'3px 3px',color:t._size===0?C.warn:isOddLot?C.purple:C.txt,textAlign:'right'}}>{t._size.toLocaleString()}</td>
-                    <td style={{padding:'3px 3px',color:C.gold}}>{t._exchName}</td>
+                    <td style={{padding:'3px 3px',color:isBoats?C.blue:C.gold}}>{t._exchName}</td>
                     <td style={{padding:'3px 3px',color:C.txtDim,fontSize:6}}>{t._condStr}</td>
                   </tr>;
                 })}</tbody>
