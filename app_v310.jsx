@@ -13296,6 +13296,7 @@ function HedgeCalcPage(p){
   var s4b=useState('0.01'),gridIncrement=s4b[0],setGridIncrement=s4b[1];
   var s5=useState('1'),sharesPerLevel=s5[0],setSharesPerLevel=s5[1];
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
+  var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
   var s6=useState(null),lastPrice=s6[0],setLastPrice=s6[1];
   var s7=useState([]),putOptions=s7[0],setPutOptions=s7[1];
   var s8=useState(false),loading=s8[0],setLoading=s8[1];
@@ -13467,7 +13468,9 @@ function HedgeCalcPage(p){
         <div><label style={lS}>Shares/Level</label>
           <input value={sharesPerLevel} onChange={function(e){setSharesPerLevel(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Reference Price ($)</label>
-          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Price to calc exposure at"/></div>
+          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Current / scenario price"/></div>
+        <div><label style={lS}>Bottom Ref Price ($)</label>
+          <input value={bottomRef} onChange={function(e){setBottomRef(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Drawdown ladder floor"/></div>
         <div style={{display:'flex',alignItems:'flex-end'}}>
           <button onClick={fetchPuts} disabled={loading}
             style={{width:'100%',padding:'10px',border:'none',borderRadius:8,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
@@ -13510,6 +13513,58 @@ function HedgeCalcPage(p){
       {rp>0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
         Increment: ${increment>0?increment.toFixed(4):'0'} | Max capital if all {lvls.toLocaleString()} levels fill: ${(function(){var mc=0;for(var x=0;x<lvls;x++)mc+=(top-x*increment)*spl;return mc.toLocaleString(undefined,{maximumFractionDigits:0})})()}
       </div>}
+    </div>}
+
+    {/* Drawdown Ladder */}
+    {rp>0&&(parseFloat(bottomRef)||0)>0&&(parseFloat(bottomRef)||0)<rp&&top>bot&&lvls>1&&<div style={card}>
+      <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Drawdown Ladder: ${fmt2(rp)} {'\u2192'} ${fmt2(parseFloat(bottomRef))}</div>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:550}}>
+          <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>PRICE</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>LEVELS</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>SHARES</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>CAPITAL</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VALUE</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>P/L ($)</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>P/L %</th>
+          </tr></thead>
+          <tbody>
+            {(function(){
+              var bRef=parseFloat(bottomRef)||0;
+              var rows2=[];
+              var startP=Math.floor(rp);
+              var endP=Math.ceil(bRef);
+              for(var pr=startP;pr>=endP;pr--){
+                var fl2=Math.min(lvls,Math.max(0,Math.round((top-pr)/increment)+1));
+                if(pr>top)fl2=0;
+                if(pr<bot)fl2=lvls;
+                var ts2=fl2*spl;
+                var cd2=0;for(var lx=0;lx<fl2;lx++)cd2+=(top-lx*increment)*spl;
+                var cv2=ts2*pr;
+                var pl2=cv2-cd2;
+                var plPct=cd2>0?(pl2/cd2*100):0;
+                var isRef=pr===Math.floor(rp);
+                var isCritical=plPct<=-50;
+                rows2.push(<tr key={pr} style={{borderBottom:'1px solid '+C.border+'20',
+                  background:isRef?C.gold+'10':isCritical?C.warn+'08':'transparent'}}>
+                  <td style={{padding:'4px 3px',color:isRef?C.gold:C.txtBright,fontWeight:isRef?700:400}}>${pr.toFixed(0)}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{fl2.toLocaleString()}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{ts2.toLocaleString()}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>${cd2.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>${cv2.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:pl2>=0?C.accent:C.warn,fontWeight:600}}>{pl2>=0?'+':''}{pl2.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:pl2>=0?C.accent:C.warn}}>{plPct.toFixed(1)}%</td>
+                </tr>);
+              }
+              return rows2;
+            })()}
+          </tbody>
+        </table>
+      </div>
+      <div style={{marginTop:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
+        Each row shows exposure if price drops to that level. Gold = reference price. Red tint = {'>'} 50% capital loss.
+      </div>
     </div>}
 
     {/* Protective Put Options */}
