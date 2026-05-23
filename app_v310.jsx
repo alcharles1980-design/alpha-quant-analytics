@@ -13292,7 +13292,7 @@ function HedgeCalcPage(p){
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
   var s2=useState('200'),gridTop=s2[0],setGridTop=s2[1];
   var s3=useState('50'),gridBottom=s3[0],setGridBottom=s3[1];
-  var s4=useState('15000'),levels=s4[0],setLevels=s4[1];
+  var s4=useState('15001'),levels=s4[0],setLevels=s4[1];
   var s4b=useState('0.01'),gridIncrement=s4b[0],setGridIncrement=s4b[1];
   var s5=useState('1'),sharesPerLevel=s5[0],setSharesPerLevel=s5[1];
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
@@ -13311,18 +13311,22 @@ function HedgeCalcPage(p){
     return r.json();
   };
 
-  // Auto-calc: when increment changes, recalculate levels
+  // Levels auto-calculated from top, bottom, and increment
+  var calcLevels=function(t2,b2,inc){
+    if(inc>0&&t2>b2)return String(Math.round((t2-b2)/inc)+1);
+    return '0';
+  };
+  var onTopChange=function(val){
+    setGridTop(val);
+    setLevels(calcLevels(parseFloat(val)||0,parseFloat(gridBottom)||0,parseFloat(gridIncrement)||0));
+  };
+  var onBottomChange=function(val){
+    setGridBottom(val);
+    setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(val)||0,parseFloat(gridIncrement)||0));
+  };
   var onIncrementChange=function(val){
     setGridIncrement(val);
-    var inc=parseFloat(val)||0;
-    var t2=parseFloat(gridTop)||0;var b2=parseFloat(gridBottom)||0;
-    if(inc>0&&t2>b2)setLevels(String(Math.round((t2-b2)/inc)+1));
-  };
-  var onLevelsChange=function(val){
-    setLevels(val);
-    var lv=parseInt(val)||0;
-    var t2=parseFloat(gridTop)||0;var b2=parseFloat(gridBottom)||0;
-    if(lv>1&&t2>b2)setGridIncrement(((t2-b2)/(lv-1)).toFixed(4));
+    setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(gridBottom)||0,parseFloat(val)||0));
   };
 
   // Calculations — use refPrice (user-entered) for exposure analysis
@@ -13453,13 +13457,13 @@ function HedgeCalcPage(p){
         <div><label style={lS}>Symbol</label>
           <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}} style={Object.assign({},iS,{textTransform:'uppercase'})} placeholder="NVDA"/></div>
         <div><label style={lS}>Grid Top ($)</label>
-          <input value={gridTop} onChange={function(e){setGridTop(e.target.value);}} style={iS} type="number" step="0.01"/></div>
+          <input value={gridTop} onChange={function(e){onTopChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Grid Bottom ($)</label>
-          <input value={gridBottom} onChange={function(e){setGridBottom(e.target.value);}} style={iS} type="number" step="0.01"/></div>
+          <input value={gridBottom} onChange={function(e){onBottomChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Increment ($)</label>
           <input value={gridIncrement} onChange={function(e){onIncrementChange(e.target.value);}} style={iS} type="number" step="0.0001"/></div>
-        <div><label style={lS}>Levels (auto)</label>
-          <input value={levels} onChange={function(e){onLevelsChange(e.target.value);}} style={iS} type="number"/></div>
+        <div><label style={lS}>Levels (calculated)</label>
+          <input value={levels} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Shares/Level</label>
           <input value={sharesPerLevel} onChange={function(e){setSharesPerLevel(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Reference Price ($)</label>
