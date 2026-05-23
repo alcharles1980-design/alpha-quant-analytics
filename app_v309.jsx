@@ -25001,6 +25001,16 @@ function Alpaca24AtrPage(p){
       var path='/v2/stocks/'+tk+'/trades?start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
       if(pt)path+='&page_token='+pt;
       var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+      // Retry on 429 rate limit with exponential backoff
+      if(r.status===429){
+        for(var retry=1;retry<=3;retry++){
+          var wait=retry*2000;
+          if(onProg)onProg(all.length);
+          await new Promise(function(res){setTimeout(res,wait);});
+          r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+          if(r.status!==429)break;
+        }
+      }
       if(!r.ok){var t=await r.text();throw new Error(t);}
       var d=await r.json();
       if(d.trades)all=all.concat(d.trades);
