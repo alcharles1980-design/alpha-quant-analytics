@@ -13316,14 +13316,13 @@ function HedgeCalcPage(p){
     setGridIncrement(val);
     var inc=parseFloat(val)||0;
     var t2=parseFloat(gridTop)||0;var b2=parseFloat(gridBottom)||0;
-    if(inc>0&&t2>b2)setLevels(String(Math.floor((t2-b2)/inc)+1));
+    if(inc>0&&t2>b2)setLevels(String(Math.round((t2-b2)/inc)));
   };
-  // When levels change, recalculate increment
   var onLevelsChange=function(val){
     setLevels(val);
     var lv=parseInt(val)||0;
     var t2=parseFloat(gridTop)||0;var b2=parseFloat(gridBottom)||0;
-    if(lv>1&&t2>b2)setGridIncrement(((t2-b2)/(lv-1)).toFixed(4));
+    if(lv>1&&t2>b2)setGridIncrement(((t2-b2)/lv).toFixed(4));
   };
 
   // Calculations — use refPrice (user-entered) for exposure analysis
@@ -13331,7 +13330,7 @@ function HedgeCalcPage(p){
   var bot=parseFloat(gridBottom)||0;
   var lvls=parseInt(levels)||0;
   var spl=parseFloat(sharesPerLevel)||0;
-  var increment=lvls>1?(top-bot)/(lvls-1):0;
+  var increment=lvls>0?(top-bot)/lvls:0;
   var rp=parseFloat(refPrice)||0; // reference price for drawdown calc
 
   // How many levels are filled (between grid top and reference price)
