@@ -20998,7 +20998,7 @@ function HourlyDataPage(p){
       {/* Column headers */}
       <div style={{display:'grid',gridTemplateColumns:'0.7fr 0.85fr 1.1fr 1fr 0.75fr',gap:6,padding:'4px 6px',borderBottom:'1px solid '+C.border,marginBottom:2}}>
         <div style={{color:C.txt,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700}}>HOUR (ET)</div>
-        <div style={{color:C.purple,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>TRADES</div>
+        <div style={{color:C.purple,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>AVG TRADES</div>
         <div style={{color:C.blue,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>VOLUME</div>
         <div style={{color:C.accent,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>$ NOTIONAL</div>
         <div style={{color:C.gold,fontSize:7,fontFamily:F,letterSpacing:1.3,fontWeight:700,textAlign:'right'}}>ATR ($/%)</div>
@@ -25276,9 +25276,9 @@ function Alpaca24AtrPage(p){
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>3M</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>5M</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'left',width:'20%'}}>RANGE</th>
-              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>TRADES</th>
+              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>AVG TRADES</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>AVG VOL</th>
-              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>NOTIONAL</th>
+              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>AVG NOTIONAL</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>BARS</th>
             </tr></thead>
             <tbody>
