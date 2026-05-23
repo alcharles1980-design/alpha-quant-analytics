@@ -13537,32 +13537,76 @@ function OptionsChainPage(p){
           var expContracts=contracts.filter(function(c){return c.expiration_date===selectedExp;});
           var expCalls=expContracts.filter(function(c){return c.type==='call';});
           var expPuts=expContracts.filter(function(c){return c.type==='put';});
-          var totalOI=0;var highOI=null;var highOIval=0;
+          var totalOI=0;var callOI=0;var putOI=0;var highOI=null;var highOIval=0;
           var mostTraded=null;var mostTradedVol=0;var totalDayVol=0;
+          var unusual=[];
           for(var ei=0;ei<expContracts.length;ei++){
             var ec=expContracts[ei];
             var oi=parseInt(ec.open_interest)||0;
             totalOI+=oi;
+            if(ec.type==='call')callOI+=oi;else putOI+=oi;
             if(oi>highOIval){highOIval=oi;highOI=ec;}
-            // Check snapshot for daily volume
             var snap3=snapshots[ec.symbol];
+            var dv=0;
             if(snap3&&snap3.dailyBar){
-              var dv=snap3.dailyBar.v||0;
+              dv=snap3.dailyBar.v||0;
               totalDayVol+=dv;
               if(dv>mostTradedVol){mostTradedVol=dv;mostTraded=ec;mostTraded._dayVol=dv;mostTraded._dayN=snap3.dailyBar.n||0;}
             }
+            // Unusual activity: volume > OI
+            if(dv>0&&oi>0&&dv>oi)unusual.push({symbol:ec.symbol,type:ec.type,strike:+ec.strike_price,vol:dv,oi:oi,ratio:(dv/oi).toFixed(1)});
           }
-          // ATM strike
-          var atmStrike=null;var atmDist=Infinity;
+          unusual.sort(function(a,b){return b.vol-a.vol;});
+          // ATM strike + implied move
+          var atmStrike=null;var atmDist=Infinity;var atmCall=null;var atmPut=null;
           if(lastPrice){
             for(var ai2=0;ai2<expContracts.length;ai2++){
               var dist=Math.abs((+expContracts[ai2].strike_price)-lastPrice);
               if(dist<atmDist){atmDist=dist;atmStrike=+expContracts[ai2].strike_price;}
             }
+            // Find ATM call and put for implied move
+            if(atmStrike){
+              for(var im=0;im<expContracts.length;im++){
+                if(+expContracts[im].strike_price===atmStrike){
+                  var imSnap=snapshots[expContracts[im].symbol];
+                  if(expContracts[im].type==='call')atmCall={contract:expContracts[im],snap:imSnap};
+                  if(expContracts[im].type==='put')atmPut={contract:expContracts[im],snap:imSnap};
+                }
+              }
+            }
           }
+          // Implied move = ATM call mid + ATM put mid (straddle price)
+          var impliedMove=null;var impliedPct=null;
+          if(atmCall&&atmPut){
+            var cMid=0;var pMid=0;
+            if(atmCall.snap&&atmCall.snap.latestQuote){var cq=atmCall.snap.latestQuote;cMid=((cq.bp||0)+(cq.ap||0))/2;}
+            else if(atmCall.contract.close_price)cMid=+atmCall.contract.close_price;
+            if(atmPut.snap&&atmPut.snap.latestQuote){var pq=atmPut.snap.latestQuote;pMid=((pq.bp||0)+(pq.ap||0))/2;}
+            else if(atmPut.contract.close_price)pMid=+atmPut.contract.close_price;
+            if(cMid>0&&pMid>0){impliedMove=cMid+pMid;if(lastPrice)impliedPct=(impliedMove/lastPrice*100);}
+          }
+          // Max Pain: strike where total option holder payout is minimized
+          var maxPainStrike=null;var maxPainMinCost=Infinity;
+          var strikes={};
+          for(var si2=0;si2<expContracts.length;si2++)strikes[+expContracts[si2].strike_price]=true;
+          var strikeList=Object.keys(strikes).map(Number).sort(function(a,b){return a-b;});
+          for(var mp=0;mp<strikeList.length;mp++){
+            var testStrike=strikeList[mp];
+            var totalPayout=0;
+            for(var mc=0;mc<expContracts.length;mc++){
+              var mec=expContracts[mc];
+              var moi=parseInt(mec.open_interest)||0;
+              var mstrike=+mec.strike_price;
+              if(mec.type==='call'&&testStrike>mstrike)totalPayout+=(testStrike-mstrike)*moi*100;
+              if(mec.type==='put'&&testStrike<mstrike)totalPayout+=(mstrike-testStrike)*moi*100;
+            }
+            if(totalPayout<maxPainMinCost){maxPainMinCost=totalPayout;maxPainStrike=testStrike;}
+          }
+          var pcRatio=callOI>0?(putOI/callOI):0;
           var dte2=Math.ceil((new Date(selectedExp+'T12:00:00')-Date.now())/86400000);
           var sml={fontSize:7,color:C.txtDim,fontFamily:F};
           var val={fontSize:11,fontWeight:700,fontFamily:F};
+          var panelS=function(borderColor){return{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+(borderColor||C.border)};};
           return <div>
             <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8,flexWrap:'wrap'}}>
               <span style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F}}>{selectedExp}</span>
@@ -13570,37 +13614,70 @@ function OptionsChainPage(p){
               <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{expContracts.length} contracts ({expCalls.length}C / {expPuts.length}P)</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {/* Put/Call Ratio */}
+              <div style={panelS(pcRatio>1?C.warn+'40':C.accent+'40')}>
+                <div style={sml}>PUT/CALL RATIO</div>
+                <div style={Object.assign({},val,{color:pcRatio>1?C.warn:pcRatio<0.7?C.accent:C.txtBright})}>{pcRatio.toFixed(2)}</div>
+                <div style={sml}>{pcRatio>1.2?'Bearish positioning':pcRatio<0.7?'Bullish positioning':'Neutral'}</div>
+                <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>Put OI: {putOI.toLocaleString()} | Call OI: {callOI.toLocaleString()}</div>
+              </div>
+              {/* Implied Move */}
+              <div style={panelS(C.blue+'40')}>
+                <div style={sml}>IMPLIED MOVE (STRADDLE)</div>
+                {impliedMove?<div>
+                  <div style={Object.assign({},val,{color:C.blue})}>{'\u00B1'}${impliedMove.toFixed(2)} ({impliedPct?impliedPct.toFixed(1)+'%':''})</div>
+                  <div style={sml}>Range: ${(lastPrice-impliedMove).toFixed(2)} - ${(lastPrice+impliedMove).toFixed(2)}</div>
+                  <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>ATM ${fmt(atmStrike)} straddle</div>
+                </div>:<div style={Object.assign({},val,{color:C.border})}>N/A</div>}
+              </div>
+              {/* Max Pain */}
+              <div style={panelS(C.purple+'40')}>
+                <div style={sml}>MAX PAIN</div>
+                {maxPainStrike?<div>
+                  <div style={Object.assign({},val,{color:C.purple||'#a855f7'})}>${fmt(maxPainStrike)}</div>
+                  <div style={sml}>{lastPrice?'Distance: '+(lastPrice>maxPainStrike?'-':'+')+('$'+Math.abs(lastPrice-maxPainStrike).toFixed(2))+' ('+Math.abs((maxPainStrike-lastPrice)/lastPrice*100).toFixed(1)+'%)':''}</div>
+                  <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:2}}>Price tends to gravitate here at expiry</div>
+                </div>:<div style={Object.assign({},val,{color:C.border})}>N/A</div>}
+              </div>
               {/* Highest OI */}
-              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'30'}}>
+              <div style={panelS(C.accent+'30')}>
                 <div style={sml}>HIGHEST OPEN INTEREST</div>
                 {highOI?<div>
                   <div style={Object.assign({},val,{color:C.accent})}>{highOIval.toLocaleString()} OI</div>
                   <div style={{fontSize:8,fontFamily:F,color:C.txtBright}}>{highOI.type==='call'?'CALL':'PUT'} ${fmt(+highOI.strike_price)}</div>
-                  <div style={sml}>Close: ${fmt(+highOI.close_price)}</div>
                 </div>:<div style={Object.assign({},val,{color:C.border})}>N/A</div>}
               </div>
               {/* Most Traded Today */}
-              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.gold+'30'}}>
+              <div style={panelS(C.gold+'30')}>
                 <div style={sml}>MOST TRADED (TODAY)</div>
                 {mostTraded?<div>
                   <div style={Object.assign({},val,{color:C.gold})}>{mostTradedVol.toLocaleString()} vol</div>
                   <div style={{fontSize:8,fontFamily:F,color:C.txtBright}}>{mostTraded.type==='call'?'CALL':'PUT'} ${fmt(+mostTraded.strike_price)}</div>
-                  <div style={sml}>{mostTraded._dayN} trades</div>
                 </div>:<div style={Object.assign({},val,{color:C.border})}>No data</div>}
               </div>
-              {/* Total OI */}
-              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.border}}>
-                <div style={sml}>TOTAL OPEN INTEREST</div>
-                <div style={Object.assign({},val,{color:C.txtBright})}>{totalOI.toLocaleString()}</div>
-                <div style={sml}>across {expContracts.length} contracts</div>
-              </div>
-              {/* Today's Volume + ATM */}
-              <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.border}}>
-                <div style={sml}>TODAY'S VOLUME</div>
-                <div style={Object.assign({},val,{color:C.txtBright})}>{totalDayVol.toLocaleString()}</div>
-                {atmStrike&&<div style={sml}>ATM Strike: ${fmt(atmStrike)}</div>}
+              {/* Total OI + Volume */}
+              <div style={panelS()}>
+                <div style={sml}>TOTALS</div>
+                <div style={{fontSize:9,fontFamily:F,color:C.txtBright}}>OI: <span style={{fontWeight:700}}>{totalOI.toLocaleString()}</span> | Vol: <span style={{fontWeight:700}}>{totalDayVol.toLocaleString()}</span></div>
+                {atmStrike&&<div style={sml}>ATM: ${fmt(atmStrike)}</div>}
               </div>
             </div>
+            {/* Unusual Activity */}
+            {unusual.length>0&&<div style={{marginTop:8,padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.warn+'40'}}>
+              <div style={Object.assign({},sml,{color:C.warn,fontWeight:700,marginBottom:4})}>UNUSUAL ACTIVITY {'\u2014'} Volume {'>'} Open Interest ({unusual.length})</div>
+              <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                {unusual.slice(0,5).map(function(u,ui){
+                  return <div key={ui} style={{display:'flex',alignItems:'center',gap:6,fontSize:8,fontFamily:F}}>
+                    <span style={{color:u.type==='call'?C.accent:C.warn,fontWeight:700,width:32}}>{u.type==='call'?'CALL':'PUT'}</span>
+                    <span style={{color:C.txtBright,fontWeight:600,width:55}}>${fmt(u.strike)}</span>
+                    <span style={{color:C.gold}}>Vol: {u.vol.toLocaleString()}</span>
+                    <span style={{color:C.txtDim}}>OI: {u.oi.toLocaleString()}</span>
+                    <span style={{color:C.warn,fontWeight:700}}>{u.ratio}x</span>
+                  </div>;
+                })}
+              </div>
+              <div style={{fontSize:6,fontFamily:F,color:C.txtDim,marginTop:4}}>Contracts where today's volume exceeds open interest suggest new large positions being opened.</div>
+            </div>}
           </div>;
         })()}
       </div>}
