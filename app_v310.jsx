@@ -13303,6 +13303,7 @@ function OptionsChainPage(p){
   var s12=useState(null),contractTrades=s12[0],setContractTrades=s12[1];
   var s13=useState(false),tradeLoading=s13[0],setTradeLoading=s13[1];
   var s14=useState(null),tradeErr=s14[0],setTradeErr=s14[1];
+  var s15=useState(null),debugResp=s15[0],setDebugResp=s15[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13314,7 +13315,7 @@ function OptionsChainPage(p){
   };
 
   var fetchContractTrades=async function(contract){
-    setSelectedContract(contract);setContractTrades(null);setTradeLoading(true);setTradeErr(null);
+    setSelectedContract(contract);setContractTrades(null);setTradeLoading(true);setTradeErr(null);setDebugResp(null);
     try{
       setProg('Fetching trades for '+contract.symbol+'...');
       var all=[];var pt=null;var pages=0;
@@ -13335,7 +13336,17 @@ function OptionsChainPage(p){
         }
         if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
         var d=await r.json();
-        // API can return trades as: { trades: { "SYMBOL": [...] } } or { trades: [...] } or { "SYMBOL": [...] }
+        // Debug: capture first page raw response
+        if(pages===0){
+          var dk=Object.keys(d);
+          var tType=d.trades?typeof d.trades:'none';
+          var tIsArr=Array.isArray(d.trades);
+          var tKeys=d.trades&&!tIsArr?Object.keys(d.trades):[];
+          setDebugResp({keys:dk.join(','),tradesType:tType,isArray:tIsArr,tradesKeys:tKeys.join(','),
+            symbol:contract.symbol,matchesSymbol:!!(d.trades&&d.trades[contract.symbol]),
+            raw:JSON.stringify(d).substring(0,800)});
+        }
+        // API can return trades as: { trades: { "SYMBOL": [...] } } or { trades: [...] }
         var pageTrades=[];
         if(d.trades){
           if(d.trades[contract.symbol]){
@@ -13398,7 +13409,7 @@ function OptionsChainPage(p){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
     var sym=symbol.trim().toUpperCase();
     if(!sym){setErr('Enter a symbol');return;}
-    setLoading(true);setErr(null);setContracts([]);setSnapshots({});setExpirations([]);setSelectedExp(null);setLastPrice(null);setSelectedContract(null);setContractTrades(null);setTradeErr(null);
+    setLoading(true);setErr(null);setContracts([]);setSnapshots({});setExpirations([]);setSelectedExp(null);setLastPrice(null);setSelectedContract(null);setContractTrades(null);setTradeErr(null);setDebugResp(null);
 
     try{
       // Get current price
@@ -13607,6 +13618,15 @@ function OptionsChainPage(p){
         {contractTrades&&contractTrades.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:16}}>
           No trades found for this contract.
           <div style={{marginTop:6,fontSize:7,color:C.border}}>Contract: {selectedContract.symbol}</div>
+          {debugResp&&<div style={{marginTop:8,textAlign:'left',padding:8,background:C.bgDeep,borderRadius:6,fontSize:7,fontFamily:F,wordBreak:'break-all'}}>
+            <div style={{color:C.gold,fontWeight:700,marginBottom:4}}>API Debug:</div>
+            <div style={{color:C.txtDim}}>Response keys: {debugResp.keys}</div>
+            <div style={{color:C.txtDim}}>trades type: {debugResp.tradesType} | isArray: {String(debugResp.isArray)}</div>
+            <div style={{color:C.txtDim}}>trades keys: {debugResp.tradesKeys||'(none)'}</div>
+            <div style={{color:C.txtDim}}>symbol match: {String(debugResp.matchesSymbol)}</div>
+            <div style={{color:C.txtDim}}>queried: {debugResp.symbol}</div>
+            <div style={{color:C.border,marginTop:4,maxHeight:100,overflow:'auto'}}>Raw: {debugResp.raw}</div>
+          </div>}
         </div>}
 
         {contractTrades&&contractTrades.length>0&&<div>
