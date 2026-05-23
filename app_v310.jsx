@@ -13319,7 +13319,7 @@ function OptionsChainPage(p){
       setProg('Fetching trades for '+contract.symbol+'...');
       var all=[];var pt=null;var pages=0;
       while(pages<100){
-        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&limit=1000&sort=desc';
+        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&feed=indicative&limit=1000&sort=desc';
         if(pt)path+='&page_token='+pt;
         var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
@@ -13335,10 +13335,22 @@ function OptionsChainPage(p){
         }
         if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
         var d=await r.json();
-        if(d.trades&&d.trades[contract.symbol]){
-          var arr=d.trades[contract.symbol];
-          for(var i=0;i<arr.length;i++)all.push(arr[i]);
+        // API can return trades as: { trades: { "SYMBOL": [...] } } or { trades: [...] } or { "SYMBOL": [...] }
+        var pageTrades=[];
+        if(d.trades){
+          if(d.trades[contract.symbol]){
+            // Nested by symbol: { trades: { "NVDA260530C00135000": [...] } }
+            pageTrades=d.trades[contract.symbol];
+          }else if(Array.isArray(d.trades)){
+            // Flat array: { trades: [...] }
+            pageTrades=d.trades;
+          }else{
+            // Check all keys in trades object (symbol might be formatted differently)
+            var tradeKeys=Object.keys(d.trades);
+            if(tradeKeys.length>0)pageTrades=d.trades[tradeKeys[0]]||[];
+          }
         }
+        for(var i=0;i<pageTrades.length;i++)all.push(pageTrades[i]);
         pages++;
         setProg(all.length.toLocaleString()+' trades loaded (page '+pages+')...');
         if(d.next_page_token){
@@ -13592,7 +13604,10 @@ function OptionsChainPage(p){
         {tradeLoading&&<div style={{color:C.gold,fontSize:9,fontFamily:F,padding:12,textAlign:'center'}}>{prog||'Loading trades...'}</div>}
         {tradeErr&&<div style={{color:C.warn,fontSize:9,fontFamily:F,padding:8,background:C.warn+'12',borderRadius:6}}>{tradeErr}</div>}
 
-        {contractTrades&&contractTrades.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:16}}>No trades found for this contract</div>}
+        {contractTrades&&contractTrades.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:16}}>
+          No trades found for this contract.
+          <div style={{marginTop:6,fontSize:7,color:C.border}}>Contract: {selectedContract.symbol} | Feed: indicative (Basic plan has 15min delay)</div>
+        </div>}
 
         {contractTrades&&contractTrades.length>0&&<div>
           {/* Summary */}
