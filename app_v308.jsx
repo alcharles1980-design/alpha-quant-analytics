@@ -6433,12 +6433,16 @@ function SettingsPage(p){
   var ss2=useState(false),savedSb=ss2[0],setSavedSb=ss2[1];
   var gs=useState(p.ghToken||''),ghTok=gs[0],setGhTok=gs[1];
   var gs2=useState(false),savedGh=gs2[0],setSavedGh=gs2[1];
+  var as1=useState(p.alpKey||''),alpK=as1[0],setAlpK=as1[1];
+  var as2=useState(p.alpSecret||''),alpS=as2[0],setAlpS=as2[1];
+  var as3=useState(false),savedAlp=as3[0],setSavedAlp=as3[1];
   var pSt=useState([]),runs=pSt[0],setRuns=pSt[1];
   var cMs=useState(''),cancelMsg=cMs[0],setCancelMsg=cMs[1];
   var cBs=useState(false),cancelling=cBs[0],setCancelling=cBs[1];
   var savePg=function(){p.onSave(key);setSaved(true);setTimeout(function(){setSaved(false);},2000);};
   var saveSb=function(){p.onSaveSb(sUrl,sKey);setSavedSb(true);setTimeout(function(){setSavedSb(false);},2000);};
   var saveGh=function(){p.onSaveGh(ghTok);setSavedGh(true);setTimeout(function(){setSavedGh(false);},2000);};
+  var saveAlp=function(){p.onSaveAlp(alpK,alpS);setSavedAlp(true);setTimeout(function(){setSavedAlp(false);},2000);};
   var clearSb=function(){setSUrl('');setSKey('');p.onSaveSb('','');};
 
   var loadRuns=async function(){
@@ -6513,6 +6517,18 @@ function SettingsPage(p){
         <input type="password" value={key} onChange={function(e){setKey(e.target.value);}} placeholder="Enter your Polygon.io key" style={iS}/>
       </div>
       <button onClick={savePg} style={Object.assign({},bB,{background:saved?C.accent:'linear-gradient(135deg,#00e5a0,#00c488)',color:C.bg})}>{saved?'Saved!':'Save Polygon Key'}</button>
+    </Cd>
+    <Cd>
+      <SectionHead title="Alpaca Markets API" sub="Market data source for trade ticks" info="Your Alpaca API key and secret are used to fetch historical trade data from Alpaca's market data API. Keys stored in browser only. PK* keys use paper trading credentials but access the same market data."/>
+      <div style={{marginBottom:8,marginTop:10}}>
+        <label style={lS}>API Key</label>
+        <input type="password" value={alpK} onChange={function(e){setAlpK(e.target.value);}} placeholder="PK..." style={iS}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={lS}>API Secret</label>
+        <input type="password" value={alpS} onChange={function(e){setAlpS(e.target.value);}} placeholder="Enter your Alpaca secret key" style={iS}/>
+      </div>
+      <button onClick={saveAlp} style={Object.assign({},bB,{background:savedAlp?C.accent:'linear-gradient(135deg,#ffb020,#e09000)',color:savedAlp?C.bg:'#000'})}>{savedAlp?'Saved!':'Save Alpaca Keys'}</button>
     </Cd>
     <Cd>
       <SectionHead title="Supabase Database" sub="Cache layer for computed analysis results" info="Supabase stores your computed analysis results so repeat queries load instantly. The URL and anon key connect directly to your Supabase project. No raw trade data is stored — only cycle counts and hourly aggregates."/>
@@ -24591,284 +24607,189 @@ function TradeFinderPage(p){
 
 // ─── ALPACA TRADE FINDER ──────────────────────────────────────────────────────
 function AlpacaTradeFinderPage(p){
-  var s1=useState(function(){return sessionStorage.getItem('alpaca_key')||'';}),alpKey=s1[0],setAlpKey=s1[1];
-  var s2=useState(function(){return sessionStorage.getItem('alpaca_secret')||'';}),alpSecret=s2[0],setAlpSecret=s2[1];
-  var s3=useState(''),ticker=s3[0],setTicker=s3[1];
-  var s4=useState(''),dateFrom=s4[0],setDateFrom=s4[1];
-  var s5=useState(''),dateTo=s5[0],setDateTo=s5[1];
-  var s6=useState('all'),statusFilter=s6[0],setStatusFilter=s6[1];
-  var s7=useState(false),loading=s7[0],setLoading=s7[1];
-  var s8=useState(null),err=s8[0],setErr=s8[1];
-  var s9=useState(null),orders=s9[0],setOrders=s9[1];
-  var s10=useState(''),prog=s10[0],setProg=s10[1];
-  var s11=useState('orders'),tab=s11[0],setTab=s11[1];
-  var s12=useState(null),fills=s12[0],setFills=s12[1];
-  var s13=useState(null),account=s13[0],setAccount=s13[1];
+  var s1=useState('SOXL'),ticker=s1[0],setTicker=s1[1];
+  var s2=useState(''),date=s2[0],setDate=s2[1];
+  var s3=useState(9),stH=s3[0],setStH=s3[1];
+  var s3b=useState(30),stM=s3b[0],setStM=s3b[1];
+  var s3c=useState(0),stS=s3c[0],setStS=s3c[1];
+  var s4=useState(9),etH=s4[0],setEtH=s4[1];
+  var s4b=useState(31),etM=s4b[0],setEtM=s4b[1];
+  var s4c=useState(0),etS=s4c[0],setEtS=s4c[1];
+  var s5=useState(false),loading=s5[0],setLoading=s5[1];
+  var s6=useState(null),err=s6[0],setErr=s6[1];
+  var s7=useState(''),prog=s7[0],setProg=s7[1];
+  var s8=useState(null),trades=s8[0],setTrades=s8[1];
+  var s9=useState(''),fMinSize=s9[0],setFMinSize=s9[1];
+  var s10=useState(''),fMaxSize=s10[0],setFMaxSize=s10[1];
+  var s11=useState(''),fMinPrice=s11[0],setFMinPrice=s11[1];
+  var s12=useState(''),fMaxPrice=s12[0],setFMaxPrice=s12[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
+  var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
+  var tPad=function(n){return String(n).padStart(2,'0');};
+  var fmtStart=tPad(stH)+':'+tPad(stM)+':'+tPad(stS);
+  var fmtEnd=tPad(etH)+':'+tPad(etM)+':'+tPad(etS);
+  var tSel={background:C.bg,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:600,padding:'8px 2px',outline:'none',textAlign:'center',flex:1};
 
-  var saveKeys=function(){
-    sessionStorage.setItem('alpaca_key',alpKey);
-    sessionStorage.setItem('alpaca_secret',alpSecret);
+  var autoEnd=function(h,m,s){
+    var totalSec=h*3600+m*60+s+60;
+    if(totalSec>=86400)totalSec-=86400;
+    setEtH(Math.floor(totalSec/3600));setEtM(Math.floor((totalSec%3600)/60));setEtS(totalSec%60);
   };
 
-  var alpFetch=async function(path){
-    var r=await fetch(PROXY,{
-      headers:{'APCA-API-KEY-ID':alpKey,'APCA-API-SECRET-KEY':alpSecret,'X-Alpaca-Path':path}
-    });
-    if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t);}
-    return r.json();
-  };
+  var exchMap={A:'AMEX',B:'BZX',C:'NSX',D:'FINRA',E:'EDGA',H:'MIAX',J:'EDGX',K:'IEXG',L:'LTSE',M:'NYSE CHI',N:'NYSE',P:'ARCA',Q:'NASDAQ',S:'MEMX',T:'NASDAQ BX',U:'CTA',V:'IEX',W:'CBOE',X:'NASDAQ PSX',Y:'BYX',Z:'BATS'};
+  var condMap={'@':'Regular',T:'Form T (Ext Hrs)',I:'Odd Lot',X:'Intermarket Sweep',F:'Intermarket Sweep',W:'Avg Price',C:'Cash Sale',E:'Auto Exec',H:'Price Variation',L:'Sold Last',N:'Next Day',O:'Opening',R:'Seller',S:'Split',Z:'Out of Seq',4:'Derivatively Priced',5:'Reopen',6:'Closing',7:'Qualified Contingent',8:'Placeholder',9:'Corrected Consolidated'};
 
-  // Fetch account on first valid key
-  var didMount=useRef(false);
-  useEffect(function(){
-    if(alpKey&&alpSecret&&!didMount.current){
-      didMount.current=true;
-      saveKeys();
-      alpFetch('/v2/account').then(function(d){setAccount(d);}).catch(function(){});
-    }
-  },[]);
-
-  var fetchOrders=async function(){
-    if(!alpKey||!alpSecret){setErr('Enter Alpaca API Key and Secret');return;}
-    saveKeys();
-    setLoading(true);setErr(null);setOrders(null);setFills(null);setProg('Fetching orders...');
+  var run=async function(){
+    if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API Key and Secret in Settings');return;}
+    if(!date){setErr('Select a date');return;}
+    setLoading(true);setErr(null);setTrades(null);setProg('Fetching trades...');
     try{
-      var path='/v2/orders?status='+statusFilter+'&limit=500&direction=desc';
-      if(ticker)path+='&symbols='+ticker.toUpperCase();
-      if(dateFrom)path+='&after='+dateFrom+'T00:00:00Z';
-      if(dateTo)path+='&until='+dateTo+'T23:59:59Z';
-      var data=await alpFetch(path);
-      if(!Array.isArray(data)){throw new Error('Unexpected response');}
-      // Format timestamps to ET
-      data.forEach(function(o){
-        if(o.created_at)o._created=new Date(o.created_at).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
-        if(o.filled_at)o._filled=new Date(o.filled_at).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
-        if(o.submitted_at)o._submitted=new Date(o.submitted_at).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
-      });
-      setOrders(data);
-      setProg('');
-    }catch(e){setErr(e.message);setProg('');}
-    setLoading(false);
-  };
+      var etOff=getETOffset(date);
+      var pad=function(n){return String(n).padStart(2,'0');};
+      var startHr=stH+etOff;var endHr=etH+etOff;
+      var nextDay=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
+      var tsStart=startHr<24?(date+'T'+pad(startHr)+':'+pad(stM)+':'+pad(stS)+'Z'):(nextDay+'T'+pad(startHr-24)+':'+pad(stM)+':'+pad(stS)+'Z');
+      var tsEnd=endHr<24?(date+'T'+pad(endHr)+':'+pad(etM)+':'+pad(etS)+'Z'):(nextDay+'T'+pad(endHr-24)+':'+pad(etM)+':'+pad(etS)+'Z');
 
-  var fetchFills=async function(){
-    if(!alpKey||!alpSecret){setErr('Enter Alpaca API Key and Secret');return;}
-    saveKeys();
-    setLoading(true);setErr(null);setOrders(null);setFills(null);setProg('Fetching fills...');
-    try{
-      var path='/v2/account/activities/FILL?direction=desc&page_size=500';
-      if(dateFrom)path+='&after='+dateFrom+'T00:00:00Z';
-      if(dateTo)path+='&until='+dateTo+'T23:59:59Z';
-      var data=await alpFetch(path);
-      if(!Array.isArray(data)){throw new Error('Unexpected response');}
-      // Filter by ticker if specified
-      if(ticker){var tk=ticker.toUpperCase();data=data.filter(function(f){return f.symbol===tk;});}
-      data.forEach(function(f){
-        if(f.transaction_time)f._time=new Date(f.transaction_time).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
-      });
-      setFills(data);
-      setProg('');
-    }catch(e){setErr(e.message);setProg('');}
-    setLoading(false);
+      var allTrades=[];var pages=0;var pageToken=null;
+      while(true){
+        var path='/v2/stocks/'+ticker.toUpperCase()+'/trades?start='+tsStart+'&end='+tsEnd+'&limit=10000&sort=asc';
+        if(pageToken)path+='&page_token='+pageToken;
+        var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+        if(!r.ok){var errTxt=await r.text();throw new Error('Alpaca '+r.status+': '+errTxt);}
+        var d=await r.json();
+        if(d.trades)for(var i=0;i<d.trades.length;i++)allTrades.push(d.trades[i]);
+        pages++;
+        setProg('Fetching... '+allTrades.length.toLocaleString()+' trades (page '+pages+')');
+        if(d.next_page_token)pageToken=d.next_page_token;else break;
+      }
+      if(!allTrades.length){setErr('No trades found for '+ticker.toUpperCase()+' on '+date+' '+fmtStart+'-'+fmtEnd+' ET');setLoading(false);return;}
+      // Convert timestamps to ET and map exchanges/conditions
+      for(var j=0;j<allTrades.length;j++){
+        var t=allTrades[j];
+        t._etTime=new Date(t.t).toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3,hour12:false});
+        t._exchName=exchMap[t.x]||t.x||'';
+        t._condStr=(t.c&&t.c.length>0)?t.c.map(function(cd){return condMap[cd]||cd;}).join(', '):'';
+        t._price=t.p;
+        t._size=t.s||0;
+      }
+      setTrades(allTrades);
+      setProg('');setLoading(false);
+    }catch(e){setErr(e.message);setProg('');setLoading(false);}
   };
-
-  var run=function(){if(tab==='orders')fetchOrders();else fetchFills();};
 
   var exportCsv=function(){
-    if(tab==='orders'&&orders){
-      var h=['created_at','symbol','side','type','qty','filled_qty','filled_avg_price','limit_price','stop_price','status','time_in_force','extended_hours','order_class','id'];
-      var rows=[h.join(',')];
-      orders.forEach(function(o){rows.push(h.map(function(k){return '"'+(o[k]!=null?o[k]:'')+'"';}).join(','));});
-      var blob=new Blob([rows.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download='alpaca_orders_'+(ticker||'all')+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(u);
+    if(!trades||!trades.length)return;
+    var headers=['time_et','price','size','exchange','exchange_name','conditions','condition_names','timestamp','trade_id','tape'];
+    var rows=[headers.join(',')];
+    for(var i=0;i<trades.length;i++){
+      var t=trades[i];
+      rows.push([t._etTime,t._price,t._size,t.x||'',t._exchName||'','"'+(t.c||[]).join(';')+'"','"'+(t._condStr||'')+'"',t.t||'',t.i||'',t.z||''].join(','));
     }
-    if(tab==='fills'&&fills){
-      var h2=['transaction_time','symbol','side','qty','price','order_id','id'];
-      var rows2=[h2.join(',')];
-      fills.forEach(function(f){rows2.push(h2.map(function(k){return '"'+(f[k]!=null?f[k]:'')+'"';}).join(','));});
-      var blob2=new Blob([rows2.join('\n')],{type:'text/csv'});var u2=URL.createObjectURL(blob2);var a2=document.createElement('a');a2.href=u2;a2.download='alpaca_fills_'+(ticker||'all')+'_'+new Date().toISOString().slice(0,10)+'.csv';a2.click();URL.revokeObjectURL(u2);
-    }
+    var blob=new Blob([rows.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download='alpaca_trades_'+ticker.toUpperCase()+'_'+date+'_'+fmtStart.replace(/:/g,'')+'-'+fmtEnd.replace(/:/g,'')+'.csv';a.click();URL.revokeObjectURL(u);
   };
 
-  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
-  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
-  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none',boxSizing:'border-box'};
-  var th={padding:'5px 6px',fontSize:7,fontFamily:F,fontWeight:700,color:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep,whiteSpace:'nowrap',letterSpacing:0.5,textTransform:'uppercase'};
-  var td={padding:'4px 6px',fontSize:8,fontFamily:F,borderBottom:'1px solid '+C.border,whiteSpace:'nowrap'};
-  var statusColor=function(s){return s==='filled'?C.accent:s==='partially_filled'?C.blue:s==='new'||s==='accepted'?C.gold:s==='canceled'||s==='expired'?C.txtDim:s==='rejected'?C.warn:C.txt;};
-
   return <div>
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Alpaca Trade Finder</div>
-      {account&&<div style={{marginLeft:'auto',padding:'4px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'40'}}>
-        <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>Paper </span>
-        <span style={{color:C.accent,fontSize:10,fontFamily:F,fontWeight:700}}>${Number(account.portfolio_value||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
-      </div>}
     </div>
-
-    {/* API Keys */}
-    <div style={card}>
-      <div style={{color:C.txtBright,fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,marginBottom:8}}>Alpaca API Credentials</div>
+    <Cd>
+      <SectionHead title="Search Trades" sub="Find specific trades from Alpaca market data" info="Fetches all trade executions from Alpaca's historical market data API for a ticker, date, and time range. Same exchange-level tick data as Polygon but from Alpaca's feed. All times are in Eastern Time."/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-        <div><label style={lS}>API Key</label><input value={alpKey} onChange={function(e){setAlpKey(e.target.value);}} style={iS} placeholder="PK..." type="password"/></div>
-        <div><label style={lS}>API Secret</label><input value={alpSecret} onChange={function(e){setAlpSecret(e.target.value);}} style={iS} placeholder="Secret..." type="password"/></div>
+        <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS}/></div>
+        <div><label style={lS}>Date</label><input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={iS}/></div>
       </div>
-      <div style={{color:C.txtDim,fontSize:7,fontFamily:F,marginTop:6}}>Keys stored in browser session only. PK* keys use paper trading API.</div>
-    </div>
-
-    {/* Search */}
-    <div style={card}>
-      {/* Tab toggle */}
-      <div style={{display:'flex',gap:6,marginBottom:10}}>
-        {['orders','fills'].map(function(t){
-          return <button key={t} onClick={function(){setTab(t);}} style={{padding:'6px 16px',borderRadius:6,border:'1px solid '+(tab===t?C.accent:C.border),
-            background:tab===t?C.accent+'15':'transparent',color:tab===t?C.accent:C.txtDim,fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer',
-            textTransform:'uppercase',letterSpacing:1}}>{t}</button>;
-        })}
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-        <div><label style={lS}>Ticker (optional)</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS} placeholder="e.g. NVDA"/></div>
-        <div><label style={lS}>From Date</label><input type="date" value={dateFrom} onChange={function(e){setDateFrom(e.target.value);}} style={iS}/></div>
-        <div><label style={lS}>To Date</label><input type="date" value={dateTo} onChange={function(e){setDateTo(e.target.value);}} style={iS}/></div>
-      </div>
-      {tab==='orders'&&<div style={{marginTop:8}}>
-        <label style={lS}>Status</label>
-        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-          {['all','open','closed','filled','canceled'].map(function(st){
-            return <button key={st} onClick={function(){setStatusFilter(st);}} style={{padding:'4px 10px',borderRadius:4,
-              border:'1px solid '+(statusFilter===st?C.accent:C.border),background:statusFilter===st?C.accent+'15':'transparent',
-              color:statusFilter===st?C.accent:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>{st}</button>;
-          })}
+      <div style={{marginTop:8,marginBottom:12}}>
+        <label style={lS}>Start Time (ET)</label>
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          <select value={stH} onChange={function(e){var v=parseInt(e.target.value);setStH(v);autoEnd(v,stM,stS);}} style={tSel}>{Array.from({length:24},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <span style={{color:C.txtDim,fontFamily:F,fontWeight:700}}>:</span>
+          <select value={stM} onChange={function(e){var v=parseInt(e.target.value);setStM(v);autoEnd(stH,v,stS);}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <span style={{color:C.txtDim,fontFamily:F,fontWeight:700}}>:</span>
+          <select value={stS} onChange={function(e){var v=parseInt(e.target.value);setStS(v);autoEnd(stH,stM,v);}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
         </div>
-      </div>}
-      <button onClick={run} disabled={loading||!alpKey||!alpSecret} style={{width:'100%',marginTop:10,padding:'12px',border:'none',borderRadius:8,
-        background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,
-        letterSpacing:1.5,textTransform:'uppercase',cursor:loading?'default':'pointer',opacity:!alpKey||!alpSecret?0.4:1}}>
-        {loading?'Fetching...':'Search '+tab.charAt(0).toUpperCase()+tab.slice(1)}
-      </button>
-      {prog&&<div style={{marginTop:6,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
-      {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
-    </div>
-
-    {/* ── ORDERS RESULTS ──────────────────────────────────────────────── */}
-    {orders&&<div>
-      <div style={card}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{orders.length} Orders</div>
-          <button onClick={exportCsv} style={{padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Export CSV</button>
+        <label style={Object.assign({},lS,{marginTop:8})}>End Time (ET)</label>
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          <select value={etH} onChange={function(e){setEtH(parseInt(e.target.value));}} style={tSel}>{Array.from({length:24},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <span style={{color:C.txtDim,fontFamily:F,fontWeight:700}}>:</span>
+          <select value={etM} onChange={function(e){setEtM(parseInt(e.target.value));}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
+          <span style={{color:C.txtDim,fontFamily:F,fontWeight:700}}>:</span>
+          <select value={etS} onChange={function(e){setEtS(parseInt(e.target.value));}} style={tSel}>{Array.from({length:60},function(_,i){return <option key={i} value={i}>{tPad(i)}</option>;})}</select>
         </div>
-        {/* Summary stats */}
+      </div>
+      <button onClick={run} disabled={loading} style={Object.assign({},bB,{background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',color:loading?C.txtDim:'#000'})}>{loading?'Searching...':'Search Trades'}</button>
+      {prog&&<div style={{marginTop:8,color:C.gold,fontSize:10,fontFamily:F}}>{prog}</div>}
+      {err&&<div style={{marginTop:8,padding:'8px 10px',background:C.warnDim,border:'1px solid #ff5c3a30',borderRadius:6,color:C.warn,fontSize:10}}>{err}</div>}
+      {!p.alpKey&&<div style={{marginTop:8,color:C.warn,fontSize:9,fontFamily:F}}>Set Alpaca API Key and Secret in Settings first.</div>}
+    </Cd>
+    {trades&&<div>
+      <Cd glow={true}>
+        <div style={{display:'inline-block',background:C.gold+'15',border:'1px solid '+C.gold,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.gold,fontFamily:F,fontWeight:700,marginBottom:8,letterSpacing:0.5}}>{ticker.toUpperCase()+' | '+date+' | '+fmtStart+'-'+fmtEnd+' ET | ALPACA'}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:4}}>
+          <Mt label="Total Trades" value={trades.length.toLocaleString()} color={C.accent} size="lg"/>
+          <Mt label="Total Volume" value={(function(){var v=0;for(var i=0;i<trades.length;i++)v+=trades[i]._size;return v.toLocaleString();})()} color={C.gold} size="md"/>
+          <Mt label="Exchanges" value={(function(){var ex={};for(var i=0;i<trades.length;i++)ex[trades[i].x]=true;return Object.keys(ex).length;})()} color={C.blue} size="md"/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:6}}>
+          <Mt label="Price Low" value={'$'+(function(){var m=Infinity;for(var i=0;i<trades.length;i++)if(trades[i]._price<m)m=trades[i]._price;return m.toFixed(4);})()} color={C.txt} size="md"/>
+          <Mt label="Price High" value={'$'+(function(){var m=-Infinity;for(var i=0;i<trades.length;i++)if(trades[i]._price>m)m=trades[i]._price;return m.toFixed(4);})()} color={C.txt} size="md"/>
+          <Mt label="Spread" value={'$'+(function(){var mn=Infinity,mx=-Infinity;for(var i=0;i<trades.length;i++){if(trades[i]._price<mn)mn=trades[i]._price;if(trades[i]._price>mx)mx=trades[i]._price;}return (mx-mn).toFixed(4);})()} color={C.gold} size="md"/>
+        </div>
+        <button onClick={exportCsv} style={Object.assign({},bB,{marginTop:10,background:'transparent',border:'1px solid '+C.accent,color:C.accent,fontSize:9})}>Export CSV ({trades.length.toLocaleString()} trades)</button>
+      </Cd>
+      <Cd>
+        <SectionHead title="Trade Log" sub={trades.length.toLocaleString()+' executions'}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6,marginBottom:8}}>
+          <div><label style={lS}>Min Size</label><input value={fMinSize} onChange={function(e){setFMinSize(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 100" type="number"/></div>
+          <div><label style={lS}>Max Size</label><input value={fMaxSize} onChange={function(e){setFMaxSize(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 5000" type="number"/></div>
+          <div><label style={lS}>Min Price</label><input value={fMinPrice} onChange={function(e){setFMinPrice(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 15" type="number" step="0.01"/></div>
+          <div><label style={lS}>Max Price</label><input value={fMaxPrice} onChange={function(e){setFMaxPrice(e.target.value);}} style={Object.assign({},iS,{padding:'6px 8px',fontSize:9})} placeholder="e.g. 18" type="number" step="0.01"/></div>
+        </div>
         {(function(){
-          var byStatus={};
-          orders.forEach(function(o){byStatus[o.status]=(byStatus[o.status]||0)+1;});
-          var filledOrders=orders.filter(function(o){return o.status==='filled';});
-          var buys=filledOrders.filter(function(o){return o.side==='buy';});
-          var sells=filledOrders.filter(function(o){return o.side==='sell';});
-          var totalBuyVal=buys.reduce(function(s,o){return s+(Number(o.filled_avg_price||0)*Number(o.filled_qty||0));},0);
-          var totalSellVal=sells.reduce(function(s,o){return s+(Number(o.filled_avg_price||0)*Number(o.filled_qty||0));},0);
+          var ft=trades.filter(function(t){
+            if(fMinSize&&t._size<parseFloat(fMinSize))return false;
+            if(fMaxSize&&t._size>parseFloat(fMaxSize))return false;
+            if(fMinPrice&&t._price<parseFloat(fMinPrice))return false;
+            if(fMaxPrice&&t._price>parseFloat(fMaxPrice))return false;
+            return true;
+          });
+          var fVol=0;for(var i=0;i<ft.length;i++)fVol+=ft[i]._size;
           return <div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
-              {Object.keys(byStatus).map(function(st){
-                return <span key={st} style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}>
-                  <span style={{color:statusColor(st),fontWeight:700}}>{st}</span> <span style={{color:C.txtDim}}>{byStatus[st]}</span>
-                </span>;
-              })}
+            {(fMinSize||fMaxSize||fMinPrice||fMaxPrice)&&<div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
+              <span style={{color:C.accent,fontSize:8,fontFamily:F,fontWeight:700}}>{ft.length.toLocaleString()+' of '+trades.length.toLocaleString()+' trades'}</span>
+              <span style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{'Vol: '+fVol.toLocaleString()}</span>
+              <button onClick={function(){setFMinSize('');setFMaxSize('');setFMinPrice('');setFMaxPrice('');}} style={{background:'transparent',border:'1px solid '+C.warn+'60',borderRadius:4,color:C.warn,fontSize:6,fontFamily:F,padding:'2px 6px',cursor:'pointer'}}>Clear</button>
+            </div>}
+            <div style={{overflowX:'auto',maxHeight:600}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+                <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Time (ET)</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Price</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right'}}>Size</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Exchange</th>
+                  <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>Conditions</th>
+                </tr></thead>
+                <tbody>{ft.slice(0,5000).map(function(t,idx){
+                  var isOddLot=t.c&&t.c.indexOf('I')>=0;
+                  var isExtHrs=t.c&&(t.c.indexOf('T')>=0);
+                  return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,background:isExtHrs?C.blue+'0d':isOddLot?C.purple+'0d':'transparent'}}>
+                    <td style={{padding:'3px 3px',color:C.txtBright}}>{t._etTime}</td>
+                    <td style={{padding:'3px 3px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+t._price.toFixed(4)}</td>
+                    <td style={{padding:'3px 3px',color:t._size===0?C.warn:isOddLot?C.purple:C.txt,textAlign:'right'}}>{t._size.toLocaleString()}</td>
+                    <td style={{padding:'3px 3px',color:C.gold}}>{t._exchName}</td>
+                    <td style={{padding:'3px 3px',color:C.txtDim,fontSize:6}}>{t._condStr}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
             </div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.accent}}>Buys</span> <span style={{color:C.txtDim}}>{buys.length} (${totalBuyVal.toFixed(2)})</span></span>
-              <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.warn}}>Sells</span> <span style={{color:C.txtDim}}>{sells.length} (${totalSellVal.toFixed(2)})</span></span>
-            </div>
+            {ft.length>5000&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F,textAlign:'center',padding:8}}>Showing first 5,000 of {ft.length.toLocaleString()} filtered trades.</div>}
           </div>;
         })()}
-      </div>
-      <div style={card}>
-        <div style={{overflowX:'auto',maxHeight:600,WebkitOverflowScrolling:'touch'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
-            <thead><tr>
-              <th style={th}>Time</th>
-              <th style={th}>Symbol</th>
-              <th style={th}>Side</th>
-              <th style={th}>Type</th>
-              <th style={th}>Qty</th>
-              <th style={th}>Filled</th>
-              <th style={th}>Avg Price</th>
-              <th style={th}>Limit</th>
-              <th style={th}>Status</th>
-              <th style={th}>TIF</th>
-              <th style={th}>Ext Hrs</th>
-            </tr></thead>
-            <tbody>
-              {orders.map(function(o,i){
-                return <tr key={o.id||i} style={{background:i%2===0?'transparent':C.bgDeep+'55'}}>
-                  <td style={Object.assign({},td,{color:C.txtDim,fontSize:7})}>{o._created||''}</td>
-                  <td style={Object.assign({},td,{color:C.txtBright,fontWeight:700})}>{o.symbol}</td>
-                  <td style={Object.assign({},td,{color:o.side==='buy'?C.accent:C.warn,fontWeight:700,textTransform:'uppercase'})}>{o.side}</td>
-                  <td style={Object.assign({},td,{color:C.txtDim})}>{o.type}</td>
-                  <td style={Object.assign({},td,{color:C.txt,textAlign:'right'})}>{o.qty||o.notional||''}</td>
-                  <td style={Object.assign({},td,{color:C.txt,textAlign:'right'})}>{o.filled_qty||'0'}</td>
-                  <td style={Object.assign({},td,{color:C.accent,fontWeight:600,textAlign:'right'})}>{o.filled_avg_price?'$'+Number(o.filled_avg_price).toFixed(4):''}</td>
-                  <td style={Object.assign({},td,{color:C.gold,textAlign:'right'})}>{o.limit_price?'$'+Number(o.limit_price).toFixed(2):''}</td>
-                  <td style={Object.assign({},td,{color:statusColor(o.status),fontWeight:700,textTransform:'uppercase',fontSize:7})}>{o.status}</td>
-                  <td style={Object.assign({},td,{color:C.txtDim})}>{o.time_in_force||''}</td>
-                  <td style={Object.assign({},td,{color:o.extended_hours?C.blue:C.txtDim,textAlign:'center'})}>{o.extended_hours?'Y':'N'}</td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>}
-
-    {/* ── FILLS RESULTS ───────────────────────────────────────────────── */}
-    {fills&&<div>
-      <div style={card}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{fills.length} Fills</div>
-          <button onClick={exportCsv} style={{padding:'4px 12px',background:'transparent',border:'1px solid '+C.accent,borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Export CSV</button>
-        </div>
-        {(function(){
-          var buys=fills.filter(function(f){return f.side==='buy';});
-          var sells=fills.filter(function(f){return f.side==='sell';});
-          var totalBuyVal=buys.reduce(function(s,f){return s+(Number(f.price||0)*Number(f.qty||0));},0);
-          var totalSellVal=sells.reduce(function(s,f){return s+(Number(f.price||0)*Number(f.qty||0));},0);
-          var tickers={};fills.forEach(function(f){tickers[f.symbol]=true;});
-          return <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.txtDim}}>Tickers: </span><span style={{color:C.txtBright}}>{Object.keys(tickers).length}</span></span>
-            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.accent}}>Buys</span> <span style={{color:C.txtDim}}>{buys.length} (${totalBuyVal.toFixed(2)})</span></span>
-            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.warn}}>Sells</span> <span style={{color:C.txtDim}}>{sells.length} (${totalSellVal.toFixed(2)})</span></span>
-            <span style={{padding:'3px 8px',borderRadius:4,background:C.bgDeep,fontSize:8,fontFamily:F}}><span style={{color:C.gold}}>Net</span> <span style={{color:totalSellVal-totalBuyVal>=0?C.accent:C.warn,fontWeight:700}}>${(totalSellVal-totalBuyVal).toFixed(2)}</span></span>
-          </div>;
-        })()}
-      </div>
-      <div style={card}>
-        <div style={{overflowX:'auto',maxHeight:600,WebkitOverflowScrolling:'touch'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',minWidth:500}}>
-            <thead><tr>
-              <th style={th}>Time (ET)</th>
-              <th style={th}>Symbol</th>
-              <th style={th}>Side</th>
-              <th style={th}>Qty</th>
-              <th style={th}>Price</th>
-              <th style={th}>Value</th>
-            </tr></thead>
-            <tbody>
-              {fills.map(function(f,i){
-                var val=Number(f.price||0)*Number(f.qty||0);
-                return <tr key={f.id||i} style={{background:i%2===0?'transparent':C.bgDeep+'55'}}>
-                  <td style={Object.assign({},td,{color:C.txtDim,fontSize:7})}>{f._time||''}</td>
-                  <td style={Object.assign({},td,{color:C.txtBright,fontWeight:700})}>{f.symbol}</td>
-                  <td style={Object.assign({},td,{color:f.side==='buy'?C.accent:C.warn,fontWeight:700,textTransform:'uppercase'})}>{f.side}</td>
-                  <td style={Object.assign({},td,{color:C.txt,textAlign:'right'})}>{f.qty}</td>
-                  <td style={Object.assign({},td,{color:C.accent,fontWeight:600,textAlign:'right'})}>${Number(f.price).toFixed(4)}</td>
-                  <td style={Object.assign({},td,{color:C.gold,textAlign:'right'})}>${val.toFixed(2)}</td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </Cd>
     </div>}
   </div>;
 }
@@ -26210,6 +26131,8 @@ function App(){
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
   var s15=useState('all'),session=s15[0],setSession=s15[1];
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
+  var s7a=useState('PK5CA67VMMJMBXT6XHQIM5GVS4'),alpKey=s7a[0],setAlpKey=s7a[1];
+  var s7b=useState(''),alpSecret=s7b[0],setAlpSecret=s7b[1];
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
   var GH_TOKEN_DEFAULT='';
@@ -26475,7 +26398,7 @@ function App(){
     {page==='trends'&&<TrendPage onBack={function(){setPage('main');}}/>}
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
-    {page==='alpacafinder'&&<AlpacaTradeFinderPage onBack={function(){setPage('home');}}/>}
+    {page==='alpacafinder'&&<AlpacaTradeFinderPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
@@ -26529,7 +26452,7 @@ function App(){
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
-    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
+    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} alpKey={alpKey} alpSecret={alpSecret} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat',{method:'DELETE',headers:getSbHeaders()}).then(function(){return fetch(SB_URL+'/rest/v1/app_config',{method:'POST',headers:getSbHeaders(),body:JSON.stringify({key:'github_pat',value:t})});}).catch(function(){});}} onSaveAlp={function(k,s){setAlpKey(k);setAlpSecret(s);}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}

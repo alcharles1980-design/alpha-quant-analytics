@@ -1,4 +1,5 @@
 // Cloudflare Worker: Alpaca API Proxy (handles CORS for browser calls)
+// Supports both trading API and market data API via X-Alpaca-Base header
 export default {
   async fetch(request) {
     if (request.method === 'OPTIONS') {
@@ -6,7 +7,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, DELETE, PATCH, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, APCA-API-KEY-ID, APCA-API-SECRET-KEY, X-Alpaca-Path',
+          'Access-Control-Allow-Headers': 'Content-Type, APCA-API-KEY-ID, APCA-API-SECRET-KEY, X-Alpaca-Path, X-Alpaca-Base',
           'Access-Control-Max-Age': '86400'
         }
       });
@@ -15,14 +16,25 @@ export default {
     var alpacaKey = request.headers.get('APCA-API-KEY-ID');
     var alpacaSecret = request.headers.get('APCA-API-SECRET-KEY');
     var alpacaPath = request.headers.get('X-Alpaca-Path');
+    var alpacaBase = request.headers.get('X-Alpaca-Base');
 
     if (!alpacaKey || !alpacaSecret || !alpacaPath) {
-      return new Response(JSON.stringify({error: 'Missing APCA-API-KEY-ID, APCA-API-SECRET-KEY, or X-Alpaca-Path headers'}), {
+      return new Response(JSON.stringify({error: 'Missing required headers'}), {
         status: 400, headers: {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
       });
     }
 
-    var base = alpacaKey.startsWith('PK') ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    // Default base: paper-api for PK keys, api for live keys
+    // Override with X-Alpaca-Base header (e.g. 'data' for market data)
+    var base;
+    if (alpacaBase === 'data') {
+      base = 'https://data.alpaca.markets';
+    } else if (alpacaKey.startsWith('PK')) {
+      base = 'https://paper-api.alpaca.markets';
+    } else {
+      base = 'https://api.alpaca.markets';
+    }
+
     var url = base + alpacaPath;
 
     try {
