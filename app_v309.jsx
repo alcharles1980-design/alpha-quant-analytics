@@ -25001,11 +25001,11 @@ function Alpaca24AtrPage(p){
       var path='/v2/stocks/'+tk+'/trades?start='+start+'&end='+end+'&limit=10000&sort=asc&feed='+feed;
       if(pt)path+='&page_token='+pt;
       var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
-      // Retry on 429 rate limit with exponential backoff
+      // Retry on 429 rate limit — wait longer each time (rate limit is per-minute)
       if(r.status===429){
-        for(var retry=1;retry<=3;retry++){
-          var wait=retry*2000;
-          if(onProg)onProg(all.length);
+        for(var retry=1;retry<=5;retry++){
+          var wait=Math.min(retry*5000,30000); // 5s, 10s, 15s, 20s, 25s
+          if(onProg)onProg(-1); // signal rate limit
           await new Promise(function(res){setTimeout(res,wait);});
           r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
           if(r.status!==429)break;
@@ -25013,10 +25013,14 @@ function Alpaca24AtrPage(p){
       }
       if(!r.ok){var t=await r.text();throw new Error(t);}
       var d=await r.json();
-      if(d.trades)all=all.concat(d.trades);
+      if(d.trades){for(var j=0;j<d.trades.length;j++)all.push(d.trades[j]);}
       pages++;
       if(onProg)onProg(all.length);
-      if(d.next_page_token)pt=d.next_page_token;else break;
+      if(d.next_page_token){
+        pt=d.next_page_token;
+        // Pace between pages: 50ms normally, 200ms every 10th page
+        await new Promise(function(res){setTimeout(res,pages%10===0?200:50);});
+      }else break;
     }
     return all;
   };
@@ -25060,7 +25064,8 @@ function Alpaca24AtrPage(p){
           setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' ('+totalTrades.toLocaleString()+' trades)');
           try{
             var trades=await fetchTrades(f,tk,dayStart,dayEnd,function(n){
-              setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' '+n.toLocaleString()+' trades');
+              if(n===-1)setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' rate limited, waiting...');
+              else setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' '+n.toLocaleString()+' trades');
             });
             fStatus[f].count+=trades.length;
             var feedAdded=0;
