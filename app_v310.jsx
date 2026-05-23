@@ -13319,7 +13319,7 @@ function OptionsChainPage(p){
       setProg('Fetching trades for '+contract.symbol+'...');
       var all=[];var pt=null;var pages=0;
       while(pages<100){
-        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&feed=indicative&limit=1000&sort=desc';
+        var path='/v1beta1/options/trades?symbols='+encodeURIComponent(contract.symbol)+'&limit=1000&sort=desc';
         if(pt)path+='&page_token='+pt;
         var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
@@ -13606,7 +13606,7 @@ function OptionsChainPage(p){
 
         {contractTrades&&contractTrades.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,textAlign:'center',padding:16}}>
           No trades found for this contract.
-          <div style={{marginTop:6,fontSize:7,color:C.border}}>Contract: {selectedContract.symbol} | Feed: indicative (Basic plan has 15min delay)</div>
+          <div style={{marginTop:6,fontSize:7,color:C.border}}>Contract: {selectedContract.symbol}</div>
         </div>}
 
         {contractTrades&&contractTrades.length>0&&<div>
