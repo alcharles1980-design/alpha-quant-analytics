@@ -25035,11 +25035,10 @@ function Alpaca24AtrPage(p){
       var fStatus={sip:{ok:true,count:0,added:0},iex:{ok:true,count:0,added:0},boats:{ok:true,count:0,added:0}};
       var hourlyAgg={}; // key: "date|hour" → {high, low, volume, tradeCount, boats}
       var totalTrades=0;
+      var seenTrades={}; // dedup across feeds: "timestamp|price|size" → true
 
       for(var dayIdx=0;dayIdx<tradingDays.length;dayIdx++){
         var dayStr=tradingDays[dayIdx];
-        // Each day: 8PM previous day through 8PM this day (full 24hr cycle)
-        // But simpler: just fetch the full calendar day in UTC
         var dayStart=dayStr+'T00:00:00Z';
         var dayEnd=dayStr+'T23:59:59Z';
 
@@ -25051,9 +25050,15 @@ function Alpaca24AtrPage(p){
               setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' '+n.toLocaleString()+' trades');
             });
             fStatus[f].count+=trades.length;
-            // Aggregate trades into hourly buckets
+            var feedAdded=0;
+            // Aggregate trades into hourly buckets with dedup
             for(var ti=0;ti<trades.length;ti++){
               var tr=trades[ti];
+              // Dedup across feeds by timestamp+price+size
+              var dedupKey=tr.t+'|'+tr.p+'|'+(tr.s||0);
+              if(seenTrades[dedupKey])continue;
+              seenTrades[dedupKey]=true;
+              feedAdded++;
               var dt=new Date(tr.t);
               var etParts=etHourFmt.formatToParts(dt);
               var etHour=-1;
@@ -25078,8 +25083,8 @@ function Alpaca24AtrPage(p){
               if(!agg.min5[k5]){agg.min5[k5]={first:tr.p,last:tr.p};}else{agg.min5[k5].last=tr.p;}
               if(f==='boats')agg.boats++;
             }
-            totalTrades+=trades.length;
-            fStatus[f].added+=trades.length;
+            totalTrades+=feedAdded;
+            fStatus[f].added+=feedAdded;
           }catch(e){
             var errMsg=(e.message||'').substring(0,80);
             if(!fStatus[f].err)fStatus[f]={ok:false,count:fStatus[f].count,added:fStatus[f].added,err:errMsg};
@@ -25138,14 +25143,17 @@ function Alpaca24AtrPage(p){
         hourData.push({hour:hr,atrDollar:avgD,atrPct:avgP,avgVol:avgV,avgTrades:avgT,avgNotional:avgN,avg1m:a1m,avg3m:a3m,avg5m:a5m,count:hd.counts,days:Object.keys(hd.dates).length,boats:hd.boats});
       }
 
-      // Get latest price
+      // Get latest price from most recent hourly bucket
       var lastPrice=0;
-      var latestAgg=null;
-      for(var lk=0;lk<aggKeys.length;lk++){
-        var la=hourlyAgg[aggKeys[lk]];
-        if(!latestAgg||aggKeys[lk]>latestAgg)latestAgg=aggKeys[lk];
+      var sortedAggs=aggKeys.slice().sort(function(a,b){
+        var pa=a.split('|'),pb=b.split('|');
+        if(pa[0]!==pb[0])return pa[0]<pb[0]?-1:1;
+        return parseInt(pa[1])-parseInt(pb[1]);
+      });
+      if(sortedAggs.length>0){
+        var lastAgg=hourlyAgg[sortedAggs[sortedAggs.length-1]];
+        if(lastAgg)lastPrice=(lastAgg.high+lastAgg.low)/2;
       }
-      if(latestAgg&&hourlyAgg[latestAgg])lastPrice=(hourlyAgg[latestAgg].high+hourlyAgg[latestAgg].low)/2;
 
       setResults({ticker:tk,hourData:hourData,maxAtrPct:maxAtrPct,totalTrades:totalTrades,lastPrice:lastPrice,
         daysScanned:tradingDays.length,
@@ -25216,7 +25224,7 @@ function Alpaca24AtrPage(p){
           var r=feedStatus[f];if(!r)return null;
           return <div key={f} style={{padding:'4px 8px',background:C.bgDeep,borderRadius:4,border:'1px solid '+(r.ok?(r.added>0?C.accent+'44':C.border):C.warn+'44'),fontSize:8,fontFamily:F}}>
             <span style={{fontWeight:700,color:r.ok?(r.added>0?C.accent:C.txtDim):C.warn}}>{f.toUpperCase()}</span>
-            <span style={{color:C.txtDim,marginLeft:4}}>{r.ok?(r.count||0).toLocaleString()+' trades':'N/A'}</span>
+            <span style={{color:C.txtDim,marginLeft:4}}>{r.ok?(r.count||0).toLocaleString()+' raw, '+(r.added||0).toLocaleString()+' unique':'N/A'}</span>
             {!r.ok&&<span style={{color:C.warn,fontSize:6,marginLeft:3}}>{r.err||'failed'}</span>}
           </div>;
         })}
