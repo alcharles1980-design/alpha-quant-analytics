@@ -13298,7 +13298,8 @@ function MostActivesPage(p){
   var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
   var s8=useState(''),minPrice=s8[0],setMinPrice=s8[1];
   var s9=useState(''),maxPrice=s9[0],setMaxPrice=s9[1];
-  var s10=useState('all'),capFilter=s10[0],setCapFilter=s10[1];
+  var s10=useState(''),minCap=s10[0],setMinCap=s10[1];
+  var s10b=useState(''),maxCap=s10b[0],setMaxCap=s10b[1];
   var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
 
@@ -13370,19 +13371,20 @@ function MostActivesPage(p){
   useEffect(function(){if(autoRefresh)fetchData();},[sortBy,topN,autoRefresh]);
 
   // Filter actives by price, market cap, and asset type
-  var capTiers={all:[0,Infinity],mega:[200e9,Infinity],large:[10e9,200e9],mid:[2e9,10e9],small:[300e6,2e9],micro:[0,300e6]};
   var filtered=actives?actives.filter(function(a){
     var pr=a.price||0;
     var mnP=parseFloat(minPrice)||0;
     var mxP=parseFloat(maxPrice)||Infinity;
     if(pr<mnP||pr>mxP)return false;
-    // Asset type filter: null marketCap = ETF, non-null = stock
+    // Asset type filter
     if(assetType==='stocks'&&a.marketCap==null)return false;
     if(assetType==='etf'&&a.marketCap!=null)return false;
-    if(capFilter!=='all'){
+    // Market cap filter (input in billions, data in raw)
+    var mnC=(parseFloat(minCap)||0)*1e9;
+    var mxC=maxCap?(parseFloat(maxCap)*1e9):Infinity;
+    if(mnC>0||mxC<Infinity){
       var mc=a.marketCap||0;
-      var range=capTiers[capFilter];
-      if(mc<range[0]||mc>=range[1])return false;
+      if(mc<mnC||mc>mxC)return false;
     }
     return true;
   }):[];
@@ -13460,15 +13462,14 @@ function MostActivesPage(p){
       </div>
 
       {/* Market Cap filter */}
-      <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600,display:'flex',alignItems:'center'}}>Mkt Cap:</span>
-        {[['all','All'],['mega','Mega $200B+'],['large','Large $10-200B'],['mid','Mid $2-10B'],['small','Small $300M-2B'],['micro','Micro <$300M']].map(function(f){
-          return <button key={f[0]} onClick={function(){setCapFilter(f[0]);setMinPrice('');setMaxPrice('');}}
-            style={{padding:'4px 8px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
-              border:'1px solid '+(capFilter===f[0]?(C.purple||'#a855f7')+'66':C.border),
-              background:capFilter===f[0]?(C.purple||'#a855f7')+'10':'transparent',
-              color:capFilter===f[0]?(C.purple||'#a855f7'):C.txtDim}}>{f[1]}</button>;
-        })}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Mkt Cap:</span>
+        <input value={minCap} onChange={function(e){setMinCap(e.target.value);}} placeholder="Min (B)" type="number" step="0.1"
+          style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
+        <input value={maxCap} onChange={function(e){setMaxCap(e.target.value);}} placeholder="Max (B)" type="number" step="0.1"
+          style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{fontSize:7,fontFamily:F,color:C.border}}>in billions</span>
       </div>
     </div>
 
