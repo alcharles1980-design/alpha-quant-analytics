@@ -14491,6 +14491,63 @@ function OptionsChainPage(p){
         </div>
       </div>
 
+      {/* Implied Move by Expiration */}
+      {lastPrice&&<div style={card}>
+        <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Implied Move by Expiration</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+            <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>EXPIRY</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>DTE</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>ATM</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{'\u00B1'}$</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{'\u00B1'}%</th>
+            <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim,paddingLeft:6}}>RANGE</th>
+          </tr></thead>
+          <tbody>
+            {expirations.map(function(exp2){
+              var d2=new Date(exp2+'T12:00:00');
+              var dte2=Math.ceil((d2-Date.now())/86400000);
+              var isSel=selectedExp===exp2;
+              // Find ATM strike for this expiration
+              var expCalls=contracts.filter(function(c2){return c2.expiration_date===exp2&&c2.type==='call';});
+              var expPuts=contracts.filter(function(c2){return c2.expiration_date===exp2&&c2.type==='put';});
+              var atm=null;var atmD=Infinity;
+              for(var ei2=0;ei2<expCalls.length;ei2++){
+                var dist2=Math.abs((+expCalls[ei2].strike_price)-lastPrice);
+                if(dist2<atmD){atmD=dist2;atm=+expCalls[ei2].strike_price;}
+              }
+              // Get ATM call + put mid
+              var cMid2=0;var pMid2=0;
+              if(atm){
+                for(var ci2=0;ci2<expCalls.length;ci2++){
+                  if(+expCalls[ci2].strike_price===atm){var cs2=snapshots[expCalls[ci2].symbol];
+                    if(cs2&&cs2.latestQuote)cMid2=((cs2.latestQuote.bp||0)+(cs2.latestQuote.ap||0))/2;
+                    else if(expCalls[ci2].close_price)cMid2=+expCalls[ci2].close_price;break;}
+                }
+                for(var pi2=0;pi2<expPuts.length;pi2++){
+                  if(+expPuts[pi2].strike_price===atm){var ps2=snapshots[expPuts[pi2].symbol];
+                    if(ps2&&ps2.latestQuote)pMid2=((ps2.latestQuote.bp||0)+(ps2.latestQuote.ap||0))/2;
+                    else if(expPuts[pi2].close_price)pMid2=+expPuts[pi2].close_price;break;}
+                }
+              }
+              var impliedMove2=cMid2+pMid2;
+              var impliedPct2=lastPrice>0?(impliedMove2/lastPrice*100):0;
+              return <tr key={exp2} onClick={function(){setSelectedExp(exp2);setSelectedContract(null);setContractTrades(null);}}
+                style={{cursor:'pointer',borderBottom:'1px solid '+C.border+'20',
+                  background:isSel?C.gold+'12':'transparent'}}>
+                <td style={{padding:'3px 2px',color:isSel?C.gold:C.txtBright,fontWeight:isSel?700:400}}>{exp2}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{dte2}d</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt(atm)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.blue,fontWeight:700}}>{impliedMove2>0?'\u00B1$'+impliedMove2.toFixed(2):'\u2014'}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.blue}}>{impliedPct2>0?'\u00B1'+impliedPct2.toFixed(1)+'%':'\u2014'}</td>
+                <td style={{padding:'3px 2px',textAlign:'left',color:C.txtDim,paddingLeft:6}}>{impliedMove2>0?'$'+(lastPrice-impliedMove2).toFixed(0)+' \u2013 $'+(lastPrice+impliedMove2).toFixed(0):'\u2014'}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+        <div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.border}}>ATM straddle price (call mid + put mid). Tap a row to select that expiration.</div>
+      </div>}
+
       {/* Call / Put toggle */}
       <div style={{display:'flex',gap:6,marginBottom:14}}>
         <button onClick={function(){setOptType('call');setSelectedContract(null);setContractTrades(null);}}
