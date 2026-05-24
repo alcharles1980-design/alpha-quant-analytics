@@ -13302,6 +13302,7 @@ function MostActivesPage(p){
   var s10b=useState(''),maxCap=s10b[0],setMaxCap=s10b[1];
   var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
+  var s13=useState('rth'),session=s13[0],setSession=s13[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13309,6 +13310,7 @@ function MostActivesPage(p){
     if(!p.alpKey||!p.alpSecret){if(manual)setErr('Set Alpaca API keys in Settings');return;}
     setLoading(true);setErr(null);
     try{
+      // Step 1: Get universe from screener (both modes need this)
       var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
         'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by='+sortBy+'&top='+topN,'X-Alpaca-Base':'data'}});
       if(!r1.ok)throw new Error('Most actives: '+r1.status);
@@ -13318,77 +13320,107 @@ function MostActivesPage(p){
         var lu=new Date(d1.last_updated);
         setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }
-      // Fetch snapshots to get prices (batch up to 50 per call)
-      var snapMap={};
-      for(var batch=0;batch<rawActives.length;batch+=50){
-        var chunk=rawActives.slice(batch,batch+50).map(function(a){return a.symbol;}).join(',');
+
+      if(session==='overnight'){
+        // ── OVERNIGHT MODE: fetch BOATS bars for the universe ──
+        var boatsMap={};
+        var startBoats=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
+        for(var bBatch=0;bBatch<rawActives.length;bBatch+=50){
+          var bChunk=rawActives.slice(bBatch,bBatch+50).map(function(a){return a.symbol;}).join(',');
+          try{
+            var rb=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(bChunk)+'&timeframe=1Day&start='+startBoats+'T00:00:00Z&limit=100&feed=boats','X-Alpaca-Base':'data'}});
+            if(rb.ok){var db=await rb.json();if(db.bars)Object.assign(boatsMap,db.bars);}
+          }catch(e2){}
+        }
+        // Build overnight actives from BOATS data
+        var overnightActives=[];
+        for(var sym in boatsMap){
+          var bars=boatsMap[sym];
+          if(!bars||bars.length===0)continue;
+          var latest=bars[bars.length-1]; // most recent overnight session
+          var avgOvVol=0;for(var bi=0;bi<bars.length;bi++)avgOvVol+=bars[bi].v;avgOvVol=avgOvVol/bars.length;
+          overnightActives.push({
+            symbol:sym,volume:latest.v,trade_count:latest.n,
+            boatsOpen:latest.o,boatsClose:latest.c,boatsHigh:latest.h,boatsLow:latest.l,boatsVwap:latest.vw,
+            boatsChange:latest.c-latest.o,boatsChangePct:latest.o?(latest.c-latest.o)/latest.o*100:0,
+            avgVol:avgOvVol,avgDays:bars.length,
+            relVol:avgOvVol>0?(latest.v/avgOvVol*100):0,
+            price:latest.c,prevClose:latest.o,change:latest.c-latest.o,changePct:latest.o?(latest.c-latest.o)/latest.o*100:0
+          });
+        }
+        overnightActives.sort(function(a,b){return b.volume-a.volume;});
+        // Enrich with market cap
         try{
-          var rs=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-            'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=iex','X-Alpaca-Base':'data'}});
-          if(rs.ok){var ds=await rs.json();Object.assign(snapMap,ds);}
-        }catch(e2){}
-      }
-      // Enrich actives with price data
-      for(var ai=0;ai<rawActives.length;ai++){
-        var sym=rawActives[ai].symbol;
-        var snap=snapMap[sym];
-        if(snap){
-          rawActives[ai].price=snap.latestTrade?snap.latestTrade.p:0;
-          rawActives[ai].prevClose=snap.prevDailyBar?snap.prevDailyBar.c:0;
-          rawActives[ai].change=rawActives[ai].price&&rawActives[ai].prevClose?(rawActives[ai].price-rawActives[ai].prevClose):0;
-          rawActives[ai].changePct=rawActives[ai].prevClose?(rawActives[ai].change/rawActives[ai].prevClose*100):0;
-        }else{
-          rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;
-        }
-      }
-      // Fetch market cap from Supabase
-      try{
-        var symList=rawActives.map(function(a2){return a2.symbol;});
-        var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap&order=ticker,created_at.desc';
-        var mcR=await fetch(mcUrl,{headers:getSbHeaders()});
-        if(mcR.ok){
-          var mcData=await mcR.json();
-          // Take latest market cap per ticker (first occurrence due to desc order)
-          var mcMap={};
-          for(var mi=0;mi<mcData.length;mi++){
-            if(!mcMap[mcData[mi].ticker]&&mcData[mi].market_cap)mcMap[mcData[mi].ticker]=mcData[mi].market_cap;
-          }
-          for(var ai2=0;ai2<rawActives.length;ai2++){
-            rawActives[ai2].marketCap=mcMap[rawActives[ai2].symbol]||null;
-          }
-        }
-      }catch(e3){}
-      // Fetch 20-day avg volume via SIP daily bars
-      try{
-        var startDate=new Date(Date.now()-30*86400000).toISOString().split('T')[0]; // 30 calendar days ≈ 20 trading days
-        for(var vBatch=0;vBatch<rawActives.length;vBatch+=50){
-          var vChunk=rawActives.slice(vBatch,vBatch+50).map(function(a3){return a3.symbol;}).join(',');
-          var rv=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-            'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&limit=10000&feed=sip','X-Alpaca-Base':'data'}});
-          if(rv.ok){
-            var dv2=await rv.json();
-            if(dv2.bars){
-              for(var sym2 in dv2.bars){
-                var dayBars=dv2.bars[sym2];
-                if(dayBars&&dayBars.length>0){
-                  var totalV=0;for(var vi=0;vi<dayBars.length;vi++)totalV+=dayBars[vi].v;
-                  var avgVol=totalV/dayBars.length;
-                  // Find and tag the active
-                  for(var ai3=0;ai3<rawActives.length;ai3++){
-                    if(rawActives[ai3].symbol===sym2){
-                      rawActives[ai3].avgVol=avgVol;
-                      rawActives[ai3].avgDays=dayBars.length;
-                      rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;
-                      break;
-                    }
-                  }
-                }
-              }
+          var symList2=overnightActives.map(function(a2){return a2.symbol;});
+          if(symList2.length>0){
+            var mcUrl2=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList2.join(',')+')&select=ticker,market_cap&order=ticker,created_at.desc';
+            var mcR2=await fetch(mcUrl2,{headers:getSbHeaders()});
+            if(mcR2.ok){
+              var mcData2=await mcR2.json();var mcMap2={};
+              for(var mi2=0;mi2<mcData2.length;mi2++){if(!mcMap2[mcData2[mi2].ticker]&&mcData2[mi2].market_cap)mcMap2[mcData2[mi2].ticker]=mcData2[mi2].market_cap;}
+              for(var ai4=0;ai4<overnightActives.length;ai4++)overnightActives[ai4].marketCap=mcMap2[overnightActives[ai4].symbol]||null;
             }
           }
+        }catch(e5){}
+        setActives(overnightActives);
+      }else{
+        // ── RTH MODE: existing flow ──
+        // Fetch snapshots for prices
+        var snapMap={};
+        for(var batch=0;batch<rawActives.length;batch+=50){
+          var chunk=rawActives.slice(batch,batch+50).map(function(a){return a.symbol;}).join(',');
+          try{
+            var rs=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+              'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=iex','X-Alpaca-Base':'data'}});
+            if(rs.ok){var ds=await rs.json();Object.assign(snapMap,ds);}
+          }catch(e2){}
         }
-      }catch(e4){}
-      setActives(rawActives);
+        for(var ai=0;ai<rawActives.length;ai++){
+          var sym3=rawActives[ai].symbol;var snap=snapMap[sym3];
+          if(snap){
+            rawActives[ai].price=snap.latestTrade?snap.latestTrade.p:0;
+            rawActives[ai].prevClose=snap.prevDailyBar?snap.prevDailyBar.c:0;
+            rawActives[ai].change=rawActives[ai].price&&rawActives[ai].prevClose?(rawActives[ai].price-rawActives[ai].prevClose):0;
+            rawActives[ai].changePct=rawActives[ai].prevClose?(rawActives[ai].change/rawActives[ai].prevClose*100):0;
+          }else{rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;}
+        }
+        // Market cap
+        try{
+          var symList=rawActives.map(function(a2){return a2.symbol;});
+          var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap&order=ticker,created_at.desc';
+          var mcR=await fetch(mcUrl,{headers:getSbHeaders()});
+          if(mcR.ok){
+            var mcData=await mcR.json();var mcMap={};
+            for(var mi=0;mi<mcData.length;mi++){if(!mcMap[mcData[mi].ticker]&&mcData[mi].market_cap)mcMap[mcData[mi].ticker]=mcData[mi].market_cap;}
+            for(var ai2=0;ai2<rawActives.length;ai2++)rawActives[ai2].marketCap=mcMap[rawActives[ai2].symbol]||null;
+          }
+        }catch(e3){}
+        // 20-day avg volume (SIP)
+        try{
+          var startDate=new Date(Date.now()-30*86400000).toISOString().split('T')[0];
+          for(var vBatch=0;vBatch<rawActives.length;vBatch+=50){
+            var vChunk=rawActives.slice(vBatch,vBatch+50).map(function(a3){return a3.symbol;}).join(',');
+            var rv=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&limit=10000&feed=sip','X-Alpaca-Base':'data'}});
+            if(rv.ok){
+              var dv2=await rv.json();
+              if(dv2.bars){for(var sym2 in dv2.bars){
+                var dayBars=dv2.bars[sym2];
+                if(dayBars&&dayBars.length>0){
+                  var totalV=0;for(var vi=0;vi<dayBars.length;vi++)totalV+=dayBars[vi].v;var avgVol=totalV/dayBars.length;
+                  for(var ai3=0;ai3<rawActives.length;ai3++){
+                    if(rawActives[ai3].symbol===sym2){rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=dayBars.length;
+                      rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;break;}
+                  }
+                }
+              }}
+            }
+          }
+        }catch(e4){}
+        setActives(rawActives);
+      }
+      // Movers (both modes)
       var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
         'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top=10','X-Alpaca-Base':'data'}});
       if(!r2.ok)throw new Error('Movers: '+r2.status);
@@ -13398,7 +13430,7 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret]);
+  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session]);
 
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
@@ -13431,6 +13463,16 @@ function MostActivesPage(p){
 
     {/* Controls */}
     <div style={card}>
+      {/* Session toggle */}
+      <div style={{display:'flex',gap:4,marginBottom:8}}>
+        {[['rth','RTH (Regular Hours)'],['overnight','Overnight (BOATS 8PM-4AM)']].map(function(s){
+          return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
+            style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
+              border:'1px solid '+(session===s[0]?C.gold:C.border),
+              background:session===s[0]?C.gold+'15':'transparent',
+              color:session===s[0]?C.gold:C.txtDim}}>{s[1]}</button>;
+        })}
+      </div>
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <div style={{display:'flex',gap:4}}>
           {['volume','trades'].map(function(m){
@@ -13505,7 +13547,8 @@ function MostActivesPage(p){
 
     {/* Most Actives Table */}
     {filtered&&filtered.length>0&&<div style={card}>
-      <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>Most Active Stocks {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
+      <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
+        {session==='overnight'?'Overnight Most Active (BOATS 8PM-4AM)':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
@@ -13517,7 +13560,7 @@ function MostActivesPage(p){
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MCAP</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AVG VOL</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AVG {session==='overnight'?'OVN':'VOL'}</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>RVOL</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BAR</th>
           </tr></thead>
