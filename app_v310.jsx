@@ -13729,7 +13729,7 @@ function HedgeCalcPage(p){
                   var bRef2=parseFloat(bottomRef)||bot;
                   var rows3=[];
                   var startP2=Math.floor(rp);
-                  var endP2=Math.max(Math.ceil(bRef2),Math.ceil(bot));
+                  var endP2=Math.min(Math.ceil(bRef2),Math.ceil(bot));
                   for(var pr2=startP2;pr2>=endP2;pr2--){
                     var fl3=Math.min(lvls,Math.max(0,Math.round((top-pr2)/increment)+1));
                     if(pr2>top)fl3=0;if(pr2<bot)fl3=lvls;
