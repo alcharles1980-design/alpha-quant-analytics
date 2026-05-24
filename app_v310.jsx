@@ -13693,13 +13693,7 @@ function HedgeCalcPage(p){
         var valAtStrike=flAtStrike*spl*putStrike;
         var maxHedgedLoss=(cdAtStrike-valAtStrike)+hedgeCost;
 
-        // IV-based expected move
-        var putIV=selectedPut.iv||0;
-        var putDTE=selectedPut.dte||0;
-        var move1s=putIV>0&&lastPrice?lastPrice*putIV*Math.sqrt(putDTE/365):0;
-        var move2s=move1s*2;
-
-        // Cumulative normal distribution (Abramowitz & Stegun approximation)
+        // Cumulative normal distribution (Abramowitz & Stegun)
         var normCDF=function(x){
           if(x===0)return 0.5;
           var t=1/(1+0.2316419*Math.abs(x));
@@ -13707,11 +13701,46 @@ function HedgeCalcPage(p){
           var p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.8212560+t*1.330274))));
           return x>0?1-p:p;
         };
-        // Probability of price being at or below a target at expiry (log-normal)
+        // Black-Scholes put price
+        var bsPut=function(S,K,T2,r,sig){
+          if(sig<=0||T2<=0)return 0;
+          var d1=(Math.log(S/K)+(r+sig*sig/2)*T2)/(sig*Math.sqrt(T2));
+          var d2=d1-sig*Math.sqrt(T2);
+          return K*Math.exp(-r*T2)*normCDF(-d2)-S*normCDF(-d1);
+        };
+        // Bisection IV solver: find σ such that BS put price ≈ market price
+        var solveIV=function(S,K,T2,r,mktPrice){
+          if(!S||!K||T2<=0||mktPrice<=0)return null;
+          var lo=0.01,hi=5.0;
+          for(var it=0;it<100;it++){
+            var mid2=(lo+hi)/2;
+            var px=bsPut(S,K,T2,r,mid2);
+            if(Math.abs(px-mktPrice)<0.001)return mid2;
+            if(px<mktPrice)lo=mid2;else hi=mid2;
+          }
+          return (lo+hi)/2;
+        };
+        var rfRate=0.045;
+        var putDTE=selectedPut.dte||0;
+        var T3=putDTE/365;
+        // Compute IV from option mid price (or use API IV if available)
+        var putIV=selectedPut.iv||null;
+        if(!putIV&&lastPrice&&T3>0&&selectedPut.mid>0){
+          putIV=solveIV(lastPrice,putStrike,T3,rfRate,selectedPut.mid);
+        }
+        // Compute delta from IV
+        var putDelta=selectedPut.delta||null;
+        if(!putDelta&&putIV&&lastPrice&&T3>0){
+          var d1c=(Math.log(lastPrice/putStrike)+(rfRate+putIV*putIV/2)*T3)/(putIV*Math.sqrt(T3));
+          putDelta=normCDF(d1c)-1;
+        }
+        var move1s=putIV&&lastPrice?lastPrice*putIV*Math.sqrt(T3):0;
+        var move2s=move1s*2;
+        // Probability of price being at or below target at expiry
         var probBelow=function(target){
-          if(!lastPrice||putIV<=0||putDTE<=0||target<=0)return null;
-          var d2=(Math.log(lastPrice/target))/(putIV*Math.sqrt(putDTE/365));
-          return normCDF(-d2);
+          if(!lastPrice||!putIV||putDTE<=0||target<=0)return null;
+          var d2pb=(Math.log(lastPrice/target))/(putIV*Math.sqrt(T3));
+          return normCDF(-d2pb);
         };
 
         return <div>
@@ -13734,18 +13763,18 @@ function HedgeCalcPage(p){
           </div>
 
           {/* Expected Move + Probability panels */}
-          {putIV>0&&lastPrice&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
+          {putIV&&lastPrice&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
             <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.blue+'30'}}>
               <div style={sml}>EXPECTED MOVE BY EXPIRY</div>
               <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.blue}}>{'\u00B1'}${move1s.toFixed(2)} ({(move1s/lastPrice*100).toFixed(1)}%)</div>
               <div style={sml}>1{'\u03C3'} range: ${(lastPrice-move1s).toFixed(2)} {'\u2013'} ${(lastPrice+move1s).toFixed(2)}</div>
               <div style={sml}>2{'\u03C3'} range: ${(lastPrice-move2s).toFixed(2)} {'\u2013'} ${(lastPrice+move2s).toFixed(2)}</div>
-              <div style={{fontSize:6,fontFamily:F,color:C.border,marginTop:2}}>IV: {(putIV*100).toFixed(1)}% | {putDTE} DTE</div>
+              <div style={{fontSize:6,fontFamily:F,color:C.border,marginTop:2}}>IV: {(putIV*100).toFixed(1)}% (computed) | {putDTE} DTE</div>
             </div>
             <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6,border:'1px solid '+(C.purple||'#a855f7')+'30'}}>
               <div style={sml}>PROBABILITY AT EXPIRY</div>
               <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.purple||'#a855f7'}}>{(probBelow(putStrike)*100).toFixed(1)}% below ${fmt2(putStrike)}</div>
-              <div style={sml}>{selectedPut.delta!=null?'Delta: '+(selectedPut.delta).toFixed(3):''}</div>
+              <div style={sml}>{putDelta!=null?'Delta: '+putDelta.toFixed(3):''}</div>
               <div style={sml}>P(below ${fmt2(bot)}): {(probBelow(bot)*100).toFixed(2)}%</div>
               <div style={{fontSize:6,fontFamily:F,color:C.border,marginTop:2}}>Log-normal model from IV</div>
             </div>
