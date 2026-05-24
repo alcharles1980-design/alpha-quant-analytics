@@ -13591,8 +13591,14 @@ function MostActivesPage(p){
       <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>No stocks match the current filters. Try adjusting price range or tier.</div>
     </div>}
 
+    {loading&&<div style={card}>
+      <div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Loading market data...</div>
+    </div>}
+
     {!loading&&!actives&&!err&&<div style={card}>
-      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>Loading market data...</div>
+      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
+        {!p.alpKey?'Waiting for Alpaca API keys...':'Tap Refresh to load data.'}
+      </div>
     </div>}
   </div>;
 }
