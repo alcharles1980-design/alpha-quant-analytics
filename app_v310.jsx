@@ -13299,6 +13299,8 @@ function MostActivesPage(p){
   var s8=useState(''),minPrice=s8[0],setMinPrice=s8[1];
   var s9=useState(''),maxPrice=s9[0],setMaxPrice=s9[1];
   var s10=useState('all'),capFilter=s10[0],setCapFilter=s10[1];
+  var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
+  var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13365,15 +13367,18 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){fetchData();},[sortBy,topN]);
+  useEffect(function(){if(autoRefresh)fetchData();},[sortBy,topN,autoRefresh]);
 
-  // Filter actives by price and market cap
+  // Filter actives by price, market cap, and asset type
   var capTiers={all:[0,Infinity],mega:[200e9,Infinity],large:[10e9,200e9],mid:[2e9,10e9],small:[300e6,2e9],micro:[0,300e6]};
   var filtered=actives?actives.filter(function(a){
     var pr=a.price||0;
     var mnP=parseFloat(minPrice)||0;
     var mxP=parseFloat(maxPrice)||Infinity;
     if(pr<mnP||pr>mxP)return false;
+    // Asset type filter: null marketCap = ETF, non-null = stock
+    if(assetType==='stocks'&&a.marketCap==null)return false;
+    if(assetType==='etf'&&a.marketCap!=null)return false;
     if(capFilter!=='all'){
       var mc=a.marketCap||0;
       var range=capTiers[capFilter];
@@ -13419,6 +13424,28 @@ function MostActivesPage(p){
           {loading?'Loading...':'Refresh'}
         </button>
       </div>
+      {/* Asset type + Auto-refresh row */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
+        <div style={{display:'flex',gap:4}}>
+          {[['all','All'],['stocks','Stocks'],['etf','ETFs']].map(function(t){
+            return <button key={t[0]} onClick={function(){setAssetType(t[0]);}}
+              style={{padding:'4px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
+                border:'1px solid '+(assetType===t[0]?C.blue+'66':C.border),
+                background:assetType===t[0]?C.blue+'10':'transparent',
+                color:assetType===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;
+          })}
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>Auto-refresh</span>
+          <div onClick={function(){setAutoRefresh(!autoRefresh);}}
+            style={{width:32,height:16,borderRadius:8,cursor:'pointer',position:'relative',transition:'background 0.2s',
+              background:autoRefresh?C.accent+'80':C.border+'60'}}>
+            <div style={{width:12,height:12,borderRadius:6,background:autoRefresh?C.accent:'#555',position:'absolute',
+              top:2,left:autoRefresh?18:2,transition:'left 0.2s'}}></div>
+          </div>
+        </div>
+      </div>
       {lastUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {lastUpdated}</div>}
       {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
 
@@ -13453,6 +13480,7 @@ function MostActivesPage(p){
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30}}>#</th>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
+            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>TYPE</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>CHG %</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MCAP</th>
@@ -13468,6 +13496,7 @@ function MostActivesPage(p){
               return <tr key={i} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
                 <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
+                <td style={{padding:'4px 3px',color:a.marketCap==null?C.blue:C.txtDim,fontSize:7}}>{a.marketCap==null?'ETF':'STK'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>=0?C.accent:C.warn,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
