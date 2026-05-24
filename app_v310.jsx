@@ -13321,7 +13321,7 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){fetchData();},[]);
+  useEffect(function(){fetchData();},[sortBy,topN]);
 
   var fmtVol=function(v){if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
