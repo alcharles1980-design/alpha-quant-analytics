@@ -13357,7 +13357,7 @@ function MostActivesPage(p){
       }catch(e3){}
       setActives(rawActives);
       var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-        'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top='+topN,'X-Alpaca-Base':'data'}});
+        'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top=10','X-Alpaca-Base':'data'}});
       if(!r2.ok)throw new Error('Movers: '+r2.status);
       var d2=await r2.json();
       setMovers(d2);
@@ -28481,7 +28481,6 @@ function App(){
     {page==='configsnap'&&<ConfigSnapshotPage onBack={function(){setPage('home');}}/>}
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
