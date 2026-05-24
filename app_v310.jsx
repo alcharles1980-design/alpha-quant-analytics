@@ -13693,8 +13693,29 @@ function HedgeCalcPage(p){
         var valAtStrike=flAtStrike*spl*putStrike;
         var maxHedgedLoss=(cdAtStrike-valAtStrike)+hedgeCost;
 
+        // IV-based expected move
+        var putIV=selectedPut.iv||0;
+        var putDTE=selectedPut.dte||0;
+        var move1s=putIV>0&&lastPrice?lastPrice*putIV*Math.sqrt(putDTE/365):0;
+        var move2s=move1s*2;
+
+        // Cumulative normal distribution (Abramowitz & Stegun approximation)
+        var normCDF=function(x){
+          if(x===0)return 0.5;
+          var t=1/(1+0.2316419*Math.abs(x));
+          var d=0.3989422802*Math.exp(-x*x/2);
+          var p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.8212560+t*1.330274))));
+          return x>0?1-p:p;
+        };
+        // Probability of price being at or below a target at expiry (log-normal)
+        var probBelow=function(target){
+          if(!lastPrice||putIV<=0||putDTE<=0||target<=0)return null;
+          var d2=(Math.log(lastPrice/target))/(putIV*Math.sqrt(putDTE/365));
+          return normCDF(-d2);
+        };
+
         return <div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:6}}>
             <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6}}>
               <div style={sml}>HEDGE COST</div>
               <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.gold}}>${hedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
@@ -13712,6 +13733,24 @@ function HedgeCalcPage(p){
             </div>
           </div>
 
+          {/* Expected Move + Probability panels */}
+          {putIV>0&&lastPrice&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
+            <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.blue+'30'}}>
+              <div style={sml}>EXPECTED MOVE BY EXPIRY</div>
+              <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.blue}}>{'\u00B1'}${move1s.toFixed(2)} ({(move1s/lastPrice*100).toFixed(1)}%)</div>
+              <div style={sml}>1{'\u03C3'} range: ${(lastPrice-move1s).toFixed(2)} {'\u2013'} ${(lastPrice+move1s).toFixed(2)}</div>
+              <div style={sml}>2{'\u03C3'} range: ${(lastPrice-move2s).toFixed(2)} {'\u2013'} ${(lastPrice+move2s).toFixed(2)}</div>
+              <div style={{fontSize:6,fontFamily:F,color:C.border,marginTop:2}}>IV: {(putIV*100).toFixed(1)}% | {putDTE} DTE</div>
+            </div>
+            <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6,border:'1px solid '+(C.purple||'#a855f7')+'30'}}>
+              <div style={sml}>PROBABILITY AT EXPIRY</div>
+              <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.purple||'#a855f7'}}>{(probBelow(putStrike)*100).toFixed(1)}% below ${fmt2(putStrike)}</div>
+              <div style={sml}>{selectedPut.delta!=null?'Delta: '+(selectedPut.delta).toFixed(3):''}</div>
+              <div style={sml}>P(below ${fmt2(bot)}): {(probBelow(bot)*100).toFixed(2)}%</div>
+              <div style={{fontSize:6,fontFamily:F,color:C.border,marginTop:2}}>Log-normal model from IV</div>
+            </div>
+          </div>}
+
           <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Hedged P/L Ladder (${Math.floor(rp)} {'\u2192'} ${Math.ceil(parseFloat(bottomRef)||bot)})</div>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:340}}>
@@ -13723,6 +13762,7 @@ function HedgeCalcPage(p){
                 <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>NET</th>
                 <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>%</th>
                 <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>SAVED</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>P(BELOW)</th>
               </tr></thead>
               <tbody>
                 {(function(){
@@ -13756,6 +13796,7 @@ function HedgeCalcPage(p){
                       <td style={{padding:'3px 2px',textAlign:'right',color:netPL>=0?C.accent:C.warn,fontWeight:700}}>{netPL>=0?'+':''}{fmtK2(netPL)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:netPL>=0?C.accent:C.warn}}>{netPct.toFixed(1)}%</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:saved>0?C.accent:C.warn}}>{saved>0?'+':''}{fmtK2(saved)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{(function(){var pb=probBelow(pr2);return pb!=null?(pb*100).toFixed(1)+'%':'\u2014';})()}</td>
                     </tr>);
                   }
                   return rows3;
@@ -13764,7 +13805,7 @@ function HedgeCalcPage(p){
             </table>
           </div>
           <div style={{marginTop:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
-            Gold = ref price. Purple = put strike (protection activates below). Saved = put payout minus hedge cost. Below strike, further drops are fully offset by put gains.
+            Gold = ref price. Purple = put strike. Saved = put payout minus cost. P(Below) = probability of price being at or below that level at expiry (log-normal model from IV).
           </div>
         </div>;
       })()}
