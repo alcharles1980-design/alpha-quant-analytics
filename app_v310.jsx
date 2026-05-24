@@ -13324,7 +13324,7 @@ function MostActivesPage(p){
         var chunk=rawActives.slice(batch,batch+50).map(function(a){return a.symbol;}).join(',');
         try{
           var rs=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-            'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=sip','X-Alpaca-Base':'data'}});
+            'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=iex','X-Alpaca-Base':'data'}});
           if(rs.ok){var ds=await rs.json();Object.assign(snapMap,ds);}
         }catch(e2){}
       }
