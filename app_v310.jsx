@@ -13416,6 +13416,161 @@ function MostActivesPage(p){
   </div>;
 }
 
+// ─── MOST ACTIVES ─────────────────────────────────────────────────────────────
+function MostActivesPage(p){
+  var s1=useState(null),actives=s1[0],setActives=s1[1];
+  var s2=useState(null),movers=s2[0],setMovers=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(null),err=s4[0],setErr=s4[1];
+  var s5=useState('volume'),sortBy=s5[0],setSortBy=s5[1];
+  var s6=useState(20),topN=s6[0],setTopN=s6[1];
+  var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
+
+  var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+
+  var fetchData=async function(){
+    if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
+    setLoading(true);setErr(null);
+    try{
+      var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+        'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by='+sortBy+'&top='+topN,'X-Alpaca-Base':'data'}});
+      if(!r1.ok)throw new Error('Most actives: '+r1.status);
+      var d1=await r1.json();
+      setActives(d1.most_actives||[]);
+      if(d1.last_updated){
+        var lu=new Date(d1.last_updated);
+        setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+      }
+      var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+        'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top='+topN,'X-Alpaca-Base':'data'}});
+      if(!r2.ok)throw new Error('Movers: '+r2.status);
+      var d2=await r2.json();
+      setMovers(d2);
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  useEffect(function(){fetchData();},[]);
+
+  var fmtVol=function(v){if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
+  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
+  var sml={fontSize:7,color:C.txtDim,fontFamily:F};
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Most Actives</div>
+    </div>
+
+    {/* Controls */}
+    <div style={card}>
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:4}}>
+          {['volume','trades'].map(function(m){
+            return <button key={m} onClick={function(){setSortBy(m);}}
+              style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
+                border:'1px solid '+(sortBy===m?C.gold+'66':C.border),
+                background:sortBy===m?C.gold+'10':'transparent',
+                color:sortBy===m?C.gold:C.txtDim}}>{m==='volume'?'By Volume':'By Trades'}</button>;
+          })}
+        </div>
+        <div style={{display:'flex',gap:4}}>
+          {[10,20,50,100].map(function(n){
+            return <button key={n} onClick={function(){setTopN(n);}}
+              style={{padding:'6px 10px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
+                border:'1px solid '+(topN===n?C.accent+'66':C.border),
+                background:topN===n?C.accent+'10':'transparent',
+                color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
+          })}
+        </div>
+        <button onClick={fetchData} disabled={loading}
+          style={{padding:'6px 14px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
+            color:loading?C.txtDim:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer'}}>
+          {loading?'Loading...':'Refresh'}
+        </button>
+      </div>
+      {lastUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {lastUpdated}</div>}
+      {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
+    </div>
+
+    {/* Most Actives Table */}
+    {actives&&actives.length>0&&<div style={card}>
+      <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>Most Active Stocks {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} (Top {actives.length})</div>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30}}>#</th>
+            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOL BAR</th>
+          </tr></thead>
+          <tbody>
+            {actives.map(function(a,i){
+              var maxVol=actives[0][sortBy==='volume'?'volume':'trade_count']||1;
+              var thisVal=sortBy==='volume'?a.volume:a.trade_count;
+              var pct=thisVal/maxVol*100;
+              return <tr key={i} style={{borderBottom:'1px solid '+C.border+'20'}}>
+                <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
+                <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',width:80}}>
+                  <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
+                    <div style={{width:60,height:6,background:C.border+'40',borderRadius:3,overflow:'hidden'}}>
+                      <div style={{width:pct+'%',height:'100%',background:i<3?C.gold:i<10?C.accent:C.blue,borderRadius:3}}></div>
+                    </div>
+                  </div>
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>}
+
+    {/* Market Movers */}
+    {movers&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      {/* Gainers */}
+      <div style={card}>
+        <div style={{color:C.accent,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>{'\u25B2'} Top Gainers</div>
+        {movers.gainers&&movers.gainers.map(function(g,i){
+          return <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid '+C.border+'20'}}>
+            <div>
+              <div style={{color:C.gold,fontWeight:700,fontSize:9,fontFamily:F}}>{g.symbol}</div>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>${g.price.toFixed(2)}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{color:C.accent,fontWeight:700,fontSize:10,fontFamily:F}}>+{g.percent_change.toFixed(1)}%</div>
+              <div style={{color:C.accent,fontSize:7,fontFamily:F}}>+${g.change.toFixed(2)}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+      {/* Losers */}
+      <div style={card}>
+        <div style={{color:C.warn,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>{'\u25BC'} Top Losers</div>
+        {movers.losers&&movers.losers.map(function(l,i){
+          return <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid '+C.border+'20'}}>
+            <div>
+              <div style={{color:C.gold,fontWeight:700,fontSize:9,fontFamily:F}}>{l.symbol}</div>
+              <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>${l.price.toFixed(2)}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{color:C.warn,fontWeight:700,fontSize:10,fontFamily:F}}>{l.percent_change.toFixed(1)}%</div>
+              <div style={{color:C.warn,fontSize:7,fontFamily:F}}>{l.change.toFixed(2)}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {!loading&&!actives&&!err&&<div style={card}>
+      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>Loading market data...</div>
+    </div>}
+  </div>;
+}
+
 // ─── CONFIG HEDGE CALCULATOR ──────────────────────────────────────────────────
 function HedgeCalcPage(p){
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
@@ -28364,6 +28519,7 @@ function App(){
     {page==='configsnap'&&<ConfigSnapshotPage onBack={function(){setPage('home');}}/>}
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
