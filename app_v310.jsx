@@ -13294,8 +13294,11 @@ function MostActivesPage(p){
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState('volume'),sortBy=s5[0],setSortBy=s5[1];
-  var s6=useState(20),topN=s6[0],setTopN=s6[1];
+  var s6=useState(50),topN=s6[0],setTopN=s6[1];
   var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
+  var s8=useState(''),minPrice=s8[0],setMinPrice=s8[1];
+  var s9=useState(''),maxPrice=s9[0],setMaxPrice=s9[1];
+  var s10=useState('all'),capFilter=s10[0],setCapFilter=s10[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13307,11 +13310,35 @@ function MostActivesPage(p){
         'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by='+sortBy+'&top='+topN,'X-Alpaca-Base':'data'}});
       if(!r1.ok)throw new Error('Most actives: '+r1.status);
       var d1=await r1.json();
-      setActives(d1.most_actives||[]);
+      var rawActives=d1.most_actives||[];
       if(d1.last_updated){
         var lu=new Date(d1.last_updated);
         setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }
+      // Fetch snapshots to get prices (batch up to 50 per call)
+      var snapMap={};
+      for(var batch=0;batch<rawActives.length;batch+=50){
+        var chunk=rawActives.slice(batch,batch+50).map(function(a){return a.symbol;}).join(',');
+        try{
+          var rs=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=iex','X-Alpaca-Base':'data'}});
+          if(rs.ok){var ds=await rs.json();Object.assign(snapMap,ds);}
+        }catch(e2){}
+      }
+      // Enrich actives with price data
+      for(var ai=0;ai<rawActives.length;ai++){
+        var sym=rawActives[ai].symbol;
+        var snap=snapMap[sym];
+        if(snap){
+          rawActives[ai].price=snap.latestTrade?snap.latestTrade.p:0;
+          rawActives[ai].prevClose=snap.prevDailyBar?snap.prevDailyBar.c:0;
+          rawActives[ai].change=rawActives[ai].price&&rawActives[ai].prevClose?(rawActives[ai].price-rawActives[ai].prevClose):0;
+          rawActives[ai].changePct=rawActives[ai].prevClose?(rawActives[ai].change/rawActives[ai].prevClose*100):0;
+        }else{
+          rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;
+        }
+      }
+      setActives(rawActives);
       var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
         'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top='+topN,'X-Alpaca-Base':'data'}});
       if(!r2.ok)throw new Error('Movers: '+r2.status);
@@ -13322,6 +13349,20 @@ function MostActivesPage(p){
   };
 
   useEffect(function(){fetchData();},[sortBy,topN]);
+
+  // Filter actives
+  var capRanges={all:[0,Infinity],mega:[200,Infinity],large:[50,200],mid:[10,50],small:[1,10],penny:[0,1]};
+  var filtered=actives?actives.filter(function(a){
+    var pr=a.price||0;
+    var mnP=parseFloat(minPrice)||0;
+    var mxP=parseFloat(maxPrice)||Infinity;
+    if(pr<mnP||pr>mxP)return false;
+    if(capFilter!=='all'){
+      var range=capRanges[capFilter];
+      if(pr<range[0]||pr>=range[1])return false;
+    }
+    return true;
+  }):[];
 
   var fmtVol=function(v){if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
@@ -13362,33 +13403,58 @@ function MostActivesPage(p){
       </div>
       {lastUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {lastUpdated}</div>}
       {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
+
+      {/* Price filter */}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Price:</span>
+        <input value={minPrice} onChange={function(e){setMinPrice(e.target.value);}} placeholder="Min" type="number" step="0.01"
+          style={{width:60,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
+        <input value={maxPrice} onChange={function(e){setMaxPrice(e.target.value);}} placeholder="Max" type="number" step="0.01"
+          style={{width:60,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+      </div>
+
+      {/* Cap/Price tier filter */}
+      <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+        {[['all','All'],['mega','$200+'],['large','$50-200'],['mid','$10-50'],['small','$1-10'],['penny','Under $1']].map(function(f){
+          return <button key={f[0]} onClick={function(){setCapFilter(f[0]);setMinPrice('');setMaxPrice('');}}
+            style={{padding:'4px 8px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+(capFilter===f[0]?(C.purple||'#a855f7')+'66':C.border),
+              background:capFilter===f[0]?(C.purple||'#a855f7')+'10':'transparent',
+              color:capFilter===f[0]?(C.purple||'#a855f7'):C.txtDim}}>{f[1]}</button>;
+        })}
+      </div>
     </div>
 
     {/* Most Actives Table */}
-    {actives&&actives.length>0&&<div style={card}>
-      <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>Most Active Stocks {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} (Top {actives.length})</div>
+    {filtered&&filtered.length>0&&<div style={card}>
+      <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>Most Active Stocks {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30}}>#</th>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>CHG %</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOL BAR</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BAR</th>
           </tr></thead>
           <tbody>
-            {actives.map(function(a,i){
-              var maxVol=actives[0][sortBy==='volume'?'volume':'trade_count']||1;
+            {filtered.map(function(a,i){
+              var maxVol=filtered[0][sortBy==='volume'?'volume':'trade_count']||1;
               var thisVal=sortBy==='volume'?a.volume:a.trade_count;
               var pct=thisVal/maxVol*100;
               return <tr key={i} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
                 <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>=0?C.accent:C.warn,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
-                <td style={{padding:'4px 3px',textAlign:'right',width:80}}>
+                <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
-                    <div style={{width:60,height:6,background:C.border+'40',borderRadius:3,overflow:'hidden'}}>
+                    <div style={{width:50,height:5,background:C.border+'40',borderRadius:3,overflow:'hidden'}}>
                       <div style={{width:pct+'%',height:'100%',background:i<3?C.gold:i<10?C.accent:C.blue,borderRadius:3}}></div>
                     </div>
                   </div>
@@ -13434,6 +13500,10 @@ function MostActivesPage(p){
           </div>;
         })}
       </div>
+    </div>}
+
+    {!loading&&actives&&filtered.length===0&&<div style={card}>
+      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>No stocks match the current filters. Try adjusting price range or tier.</div>
     </div>}
 
     {!loading&&!actives&&!err&&<div style={card}>
