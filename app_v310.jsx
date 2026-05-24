@@ -13398,7 +13398,7 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){if(autoRefresh)fetchData();},[sortBy,topN,autoRefresh,p.alpKey]);
+  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret]);
 
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
