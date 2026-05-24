@@ -13324,7 +13324,7 @@ function MostActivesPage(p){
         var chunk=rawActives.slice(batch,batch+50).map(function(a){return a.symbol;}).join(',');
         try{
           var rs=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-            'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=iex','X-Alpaca-Base':'data'}});
+            'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=sip','X-Alpaca-Base':'data'}});
           if(rs.ok){var ds=await rs.json();Object.assign(snapMap,ds);}
         }catch(e2){}
       }
@@ -13358,6 +13358,36 @@ function MostActivesPage(p){
           }
         }
       }catch(e3){}
+      // Fetch 20-day avg volume via SIP daily bars
+      try{
+        var startDate=new Date(Date.now()-30*86400000).toISOString().split('T')[0]; // 30 calendar days ≈ 20 trading days
+        for(var vBatch=0;vBatch<rawActives.length;vBatch+=50){
+          var vChunk=rawActives.slice(vBatch,vBatch+50).map(function(a3){return a3.symbol;}).join(',');
+          var rv=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&limit=10000&feed=sip','X-Alpaca-Base':'data'}});
+          if(rv.ok){
+            var dv2=await rv.json();
+            if(dv2.bars){
+              for(var sym2 in dv2.bars){
+                var dayBars=dv2.bars[sym2];
+                if(dayBars&&dayBars.length>0){
+                  var totalV=0;for(var vi=0;vi<dayBars.length;vi++)totalV+=dayBars[vi].v;
+                  var avgVol=totalV/dayBars.length;
+                  // Find and tag the active
+                  for(var ai3=0;ai3<rawActives.length;ai3++){
+                    if(rawActives[ai3].symbol===sym2){
+                      rawActives[ai3].avgVol=avgVol;
+                      rawActives[ai3].avgDays=dayBars.length;
+                      rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }catch(e4){}
       setActives(rawActives);
       var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
         'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top=10','X-Alpaca-Base':'data'}});
@@ -13487,6 +13517,8 @@ function MostActivesPage(p){
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MCAP</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AVG VOL</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>RVOL</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BAR</th>
           </tr></thead>
           <tbody>
@@ -13503,6 +13535,8 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgVol?fmtVol(a.avgVol):'\u2014'}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
                     <div style={{width:50,height:5,background:C.border+'40',borderRadius:3,overflow:'hidden'}}>
