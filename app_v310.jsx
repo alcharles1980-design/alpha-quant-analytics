@@ -13662,7 +13662,7 @@ function HedgeCalcPage(p){
         <div>
           <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase'}}>Hedged Position Analysis</div>
           <div style={{color:C.purple||'#a855f7',fontSize:10,fontWeight:700,fontFamily:F,marginTop:2}}>
-            PUT ${fmt2(selectedPut.strike)} | {selectedPut.expiration} | Mid: ${fmt2(selectedPut.mid)} per contract
+            PUT ${fmt2(selectedPut.strike)} | {selectedPut.expiration} ({selectedPut.dte} DTE) | Mid: ${fmt2(selectedPut.mid)} per contract
           </div>
         </div>
         <button onClick={function(){setSelectedPut(null);setHedgeContracts('');}}
