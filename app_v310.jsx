@@ -13298,6 +13298,7 @@ function HedgeCalcPage(p){
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
   var s5d=useState(null),selectedPut=s5d[0],setSelectedPut=s5d[1];
+  var s5f=useState(''),hedgeContracts=s5f[0],setHedgeContracts=s5f[1];
   var s5e=useState({}),expandedExps=s5e[0],setExpandedExps=s5e[1];
   var s6=useState(null),lastPrice=s6[0],setLastPrice=s6[1];
   var s7=useState([]),putOptions=s7[0],setPutOptions=s7[1];
@@ -13612,7 +13613,7 @@ function HedgeCalcPage(p){
                     var isNearMoney=lastPrice&&Math.abs(put.strike-lastPrice)/lastPrice<0.05;
                     var goodValue=put.costRatio>0&&put.costRatio<0.15;
                     var isSelected=selectedPut&&selectedPut.symbol===put.symbol;
-                    return <tr key={pi2} onClick={function(){setSelectedPut(put);}}
+                    return <tr key={pi2} onClick={function(){setSelectedPut(put);setHedgeContracts(String(put.contractsNeeded));}}
                       style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
                       background:isSelected?(C.purple||'#a855f7')+'18':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
                       <td style={{padding:'3px 2px',color:C.txtBright,fontWeight:700}}>${fmt2(put.strike)}</td>
@@ -13661,16 +13662,27 @@ function HedgeCalcPage(p){
         <div>
           <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase'}}>Hedged Position Analysis</div>
           <div style={{color:C.purple||'#a855f7',fontSize:10,fontWeight:700,fontFamily:F,marginTop:2}}>
-            PUT ${fmt2(selectedPut.strike)} | {selectedPut.expiration} | Mid: ${fmt2(selectedPut.mid)} | Cost: ${selectedPut.totalHedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}
+            PUT ${fmt2(selectedPut.strike)} | {selectedPut.expiration} | Mid: ${fmt2(selectedPut.mid)} per contract
           </div>
         </div>
-        <button onClick={function(){setSelectedPut(null);}}
+        <button onClick={function(){setSelectedPut(null);setHedgeContracts('');}}
           style={{padding:'4px 10px',background:'transparent',border:'1px solid '+C.border,borderRadius:4,color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear</button>
       </div>
 
+      {/* Contracts input */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+        <label style={{color:C.txtDim,fontSize:8,fontWeight:600,fontFamily:F}}>Contracts:</label>
+        <input value={hedgeContracts} onChange={function(e){setHedgeContracts(e.target.value);}}
+          style={{width:80,background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:700,padding:'6px 8px',outline:'none',textAlign:'center'}}
+          type="number" min="1"/>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>
+          (covers {((parseInt(hedgeContracts)||0)*100).toLocaleString()} shares | auto: {selectedPut.contractsNeeded} for {totalShares.toLocaleString()} shares)
+        </span>
+      </div>
+
       {(function(){
-        var hedgeCost=selectedPut.totalHedgeCost;
-        var nContracts=selectedPut.contractsNeeded;
+        var nContracts=parseInt(hedgeContracts)||selectedPut.contractsNeeded;
+        var hedgeCost=selectedPut.mid*nContracts*100;
         var putStrike=selectedPut.strike;
 
         // Max hedged loss: loss from levels above strike + hedge cost (below strike put covers)
@@ -13685,7 +13697,7 @@ function HedgeCalcPage(p){
             <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6}}>
               <div style={sml}>HEDGE COST</div>
               <div style={{fontSize:10,fontWeight:700,fontFamily:F,color:C.gold}}>${hedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-              <div style={sml}>{nContracts} contracts</div>
+              <div style={sml}>{nContracts} {'\u00D7'} ${fmt2(selectedPut.mid)} {'\u00D7'} 100</div>
             </div>
             <div style={{padding:'6px 8px',background:C.bgDeep,borderRadius:6}}>
               <div style={sml}>PROTECTED BELOW</div>
