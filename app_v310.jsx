@@ -13615,8 +13615,9 @@ function HedgeCalcPage(p){
                     var isSelected=selectedPut&&selectedPut.symbol===put.symbol;
                     return <tr key={pi2} onClick={function(){setSelectedPut(put);setHedgeContracts(String(put.contractsNeeded));}}
                       style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
-                      background:isSelected?(C.purple||'#a855f7')+'18':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
-                      <td style={{padding:'3px 2px',color:C.txtBright,fontWeight:700}}>${fmt2(put.strike)}</td>
+                      borderLeft:isSelected?'3px solid '+(C.purple||'#a855f7'):'3px solid transparent',
+                      background:isSelected?(C.purple||'#a855f7')+'35':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
+                      <td style={{padding:'3px 2px',color:isSelected?(C.purple||'#a855f7'):C.txtBright,fontWeight:700}}>{isSelected?'\u25B6 ':''}{'\$'+fmt2(put.strike)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>{fmt2(put.bid)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:C.warn}}>{fmt2(put.ask)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>{fmt2(put.mid)}</td>
