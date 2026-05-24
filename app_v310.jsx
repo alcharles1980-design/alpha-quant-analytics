@@ -13338,6 +13338,23 @@ function MostActivesPage(p){
           rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;
         }
       }
+      // Fetch market cap from Supabase
+      try{
+        var symList=rawActives.map(function(a2){return a2.symbol;});
+        var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap&order=ticker,created_at.desc';
+        var mcR=await fetch(mcUrl,{headers:getSbHeaders()});
+        if(mcR.ok){
+          var mcData=await mcR.json();
+          // Take latest market cap per ticker (first occurrence due to desc order)
+          var mcMap={};
+          for(var mi=0;mi<mcData.length;mi++){
+            if(!mcMap[mcData[mi].ticker]&&mcData[mi].market_cap)mcMap[mcData[mi].ticker]=mcData[mi].market_cap;
+          }
+          for(var ai2=0;ai2<rawActives.length;ai2++){
+            rawActives[ai2].marketCap=mcMap[rawActives[ai2].symbol]||null;
+          }
+        }
+      }catch(e3){}
       setActives(rawActives);
       var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
         'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top='+topN,'X-Alpaca-Base':'data'}});
@@ -13350,16 +13367,17 @@ function MostActivesPage(p){
 
   useEffect(function(){fetchData();},[sortBy,topN]);
 
-  // Filter actives
-  var capRanges={all:[0,Infinity],mega:[200,Infinity],large:[50,200],mid:[10,50],small:[1,10],penny:[0,1]};
+  // Filter actives by price and market cap
+  var capTiers={all:[0,Infinity],mega:[200e9,Infinity],large:[10e9,200e9],mid:[2e9,10e9],small:[300e6,2e9],micro:[0,300e6]};
   var filtered=actives?actives.filter(function(a){
     var pr=a.price||0;
     var mnP=parseFloat(minPrice)||0;
     var mxP=parseFloat(maxPrice)||Infinity;
     if(pr<mnP||pr>mxP)return false;
     if(capFilter!=='all'){
-      var range=capRanges[capFilter];
-      if(pr<range[0]||pr>=range[1])return false;
+      var mc=a.marketCap||0;
+      var range=capTiers[capFilter];
+      if(mc<range[0]||mc>=range[1])return false;
     }
     return true;
   }):[];
@@ -13414,9 +13432,10 @@ function MostActivesPage(p){
           style={{width:60,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
       </div>
 
-      {/* Cap/Price tier filter */}
+      {/* Market Cap filter */}
       <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-        {[['all','All'],['mega','$200+'],['large','$50-200'],['mid','$10-50'],['small','$1-10'],['penny','Under $1']].map(function(f){
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600,display:'flex',alignItems:'center'}}>Mkt Cap:</span>
+        {[['all','All'],['mega','Mega $200B+'],['large','Large $10-200B'],['mid','Mid $2-10B'],['small','Small $300M-2B'],['micro','Micro <$300M']].map(function(f){
           return <button key={f[0]} onClick={function(){setCapFilter(f[0]);setMinPrice('');setMaxPrice('');}}
             style={{padding:'4px 8px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
               border:'1px solid '+(capFilter===f[0]?(C.purple||'#a855f7')+'66':C.border),
@@ -13436,6 +13455,7 @@ function MostActivesPage(p){
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>CHG %</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MCAP</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BAR</th>
@@ -13450,6 +13470,7 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>=0?C.accent:C.warn,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
