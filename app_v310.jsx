@@ -13303,22 +13303,45 @@ function MostActivesPage(p){
   var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s13=useState('rth'),session=s13[0],setSession=s13[1];
+  var s14=useState([]),myLists=s14[0],setMyLists=s14[1];
+  var s15=useState(null),selectedList=s15[0],setSelectedList=s15[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+
+  // Fetch saved lists on mount
+  useEffect(function(){
+    fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name',{headers:getSbHeaders()})
+      .then(function(r){return r.json();}).then(function(d){setMyLists(d||[]);}).catch(function(){});
+  },[]);
 
   var fetchData=async function(manual){
     if(!p.alpKey||!p.alpSecret){if(manual)setErr('Set Alpaca API keys in Settings');return;}
     setLoading(true);setErr(null);
     try{
-      // Step 1: Get universe from screener (both modes need this)
-      var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-        'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by='+sortBy+'&top='+topN,'X-Alpaca-Base':'data'}});
-      if(!r1.ok)throw new Error('Most actives: '+r1.status);
-      var d1=await r1.json();
-      var rawActives=d1.most_actives||[];
-      if(d1.last_updated){
-        var lu=new Date(d1.last_updated);
-        setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+      var rawActives=[];
+
+      if(session==='mylists'){
+        // ── MY LISTS MODE: fetch tickers from selected list ──
+        if(!selectedList){setLoading(false);return;}
+        var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker',{headers:getSbHeaders()});
+        if(!lr.ok)throw new Error('Failed to load list');
+        var ld=await lr.json();
+        var listSymbols=ld.map(function(r){return r.ticker;});
+        if(listSymbols.length===0){setActives([]);setLoading(false);return;}
+        // Build raw actives from list tickers
+        for(var li2=0;li2<listSymbols.length;li2++)rawActives.push({symbol:listSymbols[li2],volume:0,trade_count:0});
+        setLastUpdated('List: '+(myLists.find(function(l2){return l2.id===selectedList;})||{}).name);
+      }else{
+        // ── RTH + OVERNIGHT: get universe from screener ──
+        var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by='+sortBy+'&top='+topN,'X-Alpaca-Base':'data'}});
+        if(!r1.ok)throw new Error('Most actives: '+r1.status);
+        var d1=await r1.json();
+        rawActives=d1.most_actives||[];
+        if(d1.last_updated){
+          var lu=new Date(d1.last_updated);
+          setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+        }
       }
 
       if(session==='overnight'){
@@ -13365,7 +13388,7 @@ function MostActivesPage(p){
         }catch(e5){}
         setActives(overnightActives);
       }else{
-        // ── RTH MODE: existing flow ──
+        // ── RTH + MY LISTS MODE ──
         // Fetch snapshots for prices
         var snapMap={};
         for(var batch=0;batch<rawActives.length;batch+=50){
@@ -13383,6 +13406,8 @@ function MostActivesPage(p){
             rawActives[ai].prevClose=snap.prevDailyBar?snap.prevDailyBar.c:0;
             rawActives[ai].change=rawActives[ai].price&&rawActives[ai].prevClose?(rawActives[ai].price-rawActives[ai].prevClose):0;
             rawActives[ai].changePct=rawActives[ai].prevClose?(rawActives[ai].change/rawActives[ai].prevClose*100):0;
+            // For mylists: pull volume + trades from today's dailyBar
+            if(!rawActives[ai].volume&&snap.dailyBar){rawActives[ai].volume=snap.dailyBar.v||0;rawActives[ai].trade_count=snap.dailyBar.n||0;}
           }else{rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;}
         }
         // Market cap
@@ -13410,7 +13435,12 @@ function MostActivesPage(p){
                 if(dayBars&&dayBars.length>0){
                   var totalV=0;for(var vi=0;vi<dayBars.length;vi++)totalV+=dayBars[vi].v;var avgVol=totalV/dayBars.length;
                   for(var ai3=0;ai3<rawActives.length;ai3++){
-                    if(rawActives[ai3].symbol===sym2){rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=dayBars.length;
+                    if(rawActives[ai3].symbol===sym2){
+                      rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=dayBars.length;
+                      // Use latest SIP bar volume as today's volume (more accurate than IEX snapshot)
+                      var latestBarVol=dayBars[dayBars.length-1].v;
+                      if(latestBarVol>rawActives[ai3].volume)rawActives[ai3].volume=latestBarVol;
+                      if(dayBars[dayBars.length-1].n>(rawActives[ai3].trade_count||0))rawActives[ai3].trade_count=dayBars[dayBars.length-1].n;
                       rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;break;}
                   }
                 }
@@ -13418,6 +13448,8 @@ function MostActivesPage(p){
             }
           }
         }catch(e4){}
+        // Sort by volume for mylists mode
+        if(session==='mylists')rawActives.sort(function(a,b){return(b.volume||0)-(a.volume||0);});
         setActives(rawActives);
       }
       // Movers (both modes)
@@ -13430,7 +13462,7 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session]);
+  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList]);
 
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
@@ -13465,7 +13497,7 @@ function MostActivesPage(p){
     <div style={card}>
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['rth','RTH (Regular Hours)'],['overnight','Overnight (BOATS 8PM-4AM)']].map(function(s){
+        {[['rth','RTH'],['overnight','Overnight (BOATS)'],['mylists','My Lists']].map(function(s){
           return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
             style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
               border:'1px solid '+(session===s[0]?C.gold:C.border),
@@ -13473,6 +13505,17 @@ function MostActivesPage(p){
               color:session===s[0]?C.gold:C.txtDim}}>{s[1]}</button>;
         })}
       </div>
+      {/* List selector (only in mylists mode) */}
+      {session==='mylists'&&<div style={{display:'flex',gap:4,marginBottom:8,flexWrap:'wrap'}}>
+        {myLists.map(function(lst){
+          return <button key={lst.id} onClick={function(){setSelectedList(lst.id);setActives(null);}}
+            style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+(selectedList===lst.id?(C.purple||'#a855f7')+'66':C.border),
+              background:selectedList===lst.id?(C.purple||'#a855f7')+'15':'transparent',
+              color:selectedList===lst.id?(C.purple||'#a855f7'):C.txtDim}}>{lst.name}</button>;
+        })}
+        {myLists.length===0&&<span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>No lists found. Create lists in Stocks At Glance.</span>}
+      </div>}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <div style={{display:'flex',gap:4}}>
           {['volume','trades'].map(function(m){
@@ -13548,7 +13591,7 @@ function MostActivesPage(p){
     {/* Most Actives Table */}
     {filtered&&filtered.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {session==='overnight'?'Overnight Most Active (BOATS 8PM-4AM)':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
+        {session==='overnight'?'Overnight Most Active (BOATS 8PM-4AM)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
