@@ -13305,8 +13305,8 @@ function MostActivesPage(p){
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
-  var fetchData=async function(){
-    if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
+  var fetchData=async function(manual){
+    if(!p.alpKey||!p.alpSecret){if(manual)setErr('Set Alpaca API keys in Settings');return;}
     setLoading(true);setErr(null);
     try{
       var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
@@ -13398,7 +13398,7 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){if(autoRefresh)fetchData();},[sortBy,topN,autoRefresh]);
+  useEffect(function(){if(autoRefresh)fetchData();},[sortBy,topN,autoRefresh,p.alpKey]);
 
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
@@ -13450,7 +13450,7 @@ function MostActivesPage(p){
                 color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
           })}
         </div>
-        <button onClick={fetchData} disabled={loading}
+        <button onClick={function(){fetchData(true);}} disabled={loading}
           style={{padding:'6px 14px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
             color:loading?C.txtDim:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer'}}>
           {loading?'Loading...':'Refresh'}
