@@ -13298,6 +13298,7 @@ function HedgeCalcPage(p){
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
   var s5d=useState(null),selectedPut=s5d[0],setSelectedPut=s5d[1];
+  var s5e=useState({}),expandedExps=s5e[0],setExpandedExps=s5e[1];
   var s6=useState(null),lastPrice=s6[0],setLastPrice=s6[1];
   var s7=useState([]),putOptions=s7[0],setPutOptions=s7[1];
   var s8=useState(false),loading=s8[0],setLoading=s8[1];
@@ -13520,18 +13521,19 @@ function HedgeCalcPage(p){
     {rp>0&&(parseFloat(bottomRef)||0)>0&&(parseFloat(bottomRef)||0)<rp&&top>bot&&lvls>1&&<div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Drawdown Ladder: ${fmt2(rp)} {'\u2192'} ${fmt2(parseFloat(bottomRef))}</div>
       <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:550}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:320}}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>PRICE</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>LEVELS</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>SHARES</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>CAPITAL</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VALUE</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>P/L ($)</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>P/L %</th>
+            <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>PRICE</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>LVLS</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>SHRS</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>CAPITAL</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>VALUE</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>P/L</th>
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>%</th>
           </tr></thead>
           <tbody>
             {(function(){
+              var fmtK=function(v){var a=Math.abs(v);if(a>=1000000)return(v/1000000).toFixed(1)+'M';if(a>=1000)return(v/1000).toFixed(a>=10000?0:1)+'K';return v.toFixed(0);};
               var bRef=parseFloat(bottomRef)||0;
               var rows2=[];
               var startP=Math.floor(rp);
@@ -13549,13 +13551,13 @@ function HedgeCalcPage(p){
                 var isCritical=plPct<=-50;
                 rows2.push(<tr key={pr} style={{borderBottom:'1px solid '+C.border+'20',
                   background:isRef?C.gold+'10':isCritical?C.warn+'08':'transparent'}}>
-                  <td style={{padding:'4px 3px',color:isRef?C.gold:C.txtBright,fontWeight:isRef?700:400}}>${pr.toFixed(0)}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{fl2.toLocaleString()}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{ts2.toLocaleString()}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>${cd2.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>${cv2.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:pl2>=0?C.accent:C.warn,fontWeight:600}}>{pl2>=0?'+':''}{pl2.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:pl2>=0?C.accent:C.warn}}>{plPct.toFixed(1)}%</td>
+                  <td style={{padding:'3px 2px',color:isRef?C.gold:C.txtBright,fontWeight:isRef?700:400}}>${pr}</td>
+                  <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{fl2.toLocaleString()}</td>
+                  <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>{ts2.toLocaleString()}</td>
+                  <td style={{padding:'3px 2px',textAlign:'right',color:C.gold}}>${fmtK(cd2)}</td>
+                  <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>${fmtK(cv2)}</td>
+                  <td style={{padding:'3px 2px',textAlign:'right',color:pl2>=0?C.accent:C.warn,fontWeight:600}}>{pl2>=0?'+':''}{fmtK(pl2)}</td>
+                  <td style={{padding:'3px 2px',textAlign:'right',color:pl2>=0?C.accent:C.warn}}>{plPct.toFixed(1)}%</td>
                 </tr>);
               }
               return rows2;
@@ -13578,23 +13580,32 @@ function HedgeCalcPage(p){
         {expOrder.map(function(exp3){
           var grp=expGroups[exp3];
           var dte4=grp[0].dte;
-          return <div key={exp3} style={{marginBottom:12}}>
-            <div style={{color:C.gold,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:6,padding:'4px 8px',background:C.gold+'10',borderRadius:4,display:'inline-block'}}>
-              {exp3} ({dte4} DTE)
+          var isExpOpen=expandedExps[exp3];
+          var grpHasSelected=selectedPut&&grp.some(function(pp){return pp.symbol===selectedPut.symbol;});
+          return <div key={exp3} style={{marginBottom:4}}>
+            <div onClick={function(){var e2=exp3;setExpandedExps(function(prev){var n=Object.assign({},prev);n[e2]=!n[e2];return n;});}}
+              style={{display:'flex',alignItems:'center',gap:6,padding:'6px 8px',background:C.bgDeep,borderRadius:isExpOpen?'6px 6px 0 0':'6px',
+                cursor:'pointer',border:'1px solid '+(grpHasSelected?(C.purple||'#a855f7')+'44':C.border+'44')}}>
+              <span style={{color:isExpOpen?C.gold:C.txtDim,fontSize:10,fontFamily:F}}>{isExpOpen?'\u25BC':'\u25B6'}</span>
+              <span style={{color:C.gold,fontSize:10,fontWeight:700,fontFamily:F}}>{exp3}</span>
+              <span style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{dte4} DTE</span>
+              <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{grp.length} puts</span>
+              {grpHasSelected&&<span style={{color:C.purple||'#a855f7',fontSize:7,fontFamily:F,fontWeight:700,marginLeft:'auto'}}>SELECTED</span>}
             </div>
+            {isExpOpen&&<div style={{border:'1px solid '+C.border+'44',borderTop:'none',borderRadius:'0 0 6px 6px',overflow:'hidden'}}>
             <div style={{overflowX:'auto'}}>
-              <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:650}}>
-                <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-                  <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>STRIKE</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BID</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>ASK</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MID</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>OI</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>HEDGE COST</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>% CAP</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PROTECTION</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>COST/$PROT</th>
-                  <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>B/E</th>
+              <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
+                <thead><tr style={{borderBottom:'2px solid '+C.border,background:C.bgCard}}>
+                  <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>STRIKE</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>BID</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>ASK</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>MID</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>OI</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>COST</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>%CAP</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>PROT</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>C/$P</th>
+                  <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>B/E</th>
                 </tr></thead>
                 <tbody>
                   {grp.map(function(put,pi2){
@@ -13603,22 +13614,23 @@ function HedgeCalcPage(p){
                     var isSelected=selectedPut&&selectedPut.symbol===put.symbol;
                     return <tr key={pi2} onClick={function(){setSelectedPut(put);}}
                       style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
-                      background:isSelected?C.purple+'18':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
-                      <td style={{padding:'4px 3px',color:C.txtBright,fontWeight:700}}>${fmt2(put.strike)}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>{fmt2(put.bid)}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>{fmt2(put.ask)}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt2(put.mid)}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{put.oi.toLocaleString()}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.gold,fontWeight:600}}>${put.totalHedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:put.hedgePct>5?C.warn:C.txtBright}}>{put.hedgePct.toFixed(1)}%</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>${put.totalProtection.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:put.costRatio<0.1?C.accent:put.costRatio<0.2?C.gold:C.warn}}>{fmt2(put.costRatio)}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>${fmt2(put.breakeven)}</td>
+                      background:isSelected?(C.purple||'#a855f7')+'18':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
+                      <td style={{padding:'3px 2px',color:C.txtBright,fontWeight:700}}>${fmt2(put.strike)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>{fmt2(put.bid)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.warn}}>{fmt2(put.ask)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>{fmt2(put.mid)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{put.oi.toLocaleString()}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.gold,fontWeight:600}}>${put.totalHedgeCost>=1000?(put.totalHedgeCost/1000).toFixed(1)+'K':put.totalHedgeCost.toFixed(0)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:put.hedgePct>5?C.warn:C.txtBright}}>{put.hedgePct.toFixed(1)}%</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>${put.totalProtection>=1000?(put.totalProtection/1000).toFixed(0)+'K':put.totalProtection.toFixed(0)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:put.costRatio<0.1?C.accent:put.costRatio<0.2?C.gold:C.warn}}>{fmt2(put.costRatio)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt2(put.breakeven)}</td>
                     </tr>;
                   })}
                 </tbody>
               </table>
             </div>
+            </div>}
           </div>;
         })}
       </div>
@@ -13689,18 +13701,19 @@ function HedgeCalcPage(p){
 
           <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Hedged P/L Ladder (${Math.floor(rp)} {'\u2192'} ${Math.ceil(parseFloat(bottomRef)||bot)})</div>
           <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:580}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:340}}>
               <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-                <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>PRICE</th>
-                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>STOCK P/L</th>
-                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PUT VALUE</th>
-                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>COST</th>
-                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>NET P/L</th>
-                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>NET %</th>
-                <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>SAVED</th>
+                <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>PRICE</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>STK P/L</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>PUT</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>COST</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>NET</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>%</th>
+                <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>SAVED</th>
               </tr></thead>
               <tbody>
                 {(function(){
+                  var fmtK2=function(v){var a=Math.abs(v);if(a>=1000000)return(v/1000000).toFixed(1)+'M';if(a>=1000)return(v/1000).toFixed(a>=10000?0:1)+'K';return v.toFixed(0);};
                   var bRef2=parseFloat(bottomRef)||bot;
                   var rows3=[];
                   var startP2=Math.floor(rp);
@@ -13721,15 +13734,15 @@ function HedgeCalcPage(p){
                     var isStrike=pr2===Math.floor(putStrike);
                     rows3.push(<tr key={pr2} style={{borderBottom:'1px solid '+C.border+'20',
                       background:isRef2?C.gold+'10':isStrike?(C.purple||'#a855f7')+'12':'transparent'}}>
-                      <td style={{padding:'4px 3px',color:isRef2?C.gold:isStrike?(C.purple||'#a855f7'):C.txtBright,fontWeight:isRef2||isStrike?700:400}}>
-                        ${pr2}{isStrike?' \u25C0 STRIKE':''}
+                      <td style={{padding:'3px 2px',color:isRef2?C.gold:isStrike?(C.purple||'#a855f7'):C.txtBright,fontWeight:isRef2||isStrike?700:400}}>
+                        ${pr2}{isStrike?' \u25C0':''}
                       </td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:stockPL>=0?C.accent:C.warn}}>{stockPL>=0?'+':''}{stockPL.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:putTotalValue>0?C.accent:C.txtDim}}>{putTotalValue>0?'+$'+putTotalValue.toLocaleString(undefined,{maximumFractionDigits:0}):'\u2014'}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>-${hedgeCost.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:netPL>=0?C.accent:C.warn,fontWeight:700}}>{netPL>=0?'+':''}{netPL.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:netPL>=0?C.accent:C.warn}}>{netPct.toFixed(1)}%</td>
-                      <td style={{padding:'4px 3px',textAlign:'right',color:saved>0?C.accent:C.warn}}>{saved>0?'+$'+saved.toLocaleString(undefined,{maximumFractionDigits:0}):saved.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:stockPL>=0?C.accent:C.warn}}>{stockPL>=0?'+':''}{fmtK2(stockPL)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:putTotalValue>0?C.accent:C.txtDim}}>{putTotalValue>0?'+'+fmtK2(putTotalValue):'\u2014'}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:C.warn}}>-{fmtK2(hedgeCost)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:netPL>=0?C.accent:C.warn,fontWeight:700}}>{netPL>=0?'+':''}{fmtK2(netPL)}</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:netPL>=0?C.accent:C.warn}}>{netPct.toFixed(1)}%</td>
+                      <td style={{padding:'3px 2px',textAlign:'right',color:saved>0?C.accent:C.warn}}>{saved>0?'+':''}{fmtK2(saved)}</td>
                     </tr>);
                   }
                   return rows3;
