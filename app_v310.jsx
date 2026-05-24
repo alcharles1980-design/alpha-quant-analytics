@@ -13305,6 +13305,7 @@ function MostActivesPage(p){
   var s13=useState('rth'),session=s13[0],setSession=s13[1];
   var s14=useState([]),myLists=s14[0],setMyLists=s14[1];
   var s15=useState(null),selectedList=s15[0],setSelectedList=s15[1];
+  var s16=useState('rth'),listSession=s16[0],setListSession=s16[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13328,9 +13329,9 @@ function MostActivesPage(p){
         var ld=await lr.json();
         var listSymbols=ld.map(function(r){return r.ticker;});
         if(listSymbols.length===0){setActives([]);setLoading(false);return;}
-        // Build raw actives from list tickers
         for(var li2=0;li2<listSymbols.length;li2++)rawActives.push({symbol:listSymbols[li2],volume:0,trade_count:0});
-        setLastUpdated('List: '+(myLists.find(function(l2){return l2.id===selectedList;})||{}).name);
+        var listName=(myLists.find(function(l2){return l2.id===selectedList;})||{}).name||'';
+        setLastUpdated('List: '+listName+(listSession==='overnight'?' (Overnight)':' (RTH)'));
       }else{
         // ── RTH + OVERNIGHT: get universe from screener ──
         var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
@@ -13344,7 +13345,10 @@ function MostActivesPage(p){
         }
       }
 
-      if(session==='overnight'){
+      // Determine data mode: overnight vs RTH
+      var isOvernight=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
+
+      if(isOvernight){
         // ── OVERNIGHT MODE: fetch BOATS bars for the universe ──
         var boatsMap={};
         var startBoats=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
@@ -13462,7 +13466,9 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList]);
+  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession]);
+
+  var isOvernightView=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
@@ -13515,6 +13521,15 @@ function MostActivesPage(p){
               color:selectedList===lst.id?(C.purple||'#a855f7'):C.txtDim}}>{lst.name}</button>;
         })}
         {myLists.length===0&&<span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>No lists found. Create lists in Stocks At Glance.</span>}
+      </div>}
+      {session==='mylists'&&selectedList&&<div style={{display:'flex',gap:4,marginBottom:8}}>
+        {[['rth','RTH Data'],['overnight','Overnight (BOATS)']].map(function(ls){
+          return <button key={ls[0]} onClick={function(){setListSession(ls[0]);setActives(null);}}
+            style={{padding:'5px 14px',borderRadius:5,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+(listSession===ls[0]?C.blue+'66':C.border),
+              background:listSession===ls[0]?C.blue+'10':'transparent',
+              color:listSession===ls[0]?C.blue:C.txtDim}}>{ls[1]}</button>;
+        })}
       </div>}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <div style={{display:'flex',gap:4}}>
@@ -13591,7 +13606,7 @@ function MostActivesPage(p){
     {/* Most Actives Table */}
     {filtered&&filtered.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {session==='overnight'?'Overnight Most Active (BOATS 8PM-4AM)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
+        {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
@@ -13603,7 +13618,7 @@ function MostActivesPage(p){
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MCAP</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AVG {session==='overnight'?'OVN':'VOL'}</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AVG {isOvernightView?'OVN':'VOL'}</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>RVOL</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BAR</th>
           </tr></thead>
