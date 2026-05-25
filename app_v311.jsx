@@ -17438,6 +17438,17 @@ function OscillationScreenerPage(p){
           return <button key={s.k} onClick={function(){setSessionFilter(s.k);}} style={{padding:'6px 8px',border:'1px solid '+(sessionFilter===s.k?C.blue:C.border),borderRadius:4,background:sessionFilter===s.k?C.blue:'transparent',color:sessionFilter===s.k?C.bg:C.txtDim,fontFamily:F,fontSize:7,fontWeight:600,cursor:'pointer',letterSpacing:0.5}}>{s.l}</button>;
         })}
       </div>
+      {/* Row count + Show All controls (above table) */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,flexWrap:'wrap',gap:4}}>
+        <div style={{fontSize:8,fontFamily:F,color:C.txtBright,fontWeight:600}}>
+          Showing {Math.min(filter?sorted.length:showCount,sorted.length).toLocaleString()} of {sorted.length.toLocaleString()} stocks
+        </div>
+        {showCount<sorted.length&&!filter&&<div style={{display:'flex',gap:4}}>
+          <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'4px 10px',border:'1px solid '+C.accent,borderRadius:4,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>+200</button>
+          <button onClick={function(){setShowCount(sorted.length);}} style={{padding:'4px 10px',border:'1px solid '+C.gold,borderRadius:4,background:'transparent',color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>All ({sorted.length.toLocaleString()})</button>
+        </div>}
+        {showCount>200&&!filter&&<button onClick={function(){setShowCount(200);}} style={{padding:'4px 10px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontFamily:F,fontSize:8,fontWeight:600,cursor:'pointer'}}>Reset</button>}
+      </div>
       <div style={{overflowX:'auto',}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
