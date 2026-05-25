@@ -17438,7 +17438,7 @@ function OscillationScreenerPage(p){
           return <button key={s.k} onClick={function(){setSessionFilter(s.k);}} style={{padding:'6px 8px',border:'1px solid '+(sessionFilter===s.k?C.blue:C.border),borderRadius:4,background:sessionFilter===s.k?C.blue:'transparent',color:sessionFilter===s.k?C.bg:C.txtDim,fontFamily:F,fontSize:7,fontWeight:600,cursor:'pointer',letterSpacing:0.5}}>{s.l}</button>;
         })}
       </div>
-      <div style={{overflowX:'auto',maxHeight:600}}>
+      <div style={{overflowX:'auto',}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
