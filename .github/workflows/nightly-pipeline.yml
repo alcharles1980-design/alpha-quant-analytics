@@ -1,0 +1,33 @@
+name: Nightly Pipeline
+
+on:
+  schedule:
+    # Nightly: 1AM ET = 6AM UTC (Mon-Fri)
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Comma-separated tickers'
+        required: true
+        default: 'ONON'
+
+concurrency:
+  group: pipeline-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm install
+      - name: Run nightly
+        run: node pipeline.js --nightly --tickers ${{ inputs.tickers || 'ONON' }}
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

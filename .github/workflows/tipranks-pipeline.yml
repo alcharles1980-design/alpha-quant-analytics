@@ -1,0 +1,28 @@
+name: TipRanks Sync Pipeline
+
+on:
+  schedule:
+    # TipRanks sync: 2AM ET = 7AM UTC (Mon-Fri)
+    - cron: '0 7 * * 1-5'
+  workflow_dispatch: {}
+
+concurrency:
+  group: pipeline-tipranks
+  cancel-in-progress: false
+
+jobs:
+  tipranks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm install
+      - name: Run tipranks-sync
+        run: node pipeline.js --tipranks-sync --tickers ALL
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

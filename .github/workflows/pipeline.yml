@@ -2,10 +2,6 @@ name: Alpha Quant Pipeline
 
 on:
   schedule:
-    # Nightly: 1AM ET = 6AM UTC (Mon-Fri)
-    - cron: '0 6 * * 1-5'
-    # TipRanks sync: 2AM ET = 7AM UTC (Mon-Fri, after nightly completes)
-    - cron: '0 7 * * 1-5'
     # Screener: 8PM ET = 1AM UTC next day (Mon-Fri → Tue-Sat UTC)
     - cron: '0 1 * * 2-6'
     # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
@@ -80,14 +76,6 @@ jobs:
             SCHEDULE="${{ github.event.schedule }}"
             echo "::notice::Cron schedule: $SCHEDULE"
             case "$SCHEDULE" in
-              "0 6 * * 1-5")
-                echo "mode=nightly" >> $GITHUB_OUTPUT
-                echo "tickers=ONON" >> $GITHUB_OUTPUT
-                ;;
-              "0 7 * * 1-5")
-                echo "mode=tipranks-sync" >> $GITHUB_OUTPUT
-                echo "tickers=ALL" >> $GITHUB_OUTPUT
-                ;;
               "0 1 * * 2-6")
                 echo "mode=screener" >> $GITHUB_OUTPUT
                 echo "tickers=SP500" >> $GITHUB_OUTPUT
