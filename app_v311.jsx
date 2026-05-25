@@ -17544,13 +17544,16 @@ function OscillationScreenerPage(p){
             })}</tbody>
           </table>
         </div>
-        {!filter&&showCount<sorted.length&&<div style={{display:'flex',gap:6,justifyContent:'center',marginTop:10}}>
-          <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'8px 20px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Show More (+200)</button>
-          <button onClick={function(){setShowCount(sorted.length);}} style={{padding:'8px 20px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Show All ({sorted.length})</button>
+        {sorted.length>0&&<div style={{textAlign:'center',marginTop:10,padding:'10px 0'}}>
+          {showCount<sorted.length&&!filter?<div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:6}}>
+            <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'10px 24px',border:'1px solid '+C.accent,borderRadius:8,background:C.accent+'15',color:C.accent,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>Show More (+200)</button>
+            <button onClick={function(){setShowCount(sorted.length);}} style={{padding:'10px 24px',border:'1px solid '+C.gold,borderRadius:8,background:C.gold+'15',color:C.gold,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>Show All ({sorted.length})</button>
+          </div>:null}
+          <div style={{fontSize:8,fontFamily:F,color:C.txtBright,fontWeight:600}}>
+            Showing {Math.min(filter?sorted.length:showCount,sorted.length).toLocaleString()} of {sorted.length.toLocaleString()} stocks
+            {data&&sorted.length<data.length?' (filtered from '+data.length.toLocaleString()+')':''}
+          </div>
         </div>}
-        <div style={{textAlign:'center',marginTop:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
-          Showing {Math.min(filter?sorted.length:showCount,sorted.length)} of {sorted.length} stocks{data&&sorted.length<data.length?' ('+data.length+' before filters)':''}
-        </div>
       </div>}
     </Cd>
 
