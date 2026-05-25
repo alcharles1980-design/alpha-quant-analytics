@@ -53,6 +53,9 @@ jobs:
   pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    concurrency:
+      group: pipeline-${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.schedule || 'default' }}
+      cancel-in-progress: false
     permissions:
       actions: write
       contents: read
@@ -74,21 +77,26 @@ jobs:
             echo "force=${{ inputs.force }}" >> $GITHUB_OUTPUT
             echo "::notice::Dispatch mode: ${{ inputs.mode }}, tickers: ${{ inputs.tickers }}"
           else
-            HOUR=$(date -u +%H)
-            echo "::notice::Cron trigger at UTC hour: $HOUR"
-            if [ "$HOUR" = "06" ]; then
-              echo "mode=nightly" >> $GITHUB_OUTPUT
-              echo "tickers=ONON" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "07" ]; then
-              echo "mode=tipranks-sync" >> $GITHUB_OUTPUT
-              echo "tickers=ALL" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" = "01" ]; then
-              echo "mode=screener" >> $GITHUB_OUTPUT
-              echo "tickers=SP500" >> $GITHUB_OUTPUT
-            else
-              echo "mode=hourly" >> $GITHUB_OUTPUT
-              echo "tickers=ONON" >> $GITHUB_OUTPUT
-            fi
+            SCHEDULE="${{ github.event.schedule }}"
+            echo "::notice::Cron schedule: $SCHEDULE"
+            case "$SCHEDULE" in
+              "0 6 * * 1-5")
+                echo "mode=nightly" >> $GITHUB_OUTPUT
+                echo "tickers=ONON" >> $GITHUB_OUTPUT
+                ;;
+              "0 7 * * 1-5")
+                echo "mode=tipranks-sync" >> $GITHUB_OUTPUT
+                echo "tickers=ALL" >> $GITHUB_OUTPUT
+                ;;
+              "0 1 * * 2-6")
+                echo "mode=screener" >> $GITHUB_OUTPUT
+                echo "tickers=SP500" >> $GITHUB_OUTPUT
+                ;;
+              *)
+                echo "mode=hourly" >> $GITHUB_OUTPUT
+                echo "tickers=ONON" >> $GITHUB_OUTPUT
+                ;;
+            esac
             echo "start=" >> $GITHUB_OUTPUT
             echo "end=" >> $GITHUB_OUTPUT
             echo "force=false" >> $GITHUB_OUTPUT
