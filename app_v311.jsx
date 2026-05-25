@@ -17032,6 +17032,7 @@ function OscillationScreenerPage(p){
   var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
   var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
   var s14c=useState(''),priceMax=s14c[0],setPriceMax=s14c[1];
+  var s14d=useState(200),showCount=s14d[0],setShowCount=s14d[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(false),refreshing=s16[0],setRefreshing=s16[1];
   var s17=useState('all'),sessionFilter=s17[0],setSessionFilter=s17[1];
@@ -17459,7 +17460,7 @@ function OscillationScreenerPage(p){
             <th onClick={function(){doSort('atr_pct');}} style={thS('atr_pct')}>ATR%</th>
             <th onClick={function(){doSort('reversal_pct');}} style={thS('reversal_pct')}>Rev%</th>
           </tr></thead>
-          <tbody>{(function(){var displayRows=sorted.slice(0,filter?sorted.length:200);var fullRanks={};if(filter){var allSorted=data?data.slice().map(function(r2){return Object.assign({},r2,{_score:getScore(r2)});}).sort(function(a,b){return(b._score||0)-(a._score||0);}):[];for(var ri=0;ri<allSorted.length;ri++)fullRanks[allSorted[ri].ticker]=ri+1;}return displayRows.map(function(r,idx){
+          <tbody>{(function(){var displayRows=sorted.slice(0,filter?sorted.length:showCount);var fullRanks={};if(filter){var allSorted=data?data.slice().map(function(r2){return Object.assign({},r2,{_score:getScore(r2)});}).sort(function(a,b){return(b._score||0)-(a._score||0);}):[];for(var ri=0;ri<allSorted.length;ri++)fullRanks[allSorted[ri].ticker]=ri+1;}return displayRows.map(function(r,idx){
             var rank=filter?fullRanks[r.ticker]||'--':(idx+1);
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{rank}</td>
@@ -17542,6 +17543,13 @@ function OscillationScreenerPage(p){
               </tr>;
             })}</tbody>
           </table>
+        </div>
+        {!filter&&showCount<sorted.length&&<div style={{display:'flex',gap:6,justifyContent:'center',marginTop:10}}>
+          <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'8px 20px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Show More (+200)</button>
+          <button onClick={function(){setShowCount(sorted.length);}} style={{padding:'8px 20px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:9,fontWeight:700,cursor:'pointer'}}>Show All ({sorted.length})</button>
+        </div>}
+        <div style={{textAlign:'center',marginTop:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
+          Showing {Math.min(filter?sorted.length:showCount,sorted.length)} of {sorted.length} stocks{data&&sorted.length<data.length?' ('+data.length+' before filters)':''}
         </div>
       </div>}
     </Cd>
