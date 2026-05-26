@@ -26741,11 +26741,11 @@ function Alpaca24AtrPage(p){
     if(!tk){setErr('Enter a ticker');return;}
     setLoading(true);setErr(null);setResults(null);setFeedStatus({});setProg('Building date range...');
 
-    // Build list of trading days (skip weekends)
+    // Build list of trading days (skip weekends), starting from today
     var tradingDays=[];
     var d2=new Date();
     for(var di=0;tradingDays.length<days&&di<days*3;di++){
-      var chk=new Date(d2);chk.setDate(chk.getDate()-di-1);
+      var chk=new Date(d2);chk.setDate(chk.getDate()-di);
       var dow=chk.getDay();
       if(dow!==0&&dow!==6)tradingDays.push(chk.toISOString().slice(0,10));
     }
