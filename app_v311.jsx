@@ -26928,11 +26928,11 @@ function Alpaca24AtrPage(p){
         <div><label style={lS}>Ticker</label><input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} style={iS} placeholder="e.g. NVDA"/></div>
         <div><label style={lS}>Lookback Days</label>
           <div style={{display:'flex',gap:4}}>
-            {[3,5,10,20].map(function(d){
-              return <button key={d} onClick={function(){setDays(d);}}
-                style={{flex:1,padding:'10px 4px',borderRadius:6,border:'1px solid '+(days===d?C.accent:C.border),
-                  background:days===d?C.accent+'15':'transparent',color:days===d?C.accent:C.txtDim,
-                  fontFamily:F,fontSize:12,fontWeight:700,cursor:'pointer'}}>{d}</button>;
+            {[{d:1,l:'Today'},{d:2,l:'2d'},{d:3,l:'3d'},{d:5,l:'5d'},{d:10,l:'10d'},{d:20,l:'20d'}].map(function(opt){
+              return <button key={opt.d} onClick={function(){setDays(opt.d);}}
+                style={{flex:1,padding:'10px 2px',borderRadius:6,border:'1px solid '+(days===opt.d?C.accent:C.border),
+                  background:days===opt.d?C.accent+'15':'transparent',color:days===opt.d?C.accent:C.txtDim,
+                  fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>{opt.l}</button>;
             })}
           </div>
         </div>
