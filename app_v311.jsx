@@ -26757,6 +26757,7 @@ function Alpaca24AtrPage(p){
     try{
       // For each trading day, scan all feeds, merge trades into hourly OHLCV
       var feeds=['sip','iex','boats'];
+      var todayStr2=new Date().toISOString().slice(0,10);
       var fStatus={sip:{ok:true,count:0,added:0},iex:{ok:true,count:0,added:0},boats:{ok:true,count:0,added:0}};
       var hourlyAgg={}; // key: "date|hour" → {high, low, volume, tradeCount, boats}
       var totalTrades=0;
@@ -26768,9 +26769,11 @@ function Alpaca24AtrPage(p){
         var dayStart=dayStr+'T00:00:00Z';
         var dayEnd=dayStr+'T23:59:59Z';
         var seenTrades={}; // dedup across feeds WITHIN same day only (reset per day to save memory)
+        // Skip SIP for today — Basic plan returns 403 for recent SIP data
+        var dayFeeds=(dayStr===todayStr2)?['iex','boats']:feeds;
 
-        for(var fi=0;fi<feeds.length;fi++){
-          var f=feeds[fi];
+        for(var fi=0;fi<dayFeeds.length;fi++){
+          var f=dayFeeds[fi];
           setProg('Day '+(dayIdx+1)+'/'+tradingDays.length+' '+dayStr+' '+f.toUpperCase()+' ('+totalTrades.toLocaleString()+' trades)');
           try{
             var trades=await fetchTrades(f,tk,dayStart,dayEnd,function(n){
@@ -26801,12 +26804,12 @@ function Alpaca24AtrPage(p){
               agg.volume+=(tr.s||0);
               agg.notional+=tr.p*(tr.s||0);
               agg.tradeCount++;
+              var trTs=dt.getTime();
               // Track last trade price chronologically
               if(trTs>lastTradeTs){lastTradePrice=tr.p;lastTradeTs=trTs;}
               // Track per-minute first/last price for avg move calculations
               // Store timestamp to ensure chronological ordering across feeds
               var rawMin=dt.getMinutes();
-              var trTs=dt.getTime();
               var k1=rawMin;
               var k3=Math.floor(rawMin/3);
               var k5=Math.floor(rawMin/5);
