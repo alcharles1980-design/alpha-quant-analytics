@@ -13332,7 +13332,7 @@ function MostActivesPage(p){
         if(listSymbols.length===0){setActives([]);setLoading(false);return;}
         for(var li2=0;li2<listSymbols.length;li2++)rawActives.push({symbol:listSymbols[li2],volume:0,trade_count:0});
         var listName=(myLists.find(function(l2){return l2.id===selectedList;})||{}).name||'';
-        setLastUpdated('List: '+listName+(listSession==='overnight'?' (Overnight)':' (RTH)'));
+        setLastUpdated('List: '+listName+(listSession==='overnight'?' (Overnight)':' (RTH)')+' \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }else{
         // ── RTH + OVERNIGHT: get universe from screener ──
         var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
@@ -13342,7 +13342,7 @@ function MostActivesPage(p){
         rawActives=d1.most_actives||[];
         if(d1.last_updated){
           var lu=new Date(d1.last_updated);
-          setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+          setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET (fetched '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+')');
         }
       }
 
@@ -13392,6 +13392,7 @@ function MostActivesPage(p){
           }
         }catch(e5){}
         setActives(overnightActives);
+        setLastUpdated('Overnight (BOATS) \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }else{
         // ── RTH + MY LISTS MODE ──
         // Fetch snapshots for prices
