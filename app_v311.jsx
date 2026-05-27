@@ -13302,6 +13302,7 @@ function MostActivesPage(p){
   var s10b=useState(''),maxCap=s10b[0],setMaxCap=s10b[1];
   var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
+  var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
   var s13=useState('rth'),session=s13[0],setSession=s13[1];
   var s14=useState([]),myLists=s14[0],setMyLists=s14[1];
   var s15=useState(null),selectedList=s15[0],setSelectedList=s15[1];
@@ -13466,7 +13467,7 @@ function MostActivesPage(p){
     setLoading(false);
   };
 
-  useEffect(function(){if(autoRefresh&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession]);
+  useEffect(function(){if((autoRefresh||refreshTrigger>0)&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
 
   var isOvernightView=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
@@ -13550,7 +13551,7 @@ function MostActivesPage(p){
                 color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
           })}
         </div>
-        <button onClick={function(){fetchData(true);}} disabled={loading}
+        <button onClick={function(){setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
           style={{padding:'6px 14px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
             color:loading?C.txtDim:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer'}}>
           {loading?'Loading...':'Refresh'}
