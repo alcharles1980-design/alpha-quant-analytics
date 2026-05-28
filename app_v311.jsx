@@ -7002,8 +7002,8 @@ function Splash(p){
   return <div style={{background:'linear-gradient(160deg,#0a1628 0%,#122040 30%,#1a2d5a 50%,#122040 70%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',fontFamily:F,transition:'opacity 0.8s',opacity:opacity,paddingTop:'18vh',paddingLeft:20,paddingRight:20,paddingBottom:20,position:'relative',overflow:'hidden'}}>
     <canvas ref={canvasRef} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0}}/>
     <div style={{position:'absolute',top:0,left:0,right:0,bottom:0,background:'radial-gradient(ellipse at 30% 20%,rgba(30,60,120,0.4) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(20,40,90,0.3) 0%,transparent 50%)',pointerEvents:'none',zIndex:1}}></div>
-    <div style={{color:'#ffffff',fontSize:22,fontWeight:800,letterSpacing:4,textTransform:'uppercase',marginBottom:8,textShadow:'0 0 30px rgba(255,255,255,0.5),0 0 60px rgba(120,180,255,0.25),0 2px 4px rgba(0,0,0,0.3)',position:'relative',zIndex:2}}>Alpha Quant Analytics</div>
-    <div style={{color:C.accent,fontSize:13,fontWeight:600,letterSpacing:2,marginBottom:24,position:'relative',zIndex:2}}>Beta Growth Holdings</div>
+    <div style={{color:'#ffffff',fontSize:22,fontWeight:800,letterSpacing:4,textTransform:'uppercase',marginBottom:8,textAlign:'center',textShadow:'0 0 30px rgba(255,255,255,0.5),0 0 60px rgba(120,180,255,0.25),0 2px 4px rgba(0,0,0,0.3)',position:'relative',zIndex:2}}>Alpha Quant Analytics</div>
+    <div style={{color:C.accent,fontSize:13,fontWeight:600,letterSpacing:2,marginBottom:24,textAlign:'center',position:'relative',zIndex:2}}>Beta Growth Holdings</div>
     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:28,position:'relative',zIndex:2}}>
       <div style={{width:6,height:6,borderRadius:'50%',background:C.accent,boxShadow:'0 0 8px '+C.accent,animation:'pulse 1.2s infinite'}}></div>
       <div style={{color:C.txt,fontSize:11,letterSpacing:2,textTransform:'uppercase'}}>Edge Detection</div>
