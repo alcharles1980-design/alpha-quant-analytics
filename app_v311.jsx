@@ -13770,21 +13770,24 @@ function FullMarketScanPage(p){
         var day=t.day||{};var prev=t.prevDay||{};var lt=t.lastTrade||{};
         var vol=day.v||0;var price=day.c||lt.p||prev.c||0;
         var prevClose=prev.c||0;
+        var isFallback=false;
         // Use prevDay on weekends/after-hours when day is empty
-        if(vol===0&&prev.v>0){vol=prev.v;price=prev.c||0;}
+        if(vol===0&&prev.v>0){vol=prev.v;price=prev.c||0;isFallback=true;}
         if(vol===0)continue; // skip completely inactive
-        var chg=prevClose>0?price-prevClose:0;
-        var chgPct=prevClose>0?(chg/prevClose*100):0;
-        var rvol=prev.v>0?(vol/prev.v*100):0;
+        var chg=prevClose>0&&!isFallback?price-prevClose:0;
+        var chgPct=prevClose>0&&!isFallback?(chg/prevClose*100):0;
+        // RVOL: only meaningful when we have both today AND yesterday
+        var rvol=(!isFallback&&prev.v>0)?(vol/prev.v*100):0;
         rows.push({
           symbol:t.ticker,price:price,volume:vol,
-          prevVol:prev.v||0,vwap:day.vw||prev.vw||0,
+          prevVol:isFallback?0:prev.v||0,vwap:day.vw||prev.vw||0,
           open:day.o||prev.o||0,high:day.h||prev.h||0,low:day.l||prev.l||0,
-          change:chg,changePct:chgPct,rvol:rvol
+          change:chg,changePct:chgPct,rvol:rvol,isFallback:isFallback
         });
       }
+      var hasFallback=rows.length>0&&rows[0].isFallback;
       setData(rows);
-      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET'+(hasFallback?' (market closed \u2014 showing prev day data)':''));
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -13887,7 +13890,7 @@ function FullMarketScanPage(p){
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${fmt3(r.price)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:r.changePct>=0?C.accent:C.warn,fontWeight:600}}>{r.changePct?(r.changePct>=0?'+':'')+r.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>{fmtK(r.volume)}</td>
-                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{fmtK(r.prevVol)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{r.prevVol?fmtK(r.prevVol):'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:r.rvol>200?C.warn:r.rvol>120?C.gold:C.txtDim,fontWeight:r.rvol>150?700:400}}>{r.rvol?r.rvol.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.vwap)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.high)}</td>
