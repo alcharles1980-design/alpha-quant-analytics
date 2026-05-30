@@ -13312,6 +13312,24 @@ function MostActivesPage(p){
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
+  // Polygon fallback: fetch market cap for stocks not in screener cache
+  var polygonFillMcap=async function(arr){
+    if(!p.pgKey)return;
+    var missing=[];
+    for(var mi5=0;mi5<arr.length;mi5++){if(arr[mi5].marketCap==null&&arr[mi5].tickerType==null)missing.push(mi5);}
+    if(missing.length===0)return;
+    for(var pi5=0;pi5<missing.length;pi5++){
+      var idx5=missing[pi5];var sym5=arr[idx5].symbol;
+      try{
+        var pr5=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(sym5)+'?apiKey='+p.pgKey);
+        if(pr5.ok){
+          var pd5=await pr5.json();
+          if(pd5.results){arr[idx5].marketCap=pd5.results.market_cap||null;arr[idx5].tickerType=pd5.results.type||null;}
+        }
+      }catch(e6){}
+    }
+  };
+
   // Fetch saved lists on mount
   useEffect(function(){
     fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name',{headers:getSbHeaders()})
@@ -13393,6 +13411,7 @@ function MostActivesPage(p){
             }
           }
         }catch(e5){}
+        await polygonFillMcap(overnightActives);
         setActives(overnightActives);
         setLastUpdated('Overnight (BOATS) \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }else{
@@ -13429,6 +13448,7 @@ function MostActivesPage(p){
             for(var ai2=0;ai2<rawActives.length;ai2++){var m3=mcMap[rawActives[ai2].symbol];rawActives[ai2].marketCap=m3?m3.mc:null;rawActives[ai2].tickerType=m3?m3.tt:null;}
           }
         }catch(e3){}
+        await polygonFillMcap(rawActives);
         // 20-day avg volume (SIP)
         try{
           var startDate=new Date(Date.now()-30*86400000).toISOString().split('T')[0];
@@ -28963,7 +28983,7 @@ function App(){
     {page==='configsnap'&&<ConfigSnapshotPage onBack={function(){setPage('home');}}/>}
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
