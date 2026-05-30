@@ -13384,7 +13384,7 @@ function MostActivesPage(p){
         try{
           var symList2=overnightActives.map(function(a2){return a2.symbol;});
           if(symList2.length>0){
-            var mcUrl2=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList2.join(',')+')&select=ticker,market_cap,ticker_type&order=ticker,created_at.desc';
+            var mcUrl2=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList2.join(',')+')&select=ticker,market_cap,ticker_type&order=scan_date.desc&limit=10000';
             var mcR2=await fetch(mcUrl2,{headers:getSbHeaders()});
             if(mcR2.ok){
               var mcData2=await mcR2.json();var mcMap2={};
@@ -13421,7 +13421,7 @@ function MostActivesPage(p){
         // Market cap
         try{
           var symList=rawActives.map(function(a2){return a2.symbol;});
-          var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap,ticker_type&order=ticker,created_at.desc';
+          var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap,ticker_type&order=scan_date.desc&limit=10000';
           var mcR=await fetch(mcUrl,{headers:getSbHeaders()});
           if(mcR.ok){
             var mcData=await mcR.json();var mcMap={};
