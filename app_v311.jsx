@@ -13752,6 +13752,8 @@ function FullMarketScanPage(p){
   var s12=useState(200),showCount=s12[0],setShowCount=s12[1];
   var s13=useState(null),scanTime=s13[0],setScanTime=s13[1];
   var s14=useState(0),refreshTrigger=s14[0],setRefreshTrigger=s14[1];
+  var s14b=useState(''),capMin=s14b[0],setCapMin=s14b[1];
+  var s14c=useState(''),capMax=s14c[0],setCapMax=s14c[1];
 
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',marginBottom:12};
 
@@ -13888,6 +13890,7 @@ function FullMarketScanPage(p){
     if(volMin&&r.volume<parseFloat(volMin)*1e6)return false;
     if(changePctMin&&r.changePct<parseFloat(changePctMin))return false;
     if(changePctMax&&r.changePct>parseFloat(changePctMax))return false;
+    if(capMin||capMax){var mc=r.marketCap||0;if(capMin&&mc<parseFloat(capMin)*1e9)return false;if(capMax&&mc>parseFloat(capMax)*1e9)return false;}
     return true;
   }):[];
   var sorted=filtered.slice().sort(function(a,b){
@@ -13925,6 +13928,10 @@ function FullMarketScanPage(p){
         <input value={changePctMin} onChange={function(e){setChangePctMin(e.target.value);}} placeholder="Min" type="number" style={{width:40,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
         <span style={{fontSize:7,color:C.txtDim}}>{'\u2013'}</span>
         <input value={changePctMax} onChange={function(e){setChangePctMax(e.target.value);}} placeholder="Max" type="number" style={{width:40,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim,marginLeft:4}}>MCap (B):</span>
+        <input value={capMin} onChange={function(e){setCapMin(e.target.value);}} placeholder="Min" type="number" style={{width:50,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+        <span style={{fontSize:7,color:C.txtDim}}>{'\u2013'}</span>
+        <input value={capMax} onChange={function(e){setCapMax(e.target.value);}} placeholder="Max" type="number" style={{width:50,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
       </div>
       {scanTime&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.txtDim}}>Scanned: {scanTime} | {data?data.length.toLocaleString():0} active tickers | Polygon SIP snapshot</div>}
       {data&&(function(){var visMissing=0;var vis2=sorted.slice(0,filter?sorted.length:showCount);for(var vm=0;vm<vis2.length;vm++){if(vis2[vm].marketCap==null)visMissing++;}
