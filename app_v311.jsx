@@ -13786,6 +13786,51 @@ function FullMarketScanPage(p){
         });
       }
       var hasFallback=rows.length>0&&rows[0].isFallback;
+
+      // Build symbol lookup for enrichment
+      var rowMap={};for(var ri2=0;ri2<rows.length;ri2++)rowMap[rows[ri2].symbol]=ri2;
+
+      // Fetch trade counts via Polygon grouped daily bars (12K+ stocks, 1 call)
+      try{
+        // Use last trading day (weekday)
+        var gDate=new Date();
+        for(var gd=0;gd<7;gd++){var chkD=new Date(gDate);chkD.setDate(chkD.getDate()-gd);var dow2=chkD.getDay();if(dow2!==0&&dow2!==6){gDate=chkD;break;}}
+        var gDateStr=gDate.toISOString().slice(0,10);
+        var gr=await fetch('https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/'+gDateStr+'?adjusted=true&apiKey='+p.pgKey);
+        if(gr.ok){
+          var gd2=await gr.json();
+          if(gd2.results){
+            for(var gi=0;gi<gd2.results.length;gi++){
+              var gt=gd2.results[gi];
+              var rIdx=rowMap[gt.T];
+              if(rIdx!=null){rows[rIdx].trades=gt.n||0;}
+            }
+          }
+        }
+      }catch(e7){}
+
+      // Fetch market cap + ticker_type from Supabase screener cache (2,500 stocks)
+      try{
+        var all2=[];var off2=0;
+        while(true){
+          var mh2=getSbHeaders();mh2['Range']=off2+'-'+(off2+999);
+          var mr2=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,market_cap,ticker_type&order=scan_date.desc&limit=10000',{headers:mh2});
+          var mc2=await mr2.json();
+          if(!Array.isArray(mc2)||mc2.length===0)break;
+          all2=all2.concat(mc2);
+          if(mc2.length<1000)break;
+          off2+=1000;
+        }
+        var mcLookup={};
+        for(var mi3=0;mi3<all2.length;mi3++){
+          if(!mcLookup[all2[mi3].ticker])mcLookup[all2[mi3].ticker]={mc:all2[mi3].market_cap,tt:all2[mi3].ticker_type};
+        }
+        for(var ri3=0;ri3<rows.length;ri3++){
+          var ml=mcLookup[rows[ri3].symbol];
+          if(ml){rows[ri3].marketCap=ml.mc;rows[ri3].tickerType=ml.tt;}
+        }
+      }catch(e8){}
+
       setData(rows);
       setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET'+(hasFallback?' (market closed \u2014 showing prev day data)':''));
     }catch(e){setErr(e.message);}
@@ -13873,8 +13918,10 @@ function FullMarketScanPage(p){
             {tblTh('price','PRICE')}
             {tblTh('changePct','CHG %')}
             {tblTh('volume','VOLUME')}
+            {tblTh('trades','TRADES')}
             {tblTh('prevVol','PREV VOL')}
             {tblTh('rvol','RVOL')}
+            {tblTh('marketCap','MCAP')}
             {tblTh('vwap','VWAP')}
             {tblTh('high','HIGH')}
             {tblTh('low','LOW')}
@@ -13890,8 +13937,10 @@ function FullMarketScanPage(p){
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${fmt3(r.price)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:r.changePct>=0?C.accent:C.warn,fontWeight:600}}>{r.changePct?(r.changePct>=0?'+':'')+r.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>{fmtK(r.volume)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>{r.trades?fmtK(r.trades):'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{r.prevVol?fmtK(r.prevVol):'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:r.rvol>200?C.warn:r.rvol>120?C.gold:C.txtDim,fontWeight:r.rvol>150?700:400}}>{r.rvol?r.rvol.toFixed(0)+'%':'\u2014'}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{r.marketCap?fmtK(r.marketCap):'\u2014'}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.vwap)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.high)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.low)}</td>
