@@ -13384,12 +13384,12 @@ function MostActivesPage(p){
         try{
           var symList2=overnightActives.map(function(a2){return a2.symbol;});
           if(symList2.length>0){
-            var mcUrl2=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList2.join(',')+')&select=ticker,market_cap&order=ticker,created_at.desc';
+            var mcUrl2=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList2.join(',')+')&select=ticker,market_cap,ticker_type&order=ticker,created_at.desc';
             var mcR2=await fetch(mcUrl2,{headers:getSbHeaders()});
             if(mcR2.ok){
               var mcData2=await mcR2.json();var mcMap2={};
-              for(var mi2=0;mi2<mcData2.length;mi2++){if(!mcMap2[mcData2[mi2].ticker]&&mcData2[mi2].market_cap)mcMap2[mcData2[mi2].ticker]=mcData2[mi2].market_cap;}
-              for(var ai4=0;ai4<overnightActives.length;ai4++)overnightActives[ai4].marketCap=mcMap2[overnightActives[ai4].symbol]||null;
+              for(var mi2=0;mi2<mcData2.length;mi2++){if(!mcMap2[mcData2[mi2].ticker])mcMap2[mcData2[mi2].ticker]={mc:mcData2[mi2].market_cap,tt:mcData2[mi2].ticker_type};}
+              for(var ai4=0;ai4<overnightActives.length;ai4++){var m2=mcMap2[overnightActives[ai4].symbol];overnightActives[ai4].marketCap=m2?m2.mc:null;overnightActives[ai4].tickerType=m2?m2.tt:null;}
             }
           }
         }catch(e5){}
@@ -13421,12 +13421,12 @@ function MostActivesPage(p){
         // Market cap
         try{
           var symList=rawActives.map(function(a2){return a2.symbol;});
-          var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap&order=ticker,created_at.desc';
+          var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap,ticker_type&order=ticker,created_at.desc';
           var mcR=await fetch(mcUrl,{headers:getSbHeaders()});
           if(mcR.ok){
             var mcData=await mcR.json();var mcMap={};
-            for(var mi=0;mi<mcData.length;mi++){if(!mcMap[mcData[mi].ticker]&&mcData[mi].market_cap)mcMap[mcData[mi].ticker]=mcData[mi].market_cap;}
-            for(var ai2=0;ai2<rawActives.length;ai2++)rawActives[ai2].marketCap=mcMap[rawActives[ai2].symbol]||null;
+            for(var mi=0;mi<mcData.length;mi++){if(!mcMap[mcData[mi].ticker])mcMap[mcData[mi].ticker]={mc:mcData[mi].market_cap,tt:mcData[mi].ticker_type};}
+            for(var ai2=0;ai2<rawActives.length;ai2++){var m3=mcMap[rawActives[ai2].symbol];rawActives[ai2].marketCap=m3?m3.mc:null;rawActives[ai2].tickerType=m3?m3.tt:null;}
           }
         }catch(e3){}
         // 20-day avg volume (SIP)
@@ -13480,9 +13480,10 @@ function MostActivesPage(p){
     var mnP=parseFloat(minPrice)||0;
     var mxP=parseFloat(maxPrice)||Infinity;
     if(pr<mnP||pr>mxP)return false;
-    // Asset type filter
-    if(assetType==='stocks'&&a.marketCap==null)return false;
-    if(assetType==='etf'&&a.marketCap!=null)return false;
+    // Asset type filter using ticker_type from Polygon (CS=stock, ETF/ETV/ETS/ETN=fund)
+    var isETF=a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN';
+    if(assetType==='stocks'&&isETF)return false;
+    if(assetType==='etf'&&!isETF)return false;
     // Market cap filter (input in billions, data in raw)
     var mnC=(parseFloat(minCap)||0)*1e9;
     var mxC=maxCap?(parseFloat(maxCap)*1e9):Infinity;
@@ -13641,7 +13642,7 @@ function MostActivesPage(p){
               return <tr key={i} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
                 <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
-                <td style={{padding:'4px 3px',color:a.marketCap==null?C.blue:C.txtDim,fontSize:7}}>{a.marketCap==null?'ETF':'STK'}</td>
+                <td style={{padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7}}>{a.tickerType||'STK'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>=0?C.accent:C.warn,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
