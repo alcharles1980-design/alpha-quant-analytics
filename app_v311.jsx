@@ -13736,6 +13736,186 @@ function MostActivesPage(p){
   </div>;
 }
 
+// ─── FULL MARKET SCAN ─────────────────────────────────────────────────────────
+function FullMarketScanPage(p){
+  var s1=useState(null),data=s1[0],setData=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(''),filter=s4[0],setFilter=s4[1];
+  var s5=useState('volume'),sortCol=s5[0],setSortCol=s5[1];
+  var s6=useState(true),sortDesc=s6[0],setSortDesc=s6[1];
+  var s7=useState(''),priceMin=s7[0],setPriceMin=s7[1];
+  var s8=useState(''),priceMax=s8[0],setPriceMax=s8[1];
+  var s9=useState(''),volMin=s9[0],setVolMin=s9[1];
+  var s10=useState(''),changePctMin=s10[0],setChangePctMin=s10[1];
+  var s11=useState(''),changePctMax=s11[0],setChangePctMax=s11[1];
+  var s12=useState(200),showCount=s12[0],setShowCount=s12[1];
+  var s13=useState(null),scanTime=s13[0],setScanTime=s13[1];
+  var s14=useState(0),refreshTrigger=s14[0],setRefreshTrigger=s14[1];
+
+  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',marginBottom:12};
+
+  var fetchData=async function(){
+    if(!p.pgKey){setErr('Set Polygon API key in Settings');return;}
+    setLoading(true);setErr(null);
+    try{
+      var r=await fetch('https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey='+p.pgKey);
+      if(!r.ok)throw new Error('Polygon snapshot: '+r.status);
+      var d=await r.json();
+      if(!d.tickers||!d.tickers.length)throw new Error('No data returned');
+      // Process into flat rows
+      var rows=[];
+      for(var i=0;i<d.tickers.length;i++){
+        var t=d.tickers[i];
+        var day=t.day||{};var prev=t.prevDay||{};var lt=t.lastTrade||{};
+        var vol=day.v||0;var price=day.c||lt.p||prev.c||0;
+        var prevClose=prev.c||0;
+        // Use prevDay on weekends/after-hours when day is empty
+        if(vol===0&&prev.v>0){vol=prev.v;price=prev.c||0;}
+        if(vol===0)continue; // skip completely inactive
+        var chg=prevClose>0?price-prevClose:0;
+        var chgPct=prevClose>0?(chg/prevClose*100):0;
+        var rvol=prev.v>0?(vol/prev.v*100):0;
+        rows.push({
+          symbol:t.ticker,price:price,volume:vol,
+          prevVol:prev.v||0,vwap:day.vw||prev.vw||0,
+          open:day.o||prev.o||0,high:day.h||prev.h||0,low:day.l||prev.l||0,
+          change:chg,changePct:chgPct,rvol:rvol
+        });
+      }
+      setData(rows);
+      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  useEffect(function(){if(p.pgKey)fetchData();},[p.pgKey,refreshTrigger]);
+
+  var doSort=function(col){if(sortCol===col)setSortDesc(!sortDesc);else{setSortCol(col);setSortDesc(true);}};
+  var tblTh=function(col,label,align){return <th onClick={function(){doSort(col);}} style={{padding:'3px 2px',textAlign:align||'right',color:sortCol===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortCol===col?700:400,fontSize:7}}>{label}{sortCol===col?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
+  var fmtK=function(v){if(v>=1e12)return(v/1e12).toFixed(1)+'T';if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v!=null?Math.round(v):'\u2014';};
+  var fmt3=function(v,d){return v!=null&&!isNaN(v)?(+v).toFixed(d!=null?d:2):'\u2014';};
+
+  // Filter + sort
+  var filtered=data?data.filter(function(r){
+    if(filter&&r.symbol.indexOf(filter.toUpperCase())<0)return false;
+    if(priceMin&&r.price<parseFloat(priceMin))return false;
+    if(priceMax&&r.price>parseFloat(priceMax))return false;
+    if(volMin&&r.volume<parseFloat(volMin)*1e6)return false;
+    if(changePctMin&&r.changePct<parseFloat(changePctMin))return false;
+    if(changePctMax&&r.changePct>parseFloat(changePctMax))return false;
+    return true;
+  }):[];
+  var sorted=filtered.slice().sort(function(a,b){
+    var av=a[sortCol],bv=b[sortCol];
+    if(av==null)av=sortDesc?-Infinity:Infinity;if(bv==null)bv=sortDesc?-Infinity:Infinity;
+    if(typeof av==='string'&&typeof bv==='string')return sortDesc?bv.localeCompare(av):av.localeCompare(bv);
+    return sortDesc?(+bv||0)-(+av||0):(+av||0)-(+bv||0);
+  });
+  var display=sorted.slice(0,filter?sorted.length:showCount);
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Full Market Scan</div>
+    </div>
+
+    {/* Filters */}
+    <div style={card}>
+      <div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());setShowCount(200);}} placeholder="Search ticker..." style={{width:90,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'5px 8px',outline:'none',textTransform:'uppercase'}}/>
+        <button onClick={function(){setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
+          style={{padding:'5px 14px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
+            color:loading?C.txtDim:'#000',fontFamily:F,fontSize:9,fontWeight:700,cursor:loading?'default':'pointer'}}>
+          {loading?'Loading...':'Refresh'}
+        </button>
+      </div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Price:</span>
+        <input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} placeholder="Min" type="number" style={{width:50,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+        <span style={{fontSize:7,color:C.txtDim}}>{'\u2013'}</span>
+        <input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} placeholder="Max" type="number" style={{width:50,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim,marginLeft:4}}>Vol (M):</span>
+        <input value={volMin} onChange={function(e){setVolMin(e.target.value);}} placeholder="Min" type="number" style={{width:50,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim,marginLeft:4}}>Chg%:</span>
+        <input value={changePctMin} onChange={function(e){setChangePctMin(e.target.value);}} placeholder="Min" type="number" style={{width:40,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+        <span style={{fontSize:7,color:C.txtDim}}>{'\u2013'}</span>
+        <input value={changePctMax} onChange={function(e){setChangePctMax(e.target.value);}} placeholder="Max" type="number" style={{width:40,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
+      </div>
+      {scanTime&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.txtDim}}>Scanned: {scanTime} | {data?data.length.toLocaleString():0} active tickers | Polygon SIP snapshot</div>}
+      {err&&<div style={{marginTop:4,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
+    </div>
+
+    {loading&&<div style={card}><div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Loading 12,000+ tickers from Polygon...</div></div>}
+
+    {data&&<div style={card}>
+      {/* Show count + controls */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,flexWrap:'wrap',gap:4}}>
+        <div style={{fontSize:8,fontFamily:F,color:C.txtBright,fontWeight:600}}>
+          Showing {Math.min(filter?sorted.length:showCount,sorted.length).toLocaleString()} of {sorted.length.toLocaleString()} stocks
+          {data&&sorted.length<data.length?' ('+data.length.toLocaleString()+' before filters)':''}
+        </div>
+        <div style={{display:'flex',gap:4}}>
+          {showCount<sorted.length&&!filter&&<button onClick={function(){setShowCount(showCount+200);}} style={{padding:'3px 8px',border:'1px solid '+C.accent,borderRadius:4,background:'transparent',color:C.accent,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>+200</button>}
+          {showCount<sorted.length&&!filter&&<button onClick={function(){setShowCount(sorted.length);}} style={{padding:'3px 8px',border:'1px solid '+C.gold,borderRadius:4,background:'transparent',color:C.gold,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>All</button>}
+          {showCount>200&&!filter&&<button onClick={function(){setShowCount(200);}} style={{padding:'3px 8px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontFamily:F,fontSize:7,fontWeight:600,cursor:'pointer'}}>Reset</button>}
+        </div>
+      </div>
+
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+            <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim,fontSize:7}}>#</th>
+            {tblTh('symbol','SYMBOL','left')}
+            {tblTh('price','PRICE')}
+            {tblTh('changePct','CHG %')}
+            {tblTh('volume','VOLUME')}
+            {tblTh('prevVol','PREV VOL')}
+            {tblTh('rvol','RVOL')}
+            {tblTh('vwap','VWAP')}
+            {tblTh('high','HIGH')}
+            {tblTh('low','LOW')}
+            <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim,fontSize:7}}>BAR</th>
+          </tr></thead>
+          <tbody>
+            {display.map(function(r,idx){
+              var maxVol=sorted.length>0?sorted[0].volume:1;
+              var pct=r.volume/maxVol*100;
+              return <tr key={idx} style={{borderBottom:'1px solid '+C.border+'20'}}>
+                <td style={{padding:'3px 2px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
+                <td style={{padding:'3px 2px',color:C.gold,fontWeight:700}}>{r.symbol}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${fmt3(r.price)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:r.changePct>=0?C.accent:C.warn,fontWeight:600}}>{r.changePct?(r.changePct>=0?'+':'')+r.changePct.toFixed(1)+'%':'\u2014'}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>{fmtK(r.volume)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{fmtK(r.prevVol)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:r.rvol>200?C.warn:r.rvol>120?C.gold:C.txtDim,fontWeight:r.rvol>150?700:400}}>{r.rvol?r.rvol.toFixed(0)+'%':'\u2014'}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.vwap)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.high)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>${fmt3(r.low)}</td>
+                <td style={{padding:'3px 2px',textAlign:'right',width:60}}>
+                  <div style={{width:50,height:5,background:C.border+'40',borderRadius:3,overflow:'hidden',marginLeft:'auto'}}>
+                    <div style={{width:Math.min(100,pct)+'%',height:'100%',background:idx<3?C.gold:idx<10?C.accent:C.blue,borderRadius:3}}></div>
+                  </div>
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+      {showCount<sorted.length&&!filter&&<div style={{display:'flex',gap:6,justifyContent:'center',marginTop:10}}>
+        <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'6px 16px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show More (+200)</button>
+        <button onClick={function(){setShowCount(sorted.length);}} style={{padding:'6px 16px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show All ({sorted.length.toLocaleString()})</button>
+      </div>}
+    </div>}
+
+    {!loading&&!data&&!err&&<div style={card}>
+      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
+        {!p.pgKey?'Set Polygon API key in Settings':'Tap Refresh to scan.'}
+      </div>
+    </div>}
+  </div>;
+}
+
 // ─── CONFIG HEDGE CALCULATOR ──────────────────────────────────────────────────
 function HedgeCalcPage(p){
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
@@ -28893,7 +29073,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'tipranks',label:'TipRanks Intelligence',icon:'\u2606'},{key:'configsnap',label:'Configuration Snapshot',icon:'\u2B1A'},{key:'optionschain',label:'Options Chain Viewer',icon:'\u25C7'},{key:'hedgecalc',label:'Config Hedge Calculator',icon:'\u2637'},{key:'mostactives',label:'Most Actives',icon:'\u2191'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'alpaca24atr',label:'Alpaca 24 ATR Screener',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'microvolscreen',label:'Micro Volatility Screener',icon:'\u2248',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'tipranks',label:'TipRanks Intelligence',icon:'\u2606'},{key:'configsnap',label:'Configuration Snapshot',icon:'\u2B1A'},{key:'optionschain',label:'Options Chain Viewer',icon:'\u25C7'},{key:'hedgecalc',label:'Config Hedge Calculator',icon:'\u2637'},{key:'mostactives',label:'Most Actives',icon:'\u2191'},{key:'fullmarketscan',label:'Full Market Scan',icon:'\u2316'},{key:'objectives',label:'Objectives',icon:'\u25C9'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'alpaca24atr',label:'Alpaca 24 ATR Screener',icon:'\u2261',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'trends',label:'Trend Analysis',icon:'\u2197',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'volprofile',label:'Volume Profile',icon:'\u2585',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'microvolscreen',label:'Micro Volatility Screener',icon:'\u2248',indent:true},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4',indent:true},{key:'swingscreener',label:'Low To Swing High Screener',icon:'\u2922',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -28984,6 +29164,7 @@ function App(){
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='fullmarketscan'&&<FullMarketScanPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
