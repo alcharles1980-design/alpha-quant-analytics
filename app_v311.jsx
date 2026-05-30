@@ -13294,7 +13294,7 @@ function MostActivesPage(p){
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
   var s4=useState(null),err=s4[0],setErr=s4[1];
   var s5=useState('volume'),sortBy=s5[0],setSortBy=s5[1];
-  var s6=useState(50),topN=s6[0],setTopN=s6[1];
+  var s6=useState(100),topN=s6[0],setTopN=s6[1];
   var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
   var s8=useState(''),minPrice=s8[0],setMinPrice=s8[1];
   var s9=useState(''),maxPrice=s9[0],setMaxPrice=s9[1];
