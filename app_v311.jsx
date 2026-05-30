@@ -13307,6 +13307,8 @@ function MostActivesPage(p){
   var s14=useState([]),myLists=s14[0],setMyLists=s14[1];
   var s15=useState(null),selectedList=s15[0],setSelectedList=s15[1];
   var s16=useState('rth'),listSession=s16[0],setListSession=s16[1];
+  var s17=useState('volume'),tblSort=s17[0],setTblSort=s17[1];
+  var s18=useState(true),tblDesc=s18[0],setTblDesc=s18[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -13489,7 +13491,14 @@ function MostActivesPage(p){
       if(mc<mnC||mc>mxC)return false;
     }
     return true;
+  }).sort(function(a,b){
+    var av=a[tblSort],bv=b[tblSort];
+    if(av==null)av=tblDesc?-Infinity:Infinity;if(bv==null)bv=tblDesc?-Infinity:Infinity;
+    if(typeof av==='string'&&typeof bv==='string')return tblDesc?bv.localeCompare(av):av.localeCompare(bv);
+    return tblDesc?(+bv||0)-(+av||0):(+av||0)-(+bv||0);
   }):[];
+  var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
+  var tblTh=function(col,label,align){return <th onClick={function(){doTblSort(col);}} style={{padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400}}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
 
   var fmtVol=function(v){if(v>=1e12)return(v/1e12).toFixed(1)+'T';if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
@@ -13613,16 +13622,16 @@ function MostActivesPage(p){
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30}}>#</th>
-            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
-            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>TYPE</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>CHG %</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MCAP</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>VOLUME</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>TRADES</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AVG {isOvernightView?'OVN':'VOL'}</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>RVOL</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BAR</th>
+            {tblTh("symbol","SYMBOL","left")}
+            <th style={{padding:"4px 3px",textAlign:"left",color:C.txtDim}}>TYPE</th>
+            {tblTh("price","PRICE")}
+            {tblTh("changePct","CHG %")}
+            {tblTh("marketCap","MCAP")}
+            {tblTh("volume","VOLUME")}
+            {tblTh("trade_count","TRADES")}
+            {tblTh("avgVol",isOvernightView?"AVG OVN":"AVG VOL")}
+            {tblTh("relVol","RVOL")}
+            <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>BAR</th>
           </tr></thead>
           <tbody>
             {filtered.map(function(a,i){
