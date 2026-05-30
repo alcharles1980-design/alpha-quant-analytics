@@ -13839,6 +13839,42 @@ function FullMarketScanPage(p){
 
   useEffect(function(){if(p.pgKey)fetchData();},[p.pgKey,refreshTrigger]);
 
+  // Lazy-load market cap from Polygon for visible rows missing it
+  var s15=useState(false),fillingMcap=s15[0],setFillingMcap=s15[1];
+  var s16=useState(0),mcapFilled=s16[0],setMcapFilled=s16[1];
+  var fillMissingMcap=async function(){
+    if(!data||!p.pgKey||fillingMcap)return;
+    // Find visible rows missing market cap
+    var missing=[];
+    var vis=sorted.slice(0,filter?sorted.length:showCount);
+    for(var fi2=0;fi2<vis.length;fi2++){
+      if(vis[fi2].marketCap==null)missing.push(vis[fi2].symbol);
+    }
+    if(missing.length===0)return;
+    setFillingMcap(true);var filled=0;
+    var updated=data.slice(); // shallow copy
+    var lookup={};for(var ui=0;ui<updated.length;ui++)lookup[updated[ui].symbol]=ui;
+    for(var pi6=0;pi6<missing.length;pi6++){
+      try{
+        var pr6=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(missing[pi6])+'?apiKey='+p.pgKey);
+        if(pr6.ok){
+          var pd6=await pr6.json();
+          if(pd6.results){
+            var idx6=lookup[missing[pi6]];
+            if(idx6!=null){
+              updated[idx6]=Object.assign({},updated[idx6],{marketCap:pd6.results.market_cap||null,tickerType:pd6.results.type||null});
+              filled++;
+            }
+          }
+        }
+      }catch(e9){}
+      if(pi6%10===9)setMcapFilled(filled); // progress every 10
+    }
+    setData(updated);
+    setMcapFilled(filled);
+    setFillingMcap(false);
+  };
+
   var doSort=function(col){if(sortCol===col)setSortDesc(!sortDesc);else{setSortCol(col);setSortDesc(true);}};
   var tblTh=function(col,label,align){return <th onClick={function(){doSort(col);}} style={{padding:'3px 2px',textAlign:align||'right',color:sortCol===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortCol===col?700:400,fontSize:7}}>{label}{sortCol===col?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
   var fmtK=function(v){if(v>=1e12)return(v/1e12).toFixed(1)+'T';if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v!=null?Math.round(v):'\u2014';};
@@ -13891,6 +13927,16 @@ function FullMarketScanPage(p){
         <input value={changePctMax} onChange={function(e){setChangePctMax(e.target.value);}} placeholder="Max" type="number" style={{width:40,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:8,padding:'3px 5px',outline:'none'}}/>
       </div>
       {scanTime&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.txtDim}}>Scanned: {scanTime} | {data?data.length.toLocaleString():0} active tickers | Polygon SIP snapshot</div>}
+      {data&&(function(){var visMissing=0;var vis2=sorted.slice(0,filter?sorted.length:showCount);for(var vm=0;vm<vis2.length;vm++){if(vis2[vm].marketCap==null)visMissing++;}
+        return visMissing>0?<div style={{marginTop:4,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:7,fontFamily:F,color:C.gold}}>{visMissing} visible stocks missing market cap</span>
+          <button onClick={fillMissingMcap} disabled={fillingMcap}
+            style={{padding:'3px 10px',border:'1px solid '+C.gold,borderRadius:4,background:'transparent',
+              color:C.gold,fontFamily:F,fontSize:7,fontWeight:700,cursor:fillingMcap?'default':'pointer'}}>
+            {fillingMcap?'Filling... ('+mcapFilled+')':'Fill from Polygon'}
+          </button>
+        </div>:null;
+      })()}
       {err&&<div style={{marginTop:4,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
     </div>
 
