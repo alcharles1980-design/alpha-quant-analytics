@@ -16492,15 +16492,15 @@ function StocksAtGlancePage(p){
       }
       var trData={ptHi:ptHi,ptAvg:ptN>0?Math.round(ptSum/ptN*100)/100:null,ptLo:ptLo,
           ptN:ptN,buy:buys,hold:holds,sell:sells,smartScore:smartScore};
-      setRowData(function(prev){
-        var n=Object.assign({},prev);
-        var existing=n[tkr]||{};
-        n[tkr]=Object.assign(existing,trData);
-        return n;
-      });
-      // Only save to cache if we actually got valid TipRanks data
-      // (don't mark as fresh if the proxy returned an error/empty response)
+      // Only update in-memory state + save to cache if we got valid data
+      // Otherwise cached TipRanks data gets overwritten with nulls/zeros
       if(trD&&trD.experts&&!trD.error){
+        setRowData(function(prev){
+          var n=Object.assign({},prev);
+          var existing=n[tkr]||{};
+          n[tkr]=Object.assign(existing,trData);
+          return n;
+        });
         saveTR(tkr,trData);
       }
     }catch(e){/* TipRanks fetch failed — Score/PT/BHS stay as — */}
