@@ -18454,7 +18454,17 @@ function SwingScreenerPage(p){
   var s15b=useState(''),priceMax=s15b[0],setPriceMax=s15b[1];
   var s16b=useState('stocks'),typeFilter=s16b[0],setTypeFilter=s16b[1];
   var s17b=useState(200),showCount=s17b[0],setShowCount=s17b[1];
+  var s18b=useState('10'),lookback=s18b[0],setLookback=s18b[1];
+  var lookbackOpts=[{v:'2',l:'2 days'},{v:'3',l:'3 days'},{v:'5',l:'5 days'},{v:'10',l:'10 days (all)'}];
   var pollRef=useRef(null);
+
+  // Extract profile for selected lookback (handles old flat + new nested format)
+  var getSwingProfile=function(sw){
+    if(!sw)return null;
+    if(sw[lookback]&&typeof sw[lookback]==='object')return sw[lookback];
+    if(typeof sw['4']==='number')return sw; // old flat format
+    return null;
+  };
 
   var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
   var mcapOpts=[{v:'all',l:'No Min'},{v:'100m',l:'$100M'},{v:'500m',l:'$500M'},{v:'1b',l:'$1B'},{v:'5b',l:'$5B'},{v:'10b',l:'$10B'},{v:'50b',l:'$50B'},{v:'100b',l:'$100B'}];
@@ -18529,24 +18539,27 @@ function SwingScreenerPage(p){
     var isETF2=r.ticker_type==='ETF'||r.ticker_type==='ETV'||r.ticker_type==='ETS'||r.ticker_type==='ETN';
     if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
     if(typeFilter==='etf'&&!isETF2)return false;
-    if(!r._swing)return false;
+    r._sw=getSwingProfile(r._swing);
+    if(!r._sw)return false;
     var hKeys=Object.keys(hourFilters);
     for(var i=0;i<hKeys.length;i++){
       var h=hKeys[i];var minVal=hourFilters[h];
-      if(minVal>0&&(!r._swing[h]||r._swing[h]<minVal))return false;
+      if(minVal>0&&(!r._sw[h]||r._sw[h]<minVal))return false;
     }
     return true;
   }).map(function(r){
-    var sw=r._swing||{};var total=0;var cnt=0;
+    var sw=r._sw||{};var total=0;var cnt=0;
     for(var h=4;h<19;h++){if(sw[h]){total+=sw[h];cnt++;}}
     return Object.assign({},r,{_score:cnt>0?Math.round(total/cnt*1000)/1000:0});
   }).sort(function(a,b){
     if(sortBy==='_score')return sortAsc?(a._score-b._score):(b._score-a._score);
     if(sortBy==='ticker')return sortAsc?a.ticker.localeCompare(b.ticker):b.ticker.localeCompare(a.ticker);
-    if(sortBy.charAt(0)==='h'){var hr=parseInt(sortBy.slice(1));var va2=(a._swing||{})[hr]||0;var vb2=(b._swing||{})[hr]||0;return sortAsc?(va2-vb2):(vb2-va2);}
+    if(sortBy.charAt(0)==='h'){var hr=parseInt(sortBy.slice(1));var va2=(a._sw||{})[hr]||0;var vb2=(b._sw||{})[hr]||0;return sortAsc?(va2-vb2):(vb2-va2);}
     var va=parseFloat(a[sortBy])||0,vb=parseFloat(b[sortBy])||0;
     return sortAsc?(va-vb):(vb-va);
   }):[];
+  // Deduplicate
+  var seenSw={};filtered=filtered.filter(function(r3){if(seenSw[r3.ticker])return false;seenSw[r3.ticker]=true;return true;});
 
   var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
   var thS=function(col){return{padding:'4px 3px',color:sortBy===col?C.accent:C.txtDim,textAlign:col==='ticker'?'left':'right',cursor:'pointer',fontWeight:sortBy===col?700:400};};
@@ -18559,7 +18572,16 @@ function SwingScreenerPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Hourly Low-to-Next-High Swing %" sub="Filter by minimum swing % from each hour's low to the next hour's high (10-day avg)" info="Measures the percentage change from one hour's lowest price to the following hour's highest price. This captures the maximum potential swing opportunity between consecutive hours. High positive values mean the stock regularly swings upward from one hour's low to the next hour's high -- ideal for oscillation trading. Hour 19 has no next hour so shows 0."/>
+      <SectionHead title="Hourly Low-to-Next-High Swing %" sub="Filter by minimum swing % from each hour's low to the next hour's high" info="Measures the percentage change from one hour's lowest price to the following hour's highest price. This captures the maximum potential swing opportunity between consecutive hours. High positive values mean the stock regularly swings upward from one hour's low to the next hour's high -- ideal for oscillation trading. Hour 19 has no next hour so shows 0."/>
+      {/* Lookback period selector */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <label style={{color:C.txtDim,fontSize:8,fontWeight:700,fontFamily:F}}>Lookback:</label>
+        <select value={lookback} onChange={function(e){setLookback(e.target.value);setShowCount(200);}}
+          style={{background:C.bg,border:'1px solid '+C.accent,borderRadius:6,color:C.accent,fontFamily:F,fontSize:10,fontWeight:700,padding:'6px 10px',outline:'none',cursor:'pointer'}}>
+          {lookbackOpts.map(function(o){return <option key={o.v} value={o.v} style={{background:C.bg,color:C.txtBright}}>{o.l}</option>;})}
+        </select>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Avg swing over the last {lookback} trading days of 1-min bars</span>
+      </div>
       {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with swing data'}</div>}
       {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No swing data found. Run a new scan to populate.</div>}
       {p.ghToken&&<div style={{display:'flex',gap:6,marginBottom:8}}>
@@ -18627,6 +18649,7 @@ function SwingScreenerPage(p){
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th style={{padding:'3px 2px',textAlign:'center',color:C.txtDim,fontSize:6}}></th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('_score');}} style={thS('_score')}>Avg</th>
@@ -18635,10 +18658,20 @@ function SwingScreenerPage(p){
             })}
           </tr></thead>
           <tbody>{filtered.slice(0,filter?filtered.length:showCount).map(function(r,idx){
-            var sw=r._swing||{};
+            var sw=r._sw||{};
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
+                  style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
+                    color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}}
+                  title="Yahoo Finance">Y</a>
+                {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer"
+                  style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,
+                    color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}}
+                  title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
+              </td>
               <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
               <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
               <td style={{padding:'3px',color:swColor(r._score),textAlign:'right',fontWeight:700}}>{r._score.toFixed(2)+'%'}</td>
@@ -29634,7 +29667,7 @@ function App(){
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='microvolscreen'&&<MicroVolScreenerPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
-    {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='dailylowswing'&&<DailyLowSwingPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='closehighscreener'&&<CloseHighScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dailyswingscreener'&&<DailySwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}

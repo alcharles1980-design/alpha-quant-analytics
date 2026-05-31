@@ -3178,21 +3178,41 @@ async function runScreener() {
         if (!swingDays[hdd.date]) swingDays[hdd.date] = {};
         swingDays[hdd.date][hdd.hr] = { high: hdd.high, low: hdd.low, close: hdd.close };
       }
-      var swDayKeys = Object.keys(swingDays);
+      var swDayKeys = Object.keys(swingDays).sort(); // chronological order
+      // Compute per-day per-hour swing data
+      var swDaySwings = []; // [{date, swings: {4: pct, 5: pct, ...}}]
       for (var sdi = 0; sdi < swDayKeys.length; sdi++) {
         var dayHrs = swingDays[swDayKeys[sdi]];
+        var daySwing = {};
         for (var h2 = 4; h2 < 19; h2++) {
           if (dayHrs[h2] && dayHrs[h2 + 1] && dayHrs[h2].low > 0) {
-            var swPct = (dayHrs[h2 + 1].high - dayHrs[h2].low) / dayHrs[h2].low * 100;
-            if (!swingSums[h2]) { swingSums[h2] = 0; swingCounts[h2] = 0; }
-            swingSums[h2] += swPct;
-            swingCounts[h2]++;
+            daySwing[h2] = (dayHrs[h2 + 1].high - dayHrs[h2].low) / dayHrs[h2].low * 100;
           }
         }
+        swDaySwings.push({ date: swDayKeys[sdi], swings: daySwing });
       }
+      // Multi-lookback windows
+      var swWindows = [2, 3, 5, 10];
       var hourlySwing = {};
-      for (var h2 = 4; h2 < 20; h2++) {
-        hourlySwing[h2] = swingCounts[h2] ? Math.round(swingSums[h2] / swingCounts[h2] * 1000) / 1000 : 0;
+      for (var swi = 0; swi < swWindows.length; swi++) {
+        var w = swWindows[swi];
+        var subset = swDaySwings.length > w ? swDaySwings.slice(-w) : swDaySwings;
+        var wSums = {}; var wCounts = {};
+        for (var si3 = 0; si3 < subset.length; si3++) {
+          var ds = subset[si3].swings;
+          for (var h3 = 4; h3 < 19; h3++) {
+            if (ds[h3] !== undefined) {
+              if (!wSums[h3]) { wSums[h3] = 0; wCounts[h3] = 0; }
+              wSums[h3] += ds[h3]; wCounts[h3]++;
+            }
+          }
+        }
+        var wProfile = {};
+        for (var h3 = 4; h3 < 20; h3++) {
+          wProfile[h3] = wCounts[h3] ? Math.round(wSums[h3] / wCounts[h3] * 1000) / 1000 : 0;
+        }
+        wProfile._n = subset.length;
+        hourlySwing[String(w)] = wProfile;
       }
       res.hourly_swing_profile = JSON.stringify(hourlySwing);
 
