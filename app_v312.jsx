@@ -18705,6 +18705,7 @@ function DailyLowSwingPage(p){
   var s13=useState({}),dowFilters=s13[0],setDowFilters=s13[1];
   var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
   var s15d=useState('30'),lookback=s15d[0],setLookback=s15d[1];
+  var loadGen=useRef(0); // generation counter to cancel stale backfills
   var s16e=useState(false),scanning=s16e[0],setScanning=s16e[1];
   var s17e=useState(null),pipeStatus=s17e[0],setPipeStatus=s17e[1];
   var pollRef2=useRef(null);
@@ -18733,7 +18734,7 @@ function DailyLowSwingPage(p){
       var dateRows=rDate.ok?await rDate.json():[];
       if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}
       var sd=dateRows[0].scan_date;setScanDate(sd);
-      var allRows=[];var pg=0;
+      var allRows=[];var pg=0;var gen=++loadGen.current;
       while(true){
         var ph=getSbHeaders();ph['Range']=''+(pg*1000)+'-'+((pg+1)*1000-1);
         var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&daily_low_high_profile=not.is.null&select=ticker,price,market_cap,ticker_type,daily_low_high_profile&order=osc_score.desc.nullslast',{headers:ph});
@@ -18748,8 +18749,9 @@ function DailyLowSwingPage(p){
         if(batch.length<1000)break;
         pg++;
       }
+      if(gen!==loadGen.current)return; // stale load cancelled
       setData(allRows);
-      backfillMcap(allRows,p.pgKey,setData);
+      backfillMcap(allRows,p.pgKey,function(updated){if(gen===loadGen.current)setData(updated);});
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -18810,6 +18812,8 @@ function DailyLowSwingPage(p){
     }
     return true;
   }):[];
+  // Deduplicate by ticker (safety net for race conditions)
+  var seenTk={};filtered=filtered.filter(function(r2){if(seenTk[r2.ticker])return false;seenTk[r2.ticker]=true;return true;});
   var sorted=filtered.slice().sort(function(a,b){
     if(sortCol==='ticker')return sortDesc?b.ticker.localeCompare(a.ticker):a.ticker.localeCompare(b.ticker);
     var av2=sortCol.indexOf('_')===0?a[sortCol]:((a._dlh||{})[sortCol]||0);
