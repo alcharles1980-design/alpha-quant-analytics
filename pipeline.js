@@ -2198,6 +2198,32 @@ async function runScreener() {
     var dailyCloseHigh = { avg: Math.round(dcAvg * 1000) / 1000, min: Math.round(dcMin * 1000) / 1000, max: Math.round(dcMax * 1000) / 1000, std: Math.round(dcStd * 1000) / 1000, n: dcSwings.length };
     for (var dk in dcDowAvg) dailyCloseHigh[dk] = dcDowAvg[dk];
 
+    // Daily Low to Next Day High % (full year data)
+    var dlhSwings = []; var dlhByDow = {1:[],2:[],3:[],4:[],5:[]};
+    for (var dlhi = 0; dlhi < allBars.length - 1; dlhi++) {
+      if (allBars[dlhi].l > 0) {
+        var dlhPct = (allBars[dlhi + 1].h - allBars[dlhi].l) / allBars[dlhi].l * 100;
+        dlhSwings.push(dlhPct);
+        var dlhDow = new Date(allBars[dlhi].date + 'T12:00:00Z').getDay();
+        if (dlhByDow[dlhDow]) dlhByDow[dlhDow].push(dlhPct);
+      }
+    }
+    var dlhAvg = 0, dlhMin = 0, dlhMax = 0, dlhStd = 0;
+    if (dlhSwings.length > 0) {
+      for (var j = 0; j < dlhSwings.length; j++) dlhAvg += dlhSwings[j]; dlhAvg /= dlhSwings.length;
+      dlhMin = dlhSwings[0]; dlhMax = dlhSwings[0];
+      for (var j = 0; j < dlhSwings.length; j++) { if (dlhSwings[j] < dlhMin) dlhMin = dlhSwings[j]; if (dlhSwings[j] > dlhMax) dlhMax = dlhSwings[j]; }
+      var dlhVar = 0; for (var j = 0; j < dlhSwings.length; j++) dlhVar += (dlhSwings[j] - dlhAvg) * (dlhSwings[j] - dlhAvg); dlhStd = Math.sqrt(dlhVar / dlhSwings.length);
+    }
+    var dlhDowAvg = {};
+    for (var dw2 = 1; dw2 <= 5; dw2++) {
+      var darr2 = dlhByDow[dw2];
+      if (darr2 && darr2.length > 0) { var ds2 = 0; for (var j = 0; j < darr2.length; j++) ds2 += darr2[j]; dlhDowAvg[dowNames[dw2]] = Math.round(ds2 / darr2.length * 1000) / 1000; }
+      else dlhDowAvg[dowNames[dw2]] = 0;
+    }
+    var dailyLowHigh = { avg: Math.round(dlhAvg * 1000) / 1000, min: Math.round(dlhMin * 1000) / 1000, max: Math.round(dlhMax * 1000) / 1000, std: Math.round(dlhStd * 1000) / 1000, n: dlhSwings.length };
+    for (var dk2 in dlhDowAvg) dailyLowHigh[dk2] = dlhDowAvg[dk2];
+
     // Directional Bias & Consecutive Streaks (full year data)
     var ab = allBars; var abn = ab.length;
     var upDays = 0, dnDays = 0, avgUpPct = 0, avgDnPct = 0;
@@ -2748,6 +2774,7 @@ async function runScreener() {
       reversal_pct: Math.round(reversalPct * 10) / 10, osc_score: dailyOnlyScore,
       days_sampled: n, scan_date: scanDate,
       daily_close_high_profile: JSON.stringify(dailyCloseHigh),
+      daily_low_high_profile: JSON.stringify(dailyLowHigh),
       directional_bias: JSON.stringify(dirBias),
       recovery_profile: JSON.stringify(recovProf),
       pullback_profile: JSON.stringify(pullProf),
