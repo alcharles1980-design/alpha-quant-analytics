@@ -18729,6 +18729,10 @@ function DailyLowSwingPage(p){
           try{row._dlh=typeof row.daily_low_high_profile==='string'?JSON.parse(row.daily_low_high_profile):row.daily_low_high_profile;}catch(e2){row._dlh={};}
           if(row._dlh&&typeof row._dlh==='string')try{row._dlh=JSON.parse(row._dlh);}catch(e3){row._dlh={};}
           row._avg=row._dlh?row._dlh.avg||0:0;
+          row._n=row._dlh?row._dlh.n||0:0;
+          // Skip outliers: stocks with <200 trading days have unreliable stats
+          // and stocks with avg swing >50% are almost certainly bad data (splits, thin floats)
+          if(row._n<200||row._avg>50)continue;
           allRows.push(row);
         }
         if(batch.length<1000)break;
