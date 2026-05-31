@@ -18864,12 +18864,12 @@ function DailyLowSwingPage(p){
                 <td style={{padding:'3px 2px',color:C.gold,fontWeight:700}}>{r.ticker}</td>
                 <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
-                    style={{display:'inline-block',padding:'3px 5px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
-                      color:C.purple||'#a855f7',fontSize:11,fontFamily:F,textDecoration:'none',marginRight:6,lineHeight:1}}
+                    style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
+                      color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}}
                     title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<button onClick={function(tk){return function(){p.onCheatSheet(tk);};}(r.ticker)}
-                    style={{display:'inline-block',padding:'3px 5px',border:'1px solid '+C.blue+'60',borderRadius:3,
-                      color:C.blue,fontSize:11,fontFamily:F,cursor:'pointer',background:'transparent',lineHeight:1}}
+                    style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,
+                      color:C.blue,fontSize:14,fontFamily:F,cursor:'pointer',background:'transparent',lineHeight:1}}
                     title="Stock Profile Cheat Sheet">{'\u2197'}</button>}
                 </td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${(r.price||0).toFixed(2)}</td>
