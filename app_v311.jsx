@@ -18843,6 +18843,7 @@ function DailyLowSwingPage(p){
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
             <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={thS('ticker','left')}>Ticker</th>
+            <th style={{padding:'3px 2px',textAlign:'center',color:C.txtDim,fontSize:6}}></th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('_avg');}} style={thS('_avg')}>Avg</th>
@@ -18861,6 +18862,16 @@ function DailyLowSwingPage(p){
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'3px 2px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
                 <td style={{padding:'3px 2px',color:C.gold,fontWeight:700}}>{r.ticker}</td>
+                <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
+                    style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
+                      color:C.purple||'#a855f7',fontSize:7,fontFamily:F,textDecoration:'none',marginRight:2,lineHeight:1}}
+                    title="Yahoo Finance">Y</a>
+                  {p.onCheatSheet&&<button onClick={function(tk){return function(){p.onCheatSheet(tk);};}(r.ticker)}
+                    style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,
+                      color:C.blue,fontSize:7,fontFamily:F,cursor:'pointer',background:'transparent',lineHeight:1}}
+                    title="Stock Profile Cheat Sheet">{'\u2197'}</button>}
+                </td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${(r.price||0).toFixed(2)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim,fontSize:6}}>{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:swColor(r._avg),fontWeight:700}}>{r._avg.toFixed(2)}%</td>
@@ -29542,7 +29553,7 @@ function App(){
     {page==='microvolscreen'&&<MicroVolScreenerPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
-    {page==='dailylowswing'&&<DailyLowSwingPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='dailylowswing'&&<DailyLowSwingPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='closehighscreener'&&<CloseHighScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dailyswingscreener'&&<DailySwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dirbias'&&<DirBiasPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
