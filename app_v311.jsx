@@ -18417,6 +18417,7 @@ function SwingScreenerPage(p){
   var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
   var s15b=useState(''),priceMax=s15b[0],setPriceMax=s15b[1];
   var s16b=useState('all'),typeFilter=s16b[0],setTypeFilter=s16b[1];
+  var s17b=useState(200),showCount=s17b[0],setShowCount=s17b[1];
   var pollRef=useRef(null);
 
   var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
@@ -18574,7 +18575,17 @@ function SwingScreenerPage(p){
 
     {filtered.length>0&&<Cd>
       <SectionHead title="Results" sub={filtered.length+' stocks match'+(activeFilterCount>0?' ('+activeFilterCount+' hour filter'+(activeFilterCount>1?'s':'')+')':'')}/>
-      <div style={{overflowX:'auto',maxHeight:600}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+        <div style={{fontSize:8,fontFamily:F,color:C.txtBright,fontWeight:600}}>
+          Showing {Math.min(filter?filtered.length:showCount,filtered.length).toLocaleString()} of {filtered.length.toLocaleString()} stocks
+        </div>
+        {showCount<filtered.length&&!filter&&<div style={{display:'flex',gap:4}}>
+          <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'3px 8px',border:'1px solid '+C.accent,borderRadius:4,background:'transparent',color:C.accent,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>+200</button>
+          <button onClick={function(){setShowCount(filtered.length);}} style={{padding:'3px 8px',border:'1px solid '+C.gold,borderRadius:4,background:'transparent',color:C.gold,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>All</button>
+        </div>}
+        {showCount>200&&!filter&&<button onClick={function(){setShowCount(200);}} style={{padding:'3px 8px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontFamily:F,fontSize:7,fontWeight:600,cursor:'pointer'}}>Reset</button>}
+      </div>
+      <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
@@ -18586,7 +18597,7 @@ function SwingScreenerPage(p){
               return <th key={h} onClick={function(hr){return function(){setSortBy('h'+hr);setSortAsc(false);};}(h)} style={{padding:'4px 2px',color:hasFilter?C.accent:sortBy===('h'+h)?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontSize:6,fontWeight:hasFilter||sortBy===('h'+h)?700:400}}>{(h<10?'0':'')+h}</th>;
             })}
           </tr></thead>
-          <tbody>{filtered.slice(0,300).map(function(r,idx){
+          <tbody>{filtered.slice(0,filter?filtered.length:showCount).map(function(r,idx){
             var sw=r._swing||{};
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
@@ -18601,7 +18612,10 @@ function SwingScreenerPage(p){
           })}</tbody>
         </table>
       </div>
-      {filtered.length>300&&<div style={{color:C.txtDim,fontSize:7,fontFamily:F,textAlign:'center',padding:6}}>Showing top 300 of {filtered.length}</div>}
+      {showCount<filtered.length&&!filter&&<div style={{display:"flex",gap:6,justifyContent:"center",marginTop:10}}>
+        <button onClick={function(){setShowCount(showCount+200);}} style={{padding:"6px 16px",border:"1px solid "+C.accent,borderRadius:6,background:"transparent",color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:"pointer"}}>Show More (+200)</button>
+        <button onClick={function(){setShowCount(filtered.length);}} style={{padding:"6px 16px",border:"1px solid "+C.gold,borderRadius:6,background:"transparent",color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:"pointer"}}>Show All ({filtered.length.toLocaleString()})</button>
+      </div>}
     </Cd>}
 
     {filtered.length===0&&data&&data.length>0&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No stocks match your swing% filters. Try lowering the thresholds.</div></Cd>}
@@ -19105,7 +19119,7 @@ function DailySwingScreenerPage(p){
   var s14d=useState(''),priceMin=s14d[0],setPriceMin=s14d[1];
   var s15d=useState(''),priceMax=s15d[0],setPriceMax=s15d[1];
   var s16d=useState('all'),typeFilter=s16d[0],setTypeFilter=s16d[1];
-  var s16d=useState(''),minAvg=s16d[0],setMinAvg=s16d[1];
+  var s16e=useState(''),minAvg=s16e[0],setMinAvg=s16e[1];
   var pollRef=useRef(null);
 
   var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
