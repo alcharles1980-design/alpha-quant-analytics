@@ -1,17 +1,16 @@
-// Cloudflare Worker: TipRanks API Proxy (ES Module format for wrangler deploy)
-// Anti-bot: random delays, UA rotation, CF edge caching
+// Cloudflare Worker: TipRanks Mobile API Proxy (ES Module format)
+// Uses mobile.tipranks.com with iOS-spoofed headers (no auth required)
 
-var USER_AGENTS = [
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+var MOBILE_UAS = [
+  'TipRanksApp/5.3.0 (iPhone; iOS 17.5; Scale/3.00)',
+  'TipRanksApp/5.2.1 (iPhone; iOS 17.4.1; Scale/3.00)',
+  'TipRanksApp/5.3.0 (iPhone; iOS 18.0; Scale/3.00)',
+  'TipRanksApp/5.1.0 (iPhone; iOS 17.3; Scale/2.00)',
+  'TipRanksApp/5.3.0 (iPad; iOS 17.5; Scale/2.00)'
 ];
 
 function randomUA() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+  return MOBILE_UAS[Math.floor(Math.random() * MOBILE_UAS.length)];
 }
 
 function sleep(minMs, maxMs) {
@@ -52,10 +51,11 @@ export default {
     var ts = Math.floor(Date.now() / 1000);
     var apiUrl;
 
+    // Use mobile.tipranks.com — no auth required, iOS-spoofed headers
     if (endpoint === 'getData') {
-      apiUrl = 'https://www.tipranks.com/api/stocks/getData/?name=' + ticker + '&benchmark=1&period=3&break=' + ts;
+      apiUrl = 'https://mobile.tipranks.com/api/stocks/getData/?name=' + ticker + '&benchmark=1&period=3&break=' + ts;
     } else if (endpoint === 'newsSentiments') {
-      apiUrl = 'https://www.tipranks.com/api/stocks/getNewsSentiments/?ticker=' + ticker;
+      apiUrl = 'https://mobile.tipranks.com/api/stocks/getNewsSentiments/?ticker=' + ticker;
     } else {
       return jsonResp({ error: true, message: 'Unknown endpoint: ' + endpoint }, 400);
     }
@@ -76,22 +76,13 @@ export default {
     // Random delay 500-2000ms — humanize timing
     await sleep(500, 2000);
 
-    var ua = randomUA();
-
     try {
       var resp = await fetch(apiUrl, {
         headers: {
-          'User-Agent': ua,
-          'Accept': 'application/json, text/plain, */*',
+          'User-Agent': randomUA(),
+          'Accept': 'application/json',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Referer': 'https://www.tipranks.com/stocks/' + ticker.toLowerCase() + '/forecast',
-          'Origin': 'https://www.tipranks.com',
-          'Sec-Fetch-Dest': 'empty',
-          'Sec-Fetch-Mode': 'cors',
-          'Sec-Fetch-Site': 'same-origin',
-          'Sec-Ch-Ua': '"Chromium";v="125", "Not=A?Brand";v="24"',
-          'Sec-Ch-Ua-Mobile': '?0',
-          'Sec-Ch-Ua-Platform': '"macOS"'
+          'Accept-Encoding': 'gzip, deflate, br'
         }
       });
 
@@ -101,7 +92,7 @@ export default {
 
       var contentType = resp.headers.get('content-type') || '';
       if (!contentType.includes('json')) {
-        return jsonResp({ error: true, status: 403, message: 'Non-JSON response (Cloudflare challenge)' }, 403);
+        return jsonResp({ error: true, status: 403, message: 'Non-JSON response (likely blocked)' }, 403);
       }
 
       var body = await resp.text();
