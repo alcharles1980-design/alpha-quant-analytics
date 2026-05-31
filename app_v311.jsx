@@ -18718,7 +18718,8 @@ function DailyLowSwingPage(p){
     if(capMin&&(r.market_cap||0)<parseFloat(capMin)*1e9)return false;
     if(capMax&&(r.market_cap||0)>parseFloat(capMax)*1e9)return false;
     var isETF3=r.ticker_type==='ETF'||r.ticker_type==='ETV'||r.ticker_type==='ETS'||r.ticker_type==='ETN';
-    if(typeFilter==='stocks'&&isETF3)return false;
+    var isStock3=r.ticker_type==='CS'||r.ticker_type==='ADRC';
+    if(typeFilter==='stocks'&&!isStock3)return false;
     if(typeFilter==='etf'&&!isETF3)return false;
     if(!r._dlh)return false;
     var dKeys=Object.keys(dowFilters);
