@@ -18456,6 +18456,7 @@ function SwingScreenerPage(p){
   var s17b=useState(200),showCount=s17b[0],setShowCount=s17b[1];
   var s18b=useState('10'),lookback=s18b[0],setLookback=s18b[1];
   var lookbackOpts=[{v:'2',l:'2 days'},{v:'3',l:'3 days'},{v:'5',l:'5 days'},{v:'10',l:'10 days (all)'}];
+  var s19b=useState('rth'),sessionMode=s19b[0],setSessionMode=s19b[1];
   var pollRef=useRef(null);
 
   // Extract profile for selected lookback (handles old flat + new nested format)
@@ -18549,7 +18550,8 @@ function SwingScreenerPage(p){
     return true;
   }).map(function(r){
     var sw=r._sw||{};var total=0;var cnt=0;
-    for(var h=4;h<19;h++){if(sw[h]){total+=sw[h];cnt++;}}
+    var hStart=sessionMode==='rth'?9:4;var hEnd=sessionMode==='rth'?16:19;
+    for(var h=hStart;h<hEnd;h++){if(sw[h]){total+=sw[h];cnt++;}}
     return Object.assign({},r,{_score:cnt>0?Math.round(total/cnt*1000)/1000:0});
   }).sort(function(a,b){
     if(sortBy==='_score')return sortAsc?(a._score-b._score):(b._score-a._score);
@@ -18581,6 +18583,17 @@ function SwingScreenerPage(p){
           {lookbackOpts.map(function(o){return <option key={o.v} value={o.v} style={{background:C.bg,color:C.txtBright}}>{o.l}</option>;})}
         </select>
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Avg swing over the last {lookback} trading days of 1-min bars</span>
+      </div>
+      {/* Session mode toggle */}
+      <div style={{display:'flex',gap:4,marginBottom:8}}>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim,fontWeight:600,display:'flex',alignItems:'center'}}>Avg Hours:</span>
+        {[['rth','RTH (9:30-4)'],['all','All Hours (4-8)']].map(function(m){
+          return <button key={m[0]} onClick={function(){setSessionMode(m[0]);}}
+            style={{padding:'5px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+(sessionMode===m[0]?C.gold+'66':C.border),
+              background:sessionMode===m[0]?C.gold+'10':'transparent',
+              color:sessionMode===m[0]?C.gold:C.txtDim}}>{m[1]}</button>;
+        })}
       </div>
       {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+(scanTime||scanDate)+' | '+(data?data.length:0)+' stocks with swing data'}</div>}
       {data&&data.length===0&&<div style={{padding:10,background:C.warn+'1a',border:'1px solid '+C.warn,borderRadius:6,marginBottom:8,color:C.warn,fontSize:8,fontFamily:F}}>No swing data found. Run a new scan to populate.</div>}
