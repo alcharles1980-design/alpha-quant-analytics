@@ -17024,17 +17024,22 @@ function StocksAtGlancePage(p){
                   {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:rbar()||<span style={{color:C.border}}>—</span>}
                 </td>
                 <td style={Object.assign({},tdStyle,{textAlign:'center',whiteSpace:'nowrap'})}>
-                  <button onClick={function(){delete pendingTR.current[t];fetchPolygon(t);fetchTipRanks(t);}}
-                    title="Refresh this ticker"
-                    style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
-                      color:C.accent,fontSize:10,fontFamily:F,padding:'2px 6px',cursor:'pointer',marginRight:4}}>{'\u21BB'}</button>
-                  {p.onCheatSheet&&<button onClick={function(){p.onCheatSheet(t);}}
-                    title="Open in Stock Profile Cheat Sheet"
-                    style={{background:'transparent',border:'1px solid '+C.blue+'80',borderRadius:4,
-                      color:C.blue,fontSize:10,fontFamily:F,padding:'2px 6px',cursor:'pointer',marginRight:4}}>{'\u2197'}</button>}
-                  <button onClick={function(){deleteTicker(t);}}
-                    style={{background:'transparent',border:'1px solid '+C.warn+'80',borderRadius:4,
-                      color:C.warn,fontSize:10,fontFamily:F,padding:'2px 7px',cursor:'pointer'}}>{'\u2715'}</button>
+                  <div style={{display:'flex',gap:4,justifyContent:'center'}}>
+                    <button onClick={function(){delete pendingTR.current[t];fetchPolygon(t);fetchTipRanks(t);}}
+                      title="Refresh this ticker"
+                      style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
+                        color:C.accent,fontSize:8,fontFamily:F,padding:'3px 6px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                      <span style={{fontSize:11}}>{'\u21BB'}</span><span style={{fontSize:5,letterSpacing:0.5}}>Refresh</span></button>
+                    {p.onCheatSheet&&<button onClick={function(){p.onCheatSheet(t);}}
+                      title="Open in Stock Profile Cheat Sheet"
+                      style={{background:'transparent',border:'1px solid '+C.blue+'80',borderRadius:4,
+                        color:C.blue,fontSize:8,fontFamily:F,padding:'3px 6px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                      <span style={{fontSize:11}}>{'\u2197'}</span><span style={{fontSize:5,letterSpacing:0.5}}>Profile</span></button>}
+                    <button onClick={function(){deleteTicker(t);}}
+                      style={{background:'transparent',border:'1px solid '+C.warn+'80',borderRadius:4,
+                        color:C.warn,fontSize:8,fontFamily:F,padding:'3px 6px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                      <span style={{fontSize:11}}>{'\u2715'}</span><span style={{fontSize:5,letterSpacing:0.5}}>Remove</span></button>
+                  </div>
                 </td>
               </tr>;
             })}
