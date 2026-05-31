@@ -6945,10 +6945,10 @@ function Splash(p){
   var s=useState(0),opacity=s[0],setOpacity=s[1];
   var ps=useState(''),pw=ps[0],setPw=ps[1];
   var es=useState(false),pwError=es[0],setPwError=es[1];
-  var ls=useState(false),unlocked=ls[0],setUnlocked=ls[1];
+  var ls=useState(function(){try{return localStorage.getItem('aq_auth')==='1';}catch(e){return false;}}),unlocked=ls[0],setUnlocked=ls[1];
   var canvasRef=useRef(null);
   useEffect(function(){setTimeout(function(){setOpacity(1);},100);},[]);
-  useEffect(function(){if(unlocked)setTimeout(function(){p.onDone();},1200);},[unlocked]);
+  useEffect(function(){if(unlocked)setTimeout(function(){p.onDone();},unlocked&&pw===''?100:1200);},[unlocked]);
   useEffect(function(){
     var canvas=canvasRef.current;if(!canvas)return;
     var ctx=canvas.getContext('2d');
@@ -7001,7 +7001,7 @@ function Splash(p){
     window.addEventListener('resize',onResize);
     return function(){cancelAnimationFrame(frameId);window.removeEventListener('resize',onResize);};
   },[]);
-  var submit=function(){if(pw==='BT'){setPwError(false);setUnlocked(true);}else{setPwError(true);}};
+  var submit=function(){if(pw==='BT'){setPwError(false);setUnlocked(true);try{localStorage.setItem('aq_auth','1');}catch(e){}}else{setPwError(true);}};
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:600,padding:'10px 12px',outline:'none'};
   var bB={width:'100%',padding:'12px',border:'none',borderRadius:8,fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'};
   return <div style={{background:'linear-gradient(160deg,#0a1628 0%,#122040 30%,#1a2d5a 50%,#122040 70%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',fontFamily:F,transition:'opacity 0.8s',opacity:opacity,paddingTop:'18vh',paddingLeft:20,paddingRight:20,paddingBottom:20,position:'relative',overflow:'hidden'}}>
