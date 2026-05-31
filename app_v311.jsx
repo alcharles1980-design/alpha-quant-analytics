@@ -18664,7 +18664,7 @@ function DailyLowSwingPage(p){
   var s9=useState(''),priceMax=s9[0],setPriceMax=s9[1];
   var s10=useState(''),capMin=s10[0],setCapMin=s10[1];
   var s11=useState(''),capMax=s11[0],setCapMax=s11[1];
-  var s12=useState('all'),typeFilter=s12[0],setTypeFilter=s12[1];
+  var s12=useState('stocks'),typeFilter=s12[0],setTypeFilter=s12[1];
   var s13=useState({}),dowFilters=s13[0],setDowFilters=s13[1];
   var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
 
