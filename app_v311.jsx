@@ -18704,12 +18704,24 @@ function DailyLowSwingPage(p){
   var s12=useState('stocks'),typeFilter=s12[0],setTypeFilter=s12[1];
   var s13=useState({}),dowFilters=s13[0],setDowFilters=s13[1];
   var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
+  var s15d=useState('30'),lookback=s15d[0],setLookback=s15d[1];
+  var lookbackOpts=[{v:'5',l:'5 days'},{v:'10',l:'10 days'},{v:'30',l:'30 days'},{v:'60',l:'60 days'},{v:'90',l:'90 days'},{v:'180',l:'180 days'},{v:'252',l:'252 days (1yr)'}];
 
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',marginBottom:12};
   var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
   var iS={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:6,padding:'8px',color:C.txtBright,fontSize:10,fontFamily:F,outline:'none'};
   var dows=['mon','tue','wed','thu','fri'];
   var dowLabels={mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday'};
+
+  // Extract profile for selected lookback (handles both old flat format + new nested format)
+  var getProfile=function(dlh){
+    if(!dlh)return null;
+    // New nested format: {"5":{avg,...}, "30":{avg,...}, ...}
+    if(dlh[lookback]&&typeof dlh[lookback]==='object'&&dlh[lookback].avg!=null)return dlh[lookback];
+    // Old flat format: {avg,...,mon,...} — use as-is (will be replaced after pipeline re-runs)
+    if(typeof dlh.avg==='number')return dlh;
+    return null;
+  };
 
   var load=async function(){
     setLoading(true);setErr(null);
@@ -18726,13 +18738,8 @@ function DailyLowSwingPage(p){
         if(!batch.length)break;
         for(var i=0;i<batch.length;i++){
           var row=batch[i];
-          try{row._dlh=typeof row.daily_low_high_profile==='string'?JSON.parse(row.daily_low_high_profile):row.daily_low_high_profile;}catch(e2){row._dlh={};}
-          if(row._dlh&&typeof row._dlh==='string')try{row._dlh=JSON.parse(row._dlh);}catch(e3){row._dlh={};}
-          row._avg=row._dlh?row._dlh.avg||0:0;
-          row._n=row._dlh?row._dlh.n||0:0;
-          // Skip outliers: stocks with <200 trading days have unreliable stats
-          // and stocks with avg swing >50% are almost certainly bad data (splits, thin floats)
-          if(row._n<200||row._avg>50)continue;
+          try{row._dlhRaw=typeof row.daily_low_high_profile==='string'?JSON.parse(row.daily_low_high_profile):row.daily_low_high_profile;}catch(e2){row._dlhRaw={};}
+          if(row._dlhRaw&&typeof row._dlhRaw==='string')try{row._dlhRaw=JSON.parse(row._dlhRaw);}catch(e3){row._dlhRaw={};}
           allRows.push(row);
         }
         if(batch.length<1000)break;
@@ -18763,7 +18770,14 @@ function DailyLowSwingPage(p){
     var isStock3=r.ticker_type==='CS'||r.ticker_type==='ADRC';
     if(typeFilter==='stocks'&&!isStock3)return false;
     if(typeFilter==='etf'&&!isETF3)return false;
+    // Extract profile for selected lookback
+    r._dlh=getProfile(r._dlhRaw);
     if(!r._dlh)return false;
+    r._avg=r._dlh.avg||0;r._n=r._dlh.n||0;
+    // Outlier filter: avg>50% is bad data; n must be reasonable for selected lookback
+    if(r._avg>50)return false;
+    var minN=Math.min(parseInt(lookback)*0.6,100); // e.g. 30d lookback → need at least 18 data points
+    if(r._n<minN)return false;
     var dKeys=Object.keys(dowFilters);
     for(var i=0;i<dKeys.length;i++){
       var d=dKeys[i];var minVal=dowFilters[d];
@@ -18787,7 +18801,16 @@ function DailyLowSwingPage(p){
 
     <div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Daily Low-to-Next-Day-High Swing %</div>
-      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:8}}>Measures the % change from one day's lowest price to the next day's highest price (1-year avg, broken down by day of week). High values = big overnight + next-day recovery swings.</div>
+      <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:8}}>Measures the % change from one day's lowest price to the next day's highest price, broken down by day of week. High values = big overnight + next-day recovery swings.</div>
+      {/* Lookback period selector */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <label style={{color:C.txtDim,fontSize:8,fontWeight:700,fontFamily:F}}>Lookback:</label>
+        <select value={lookback} onChange={function(e){setLookback(e.target.value);setShowCount(200);}}
+          style={{background:C.bg,border:'1px solid '+C.accent,borderRadius:6,color:C.accent,fontFamily:F,fontSize:10,fontWeight:700,padding:'6px 10px',outline:'none',cursor:'pointer'}}>
+          {lookbackOpts.map(function(o){return <option key={o.v} value={o.v} style={{background:C.bg,color:C.txtBright}}>{o.l}</option>;})}
+        </select>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Avg swing over the last {lookback} trading days</span>
+      </div>
       {scanDate&&<div style={{display:'inline-block',background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,marginBottom:8}}>{'SCAN: '+scanDate+' | '+(data?data.length:0)+' stocks'}</div>}
       <div style={{marginBottom:6}}>
         <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());setShowCount(200);}} style={Object.assign({},iS,{marginBottom:6})} placeholder="Search ticker..."/>
