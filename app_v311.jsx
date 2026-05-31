@@ -18705,6 +18705,9 @@ function DailyLowSwingPage(p){
   var s13=useState({}),dowFilters=s13[0],setDowFilters=s13[1];
   var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
   var s15d=useState('30'),lookback=s15d[0],setLookback=s15d[1];
+  var s16e=useState(false),scanning=s16e[0],setScanning=s16e[1];
+  var s17e=useState(null),pipeStatus=s17e[0],setPipeStatus=s17e[1];
+  var pollRef2=useRef(null);
   var lookbackOpts=[{v:'5',l:'5 days'},{v:'10',l:'10 days'},{v:'30',l:'30 days'},{v:'60',l:'60 days'},{v:'90',l:'90 days'},{v:'180',l:'180 days'},{v:'252',l:'252 days (1yr)'}];
 
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',marginBottom:12};
@@ -18750,7 +18753,29 @@ function DailyLowSwingPage(p){
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
-  useEffect(function(){load();},[]);
+  useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
+  useEffect(function(){return function(){if(pollRef2.current)clearInterval(pollRef2.current);};},[]);
+
+  var pollProgress=function(){
+    if(pollRef2.current)clearInterval(pollRef2.current);
+    pollRef2.current=setInterval(async function(){
+      try{
+        var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
+        var rows=r.ok?await r.json():[];
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef2.current);pollRef2.current=null;if(rows[0].status==='complete')load();}}
+      }catch(e){}
+    },3000);
+  };
+
+  var triggerScan=async function(){
+    if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}
+    setErr(null);setScanning(true);
+    try{
+      var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});
+      if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}
+      else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}
+    }catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}
+  };
 
   var doSort=function(col){if(sortCol===col)setSortDesc(!sortDesc);else{setSortCol(col);setSortDesc(true);}};
   var thS=function(col,align){return{padding:'4px 3px',color:sortCol===col?C.gold:C.txtDim,textAlign:align||'right',cursor:'pointer',fontWeight:sortCol===col?700:400,fontSize:7};};
@@ -18833,6 +18858,23 @@ function DailyLowSwingPage(p){
               color:typeFilter===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;
         })}
       </div>
+      {/* Pipeline trigger + progress */}
+      <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+        <button onClick={triggerScan} disabled={scanning}
+          style={{padding:"8px 14px",border:"none",borderRadius:6,fontFamily:F,fontSize:8,fontWeight:800,letterSpacing:1.5,textTransform:"uppercase",cursor:scanning?"default":"pointer",
+            background:scanning?"linear-gradient(135deg,#00e5a0,#00c488)":"linear-gradient(135deg,#9d5cff,#6030c0)",color:scanning?C.bg:"#fff"}}>{scanning?"\u2713 Scan Triggered!":"Run New Scan"}</button>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Triggers screener pipeline (~30 min)</span>
+      </div>
+      {pipeStatus&&<div style={{marginBottom:8,padding:"8px",background:C.bg,borderRadius:6,border:"1px solid "+(pipeStatus.status==="complete"?C.accent:pipeStatus.status==="error"?C.warn:(C.purple||"#a855f7"))}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <span style={{color:pipeStatus.status==="complete"?C.accent:pipeStatus.status==="error"?C.warn:(C.purple||"#a855f7"),fontSize:7,fontWeight:700,fontFamily:F}}>{pipeStatus.status==="complete"?"\u2713 Scan Complete":pipeStatus.status==="error"?"\u2717 Error":"\u25CF Scanning..."}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{(pipeStatus.progress_pct||0)+"%"}</span>
+        </div>
+        <div style={{width:"100%",height:4,background:C.border+"40",borderRadius:2,overflow:"hidden"}}>
+          <div style={{width:(pipeStatus.progress_pct||0)+"%",height:"100%",background:pipeStatus.status==="complete"?C.accent:pipeStatus.status==="error"?C.warn:"linear-gradient(90deg,#9d5cff,#6030c0)",borderRadius:2,transition:"width 0.5s"}}></div>
+        </div>
+        {pipeStatus.message&&<div style={{marginTop:3,fontSize:7,fontFamily:F,color:C.txtDim}}>{pipeStatus.message}</div>}
+      </div>}
       <div style={{marginBottom:4}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <label style={lS}>Min Swing% Per Day {activeFilterCount>0&&<span style={{color:C.accent}}>({activeFilterCount} active)</span>}</label>
