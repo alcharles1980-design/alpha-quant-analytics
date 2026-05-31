@@ -1308,6 +1308,26 @@ function UploadPage(p){
     </div>}
   </div>;
 }
+// Shared: Polygon market cap backfill for screener data
+// Finds CS/ADRC stocks with null market_cap, fetches from Polygon reference API
+async function polygonBackfillMcap(rows,pgKey,setDataFn){
+  if(!pgKey||!rows||!rows.length)return;
+  var missing=[];
+  for(var i=0;i<rows.length;i++){
+    if((rows[i].ticker_type==='CS'||rows[i].ticker_type==='ADRC')&&rows[i].market_cap==null)missing.push(i);
+  }
+  if(!missing.length)return;
+  var updated=rows.slice();
+  for(var j=0;j<missing.length;j++){
+    var idx=missing[j];var tk=updated[idx].ticker;
+    try{
+      var r=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(tk)+'?apiKey='+pgKey);
+      if(r.ok){var d=await r.json();if(d.results&&d.results.market_cap)updated[idx]=Object.assign({},updated[idx],{market_cap:d.results.market_cap});}
+    }catch(e){}
+  }
+  setDataFn(updated);
+}
+
 function CollapseStage(p){
   var s=useState(false),open=s[0],setOpen=s[1];
   return <Cd glow={p.glow} style={p.style}>
@@ -17956,7 +17976,7 @@ function MicroVolScreenerPage(p){
   var s4=useState(''),filter=s4[0],setFilter=s4[1];
   var s5=useState('micro_score'),sortCol=s5[0],setSortCol=s5[1];
   var s6=useState(true),sortDesc=s6[0],setSortDesc=s6[1];
-  var s7=useState('all'),typeFilter=s7[0],setTypeFilter=s7[1];
+  var s7=useState('stocks'),typeFilter=s7[0],setTypeFilter=s7[1];
   var s8=useState(''),priceMin=s8[0],setPriceMin=s8[1];
   var s9=useState(''),priceMax=s9[0],setPriceMax=s9[1];
   var s10=useState(''),capMin=s10[0],setCapMin=s10[1];
@@ -18017,6 +18037,7 @@ function MicroVolScreenerPage(p){
         r.optimal_tp=oscDollar>0?Math.max(0.01,Math.round(oscDollar*0.5*100)/100):0;
       }
       setData(all);
+      polygonBackfillMcap(all,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -18032,7 +18053,8 @@ function MicroVolScreenerPage(p){
   var filtered=data?data.filter(function(r){
     if(filter&&r.ticker.indexOf(filter.toUpperCase())<0)return false;
     var pr=r.price||0;if(priceMin&&pr<parseFloat(priceMin))return false;if(priceMax&&pr>parseFloat(priceMax))return false;
-    if(typeFilter==='stocks'&&r.market_cap==null)return false;if(typeFilter==='etf'&&r.market_cap!=null)return false;
+    if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
+    if(typeFilter==='etf'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
     var mc=r.market_cap||0;if(capMin&&mc<parseFloat(capMin)*1e9)return false;if(capMax&&mc>parseFloat(capMax)*1e9)return false;
     return true;
   }):[];
@@ -18416,7 +18438,7 @@ function SwingScreenerPage(p){
   var s13b=useState('all'),mcapMax=s13b[0],setMcapMax=s13b[1];
   var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
   var s15b=useState(''),priceMax=s15b[0],setPriceMax=s15b[1];
-  var s16b=useState('all'),typeFilter=s16b[0],setTypeFilter=s16b[1];
+  var s16b=useState('stocks'),typeFilter=s16b[0],setTypeFilter=s16b[1];
   var s17b=useState(200),showCount=s17b[0],setShowCount=s17b[1];
   var pollRef=useRef(null);
 
@@ -18473,6 +18495,7 @@ function SwingScreenerPage(p){
         page++;
       }
       setData(allRows);
+      polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -18490,7 +18513,7 @@ function SwingScreenerPage(p){
     if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
     if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
     var isETF2=r.ticker_type==='ETF'||r.ticker_type==='ETV'||r.ticker_type==='ETS'||r.ticker_type==='ETN';
-    if(typeFilter==='stocks'&&isETF2)return false;
+    if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
     if(typeFilter==='etf'&&!isETF2)return false;
     if(!r._swing)return false;
     var hKeys=Object.keys(hourFilters);
@@ -18698,6 +18721,7 @@ function DailyLowSwingPage(p){
         pg++;
       }
       setData(allRows);
+      polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -18871,7 +18895,7 @@ function CloseHighScreenerPage(p){
   var s13c=useState('all'),mcapMax=s13c[0],setMcapMax=s13c[1];
   var s14c=useState(''),priceMin=s14c[0],setPriceMin=s14c[1];
   var s15c=useState(''),priceMax=s15c[0],setPriceMax=s15c[1];
-  var s16c=useState('all'),typeFilter=s16c[0],setTypeFilter=s16c[1];
+  var s16c=useState('stocks'),typeFilter=s16c[0],setTypeFilter=s16c[1];
   var pollRef=useRef(null);
 
   var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
@@ -18927,6 +18951,7 @@ function CloseHighScreenerPage(p){
         page++;
       }
       setData(allRows);
+      polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -18943,7 +18968,7 @@ function CloseHighScreenerPage(p){
     if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
     if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
     var isETF4=r.ticker_type==="ETF"||r.ticker_type==="ETV"||r.ticker_type==="ETS"||r.ticker_type==="ETN";
-    if(typeFilter==="stocks"&&isETF4)return false;
+    if(typeFilter==="stocks"&&r.ticker_type!=="CS"&&r.ticker_type!=="ADRC")return false;
     if(typeFilter==="etf"&&!isETF4)return false;
     if(!r._ch)return false;
     var hKeys=Object.keys(hourFilters);
@@ -19119,7 +19144,7 @@ function DailySwingScreenerPage(p){
   var s13d=useState('all'),mcapMax=s13d[0],setMcapMax=s13d[1];
   var s14d=useState(''),priceMin=s14d[0],setPriceMin=s14d[1];
   var s15d=useState(''),priceMax=s15d[0],setPriceMax=s15d[1];
-  var s16d=useState('all'),typeFilter=s16d[0],setTypeFilter=s16d[1];
+  var s16d=useState('stocks'),typeFilter=s16d[0],setTypeFilter=s16d[1];
   var s16e=useState(''),minAvg=s16e[0],setMinAvg=s16e[1];
   var pollRef=useRef(null);
 
@@ -19178,6 +19203,7 @@ function DailySwingScreenerPage(p){
         page++;
       }
       setData(allRows);
+      polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -19194,7 +19220,7 @@ function DailySwingScreenerPage(p){
     if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
     if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
     var isETF5=r.ticker_type==="ETF"||r.ticker_type==="ETV"||r.ticker_type==="ETS"||r.ticker_type==="ETN";
-    if(typeFilter==="stocks"&&isETF5)return false;
+    if(typeFilter==="stocks"&&r.ticker_type!=="CS"&&r.ticker_type!=="ADRC")return false;
     if(typeFilter==="etf"&&!isETF5)return false;
     if(!r._dch)return false;
     if(minAvg&&(r._dch.avg||0)<parseFloat(minAvg))return false;
@@ -29495,12 +29521,12 @@ function App(){
     {page==='alpaca24atr'&&<Alpaca24AtrPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='volprofile'&&<VolumeProfilePage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='microvolscreen'&&<MicroVolScreenerPage onBack={function(){setPage('home');}}/>}
+    {page==='microvolscreen'&&<MicroVolScreenerPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
-    {page==='swingscreener'&&<SwingScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
-    {page==='dailylowswing'&&<DailyLowSwingPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
-    {page==='closehighscreener'&&<CloseHighScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
-    {page==='dailyswingscreener'&&<DailySwingScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='dailylowswing'&&<DailyLowSwingPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='closehighscreener'&&<CloseHighScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='dailyswingscreener'&&<DailySwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dirbias'&&<DirBiasPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='recovery'&&<RecoveryPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='pullback'&&<PullbackPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
