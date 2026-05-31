@@ -18416,6 +18416,7 @@ function SwingScreenerPage(p){
   var s13b=useState('all'),mcapMax=s13b[0],setMcapMax=s13b[1];
   var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
   var s15b=useState(''),priceMax=s15b[0],setPriceMax=s15b[1];
+  var s16b=useState('all'),typeFilter=s16b[0],setTypeFilter=s16b[1];
   var pollRef=useRef(null);
 
   var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
@@ -18487,6 +18488,9 @@ function SwingScreenerPage(p){
     if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
     if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
     if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
+    var isETF2=r.ticker_type==='ETF'||r.ticker_type==='ETV'||r.ticker_type==='ETS'||r.ticker_type==='ETN';
+    if(typeFilter==='stocks'&&isETF2)return false;
+    if(typeFilter==='etf'&&!isETF2)return false;
     if(!r._swing)return false;
     var hKeys=Object.keys(hourFilters);
     for(var i=0;i<hKeys.length;i++){
@@ -18542,6 +18546,16 @@ function SwingScreenerPage(p){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <div><label style={lS}>Min Price</label><input value={priceMin} onChange={function(e){setPriceMin(e.target.value);}} style={iS} placeholder="No Min" type="number" step="1"/></div>
         <div><label style={lS}>Max Price</label><input value={priceMax} onChange={function(e){setPriceMax(e.target.value);}} style={iS} placeholder="No Max" type="number" step="1"/></div>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:8}}>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim,fontWeight:600,display:"flex",alignItems:"center"}}>Type:</span>
+        {[["all","All"],["stocks","Stocks"],["etf","ETFs"]].map(function(t){
+          return <button key={t[0]} onClick={function(){setTypeFilter(t[0]);}}
+            style={{padding:"5px 10px",borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:"pointer",
+              border:"1px solid "+(typeFilter===t[0]?C.blue+"66":C.border),
+              background:typeFilter===t[0]?C.blue+"10":"transparent",
+              color:typeFilter===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;
+        })}
       </div>
       <div style={{marginBottom:4}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
