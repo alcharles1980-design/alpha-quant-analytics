@@ -18457,6 +18457,7 @@ function SwingScreenerPage(p){
   var s18b=useState('10'),lookback=s18b[0],setLookback=s18b[1];
   var lookbackOpts=[{v:'2',l:'2 days'},{v:'3',l:'3 days'},{v:'5',l:'5 days'},{v:'10',l:'10 days (all)'}];
   var s19b=useState('rth'),sessionMode=s19b[0],setSessionMode=s19b[1];
+  var s20b=useState(''),lookupTk=s20b[0],setLookupTk=s20b[1];
   var pollRef=useRef(null);
 
   // Extract profile for selected lookback (handles old flat + new nested format)
@@ -18607,6 +18608,17 @@ function SwingScreenerPage(p){
         </div>
         <div style={{height:4,background:C.border,borderRadius:2,overflow:'hidden'}}><div style={{width:(pipeStatus.progress_pct||0)+'%',height:'100%',background:pipeStatus.status==='complete'?C.accent:pipeStatus.status==='error'?C.warn:C.purple,borderRadius:2,transition:'width 0.3s'}}/></div>
         <div style={{color:C.txtDim,fontSize:6,fontFamily:F,marginTop:3}}>{pipeStatus.message||''}</div>
+      </div>}
+
+      {/* Ticker Lookup */}
+      {data&&<div style={{marginBottom:10,padding:12,background:C.bg,border:'1px solid '+C.border,borderRadius:8}}>
+        <label style={lS}>Ticker Lookup</label>
+        <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:4}}>
+          <input value={lookupTk} onChange={function(e){setLookupTk(e.target.value.toUpperCase());}} style={Object.assign({},iS,{flex:1})} placeholder="Enter ticker e.g. NVDA"/>
+          {lookupTk&&<a href={'https://finance.yahoo.com/quote/'+lookupTk} target="_blank" rel="noopener noreferrer" style={{padding:'6px 10px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:6,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none'}}>Y</a>}
+          {lookupTk&&p.onCheatSheet&&<a href={'#cheatsheet:'+lookupTk} target="_blank" rel="noopener noreferrer" style={{padding:'6px 10px',border:'1px solid '+C.blue+'60',borderRadius:6,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none'}}>{'\u2197'}</a>}
+        </div>
+        {(function(){if(!lookupTk||lookupTk.length<2||!data)return null;var match=null;for(var li=0;li<data.length;li++){if(data[li].ticker===lookupTk){match=data[li];break;}}if(!match)return <div style={{color:C.warn,fontSize:8,fontFamily:F}}>{lookupTk} not found in screener data.</div>;var sw=getSwingProfile(match._swing);if(!sw)return <div style={{color:C.warn,fontSize:8,fontFamily:F}}>{lookupTk} has no swing profile.</div>;var rthT=0,rthC=0,allT=0,allC=0;for(var h=4;h<19;h++){if(sw[h]){allT+=sw[h];allC++;if(h>=9&&h<=15){rthT+=sw[h];rthC++;}}}var rthAvg=rthC>0?rthT/rthC:0;var allAvg=allC>0?allT/allC:0;var maxSw=0;for(var h2=4;h2<19;h2++){if((sw[h2]||0)>maxSw)maxSw=sw[h2];}return <div style={{marginTop:6}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}><div><span style={{color:C.gold,fontSize:14,fontWeight:800,fontFamily:F}}>{match.ticker}</span><span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{'$'+(match.price||0).toFixed(2)}</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F,marginLeft:8}}>{fmtMcap(match.market_cap)}</span></div><div style={{textAlign:'right'}}><div style={{color:C.gold,fontSize:9,fontWeight:700,fontFamily:F}}>{'RTH Avg: '+rthAvg.toFixed(2)+'%'}</div><div style={{color:C.blue,fontSize:8,fontFamily:F}}>{'All Avg: '+allAvg.toFixed(2)+'%'}</div></div></div><div style={{display:'flex',gap:2,alignItems:'flex-end',height:60}}>{Array.from({length:16},function(_,i){var h3=i+4;var v=sw[h3]||0;var pct=maxSw>0?v/maxSw*100:0;var isRth=h3>=9&&h3<=15;return <div key={h3} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}}><div style={{fontSize:5,color:swColor(v),fontWeight:700,fontFamily:F,marginBottom:1}}>{v>0?v.toFixed(1):''}</div><div style={{width:'100%',height:Math.max(2,pct*0.5),background:isRth?C.accent:C.blue,borderRadius:2,opacity:v>0?1:0.2}}></div><div style={{fontSize:5,color:isRth?C.txtBright:C.txtDim,fontFamily:F,marginTop:1}}>{(h3<10?'0':'')+h3}</div></div>;})}</div><div style={{marginTop:4,fontSize:6,fontFamily:F,color:C.txtDim,textAlign:'center'}}>{'Green = RTH (09-15) | Blue = Extended | Lookback: '+lookback+'d'}</div></div>;})()}
       </div>}
       <div style={{marginBottom:8}}>
         <label style={lS}>Filter Ticker</label>
