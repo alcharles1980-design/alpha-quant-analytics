@@ -1382,7 +1382,7 @@ function HomePage(p){
 }
 
 function StockProfileCheatSheetPage(p){
-  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s1=useState(p.initialTicker||''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),data=s4[0],setData=s4[1];
@@ -1487,6 +1487,7 @@ function StockProfileCheatSheetPage(p){
     var tk=ticker.trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Add Polygon API key in Settings');return;}
+    setTicker(tk);
 
     // Cancel any in-flight prior request before starting a new one
     if(abortRef.current){try{abortRef.current.abort();}catch(_){}}
@@ -2866,6 +2867,9 @@ function StockProfileCheatSheetPage(p){
 
   // Cleanup: abort in-flight fetch when component unmounts
   useEffect(function(){return function(){if(abortRef.current){try{abortRef.current.abort();}catch(_){}}};},[]);
+
+  // Auto-fetch when initialTicker provided (e.g. from Stocks At Glance shortcut)
+  useEffect(function(){if(p.initialTicker&&p.apiKey)fetchProfile();},[]);
 
   var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:13,fontWeight:700,padding:'10px 12px',outline:'none',letterSpacing:1,textTransform:'uppercase'};
   var bS={width:'100%',padding:'12px',border:'none',borderRadius:8,background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:loading?'default':'pointer',marginTop:10};
@@ -17024,6 +17028,10 @@ function StocksAtGlancePage(p){
                     title="Refresh this ticker"
                     style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
                       color:C.accent,fontSize:10,fontFamily:F,padding:'2px 6px',cursor:'pointer',marginRight:4}}>{'\u21BB'}</button>
+                  {p.onCheatSheet&&<button onClick={function(){p.onCheatSheet(t);}}
+                    title="Open in Stock Profile Cheat Sheet"
+                    style={{background:'transparent',border:'1px solid '+C.blue+'80',borderRadius:4,
+                      color:C.blue,fontSize:10,fontFamily:F,padding:'2px 6px',cursor:'pointer',marginRight:4}}>{'\u2197'}</button>}
                   <button onClick={function(){deleteTicker(t);}}
                     style={{background:'transparent',border:'1px solid '+C.warn+'80',borderRadius:4,
                       color:C.warn,fontSize:10,fontFamily:F,padding:'2px 7px',cursor:'pointer'}}>{'\u2715'}</button>
@@ -28943,6 +28951,7 @@ function App(){
   var zoomReset=function(){setZoom(100);};
   var ps=useState(function(){var h=window.location.hash.slice(1);return h||'home';}),page=ps[0],setPageRaw=ps[1];
   var opi=useState(null),optPageInit=opi[0],setOptPageInit=opi[1];
+  var cst=useState(''),csTarget=cst[0],setCsTarget=cst[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
@@ -29266,7 +29275,7 @@ function App(){
     {page==='home'&&<StockProfileCheatSheetPage apiKey={pgKey}/>}
     {page==='theproblem'&&<HomePage onNav={function(k){setPage(k);}} onBack={function(){setPage('home');}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
-    {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}}/>}
+    {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='tipranks'&&<TipRanksPage onBack={function(){setPage('home');}}/>}
     {page==='configsnap'&&<ConfigSnapshotPage onBack={function(){setPage('home');}}/>}
@@ -29274,7 +29283,7 @@ function App(){
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='fullmarketscan'&&<FullMarketScanPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} initialTicker={csTarget} onBack={function(){setCsTarget('');setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
     {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} alpKey={alpKey} alpSecret={alpSecret} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);var uh=Object.assign({},getSbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'});fetch(SB_URL+'/rest/v1/app_config?on_conflict=key',{method:'POST',headers:uh,body:JSON.stringify({key:'github_pat',value:t,updated_at:new Date().toISOString()})}).catch(function(){});}} onSaveAlp={function(k,s){setAlpKey(k);setAlpSecret(s);var uh=Object.assign({},getSbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'});fetch(SB_URL+'/rest/v1/app_config?on_conflict=key',{method:'POST',headers:uh,body:JSON.stringify({key:'alpaca_key',value:k,updated_at:new Date().toISOString()})}).catch(function(){});fetch(SB_URL+'/rest/v1/app_config?on_conflict=key',{method:'POST',headers:uh,body:JSON.stringify({key:'alpaca_secret',value:s,updated_at:new Date().toISOString()})}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
