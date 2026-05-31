@@ -18928,7 +18928,7 @@ function DailyLowSwingPage(p){
                 <td style={{padding:'3px 2px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
                 <td style={{padding:'3px 2px',color:C.gold,fontWeight:700}}>{r.ticker}</td>
                 <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
-                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
+                  <a href={'https://finance.yahoo.com/chart/'+r.ticker+'#eyJpbnRlcnZhbCI6MTUsInBlcmlvZGljaXR5IjoxLCJ0aW1lVW5pdCI6Im1pbnV0ZSIsImNoYXJ0VHlwZSI6ImxpbmUiLCJoZWFkZXJQcmljZVBlcmlvZCI6IjVkYXkiLCJyYW5nZSI6IjVkIn0='} target="_blank" rel="noopener noreferrer"
                     style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
                       color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}}
                     title="Yahoo Finance">Y</a>
