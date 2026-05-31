@@ -18027,7 +18027,7 @@ function MicroVolScreenerPage(p){
       // Compute micro-volatility score for each stock
       for(var i=0;i<all.length;i++){
         var r=all[i];
-        // Micro Score: optimized for grid trading at $0.01-$0.10 increments
+        // Micro Score: optimized for oscillation trading at $0.01-$0.10 increments
         var hurstScore=r.intraday_hurst!=null?Math.max(0,(0.55-r.intraday_hurst)/0.55*100):0; // <0.5=mean reverting, 0=random, cap at 0.55
         var revScore=r.intraday_reversal_rate||0; // Higher reversal = better for grids
         var autoScore=r.autocorr_60d!=null?Math.max(0,-parseFloat(r.autocorr_60d))*200:0; // Negative autocorr = mean reverting, scale to 0-100
@@ -18184,7 +18184,7 @@ function MicroVolScreenerPage(p){
     {data&&<div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Column Guide</div>
       <div style={{display:'flex',flexDirection:'column',gap:3,fontSize:9,fontFamily:F}}>
-        <div><span style={{color:C.txtBright,fontWeight:700}}>MicroS</span><span style={{color:C.txtDim}}> {'\u2014'} Micro-volatility score (0-100). Weighted: iHurst 25%, Rev% 20%, AutoCorr 15%, VWAP 15%, Osc/D 15%, Symmetry 10%. Higher = better for micro grid trading.</span></div>
+        <div><span style={{color:C.txtBright,fontWeight:700}}>MicroS</span><span style={{color:C.txtDim}}> {'\u2014'} Micro-volatility score (0-100). Weighted: iHurst 25%, Rev% 20%, AutoCorr 15%, VWAP 15%, Osc/D 15%, Symmetry 10%. Higher = better for micro oscillation trading.</span></div>
         <div><span style={{color:C.txtBright,fontWeight:700}}>Osc$</span><span style={{color:C.txtDim}}> {'\u2014'} Average dollar move per 1-min bar oscillation. This is the typical price swing within a single minute. Key for setting grid TP levels.</span></div>
         <div><span style={{color:C.txtBright,fontWeight:700}}>Osc%</span><span style={{color:C.txtDim}}> {'\u2014'} Same as Osc$ but as % of price. Normalizes across different price levels.</span></div>
         <div><span style={{color:C.txtBright,fontWeight:700}}>Osc/D</span><span style={{color:C.txtDim}}> {'\u2014'} Oscillations per day. How many times price reverses direction. More = more fill opportunities.</span></div>
