@@ -17031,7 +17031,7 @@ function StocksAtGlancePage(p){
                       style={{background:'transparent',border:'1px solid '+C.border,borderRadius:4,
                         color:C.accent,fontSize:8,fontFamily:F,padding:'3px 6px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
                       <span style={{fontSize:11}}>{'\u21BB'}</span><span style={{fontSize:5,letterSpacing:0.5}}>Refresh</span></button>
-                    {p.onCheatSheet&&<button onClick={function(){p.onCheatSheet(t);}}
+                    {p.onCheatSheet&&<button onClick={function(){window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+t,'_blank');}}
                       title="Open in Stock Profile Cheat Sheet"
                       style={{background:'transparent',border:'1px solid '+C.blue+'80',borderRadius:4,
                         color:C.blue,fontSize:8,fontFamily:F,padding:'3px 6px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
@@ -18932,7 +18932,7 @@ function DailyLowSwingPage(p){
                     style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
                       color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}}
                     title="Yahoo Finance">Y</a>
-                  {p.onCheatSheet&&<button onClick={function(tk){return function(){p.onCheatSheet(tk);};}(r.ticker)}
+                  {p.onCheatSheet&&<button onClick={function(tk){return function(){window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)}
                     style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,
                       color:C.blue,fontSize:14,fontFamily:F,cursor:'pointer',background:'transparent',lineHeight:1}}
                     title="Stock Profile Cheat Sheet">{'\u2197'}</button>}
@@ -29323,7 +29323,12 @@ function App(){
   var toggleTheme=function(){var nt=theme==='dark'?'light':'dark';applyTheme(nt);setThemeState(nt);};
   var setPage=function(p){setPageRaw(p);window.location.hash=p;};
   useEffect(function(){
-    var onPop=function(){var h=window.location.hash.slice(1);if(h)setPageRaw(h);else setPageRaw('home');};
+    var parseHash=function(){
+      var h=window.location.hash.slice(1);
+      if(h&&h.indexOf('cheatsheet:')===0){var tk=h.split(':')[1];setCsTarget(tk||'');return 'cheatsheet';}
+      return h||'home';
+    };
+    var onPop=function(){setPageRaw(parseHash());};
     window.addEventListener('popstate',onPop);
     if(!window.location.hash)window.location.hash='home';
     return function(){window.removeEventListener('popstate',onPop);};
@@ -29334,9 +29339,17 @@ function App(){
   var zoomIn=function(){setZoom(function(z){return Math.min(150,z+10);});};
   var zoomOut=function(){setZoom(function(z){return Math.max(50,z-10);});};
   var zoomReset=function(){setZoom(100);};
-  var ps=useState(function(){var h=window.location.hash.slice(1);return h||'home';}),page=ps[0],setPageRaw=ps[1];
+  var ps=useState(function(){
+    var h=window.location.hash.slice(1);
+    if(h&&h.indexOf('cheatsheet:')===0)return 'cheatsheet';
+    return h||'home';
+  }),page=ps[0],setPageRaw=ps[1];
   var opi=useState(null),optPageInit=opi[0],setOptPageInit=opi[1];
-  var cst=useState(''),csTarget=cst[0],setCsTarget=cst[1];
+  var cst=useState(function(){
+    var h=window.location.hash.slice(1);
+    if(h&&h.indexOf('cheatsheet:')===0)return h.split(':')[1]||'';
+    return '';
+  }),csTarget=cst[0],setCsTarget=cst[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
