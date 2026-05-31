@@ -1308,24 +1308,6 @@ function UploadPage(p){
     </div>}
   </div>;
 }
-// Shared: Polygon market cap backfill for screener data
-// Finds CS/ADRC stocks with null market_cap, fetches from Polygon reference API
-  if(!pgKey||!rows||!rows.length)return;
-  var missing=[];
-  for(var i=0;i<rows.length;i++){
-    if((rows[i].ticker_type==='CS'||rows[i].ticker_type==='ADRC')&&rows[i].market_cap==null)missing.push(i);
-  }
-  if(!missing.length)return;
-  var updated=rows.slice();
-  for(var j=0;j<missing.length;j++){
-    var idx=missing[j];var tk=updated[idx].ticker;
-    try{
-      var r=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(tk)+'?apiKey='+pgKey);
-      if(r.ok){var d=await r.json();if(d.results&&d.results.market_cap)updated[idx]=Object.assign({},updated[idx],{market_cap:d.results.market_cap});}
-    }catch(e){}
-  }
-  setDataFn(updated);
-}
 
 function CollapseStage(p){
   var s=useState(false),open=s[0],setOpen=s[1];
@@ -17371,36 +17353,6 @@ function ExtendedHoursVolumePage(p){
   </div>;
 }
 
-// Shared: auto-backfill missing market_cap from Polygon for screener data
-  if(!pgKey||!rows||!rows.length)return;
-  var missing=[];
-  for(var i=0;i<rows.length;i++){
-    if(rows[i].market_cap==null&&(rows[i].ticker_type==null||rows[i].ticker_type==='CS'))missing.push(i);
-  }
-  if(missing.length===0||missing.length>50)return; // skip if too many (avoid API spam)
-  var updated=rows.slice();var changed=false;
-  for(var j=0;j<missing.length;j++){
-    var idx=missing[j];var tk=updated[idx].ticker;
-    try{
-      var r=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(tk)+'?apiKey='+pgKey);
-      if(r.ok){
-        var d=await r.json();
-        if(d.results){
-          updated[idx]=Object.assign({},updated[idx],{market_cap:d.results.market_cap||null,ticker_type:d.results.type||updated[idx].ticker_type});
-          changed=true;
-          // Save back to Supabase for future loads
-          try{
-            await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?ticker=eq.'+tk+'&scan_date=eq.'+updated[idx].scan_date,{
-              method:'PATCH',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),
-              body:JSON.stringify({market_cap:d.results.market_cap||null,ticker_type:d.results.type||null})
-            });
-          }catch(e2){}
-        }
-      }
-    }catch(e){}
-  }
-  if(changed&&setData)setData(updated);
-}
 
 // Shared: auto-backfill missing market_cap from Polygon for screener data
 async function backfillMcap(rows,pgKey,setDataFn){
