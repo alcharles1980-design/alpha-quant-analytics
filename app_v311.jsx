@@ -1310,7 +1310,6 @@ function UploadPage(p){
 }
 // Shared: Polygon market cap backfill for screener data
 // Finds CS/ADRC stocks with null market_cap, fetches from Polygon reference API
-async function polygonBackfillMcap(rows,pgKey,setDataFn){
   if(!pgKey||!rows||!rows.length)return;
   var missing=[];
   for(var i=0;i<rows.length;i++){
@@ -17373,7 +17372,6 @@ function ExtendedHoursVolumePage(p){
 }
 
 // Shared: auto-backfill missing market_cap from Polygon for screener data
-async function backfillMcap(rows,pgKey,setData){
   if(!pgKey||!rows||!rows.length)return;
   var missing=[];
   for(var i=0;i<rows.length;i++){
@@ -17402,6 +17400,37 @@ async function backfillMcap(rows,pgKey,setData){
     }catch(e){}
   }
   if(changed&&setData)setData(updated);
+}
+
+// Shared: auto-backfill missing market_cap from Polygon for screener data
+async function backfillMcap(rows,pgKey,setDataFn){
+  if(!pgKey||!rows||!rows.length)return;
+  var missing=[];
+  for(var i=0;i<rows.length;i++){
+    if(rows[i].market_cap==null&&(rows[i].ticker_type==null||rows[i].ticker_type==='CS'))missing.push(i);
+  }
+  if(missing.length===0||missing.length>50)return;
+  var updated=rows.slice();var changed=false;
+  for(var j=0;j<missing.length;j++){
+    var idx=missing[j];var tk=updated[idx].ticker;
+    try{
+      var r=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(tk)+'?apiKey='+pgKey);
+      if(r.ok){
+        var d=await r.json();
+        if(d.results){
+          updated[idx]=Object.assign({},updated[idx],{market_cap:d.results.market_cap||null,ticker_type:d.results.type||updated[idx].ticker_type});
+          changed=true;
+          try{
+            fetch(SB_URL+'/rest/v1/cached_oscillation_screener?ticker=eq.'+tk+'&scan_date=eq.'+updated[idx].scan_date,{
+              method:'PATCH',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),
+              body:JSON.stringify({market_cap:d.results.market_cap||null,ticker_type:d.results.type||null})
+            });
+          }catch(e2){}
+        }
+      }
+    }catch(e){}
+  }
+  if(changed&&setDataFn)setDataFn(updated);
 }
 
 function OscillationScreenerPage(p){
@@ -17568,12 +17597,12 @@ function OscillationScreenerPage(p){
         page++;
       }
       setData(allRows);
+      backfillMcap(allRows,p.apiKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
   useEffect(function(){
     load();
-      backfillMcap(load(,p.apiKey,setData);
     // Load latest pipeline status on mount
     (async function(){
       try{
@@ -18070,11 +18099,10 @@ function MicroVolScreenerPage(p){
         r.optimal_tp=oscDollar>0?Math.max(0.01,Math.round(oscDollar*0.5*100)/100):0;
       }
       setData(all);
-      polygonBackfillMcap(all,p.pgKey,setData);
+      backfillMcap(all,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
-      backfillMcap(},p.pgKey,setData);
 
   useEffect(function(){loadData();},[]);
 
@@ -18529,10 +18557,9 @@ function SwingScreenerPage(p){
         page++;
       }
       setData(allRows);
-      polygonBackfillMcap(allRows,p.pgKey,setData);
+      backfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
-      backfillMcap(setLoading(false,p.pgKey,setData);
   };
   useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
 
@@ -18756,9 +18783,8 @@ function DailyLowSwingPage(p){
         pg++;
       }
       setData(allRows);
-      polygonBackfillMcap(allRows,p.pgKey,setData);
+      backfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
-      backfillMcap(}catch(e){setErr(e.message);},p.pgKey,setData);
     setLoading(false);
   };
   useEffect(function(){load();},[]);
@@ -18987,8 +19013,7 @@ function CloseHighScreenerPage(p){
         page++;
       }
       setData(allRows);
-      polygonBackfillMcap(allRows,p.pgKey,setData);
-      backfillMcap(polygonBackfillMcap(allRows,p.pgKey,setData,p.pgKey,setData);
+      backfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -19241,7 +19266,6 @@ function DailySwingScreenerPage(p){
       }
       setData(allRows);
       backfillMcap(allRows,p.pgKey,setData);
-      polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
