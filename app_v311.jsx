@@ -17372,6 +17372,38 @@ function ExtendedHoursVolumePage(p){
   </div>;
 }
 
+// Shared: auto-backfill missing market_cap from Polygon for screener data
+async function backfillMcap(rows,pgKey,setData){
+  if(!pgKey||!rows||!rows.length)return;
+  var missing=[];
+  for(var i=0;i<rows.length;i++){
+    if(rows[i].market_cap==null&&(rows[i].ticker_type==null||rows[i].ticker_type==='CS'))missing.push(i);
+  }
+  if(missing.length===0||missing.length>50)return; // skip if too many (avoid API spam)
+  var updated=rows.slice();var changed=false;
+  for(var j=0;j<missing.length;j++){
+    var idx=missing[j];var tk=updated[idx].ticker;
+    try{
+      var r=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(tk)+'?apiKey='+pgKey);
+      if(r.ok){
+        var d=await r.json();
+        if(d.results){
+          updated[idx]=Object.assign({},updated[idx],{market_cap:d.results.market_cap||null,ticker_type:d.results.type||updated[idx].ticker_type});
+          changed=true;
+          // Save back to Supabase for future loads
+          try{
+            await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?ticker=eq.'+tk+'&scan_date=eq.'+updated[idx].scan_date,{
+              method:'PATCH',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),
+              body:JSON.stringify({market_cap:d.results.market_cap||null,ticker_type:d.results.type||null})
+            });
+          }catch(e2){}
+        }
+      }
+    }catch(e){}
+  }
+  if(changed&&setData)setData(updated);
+}
+
 function OscillationScreenerPage(p){
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
@@ -17383,7 +17415,7 @@ function OscillationScreenerPage(p){
   var s8=useState(''),prog=s8[0],setProg=s8[1];
   var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
   var s13=useState(false),showColGuide=s13[0],setShowColGuide=s13[1];
-  var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
+  var s14=useState('stocks'),etfFilter=s14[0],setEtfFilter=s14[1];
   var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
   var s14c=useState(''),priceMax=s14c[0],setPriceMax=s14c[1];
   var s14d=useState(200),showCount=s14d[0],setShowCount=s14d[1];
@@ -17541,6 +17573,7 @@ function OscillationScreenerPage(p){
   };
   useEffect(function(){
     load();
+      backfillMcap(load(,p.apiKey,setData);
     // Load latest pipeline status on mount
     (async function(){
       try{
@@ -17584,8 +17617,8 @@ function OscillationScreenerPage(p){
     if(rankMode==='intraday'&&r.intraday_hurst==null)return false;
     if(priceMin&&r.price<parseFloat(priceMin))return false;
     if(priceMax&&r.price>parseFloat(priceMax))return false;
-    if(etfFilter==='stocks'&&r.ticker_type==='ETF')return false;
-    if(etfFilter==='etfs'&&r.ticker_type!=='ETF')return false;
+    if(etfFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
+    if(etfFilter==='etfs'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
     return true;
   }).map(function(r){
     var row=Object.assign({},r,{_score:getScore(r)});
@@ -18041,6 +18074,7 @@ function MicroVolScreenerPage(p){
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
+      backfillMcap(},p.pgKey,setData);
 
   useEffect(function(){loadData();},[]);
 
@@ -18498,6 +18532,7 @@ function SwingScreenerPage(p){
       polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
+      backfillMcap(setLoading(false,p.pgKey,setData);
   };
   useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
 
@@ -18723,6 +18758,7 @@ function DailyLowSwingPage(p){
       setData(allRows);
       polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
+      backfillMcap(}catch(e){setErr(e.message);},p.pgKey,setData);
     setLoading(false);
   };
   useEffect(function(){load();},[]);
@@ -18952,6 +18988,7 @@ function CloseHighScreenerPage(p){
       }
       setData(allRows);
       polygonBackfillMcap(allRows,p.pgKey,setData);
+      backfillMcap(polygonBackfillMcap(allRows,p.pgKey,setData,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
   };
@@ -19203,6 +19240,7 @@ function DailySwingScreenerPage(p){
         page++;
       }
       setData(allRows);
+      backfillMcap(allRows,p.pgKey,setData);
       polygonBackfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
     setLoading(false);
