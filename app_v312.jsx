@@ -14080,7 +14080,7 @@ function OvernightHourlyPage(p){
         setProgMsg('Fetching BOATS bars... '+Math.min(bi+25,tickers.length)+'/'+tickers.length);
         var symStr=batch.join(',');
         var url=PROXY;
-        var path='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+encodeURIComponent(startStr)+'&end='+encodeURIComponent(endStr)+'&feed=boats&limit=10000';
+        var path='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&feed=boats&limit=10000';
         var r2=await fetch(url,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
         if(r2.ok){
           var d2=await r2.json();
@@ -14089,6 +14089,8 @@ function OvernightHourlyPage(p){
             if(!allBars[sym])allBars[sym]=[];
             allBars[sym]=allBars[sym].concat(bars[sym]);
           }
+        }else{
+          var errText=await r2.text();console.error('BOATS bars error:',r2.status,errText);
         }
       }
 
