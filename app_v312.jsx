@@ -14075,31 +14075,27 @@ function OvernightHourlyPage(p){
 
       // Fetch BOATS bars in batches of 25 (multi-symbol endpoint)
       var allBars={}; // ticker → [{t, n, v, ...}]
-      var debugInfo=['keys:'+(p.alpKey?p.alpKey.slice(0,6)+'...':'NONE'),'tickers:'+tickers.length,'start:'+startStr,'end:'+endStr];
+      var debugInfo=[];
       for(var bi=0;bi<tickers.length;bi+=25){
         var batch=tickers.slice(bi,bi+25);
         setProgMsg('Fetching BOATS bars... '+Math.min(bi+25,tickers.length)+'/'+tickers.length);
         var symStr=batch.join(',');
-        var url=PROXY;
-        var path='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&feed=boats&limit=10000';
+        var boatsUrl='https://data.alpaca.markets/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&feed=boats&limit=10000';
         try{
-          var r2=await fetch(url,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
-          debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': HTTP '+r2.status);
+          var r2=await fetch(boatsUrl,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret}});
           if(r2.ok){
             var d2=await r2.json();
             var bars=d2.bars||{};
-            var batchCount=Object.keys(bars).length;
-            debugInfo.push(' → '+batchCount+' tickers returned');
             for(var sym in bars){
               if(!allBars[sym])allBars[sym]=[];
               allBars[sym]=allBars[sym].concat(bars[sym]);
             }
           }else{
             var errBody=await r2.text();
-            debugInfo.push(' → ERROR: '+errBody.slice(0,80));
+            debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': HTTP '+r2.status+' '+errBody.slice(0,80));
           }
         }catch(fetchErr){
-          debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': FETCH FAIL: '+fetchErr.message);
+          debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': '+fetchErr.message);
         }
       }
 
@@ -14154,8 +14150,9 @@ function OvernightHourlyPage(p){
       // Sort by total desc
       rows.sort(function(a,b){return b.total-a.total;});
       setData(rows);
-      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET | '+Object.keys(allBars).length+' tickers with bars | '+rows.length+' have BOATS hours | Debug: '+debugInfo.join('; '));
-    }catch(e){setErr(e.message);}
+      if(rows.length===0){setErr(Object.keys(allBars).length+' tickers returned bars but 0 had BOATS hours (20-03 ET). '+debugInfo.join(' | '));}
+      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET | '+Object.keys(allBars).length+' tickers with bars | '+rows.length+' processed');
+    }catch(e){setErr(e.message+' | Debug: '+debugInfo.join('; '));}
     setLoading(false);setProgMsg('');
   };
 
