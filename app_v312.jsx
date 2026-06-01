@@ -13375,7 +13375,7 @@ function MostActivesPage(p){
       var isOvernight=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
       if(isOvernight){
-        // ── OVERNIGHT MODE: fetch BOATS bars for the universe ──
+        // ── OVERNIGHT MODE: fetch overnight bars for the universe ──
         var boatsMap={};
         var startBoats=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
         for(var bBatch=0;bBatch<rawActives.length;bBatch+=50){
@@ -14045,7 +14045,7 @@ function OvernightHourlyPage(p){
 
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',marginBottom:12};
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
-  // BOATS hours in ET: 20,21,22,23,0,1,2,3 (8PM-3AM, bars cover through 4AM)
+  // overnight hours in ET: 20,21,22,23,0,1,2,3 (8PM-3AM, bars cover through 4AM)
   var boatsHours=[20,21,22,23,0,1,2,3];
   var hourLabel=function(h){return (h<10?'0':'')+h+':00';};
   var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
@@ -14073,18 +14073,18 @@ function OvernightHourlyPage(p){
       var startStr=startDate.toISOString().slice(0,10)+'T00:00:00Z';
       var endStr=endDate.toISOString().slice(0,10)+'T23:59:59Z';
 
-      // Fetch BOATS bars in batches of 25 (multi-symbol endpoint)
+      // Fetch overnight bars in batches of 25 (multi-symbol endpoint)
       var allBars={}; // ticker → [{t, n, v, ...}]
       var debugInfo=[];
       for(var bi=0;bi<tickers.length;bi+=20){
         var batch=tickers.slice(bi,bi+20);
-        setProgMsg('Fetching BOATS bars... '+Math.min(bi+20,tickers.length)+'/'+tickers.length);
+        setProgMsg('Fetching overnight bars... '+Math.min(bi+20,tickers.length)+'/'+tickers.length);
         var symStr=batch.join(',');
         var pageToken=null;
         try{
           // Paginate through all results for this batch
           do{
-            var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&limit=10000&feed=boats';
+            var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&limit=10000&feed=sip';
             if(pageToken)apiPath+='&page_token='+pageToken;
             var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
               'X-Alpaca-Path':apiPath,'X-Alpaca-Base':'data'}});
@@ -14112,7 +14112,7 @@ function OvernightHourlyPage(p){
       if(missing.length>0)debugInfo.push('Missing: '+missing.join(','));
 
       // Process: group by ticker → hour (ET), compute avg trade count
-      setProgMsg('Processing hourly data... ('+Object.keys(allBars).length+' tickers have BOATS bars)');
+      setProgMsg('Processing hourly data... ('+Object.keys(allBars).length+' tickers have overnight bars)');
       var rows=[];
       for(var ti=0;ti<tickers.length;ti++){
         var tk=tickers[ti];
@@ -14134,7 +14134,7 @@ function OvernightHourlyPage(p){
           }else if(etHour<=3){
             var prev=new Date(dt);prev.setDate(prev.getDate()-1);
             sessionDate=prev.toLocaleDateString('en-CA',{timeZone:'America/New_York'});
-          }else{continue;} // skip non-BOATS hours
+          }else{continue;} // skip non-overnight hours
           if(!nightMap[sessionDate])nightMap[sessionDate]={};
           nightMap[sessionDate][etHour]=(nightMap[sessionDate][etHour]||0)+(bar.n||0);
         }
@@ -14162,7 +14162,7 @@ function OvernightHourlyPage(p){
       // Sort by total desc
       rows.sort(function(a,b){return b.total-a.total;});
       setData(rows);
-      if(rows.length===0){setErr(Object.keys(allBars).length+' tickers returned bars but 0 had BOATS hours (20-03 ET). '+debugInfo.join(' | '));}
+      if(rows.length===0){setErr(Object.keys(allBars).length+' tickers returned bars but 0 had overnight hours (20-03 ET). '+debugInfo.join(' | '));}
       setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET | '+Object.keys(allBars).length+' tickers with bars | '+rows.length+' processed');
     }catch(e){setErr(e.message+' | Debug: '+debugInfo.join('; '));}
     setLoading(false);setProgMsg('');
@@ -14205,7 +14205,7 @@ function OvernightHourlyPage(p){
     </div>
 
     <div style={card}>
-      <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>BOATS Session (8PM {'\u2013'} 4AM ET)</div>
+      <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Overnight Session (8PM {'\u2013'} 4AM ET) {'\u2014'} All Exchanges (SIP)</div>
 
       {/* List selector */}
       <div style={{display:'flex',gap:4,marginBottom:8,flexWrap:'wrap'}}>
@@ -14291,7 +14291,7 @@ function OvernightHourlyPage(p){
           </tbody>
         </table>
       </div>
-      {data&&data.length===0&&<div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:9,fontFamily:F}}>No BOATS data found for tickers in this list.</div>}
+      {data&&data.length===0&&<div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:9,fontFamily:F}}>No overnight data found for tickers in this list.</div>}
     </div>}
 
     {!data&&!loading&&<div style={card}>
