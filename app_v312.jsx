@@ -14045,8 +14045,8 @@ function OvernightHourlyPage(p){
 
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',marginBottom:12};
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
-  // overnight hours in ET: 20,21,22,23,0,1,2,3 (8PM-3AM, bars cover through 4AM)
-  var boatsHours=[20,21,22,23,0,1,2,3];
+  // Overnight + pre-market hours in ET: 20-23,0-3 (BOATS), 4-8 (SIP pre-market)
+  var boatsHours=[20,21,22,23,0,1,2,3,4,5,6,7,8];
   var hourLabel=function(h){return (h<10?'0':'')+h+':00';};
   var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
 
@@ -14076,34 +14076,37 @@ function OvernightHourlyPage(p){
       // Fetch overnight bars in batches of 25 (multi-symbol endpoint)
       var allBars={}; // ticker → [{t, n, v, ...}]
       var debugInfo=[];
-      for(var bi=0;bi<tickers.length;bi+=20){
-        var batch=tickers.slice(bi,bi+20);
-        setProgMsg('Fetching overnight bars... '+Math.min(bi+20,tickers.length)+'/'+tickers.length);
-        var symStr=batch.join(',');
-        var pageToken=null;
-        try{
-          // Paginate through all results for this batch
-          do{
-            var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&limit=10000&feed=sip';
-            if(pageToken)apiPath+='&page_token='+pageToken;
-            var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-              'X-Alpaca-Path':apiPath,'X-Alpaca-Base':'data'}});
-            if(r2.ok){
-              var d2=await r2.json();
-              var bars=d2.bars||{};
-              for(var sym in bars){
-                if(!allBars[sym])allBars[sym]=[];
-                allBars[sym]=allBars[sym].concat(bars[sym]);
+      var feeds=['boats','sip']; // BOATS for 8PM-4AM, SIP for 4AM-9AM pre-market
+      for(var fi=0;fi<feeds.length;fi++){
+        var feedName=feeds[fi];
+        for(var bi=0;bi<tickers.length;bi+=20){
+          var batch=tickers.slice(bi,bi+20);
+          setProgMsg('Fetching '+feedName.toUpperCase()+' bars... '+Math.min(bi+20,tickers.length)+'/'+tickers.length);
+          var symStr=batch.join(',');
+          var pageToken=null;
+          try{
+            do{
+              var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&limit=10000&feed='+feedName;
+              if(pageToken)apiPath+='&page_token='+pageToken;
+              var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+                'X-Alpaca-Path':apiPath,'X-Alpaca-Base':'data'}});
+              if(r2.ok){
+                var d2=await r2.json();
+                var bars=d2.bars||{};
+                for(var sym in bars){
+                  if(!allBars[sym])allBars[sym]=[];
+                  allBars[sym]=allBars[sym].concat(bars[sym]);
+                }
+                pageToken=d2.next_page_token||null;
+              }else{
+                var errBody=await r2.text();
+                debugInfo.push(feedName+' B'+(Math.floor(bi/20)+1)+':'+r2.status+' '+errBody.slice(0,50));
+                pageToken=null;
               }
-              pageToken=d2.next_page_token||null;
-            }else{
-              var errBody=await r2.text();
-              debugInfo.push('B'+(Math.floor(bi/20)+1)+':'+r2.status+' '+errBody.slice(0,60));
-              pageToken=null;
-            }
-          }while(pageToken);
-        }catch(fetchErr){
-          debugInfo.push('B'+(Math.floor(bi/20)+1)+':'+fetchErr.message);
+            }while(pageToken);
+          }catch(fetchErr){
+            debugInfo.push(feedName+' B'+(Math.floor(bi/20)+1)+':'+fetchErr.message);
+          }
         }
       }
       // Debug: show which expected tickers are missing from results
@@ -14127,14 +14130,14 @@ function OvernightHourlyPage(p){
           var etHour=parseInt(etHourFmt.format(dt));
           // Determine which overnight session this belongs to
           // Hours 20-23 belong to that calendar day's overnight
-          // Hours 0-3 belong to the previous day's overnight
+          // Hours 0-8 belong to the previous day's overnight (midnight through pre-market)
           var sessionDate;
           if(etHour>=20){
             sessionDate=dt.toLocaleDateString('en-CA',{timeZone:'America/New_York'});
-          }else if(etHour<=3){
+          }else if(etHour<=8){
             var prev=new Date(dt);prev.setDate(prev.getDate()-1);
             sessionDate=prev.toLocaleDateString('en-CA',{timeZone:'America/New_York'});
-          }else{continue;} // skip non-overnight hours
+          }else{continue;} // skip RTH hours (9-19)
           if(!nightMap[sessionDate])nightMap[sessionDate]={};
           nightMap[sessionDate][etHour]=(nightMap[sessionDate][etHour]||0)+(bar.n||0);
         }
@@ -14162,7 +14165,7 @@ function OvernightHourlyPage(p){
       // Sort by total desc
       rows.sort(function(a,b){return b.total-a.total;});
       setData(rows);
-      if(rows.length===0){setErr(Object.keys(allBars).length+' tickers returned bars but 0 had overnight hours (20-03 ET). '+debugInfo.join(' | '));}
+      if(rows.length===0){setErr(Object.keys(allBars).length+' tickers returned bars but 0 had overnight+pre-market hours (20-08 ET). '+debugInfo.join(' | '));}
       setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET | '+Object.keys(allBars).length+' tickers with bars | '+rows.length+' processed');
     }catch(e){setErr(e.message+' | Debug: '+debugInfo.join('; '));}
     setLoading(false);setProgMsg('');
@@ -14205,7 +14208,7 @@ function OvernightHourlyPage(p){
     </div>
 
     <div style={card}>
-      <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Overnight Session (8PM {'\u2013'} 4AM ET) {'\u2014'} All Exchanges (SIP)</div>
+      <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Overnight + Pre-Market (8PM {'\u2013'} 9AM ET)</div>
 
       {/* List selector */}
       <div style={{display:'flex',gap:4,marginBottom:8,flexWrap:'wrap'}}>
