@@ -14076,13 +14076,13 @@ function OvernightHourlyPage(p){
       // Fetch BOATS bars in batches of 25 (multi-symbol endpoint)
       var allBars={}; // ticker → [{t, n, v, ...}]
       var debugInfo=[];
-      for(var bi=0;bi<tickers.length;bi+=25){
-        var batch=tickers.slice(bi,bi+25);
-        setProgMsg('Fetching BOATS bars... '+Math.min(bi+25,tickers.length)+'/'+tickers.length);
+      for(var bi=0;bi<tickers.length;bi+=50){
+        var batch=tickers.slice(bi,bi+50);
+        setProgMsg('Fetching BOATS bars... '+Math.min(bi+50,tickers.length)+'/'+tickers.length);
         var symStr=batch.join(',');
-        var boatsUrl='https://data.alpaca.markets/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&feed=boats&limit=10000';
         try{
-          var r2=await fetch(boatsUrl,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret}});
+          var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&limit=10000&feed=boats','X-Alpaca-Base':'data'}});
           if(r2.ok){
             var d2=await r2.json();
             var bars=d2.bars||{};
@@ -14092,10 +14092,10 @@ function OvernightHourlyPage(p){
             }
           }else{
             var errBody=await r2.text();
-            debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': HTTP '+r2.status+' '+errBody.slice(0,80));
+            debugInfo.push('B'+(Math.floor(bi/50)+1)+':'+r2.status+' '+errBody.slice(0,60));
           }
         }catch(fetchErr){
-          debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': '+fetchErr.message);
+          debugInfo.push('B'+(Math.floor(bi/50)+1)+':'+fetchErr.message);
         }
       }
 
