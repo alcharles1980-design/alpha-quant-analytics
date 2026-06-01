@@ -14058,7 +14058,7 @@ function OvernightHourlyPage(p){
   var fetchData=async function(){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
     if(!selectedList){setErr('Select a list');return;}
-    setLoading(true);setErr(null);setData(null);setProgMsg('Loading tickers...');
+    setLoading(true);setErr(null);setData(null);setProgMsg('Loading tickers... (keys: '+(p.alpKey?'set':'MISSING')+')');
     try{
       // Get tickers from selected list
       var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker',{headers:getSbHeaders()});
@@ -14081,21 +14081,26 @@ function OvernightHourlyPage(p){
         var symStr=batch.join(',');
         var url=PROXY;
         var path='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&feed=boats&limit=10000';
-        var r2=await fetch(url,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
-        if(r2.ok){
-          var d2=await r2.json();
-          var bars=d2.bars||{};
-          for(var sym in bars){
-            if(!allBars[sym])allBars[sym]=[];
-            allBars[sym]=allBars[sym].concat(bars[sym]);
+        try{
+          var r2=await fetch(url,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+          if(r2.ok){
+            var d2=await r2.json();
+            var bars=d2.bars||{};
+            for(var sym in bars){
+              if(!allBars[sym])allBars[sym]=[];
+              allBars[sym]=allBars[sym].concat(bars[sym]);
+            }
+          }else{
+            var errBody=await r2.text();
+            setProgMsg('API error: '+r2.status+' '+errBody.slice(0,100));
           }
-        }else{
-          var errText=await r2.text();console.error('BOATS bars error:',r2.status,errText);
+        }catch(fetchErr){
+          setProgMsg('Fetch error: '+fetchErr.message);
         }
       }
 
       // Process: group by ticker → hour (ET), compute avg trade count
-      setProgMsg('Processing hourly data...');
+      setProgMsg('Processing hourly data... ('+Object.keys(allBars).length+' tickers have BOATS bars)');
       var rows=[];
       for(var ti=0;ti<tickers.length;ti++){
         var tk=tickers[ti];
@@ -14147,7 +14152,9 @@ function OvernightHourlyPage(p){
       setData(rows);
       setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
     }catch(e){setErr(e.message);}
-    setLoading(false);setProgMsg('');
+    setLoading(false);
+    // Only clear progMsg if it's not an error
+    if(progMsg&&progMsg.indexOf('error')<0&&progMsg.indexOf('Error')<0)setProgMsg('');
   };
 
   var doSort=function(col){if(sortCol===col)setSortDesc(!sortDesc);else{setSortCol(col);setSortDesc(true);}};
