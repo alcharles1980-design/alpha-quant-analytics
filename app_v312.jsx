@@ -14075,6 +14075,7 @@ function OvernightHourlyPage(p){
 
       // Fetch BOATS bars in batches of 25 (multi-symbol endpoint)
       var allBars={}; // ticker → [{t, n, v, ...}]
+      var debugInfo=['keys:'+(p.alpKey?p.alpKey.slice(0,6)+'...':'NONE'),'tickers:'+tickers.length,'start:'+startStr,'end:'+endStr];
       for(var bi=0;bi<tickers.length;bi+=25){
         var batch=tickers.slice(bi,bi+25);
         setProgMsg('Fetching BOATS bars... '+Math.min(bi+25,tickers.length)+'/'+tickers.length);
@@ -14083,19 +14084,22 @@ function OvernightHourlyPage(p){
         var path='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&feed=boats&limit=10000';
         try{
           var r2=await fetch(url,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+          debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': HTTP '+r2.status);
           if(r2.ok){
             var d2=await r2.json();
             var bars=d2.bars||{};
+            var batchCount=Object.keys(bars).length;
+            debugInfo.push(' → '+batchCount+' tickers returned');
             for(var sym in bars){
               if(!allBars[sym])allBars[sym]=[];
               allBars[sym]=allBars[sym].concat(bars[sym]);
             }
           }else{
             var errBody=await r2.text();
-            setProgMsg('API error: '+r2.status+' '+errBody.slice(0,100));
+            debugInfo.push(' → ERROR: '+errBody.slice(0,80));
           }
         }catch(fetchErr){
-          setProgMsg('Fetch error: '+fetchErr.message);
+          debugInfo.push('Batch '+(Math.floor(bi/25)+1)+': FETCH FAIL: '+fetchErr.message);
         }
       }
 
@@ -14150,11 +14154,9 @@ function OvernightHourlyPage(p){
       // Sort by total desc
       rows.sort(function(a,b){return b.total-a.total;});
       setData(rows);
-      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+      setScanTime(new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET | '+Object.keys(allBars).length+' tickers with bars | '+rows.length+' have BOATS hours | Debug: '+debugInfo.join('; '));
     }catch(e){setErr(e.message);}
-    setLoading(false);
-    // Only clear progMsg if it's not an error
-    if(progMsg&&progMsg.indexOf('error')<0&&progMsg.indexOf('Error')<0)setProgMsg('');
+    setLoading(false);setProgMsg('');
   };
 
   var doSort=function(col){if(sortCol===col)setSortDesc(!sortDesc);else{setSortCol(col);setSortDesc(true);}};
@@ -14225,7 +14227,7 @@ function OvernightHourlyPage(p){
       </div>
       {progMsg&&<div style={{fontSize:7,fontFamily:F,color:C.purple||'#a855f7'}}>{progMsg}</div>}
       {err&&<div style={{marginTop:4,color:C.warn,fontSize:8,fontFamily:F}}>{err}</div>}
-      {scanTime&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.txtDim}}>Scanned: {scanTime} | {data?data.length:0} tickers with BOATS data | Avg over {lookback} night{lookback!=='1'?'s':''}</div>}
+      {scanTime&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.txtDim,wordBreak:'break-all'}}>{scanTime}</div>}
     </div>
 
     {/* Heatmap Legend */}
