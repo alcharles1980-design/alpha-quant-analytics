@@ -13383,9 +13383,18 @@ function MostActivesPage(p){
         for(var bBatch=0;bBatch<rawActives.length;bBatch+=50){
           var bChunk=rawActives.slice(bBatch,bBatch+50).map(function(a){return a.symbol;}).join(',');
           try{
-            var rb=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(bChunk)+'&timeframe=1Day&start='+startBoats+'T00:00:00Z&end='+endBoats+'T23:59:59Z&limit=100&feed=boats','X-Alpaca-Base':'data'}});
-            if(rb.ok){var db=await rb.json();if(db.bars)Object.assign(boatsMap,db.bars);}
+            var boatsToken=null;
+            do{
+              var boatsPath='/v2/stocks/bars?symbols='+encodeURIComponent(bChunk)+'&timeframe=1Day&start='+startBoats+'T00:00:00Z&end='+endBoats+'T23:59:59Z&limit=10000&feed=boats';
+              if(boatsToken)boatsPath+='&page_token='+boatsToken;
+              var rb=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+                'X-Alpaca-Path':boatsPath,'X-Alpaca-Base':'data'}});
+              if(rb.ok){
+                var db=await rb.json();
+                if(db.bars){for(var bSym in db.bars){if(!boatsMap[bSym])boatsMap[bSym]=[];boatsMap[bSym]=boatsMap[bSym].concat(db.bars[bSym]);}}
+                boatsToken=db.next_page_token||null;
+              }else{boatsToken=null;}
+            }while(boatsToken);
           }catch(e2){}
         }
         // Build overnight actives from BOATS data
