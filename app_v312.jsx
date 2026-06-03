@@ -13377,7 +13377,7 @@ function MostActivesPage(p){
       if(isOvernight){
         // ── OVERNIGHT MODE: fetch overnight bars for the universe ──
         var boatsMap={};
-        var startBoats=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
+        var startBoats=new Date(Date.now()-5*86400000).toISOString().split('T')[0];
         for(var bBatch=0;bBatch<rawActives.length;bBatch+=50){
           var bChunk=rawActives.slice(bBatch,bBatch+50).map(function(a){return a.symbol;}).join(',');
           try{
@@ -13666,8 +13666,8 @@ function MostActivesPage(p){
             {filtered.map(function(a,i){
               var maxVol=filtered[0][sortBy==='volume'?'volume':'trade_count']||1;
               var thisVal=sortBy==='volume'?a.volume:a.trade_count;
-              var pct=thisVal/maxVol*100;
-              return <tr key={i} style={{borderBottom:'1px solid '+C.border+'20'}}>
+              var pct=maxVol>0?thisVal/maxVol*100:0;
+              return <tr key={a.symbol} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
                 <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
                 <td style={{padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7}}>{a.tickerType||'STK'}</td>
@@ -13698,7 +13698,7 @@ function MostActivesPage(p){
       <div style={card}>
         <div style={{color:C.accent,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>{'\u25B2'} Top Gainers</div>
         {movers.gainers&&movers.gainers.map(function(g,i){
-          return <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid '+C.border+'20'}}>
+          return <div key={g.symbol||i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid '+C.border+'20'}}>
             <div>
               <div style={{color:C.gold,fontWeight:700,fontSize:9,fontFamily:F}}>{g.symbol}</div>
               <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>${g.price.toFixed(2)}</div>
@@ -13714,7 +13714,7 @@ function MostActivesPage(p){
       <div style={card}>
         <div style={{color:C.warn,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>{'\u25BC'} Top Losers</div>
         {movers.losers&&movers.losers.map(function(l,i){
-          return <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid '+C.border+'20'}}>
+          return <div key={l.symbol||i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid '+C.border+'20'}}>
             <div>
               <div style={{color:C.gold,fontWeight:700,fontSize:9,fontFamily:F}}>{l.symbol}</div>
               <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>${l.price.toFixed(2)}</div>
