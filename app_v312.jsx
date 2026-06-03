@@ -13532,6 +13532,9 @@ function MostActivesPage(p){
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
   var tblTh=function(col,label,align){return <th onClick={function(){doTblSort(col);}} style={{padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400}}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
 
+  var barCol=tblSort==='trade_count'?'trade_count':'volume';
+  var maxBar=1;if(filtered.length>0){for(var mbi=0;mbi<filtered.length;mbi++){if((filtered[mbi][barCol]||0)>maxBar)maxBar=filtered[mbi][barCol];}}
+
   var fmtVol=function(v){if(v>=1e12)return(v/1e12).toFixed(1)+'T';if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
   var sml={fontSize:7,color:C.txtDim,fontFamily:F};
@@ -13667,9 +13670,7 @@ function MostActivesPage(p){
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>BAR</th>
           </tr></thead>
           <tbody>
-            {(function(){var barCol=tblSort==='trade_count'?'trade_count':'volume';var maxBar=filtered.length>0?(filtered[0][barCol]||1):1;
-            for(var mbi=0;mbi<filtered.length;mbi++){if((filtered[mbi][barCol]||0)>maxBar)maxBar=filtered[mbi][barCol];}
-            return filtered.map(function(a,i){
+            {filtered.map(function(a,i){
               var pct=maxBar>0?(a[barCol]||0)/maxBar*100:0;
               return <tr key={a.symbol} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
@@ -13698,7 +13699,7 @@ function MostActivesPage(p){
                   </div>
                 </td>
               </tr>;
-            });})()
+            })}
           </tbody>
         </table>
       </div>
