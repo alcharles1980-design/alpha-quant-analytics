@@ -13337,7 +13337,7 @@ function MostActivesPage(p){
 
   // Fetch saved lists on mount
   useEffect(function(){
-    fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name',{headers:getSbHeaders()})
+    fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name&limit=1000',{headers:getSbHeaders()})
       .then(function(r){return r.json();}).then(function(d){setMyLists(d||[]);}).catch(function(){});
   },[]);
 
@@ -13350,7 +13350,7 @@ function MostActivesPage(p){
       if(session==='mylists'){
         // ── MY LISTS MODE: fetch tickers from selected list ──
         if(!selectedList){setLoading(false);return;}
-        var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker',{headers:getSbHeaders()});
+        var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker&limit=10000',{headers:getSbHeaders()});
         if(!lr.ok)throw new Error('Failed to load list');
         var ld=await lr.json();
         var listSymbols=ld.map(function(r){return r.ticker;});
@@ -14076,7 +14076,7 @@ function OvernightHourlyPage(p){
   var etHourFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hourCycle:'h23'});
 
   useEffect(function(){
-    fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name',{headers:getSbHeaders()})
+    fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name&limit=1000',{headers:getSbHeaders()})
       .then(function(r){return r.json();}).then(function(d){setMyLists(d||[]);}).catch(function(){});
   },[]);
 
@@ -14086,17 +14086,17 @@ function OvernightHourlyPage(p){
     setLoading(true);setErr(null);setData(null);setProgMsg('Loading tickers... (keys: '+(p.alpKey?'set':'MISSING')+')');
     try{
       // Get tickers from selected list
-      var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker',{headers:getSbHeaders()});
+      var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker&limit=10000',{headers:getSbHeaders()});
       var ld=await lr.json();
       var tickers=ld.map(function(r){return r.ticker;});
       if(!tickers.length){setErr('No tickers in this list');setLoading(false);return;}
 
-      // Build date range for lookback
+      // Build date range for lookback — skip today (BOATS/SIP return 403 for "recent" data)
       var nights=parseInt(lookback)||5;
-      var endDate=new Date();
-      var startDate=new Date();startDate.setDate(startDate.getDate()-(nights+3)); // extra days for weekends
+      var yesterday=new Date();yesterday.setDate(yesterday.getDate()-1);
+      var startDate=new Date();startDate.setDate(startDate.getDate()-(nights+4)); // extra days for weekends + skip today
       var startStr=startDate.toISOString().slice(0,10)+'T00:00:00Z';
-      var endStr=endDate.toISOString().slice(0,10)+'T23:59:59Z';
+      var endStr=yesterday.toISOString().slice(0,10)+'T23:59:59Z';
 
       // Fetch overnight bars in batches of 25 (multi-symbol endpoint)
       var allBars={}; // ticker → [{t, n, v, ...}]
@@ -14111,7 +14111,7 @@ function OvernightHourlyPage(p){
           var pageToken=null;
           try{
             do{
-              var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&limit=10000&feed='+feedName;
+              var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(symStr)+'&timeframe=1Hour&start='+startStr+'&end='+endStr+'&limit=10000&feed='+feedName;
               if(pageToken)apiPath+='&page_token='+pageToken;
               var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
                 'X-Alpaca-Path':apiPath,'X-Alpaca-Base':'data'}});
@@ -14141,10 +14141,11 @@ function OvernightHourlyPage(p){
 
       // Process: group by ticker → hour (ET), compute avg trade count
       setProgMsg('Processing hourly data... ('+Object.keys(allBars).length+' tickers have overnight bars)');
+      var todayStr4=new Date().toISOString().slice(0,10);
       var rows=[];
       for(var ti=0;ti<tickers.length;ti++){
         var tk=tickers[ti];
-        var tkBars=allBars[tk]||[];
+        var tkBars=(allBars[tk]||[]).filter(function(b3){return b3.t.slice(0,10)!==todayStr4;}); // skip today's bars
         if(!tkBars.length)continue;
 
         // Group bars by date+hour in ET
