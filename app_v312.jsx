@@ -13470,10 +13470,13 @@ function MostActivesPage(p){
                   for(var ai3=0;ai3<rawActives.length;ai3++){
                     if(rawActives[ai3].symbol===sym2){
                       rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=dayBars.length;
-                      // Use latest SIP bar volume as today's volume (more accurate than IEX snapshot)
-                      var latestBarVol=dayBars[dayBars.length-1].v;
-                      if(latestBarVol>rawActives[ai3].volume)rawActives[ai3].volume=latestBarVol;
-                      if(dayBars[dayBars.length-1].n>(rawActives[ai3].trade_count||0))rawActives[ai3].trade_count=dayBars[dayBars.length-1].n;
+                      // For My Lists mode: fill volume/trades from SIP (initially 0)
+                      // For RTH screener mode: screener already has accurate values, don't overwrite
+                      if(session==='mylists'){
+                        var latestBarVol=dayBars[dayBars.length-1].v;
+                        if(latestBarVol>rawActives[ai3].volume)rawActives[ai3].volume=latestBarVol;
+                        if(dayBars[dayBars.length-1].n>(rawActives[ai3].trade_count||0))rawActives[ai3].trade_count=dayBars[dayBars.length-1].n;
+                      }
                       rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;break;}
                   }
                 }
