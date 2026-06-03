@@ -13377,12 +13377,14 @@ function MostActivesPage(p){
       if(isOvernight){
         // ── OVERNIGHT MODE: fetch overnight bars for the universe ──
         var boatsMap={};
+        var boatsEnd=new Date();boatsEnd.setDate(boatsEnd.getDate()-1);
         var startBoats=new Date(Date.now()-5*86400000).toISOString().split('T')[0];
+        var endBoats=boatsEnd.toISOString().split('T')[0];
         for(var bBatch=0;bBatch<rawActives.length;bBatch+=50){
           var bChunk=rawActives.slice(bBatch,bBatch+50).map(function(a){return a.symbol;}).join(',');
           try{
             var rb=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(bChunk)+'&timeframe=1Day&start='+startBoats+'T00:00:00Z&limit=100&feed=boats','X-Alpaca-Base':'data'}});
+              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(bChunk)+'&timeframe=1Day&start='+startBoats+'T00:00:00Z&end='+endBoats+'T23:59:59Z&limit=100&feed=boats','X-Alpaca-Base':'data'}});
             if(rb.ok){var db=await rb.json();if(db.bars)Object.assign(boatsMap,db.bars);}
           }catch(e2){}
         }
@@ -13508,9 +13510,10 @@ function MostActivesPage(p){
     var mnP=parseFloat(minPrice)||0;
     var mxP=parseFloat(maxPrice)||Infinity;
     if(pr<mnP||pr>mxP)return false;
-    // Asset type filter using ticker_type from Polygon (CS=stock, ETF/ETV/ETS/ETN=fund)
+    // Asset type filter using ticker_type from Polygon (CS/ADRC=stock, ETF/ETV/ETS/ETN=fund)
     var isETF=a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN';
-    if(assetType==='stocks'&&isETF)return false;
+    var isStock=a.tickerType==='CS'||a.tickerType==='ADRC';
+    if(assetType==='stocks'&&!isStock)return false;
     if(assetType==='etf'&&!isETF)return false;
     // Market cap filter (input in billions, data in raw)
     var mnC=(parseFloat(minCap)||0)*1e9;
@@ -13652,6 +13655,7 @@ function MostActivesPage(p){
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30}}>#</th>
             {tblTh("symbol","SYMBOL","left")}
+            <th style={{padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6}}></th>
             <th style={{padding:"4px 3px",textAlign:"left",color:C.txtDim}}>TYPE</th>
             {tblTh("price","PRICE")}
             {tblTh("changePct","CHG %")}
@@ -13663,16 +13667,24 @@ function MostActivesPage(p){
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>BAR</th>
           </tr></thead>
           <tbody>
-            {filtered.map(function(a,i){
-              var maxVol=filtered[0][sortBy==='volume'?'volume':'trade_count']||1;
-              var thisVal=sortBy==='volume'?a.volume:a.trade_count;
-              var pct=maxVol>0?thisVal/maxVol*100:0;
+            {(function(){var barCol=tblSort==='trade_count'?'trade_count':'volume';var maxBar=filtered.length>0?(filtered[0][barCol]||1):1;
+            for(var mbi=0;mbi<filtered.length;mbi++){if((filtered[mbi][barCol]||0)>maxBar)maxBar=filtered[mbi][barCol];}
+            return filtered.map(function(a,i){
+              var pct=maxBar>0?(a[barCol]||0)/maxBar*100:0;
               return <tr key={a.symbol} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
                 <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
+                <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                  <a href={'https://finance.yahoo.com/quote/'+a.symbol} target="_blank" rel="noopener noreferrer"
+                    style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
+                      color:C.purple||'#a855f7',fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
+                  <a href={'#cheatsheet:'+a.symbol} target="_blank" rel="noopener noreferrer"
+                    style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,
+                      color:C.blue,fontSize:10,fontFamily:F,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
+                </td>
                 <td style={{padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7}}>{a.tickerType||'STK'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
-                <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>=0?C.accent:C.warn,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
@@ -13686,7 +13698,7 @@ function MostActivesPage(p){
                   </div>
                 </td>
               </tr>;
-            })}
+            });})()
           </tbody>
         </table>
       </div>
