@@ -13390,14 +13390,10 @@ function MostActivesPage(p){
         }
         // Build overnight actives from BOATS data
         var overnightActives=[];
-        var todayStr3=new Date().toISOString().slice(0,10);
         for(var sym in boatsMap){
           var bars=boatsMap[sym];
           if(!bars||bars.length===0)continue;
-          // Filter out today's incomplete BOATS bar (end param is ignored by Alpaca)
-          bars=bars.filter(function(b2){return b2.t.slice(0,10)!==todayStr3;});
-          if(bars.length===0)continue;
-          var latest=bars[bars.length-1]; // most recent COMPLETED overnight session
+          var latest=bars[bars.length-1]; // most recent overnight session (may be in-progress)
           var avgOvVol=0;for(var bi=0;bi<bars.length;bi++)avgOvVol+=bars[bi].v;avgOvVol=avgOvVol/bars.length;
           overnightActives.push({
             symbol:sym,volume:latest.v,trade_count:latest.n,
