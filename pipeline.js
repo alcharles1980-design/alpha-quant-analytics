@@ -2824,10 +2824,10 @@ async function runScreener() {
       var fetchTimer = setTimeout(function() { fetchCtrl.abort(); }, 30000);
       var r5 = await fetch(url5, { signal: fetchCtrl.signal });
       clearTimeout(fetchTimer);
-      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; continue; }
+      if (!r5.ok) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; res.minute_swing_profile = null; continue; }
       var d5 = await r5.json();
       var bars5 = d5.results || [];
-      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; continue; }
+      if (bars5.length < 20) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; res.minute_swing_profile = null; continue; }
 
       // Compute 1-min returns PER DAY (exclude overnight gaps)
       var dayBarsForReturns = {};
@@ -3227,7 +3227,47 @@ async function runScreener() {
       }
       res.hourly_swing_profile = JSON.stringify(hourlySwing);
 
-      // Hour Close to Next Hour High %: prev hour close → next hour high
+      // Minute Bar Low-to-Next-Bar-High: bar[i].low → bar[i+1].high per ET hour
+      // Multi-lookback: [2,3,5,10] days — same windows as hourly swing
+      var minSwWindows = [2, 3, 5, 10];
+      var minuteSwing = {};
+      // Build per-day, per-hour list of 1-min swings
+      var minSwDayMap = {}; // date -> { hr: [swing_pcts] }
+      for (var mbi = 0; mbi < bars5.length - 1; mbi++) {
+        var mb = bars5[mbi], mb2 = bars5[mbi + 1];
+        // Only compute within same day (no overnight gap)
+        var mDate = etDateFmt.format(new Date(mb.t));
+        var mDate2 = etDateFmt.format(new Date(mb2.t));
+        if (mDate !== mDate2) continue; // skip day-boundary pairs
+        if (mb.l <= 0) continue;
+        var mHr = parseInt(etHrFmtShared.format(new Date(mb.t))) || 0;
+        var mSwPct = (mb2.h - mb.l) / mb.l * 100;
+        if (!minSwDayMap[mDate]) minSwDayMap[mDate] = {};
+        if (!minSwDayMap[mDate][mHr]) minSwDayMap[mDate][mHr] = [];
+        minSwDayMap[mDate][mHr].push(mSwPct);
+      }
+      var minSwDays = Object.keys(minSwDayMap).sort();
+      for (var mwi = 0; mwi < minSwWindows.length; mwi++) {
+        var mw = minSwWindows[mwi];
+        var mSubset = minSwDays.length > mw ? minSwDays.slice(-mw) : minSwDays;
+        var mHrSums = {}; var mHrCounts = {};
+        for (var msi = 0; msi < mSubset.length; msi++) {
+          var mDay = minSwDayMap[mSubset[msi]];
+          for (var mh = 4; mh < 20; mh++) {
+            var mArr = mDay[mh];
+            if (!mArr || !mArr.length) continue;
+            if (!mHrSums[mh]) { mHrSums[mh] = 0; mHrCounts[mh] = 0; }
+            for (var mai = 0; mai < mArr.length; mai++) { mHrSums[mh] += mArr[mai]; mHrCounts[mh]++; }
+          }
+        }
+        var mProfile = {};
+        for (var mh2 = 4; mh2 < 20; mh2++) {
+          mProfile[mh2] = mHrCounts[mh2] ? Math.round(mHrSums[mh2] / mHrCounts[mh2] * 1000) / 1000 : 0;
+        }
+        mProfile._n = mSubset.length;
+        minuteSwing[String(mw)] = mProfile;
+      }
+      res.minute_swing_profile = JSON.stringify(minuteSwing);
       var chSums = {}; var chCounts = {};
       for (var sdi2 = 0; sdi2 < swDayKeys.length; sdi2++) {
         var dayHrs2 = swingDays[swDayKeys[sdi2]];
@@ -3286,7 +3326,7 @@ async function runScreener() {
       res.osc_score = Math.round((iHurstScore * 0.25 + dHurstScore * 0.10 + atrS * 0.15 + iOscS * 0.20 + dOscS * 0.05 + iRevS * 0.10 + crossS * 0.10 + Math.min(100, res.yz_vol * 1.5) * 0.05) * 10) / 10;
 
       processed5m++;
-    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; }
+    } catch (e) { res.intraday_hurst = null; res.intraday_osc_ratio = null; res.intraday_reversal_rate = null; res.avg_vwap_crossings = null; res.avg_osc_pct = null; res.avg_osc_dollar = null; res.avg_up_osc_dollar = null; res.avg_up_osc_pct = null; res.avg_dn_osc_dollar = null; res.avg_dn_osc_pct = null; res.osc_per_day = null; res.session_metrics = null; res.hourly_atr_profile = null; res.hourly_swing_profile = null; res.hourly_close_high_profile = null; res.hourly_vol_regime = null; res.overlap_ratio = null; res.cycle_density = null; res.minute_swing_profile = null; }
 
     if (ri % 50 === 0) {
       console.log('  Intraday: ' + ri + '/' + results.length + ' (' + processed5m + ' with data)');
