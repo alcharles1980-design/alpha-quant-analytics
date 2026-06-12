@@ -2916,9 +2916,11 @@ async function runScreener() {
       // Expected Completed Excursion (ECE): avg size of each directional run
       // Split into UP (profit opportunity) and DOWN (entry opportunity)
       var upExcursions = [], dnExcursions = [];
+      var daysProcessed = 0; // track actual days counted (skip holidays/partial days)
       for (var dk2 = 0; dk2 < dayKeys.length; dk2++) {
         var db2 = dayBars[dayKeys[dk2]];
         if (db2.length < 5) continue;
+        daysProcessed++;
         var runStart = db2[0].c;
         var runDir = 0; // 0=none, 1=up, -1=down
         for (var bi6 = 1; bi6 < db2.length; bi6++) {
@@ -2934,12 +2936,17 @@ async function runScreener() {
             runDir = dir;
           }
         }
+        // Count the final run-in-progress (previously dropped silently)
+        if (runDir !== 0) {
+          var finalExc = Math.abs(db2[db2.length - 1].c - runStart);
+          if (finalExc > 0) { if (runDir === 1) upExcursions.push(finalExc); else dnExcursions.push(finalExc); }
+        }
       }
       var allExcursions = upExcursions.concat(dnExcursions);
       var avgExcDollar = 0;
       if (allExcursions.length > 0) { for (var j = 0; j < allExcursions.length; j++) avgExcDollar += allExcursions[j]; avgExcDollar /= allExcursions.length; }
       var avgExcPct = res.price > 0 ? (avgExcDollar / res.price) * 100 : 0;
-      var oscPerDay = dayKeys.length > 0 ? Math.round(allExcursions.length / dayKeys.length * 10) / 10 : 0;
+      var oscPerDay = daysProcessed > 0 ? Math.round(allExcursions.length / daysProcessed * 10) / 10 : 0;
       var avgUpExc = 0; if (upExcursions.length > 0) { for (var j = 0; j < upExcursions.length; j++) avgUpExc += upExcursions[j]; avgUpExc /= upExcursions.length; }
       var avgDnExc = 0; if (dnExcursions.length > 0) { for (var j = 0; j < dnExcursions.length; j++) avgDnExc += dnExcursions[j]; avgDnExc /= dnExcursions.length; }
 
@@ -3061,9 +3068,11 @@ async function runScreener() {
         // Group session bars by day
         var sDayBars = {};
         for (var j = 0; j < sesBars.length; j++) { var dd = etDateFmt.format(new Date(sesBars[j].t)); if (!sDayBars[dd]) sDayBars[dd] = []; sDayBars[dd].push(sesBars[j]); }
+        var sDaysProcessed = 0;
         var sDayKeys = Object.keys(sDayBars);
         for (var dki = 0; dki < sDayKeys.length; dki++) {
           var sdb = sDayBars[sDayKeys[dki]]; if (sdb.length < 3) continue;
+          sDaysProcessed++;
           var sam = 0, snm = Math.abs(sdb[sdb.length-1].c - sdb[0].o);
           for (var j = 1; j < sdb.length; j++) sam += Math.abs(sdb[j].c - sdb[j-1].c);
           sOscR.push(snm > 0 ? sam / snm : sam > 0 ? 99 : 0);
@@ -3074,6 +3083,8 @@ async function runScreener() {
           sVX.push(cx);
           var rs2 = sdb[0].c, rd2 = 0;
           for (var j = 1; j < sdb.length; j++) { var mv = sdb[j].c - sdb[j-1].c; var dr = mv>0?1:mv<0?-1:0; if (dr===0) continue; if (rd2===0) { rd2=dr; rs2=sdb[j-1].c; } else if (dr!==rd2) { var ex = Math.abs(sdb[j-1].c - rs2); if (ex>0) { sExc.push(ex); if (rd2===1) sUpExc.push(ex); else sDnExc.push(ex); } rs2=sdb[j-1].c; rd2=dr; } }
+          // Count final run-in-progress (was dropped silently)
+          if (rd2 !== 0) { var fex = Math.abs(sdb[sdb.length-1].c - rs2); if (fex>0) { sExc.push(fex); if (rd2===1) sUpExc.push(fex); else sDnExc.push(fex); } }
         }
         var aOR = 0; if (sOscR.length) { for (var j = 0; j < sOscR.length; j++) aOR += sOscR[j]; aOR /= sOscR.length; }
         var aRR = 0; if (sRevR.length) { for (var j = 0; j < sRevR.length; j++) aRR += sRevR[j]; aRR /= sRevR.length; }
@@ -3082,7 +3093,7 @@ async function runScreener() {
         var aUE = 0; if (sUpExc.length) { for (var j = 0; j < sUpExc.length; j++) aUE += sUpExc[j]; aUE /= sUpExc.length; }
         var aDnE = 0; if (sDnExc.length) { for (var j = 0; j < sDnExc.length; j++) aDnE += sDnExc[j]; aDnE /= sDnExc.length; }
         var aEP = res.price > 0 ? (aED / res.price) * 100 : 0;
-        var sOscPerDay = sDayKeys.length > 0 ? Math.round(sExc.length / sDayKeys.length * 10) / 10 : 0;
+        var sOscPerDay = sDaysProcessed > 0 ? Math.round(sExc.length / sDaysProcessed * 10) / 10 : 0;
         sesMetrics[sk] = { bars: sesBars.length, hurst: Math.round(sH*1000)/1000, osc_ratio: Math.round(aOR*10)/10, rev_rate: Math.round(aRR*10)/10, vx: Math.round(aVX*10)/10, osc_pct: Math.round(aEP*1000)/1000, osc_dollar: Math.round(aED*100)/100, up_osc_dollar: Math.round(aUE*100)/100, dn_osc_dollar: Math.round(aDnE*100)/100, osc_per_day: sOscPerDay };
       }
       res.session_metrics = JSON.stringify(sesMetrics);
