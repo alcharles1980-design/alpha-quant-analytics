@@ -13291,7 +13291,6 @@ function StockClassificationPage(p){
 // Fetches full TipRanks data via Supabase-proxied tipranks_fetch(ticker) function.
 // Displays Smart Score, analyst consensus, individual analysts, insiders,
 // hedge fund activity, blogger sentiment, and news sentiment — all from one call.
-// ─── CONFIGURATION SNAPSHOT PAGE ───────────────────────────────────────────────
 // ─── MOST ACTIVES ─────────────────────────────────────────────────────────────
 function MostActivesPage(p){
   var s1=useState(null),actives=s1[0],setActives=s1[1];
