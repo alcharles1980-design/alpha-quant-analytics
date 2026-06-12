@@ -18331,7 +18331,7 @@ function MicroVolScreenerPage(p){
         var revScore=r.intraday_reversal_rate||0; // Higher reversal = better for grids
         var autoScore=r.autocorr_60d!=null?Math.max(0,-parseFloat(r.autocorr_60d))*200:0; // Negative autocorr = mean reverting, scale to 0-100
         var vwapScore=Math.min(100,(r.avg_vwap_crossings||0)*2); // More VWAP crosses = more oscillation
-        var oscFreqScore=Math.min(100,(r.osc_per_day||0)/5); // 500 osc/day = 100
+        var oscFreqScore=Math.min(100,(r.osc_per_day||0)*2); // 50 osc/day = 100 (typical range 15-50)
         // Symmetry: how balanced are up vs down oscillations (1.0 = perfect)
         var upOsc=parseFloat(r.avg_up_osc_pct)||0;var dnOsc=parseFloat(r.avg_dn_osc_pct)||0;
         var symRatio=(upOsc>0&&dnOsc>0)?Math.min(upOsc,dnOsc)/Math.max(upOsc,dnOsc):0;
