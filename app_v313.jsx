@@ -18053,7 +18053,7 @@ function OscillationScreenerPage(p){
       var allRows=[];var page=0;var pageSize=1000;
       while(true){
         var ph=getSbHeaders();ph['Range']=''+(page*pageSize)+'-'+((page+1)*pageSize-1);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type,osc_score,scan_date,avg_osc_pct,avg_osc_dollar,osc_per_day,intraday_reversal_rate,reversal_pct,avg_vwap_crossings,autocorr_60d,hurst_60d,hurst,intraday_hurst,intraday_osc_ratio,osc_drift_ratio,atr_pct,yz_vol&scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type,osc_score,scan_date,avg_osc_pct,avg_osc_dollar,osc_per_day,intraday_reversal_rate,reversal_pct,avg_vwap_crossings,autocorr_60d,hurst_60d,hurst,intraday_hurst,intraday_osc_ratio,osc_drift_ratio,atr_pct,yz_vol,adv_dollars,avg_up_osc_dollar,avg_dn_osc_dollar,session_metrics&scan_date=eq.'+sd+'&order=osc_score.desc',{headers:ph});
         var batch=pr.ok?await pr.json():[];
         if(!batch.length)break;
         for(var bi=0;bi<batch.length;bi++)allRows.push(batch[bi]);
