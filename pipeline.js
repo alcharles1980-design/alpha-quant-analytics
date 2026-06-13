@@ -3228,46 +3228,45 @@ async function runScreener() {
       res.hourly_swing_profile = JSON.stringify(hourlySwing);
 
       // Minute Bar Low-to-Next-Bar-High: bar[i].low → bar[i+1].high per ET hour
-      // Multi-lookback: [2,3,5,10] days — same windows as hourly swing
-      var minSwWindows = [2, 3, 5, 10];
-      var minuteSwing = {};
-      // Build per-day, per-hour list of 1-min swings
-      var minSwDayMap = {}; // date -> { hr: [swing_pcts] }
-      for (var mbi = 0; mbi < bars5.length - 1; mbi++) {
-        var mb = bars5[mbi], mb2 = bars5[mbi + 1];
-        // Only compute within same day (no overnight gap)
-        var mDate = etDateFmt.format(new Date(mb.t));
-        var mDate2 = etDateFmt.format(new Date(mb2.t));
-        if (mDate !== mDate2) continue; // skip day-boundary pairs
-        if (mb.l <= 0) continue;
-        var mHr = parseInt(etHrFmtShared.format(new Date(mb.t))) || 0;
-        var mSwPct = (mb2.h - mb.l) / mb.l * 100;
-        if (!minSwDayMap[mDate]) minSwDayMap[mDate] = {};
-        if (!minSwDayMap[mDate][mHr]) minSwDayMap[mDate][mHr] = [];
-        minSwDayMap[mDate][mHr].push(mSwPct);
-      }
-      var minSwDays = Object.keys(minSwDayMap).sort();
-      for (var mwi = 0; mwi < minSwWindows.length; mwi++) {
-        var mw = minSwWindows[mwi];
-        var mSubset = minSwDays.length > mw ? minSwDays.slice(-mw) : minSwDays;
-        var mHrSums = {}; var mHrCounts = {};
-        for (var msi = 0; msi < mSubset.length; msi++) {
-          var mDay = minSwDayMap[mSubset[msi]];
-          for (var mh = 4; mh < 20; mh++) {
-            var mArr = mDay[mh];
-            if (!mArr || !mArr.length) continue;
-            if (!mHrSums[mh]) { mHrSums[mh] = 0; mHrCounts[mh] = 0; }
-            for (var mai = 0; mai < mArr.length; mai++) { mHrSums[mh] += mArr[mai]; mHrCounts[mh]++; }
+      try {
+        var minSwWindows = [2, 3, 5, 10];
+        var minuteSwing = {};
+        var minSwDayMap = {};
+        for (var mbi = 0; mbi < bars5.length - 1; mbi++) {
+          var mb = bars5[mbi], mb2 = bars5[mbi + 1];
+          var mDate = etDateFmt.format(new Date(mb.t));
+          var mDate2 = etDateFmt.format(new Date(mb2.t));
+          if (mDate !== mDate2) continue;
+          if (!mb.l || mb.l <= 0) continue;
+          var mHr = parseInt(etHrFmtShared.format(new Date(mb.t))) || 0;
+          var mSwPct = (mb2.h - mb.l) / mb.l * 100;
+          if (!minSwDayMap[mDate]) minSwDayMap[mDate] = {};
+          if (!minSwDayMap[mDate][mHr]) minSwDayMap[mDate][mHr] = [];
+          minSwDayMap[mDate][mHr].push(mSwPct);
+        }
+        var minSwDays = Object.keys(minSwDayMap).sort();
+        for (var mwi = 0; mwi < minSwWindows.length; mwi++) {
+          var mw = minSwWindows[mwi];
+          var mSubset = minSwDays.length > mw ? minSwDays.slice(-mw) : minSwDays;
+          var mHrSums = {}; var mHrCounts = {};
+          for (var msi = 0; msi < mSubset.length; msi++) {
+            var mDay = minSwDayMap[mSubset[msi]];
+            for (var mh = 4; mh < 20; mh++) {
+              var mArr = mDay[mh];
+              if (!mArr || !mArr.length) continue;
+              if (!mHrSums[mh]) { mHrSums[mh] = 0; mHrCounts[mh] = 0; }
+              for (var mai = 0; mai < mArr.length; mai++) { mHrSums[mh] += mArr[mai]; mHrCounts[mh]++; }
+            }
           }
+          var mProfile = {};
+          for (var mh2 = 4; mh2 < 20; mh2++) {
+            mProfile[mh2] = mHrCounts[mh2] ? Math.round(mHrSums[mh2] / mHrCounts[mh2] * 1000) / 1000 : 0;
+          }
+          mProfile._n = mSubset.length;
+          minuteSwing[String(mw)] = mProfile;
         }
-        var mProfile = {};
-        for (var mh2 = 4; mh2 < 20; mh2++) {
-          mProfile[mh2] = mHrCounts[mh2] ? Math.round(mHrSums[mh2] / mHrCounts[mh2] * 1000) / 1000 : 0;
-        }
-        mProfile._n = mSubset.length;
-        minuteSwing[String(mw)] = mProfile;
-      }
-      res.minute_swing_profile = JSON.stringify(minuteSwing);
+        res.minute_swing_profile = JSON.stringify(minuteSwing);
+      } catch (eMin) { res.minute_swing_profile = null; console.log('  WARN: minute_swing_profile failed for ' + res.ticker + ': ' + eMin.message); }
       var chSums = {}; var chCounts = {};
       for (var sdi2 = 0; sdi2 < swDayKeys.length; sdi2++) {
         var dayHrs2 = swingDays[swDayKeys[sdi2]];
