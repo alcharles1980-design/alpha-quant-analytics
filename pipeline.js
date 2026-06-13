@@ -1932,7 +1932,8 @@ function _classifyRegime(allBars) {
 }
 
 async function runScreener() {
-  var scanDate = new Date().toISOString().slice(0, 10);
+  // Use ET date to avoid UTC midnight rollover (11PM ET = next day UTC)
+  var scanDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
   // Concurrent-run guard: abort if another screener is already running
   try {
@@ -2814,6 +2815,7 @@ async function runScreener() {
   var processed5m = 0;
   var etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
   var etHrFmtShared = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+  var etHrShared = function(ms) { var h = parseInt(etHrFmtShared.format(new Date(ms))); return (isNaN(h) || h === 24) ? 0 : h; }; // clamp "24" (midnight in some locales) to 0
   var etMinFmtShared = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false });
 
   for (var ri = 0; ri < results.length; ri++) {
@@ -2973,7 +2975,7 @@ async function runScreener() {
         var combined = Math.max(b0.h, b1.h) - Math.min(b0.l, b1.l);
         var ratio = combined > 0 ? Math.max(0, overlap / combined) : 0;
         olapSum += ratio; olapCount++;
-        var oHr = parseInt(etHrFmtShared.format(new Date(b1.t))) || 0;
+        var oHr = etHrShared(b1.t);
         if (hrOlap[oHr]) { hrOlap[oHr].sum += ratio; hrOlap[oHr].n++; }
         if (overlap <= 0) { gapCount++; if (hrOlap[oHr]) hrOlap[oHr].gaps++; if (curStreak > 0) { olapStreakSum += curStreak; olapStreakCount++; } curStreak = 0; }
         else { curStreak++; }
@@ -3010,7 +3012,7 @@ async function runScreener() {
             var cdOpenC = Math.round(cdBar.o * 100);
             var cdCloseC = Math.round(cdBar.c * 100);
             var cdBullish = cdCloseC >= cdOpenC;
-            var cdBHr = parseInt(etHrFmtShared.format(new Date(cdBar.t))) || 0;
+            var cdBHr = etHrShared(cdBar.t);
             // Check completions: any held level + tpCents <= highC
             var cdKeys = Object.keys(cdHeld);
             for (var cdk = 0; cdk < cdKeys.length; cdk++) {
@@ -3100,12 +3102,12 @@ async function runScreener() {
 
       // Hourly ATR profile: ATR% per hour (4-19) averaged across days
       var hourlyAtr = {};
-      var etHrFmt = etHrFmtShared;
+      var etHrFmt = etHrFmtShared; // alias — use etHrShared() for safe parsing
       // Group bars by ET date + hour
       var hrDayData = {}; // key: "h" -> [{date, high, low}]
       for (var bi8 = 0; bi8 < bars5.length; bi8++) {
         var bTs = new Date(bars5[bi8].t);
-        var bHr = parseInt(etHrFmt.format(bTs)) || 0;
+        var bHr = etHrShared(bTs.getTime ? bTs.getTime() : new Date(bTs).getTime());
         var bDt = etDateFmt.format(bTs);
         var hdk = bHr + '_' + bDt;
         if (!hrDayData[hdk]) hrDayData[hdk] = { hr: bHr, date: bDt, high: -Infinity, low: Infinity, close: 0 };
@@ -3232,17 +3234,19 @@ async function runScreener() {
         var minSwWindows = [2, 3, 5, 10];
         var minuteSwing = {};
         var minSwDayMap = {};
+        var minTotalPairs = 0;
         for (var mbi = 0; mbi < bars5.length - 1; mbi++) {
           var mb = bars5[mbi], mb2 = bars5[mbi + 1];
           var mDate = etDateFmt.format(new Date(mb.t));
           var mDate2 = etDateFmt.format(new Date(mb2.t));
           if (mDate !== mDate2) continue;
           if (!mb.l || mb.l <= 0) continue;
-          var mHr = parseInt(etHrFmtShared.format(new Date(mb.t))) || 0;
+          var mHr = etHrShared(mb.t);
           var mSwPct = (mb2.h - mb.l) / mb.l * 100;
           if (!minSwDayMap[mDate]) minSwDayMap[mDate] = {};
           if (!minSwDayMap[mDate][mHr]) minSwDayMap[mDate][mHr] = [];
           minSwDayMap[mDate][mHr].push(mSwPct);
+          minTotalPairs++;
         }
         var minSwDays = Object.keys(minSwDayMap).sort();
         for (var mwi = 0; mwi < minSwWindows.length; mwi++) {
@@ -3251,7 +3255,7 @@ async function runScreener() {
           var mHrSums = {}; var mHrCounts = {};
           for (var msi = 0; msi < mSubset.length; msi++) {
             var mDay = minSwDayMap[mSubset[msi]];
-            for (var mh = 4; mh < 20; mh++) {
+            for (var mh = 0; mh < 24; mh++) {
               var mArr = mDay[mh];
               if (!mArr || !mArr.length) continue;
               if (!mHrSums[mh]) { mHrSums[mh] = 0; mHrCounts[mh] = 0; }
@@ -3259,13 +3263,15 @@ async function runScreener() {
             }
           }
           var mProfile = {};
-          for (var mh2 = 4; mh2 < 20; mh2++) {
+          for (var mh2 = 0; mh2 < 24; mh2++) {
             mProfile[mh2] = mHrCounts[mh2] ? Math.round(mHrSums[mh2] / mHrCounts[mh2] * 1000) / 1000 : 0;
           }
           mProfile._n = mSubset.length;
+          mProfile._pairs = minTotalPairs;
           minuteSwing[String(mw)] = mProfile;
         }
         res.minute_swing_profile = JSON.stringify(minuteSwing);
+        if (ri % 100 === 0) console.log('  [min_swing] ' + res.ticker + ': ' + minSwDays.length + ' days, ' + minTotalPairs + ' pairs → OK');
       } catch (eMin) { res.minute_swing_profile = null; console.log('  WARN: minute_swing_profile failed for ' + res.ticker + ': ' + eMin.message); }
       var chSums = {}; var chCounts = {};
       for (var sdi2 = 0; sdi2 < swDayKeys.length; sdi2++) {
@@ -3346,8 +3352,14 @@ async function runScreener() {
 
   // Step 4: Save to Supabase
   await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'running', progress_pct: 90, message: 'Saving ' + results.length + ' results...' });
-  await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
-  await sleep(300);
+  var delR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + scanDate, { method: 'DELETE', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }) });
+  if (!delR.ok) {
+    var delErr = await delR.text();
+    console.log('WARN: DELETE failed (' + delR.status + '): ' + delErr.slice(0, 200) + ' — proceeding with upsert anyway');
+  } else {
+    console.log('DELETE scan_date=' + scanDate + ' OK — cleared previous rows');
+  }
+  await sleep(500); // Give Supabase time to process DELETE before inserting
   // Clear previous run's debug log
   try { await fetch(SB_URL + '/rest/v1/extvol_debug_log?id=gt.0', { method: 'DELETE', headers: sbHeaders() }); } catch (e) {}
   var debugLog = async function (tk, step, detail) {
@@ -3355,7 +3367,9 @@ async function runScreener() {
   };
 
   var savedCount = 0, failedCount = 0, batchFailures = 0, poisonLogged = 0;
-  var BATCH_SIZE = 50; // Reduced from 200 to fit within PostgREST request body limits
+  var minSwingCount = results.filter(function(r) { return r.minute_swing_profile != null; }).length;
+  console.log('Save starting: ' + results.length + ' rows, ' + minSwingCount + ' with minute_swing_profile');
+  var BATCH_SIZE = 50;
   for (var bi = 0; bi < results.length; bi += BATCH_SIZE) {
     var batch = results.slice(bi, bi + BATCH_SIZE);
     if (bi > 0) await sleep(100); // breathing room for Supabase between batches
