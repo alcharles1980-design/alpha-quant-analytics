@@ -3359,7 +3359,7 @@ async function runScreener() {
   for (var bi = 0; bi < results.length; bi += BATCH_SIZE) {
     var batch = results.slice(bi, bi + BATCH_SIZE);
     if (bi > 0) await sleep(100); // breathing room for Supabase between batches
-    var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify(batch) });
+    var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify(batch) });
     if (saveR.ok) {
       savedCount += batch.length;
       continue;
@@ -3381,7 +3381,7 @@ async function runScreener() {
 
     // ALWAYS retry one row at a time so failures don't block the rest of the batch
     for (var ri = 0; ri < batch.length; ri++) {
-      var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }), body: JSON.stringify([batch[ri]]) });
+      var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify([batch[ri]]) });
       if (oneR.ok) {
         savedCount++;
       } else {
