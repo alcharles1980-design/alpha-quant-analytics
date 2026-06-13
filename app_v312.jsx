@@ -14059,13 +14059,14 @@ function VolumeProfileMTFPage(p){
   var s1=useState(''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
-  var s4=useState(null),prof=s4[0],setProf=s4[1];
+  var s4=useState(null),rawData=s4[0],setRawData=s4[1]; // {1:{bars,label,mult}, 5:{...}, ...}
   var s5=useState('5'),lookback=s5[0],setLookback=s5[1];
   var s6=useState('auto'),binMode=s6[0],setBinMode=s6[1];
   var s7=useState('0.10'),tickSize=s7[0],setTickSize=s7[1];
   var s8=useState('volume'),metric=s8[0],setMetric=s8[1];
   var s9=useState(false),showAllLevels=s9[0],setShowAllLevels=s9[1];
   var s10=useState(''),progMsg=s10[0],setProgMsg=s10[1];
+  var s11=useState(''),loadedTicker=s11[0],setLoadedTicker=s11[1];
 
   var lookbackOpts=[{v:'1',l:'1 Day',mult:1,span:'minute',days:1},{v:'5',l:'5 Days',mult:5,span:'minute',days:7},{v:'20',l:'20 Days',mult:15,span:'minute',days:30},{v:'60',l:'60 Days',mult:60,span:'minute',days:90}];
   var tickOpts=[{v:'0.01',l:'$0.01'},{v:'0.05',l:'$0.05'},{v:'0.10',l:'$0.10'},{v:'0.25',l:'$0.25'},{v:'0.50',l:'$0.50'},{v:'1.00',l:'$1.00'}];
@@ -14076,111 +14077,105 @@ function VolumeProfileMTFPage(p){
   var fmtVol=function(v){if(v>=1e9)return (v/1e9).toFixed(2)+'B';if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toString();};
   var fmtNum=function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toString();};
 
+  // Pure profile builder — no fetch, no state. Recomputes instantly on toggle.
+  var buildProfile=function(bars,opt,bMode,tSize){
+    if(!bars||!bars.length)return null;
+    var pLo=Infinity,pHi=-Infinity;
+    for(var i=0;i<bars.length;i++){if(bars[i].l<pLo)pLo=bars[i].l;if(bars[i].h>pHi)pHi=bars[i].h;}
+    if(!isFinite(pLo)||!isFinite(pHi)||pHi<=pLo)return null;
+    var binSize;
+    if(bMode==='tick'){binSize=parseFloat(tSize);}
+    else{
+      var raw=(pHi-pLo)/50;
+      var mag=Math.pow(10,Math.floor(Math.log10(raw)));
+      var norm=raw/mag;
+      var step=norm<1.5?1:norm<3.5?2:norm<7.5?5:10;
+      binSize=step*mag;
+      if(binSize<0.01)binSize=0.01;
+    }
+    var binCount=Math.ceil((pHi-pLo)/binSize)+1;
+    if(binCount>2000){binSize=(pHi-pLo)/2000;}
+    var binLo=Math.floor(pLo/binSize)*binSize;
+    var nBins=Math.ceil((pHi-binLo)/binSize)+1;
+    var bins=[];
+    for(var b=0;b<nBins;b++){var lo=binLo+b*binSize;bins.push({lo:lo,hi:lo+binSize,mid:lo+binSize/2,vol:0,trd:0});}
+    for(var bi=0;bi<bars.length;bi++){
+      var bar=bars[bi];var v=bar.v||0,n=bar.n||0;
+      var loIdx=Math.floor((bar.l-binLo)/binSize);
+      var hiIdx=Math.floor((bar.h-binLo)/binSize);
+      if(loIdx<0)loIdx=0;if(hiIdx>=nBins)hiIdx=nBins-1;if(hiIdx<loIdx)hiIdx=loIdx;
+      var span=hiIdx-loIdx+1;var vPer=v/span,nPer=n/span;
+      for(var k=loIdx;k<=hiIdx;k++){bins[k].vol+=vPer;bins[k].trd+=nPer;}
+    }
+    var totalVol=0,totalTrd=0,pocIdx=0,maxVol=0;
+    for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;totalTrd+=bins[c].trd;if(bins[c].vol>maxVol){maxVol=bins[c].vol;pocIdx=c;}}
+    var target=totalVol*0.70;
+    var acc=bins[pocIdx].vol;var lo2=pocIdx,hi2=pocIdx;
+    while(acc<target&&(lo2>0||hi2<nBins-1)){
+      var vBelow=lo2>0?bins[lo2-1].vol:-1;
+      var vAbove=hi2<nBins-1?bins[hi2+1].vol:-1;
+      if(vAbove>=vBelow){hi2++;acc+=bins[hi2].vol;}else{lo2--;acc+=bins[lo2].vol;}
+    }
+    var vah=bins[hi2].hi,val=bins[lo2].lo,poc=bins[pocIdx].mid;
+    var meanVol=totalVol/nBins;var hvn=[],lvn=[];
+    for(var e=1;e<nBins-1;e++){
+      var cur=bins[e].vol,pv=bins[e-1].vol,nx=bins[e+1].vol;
+      if(cur>pv&&cur>nx&&cur>meanVol*1.3)hvn.push({price:bins[e].mid,vol:cur});
+      if(cur<pv&&cur<nx&&cur<meanVol*0.5&&cur>0)lvn.push({price:bins[e].mid,vol:cur});
+    }
+    hvn.sort(function(a,b){return b.vol-a.vol;});hvn=hvn.slice(0,6);
+    var lastPrice=bars[bars.length-1].c;
+    return {bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,binLo:binLo,bars:bars,
+      totalVol:totalVol,totalTrd:totalTrd,poc:poc,pocIdx:pocIdx,maxVol:maxVol,vah:vah,val:val,
+      hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l};
+  };
+
+  // Fetch ALL lookback timeframes up front so toggling is instant (no re-fetch)
   var compute=async function(){
     var tk=ticker.trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Polygon API key not set');return;}
-    setLoading(true);setErr(null);setProf(null);setProgMsg('Fetching bars...');
+    setLoading(true);setErr(null);setRawData(null);
     try{
-      var opt=lookbackOpts.filter(function(o){return o.v===lookback;})[0]||lookbackOpts[1];
-      var toD=new Date();
-      var frD=new Date();frD.setDate(frD.getDate()-opt.days);
-      var fromStr=frD.toISOString().slice(0,10);
-      var toStr=toD.toISOString().slice(0,10);
-      // Fetch bars with pagination
-      var bars=[];
-      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(tk)+'/range/'+opt.mult+'/'+opt.span+'/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-      var pages=0;
-      while(url&&pages<10){
-        var r=await fetch(url);
-        if(!r.ok){var et=await r.text();throw new Error('Polygon '+r.status+': '+et.slice(0,120));}
-        var d=await r.json();
-        if(d.results&&d.results.length)bars=bars.concat(d.results);
-        url=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;
-        pages++;
-        if(url)setProgMsg('Fetching bars... '+bars.length+' so far');
+      var collected={};
+      for(var oi=0;oi<lookbackOpts.length;oi++){
+        var opt=lookbackOpts[oi];
+        setProgMsg('Fetching '+opt.l+' ('+(oi+1)+'/'+lookbackOpts.length+')...');
+        var toD=new Date();var frD=new Date();frD.setDate(frD.getDate()-opt.days);
+        var fromStr=frD.toISOString().slice(0,10);var toStr=toD.toISOString().slice(0,10);
+        var bars=[];
+        var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(tk)+'/range/'+opt.mult+'/'+opt.span+'/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+        var pages=0;
+        while(url&&pages<10){
+          var r=await fetch(url);
+          if(!r.ok){var et=await r.text();throw new Error('Polygon '+r.status+' on '+opt.l+': '+et.slice(0,100));}
+          var d=await r.json();
+          if(d.results&&d.results.length)bars=bars.concat(d.results);
+          url=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;
+          pages++;
+        }
+        collected[opt.v]={bars:bars,opt:opt};
       }
-      if(!bars.length){setErr(tk+': no bar data returned for this period.');setLoading(false);setProgMsg('');return;}
-
-      setProgMsg('Building profile from '+bars.length+' bars...');
-      // Determine price range
-      var pLo=Infinity,pHi=-Infinity;
-      for(var i=0;i<bars.length;i++){if(bars[i].l<pLo)pLo=bars[i].l;if(bars[i].h>pHi)pHi=bars[i].h;}
-      if(!isFinite(pLo)||!isFinite(pHi)||pHi<=pLo){setErr('Invalid price range.');setLoading(false);return;}
-
-      // Determine bin size
-      var binSize;
-      if(binMode==='tick'){binSize=parseFloat(tickSize);}
-      else{
-        // Auto: ~50 bins, round to a sensible increment
-        var raw=(pHi-pLo)/50;
-        var mag=Math.pow(10,Math.floor(Math.log10(raw)));
-        var norm=raw/mag;
-        var step=norm<1.5?1:norm<3.5?2:norm<7.5?5:10;
-        binSize=step*mag;
-        if(binSize<0.01)binSize=0.01;
-      }
-      // Cap bin count to avoid runaway (e.g. $0.01 on a $500 stock)
-      var binCount=Math.ceil((pHi-pLo)/binSize)+1;
-      if(binCount>2000){binSize=(pHi-pLo)/2000;binCount=2001;}
-
-      // Build bins
-      var binLo=Math.floor(pLo/binSize)*binSize;
-      var nBins=Math.ceil((pHi-binLo)/binSize)+1;
-      var bins=[];
-      for(var b=0;b<nBins;b++){
-        var lo=binLo+b*binSize;
-        bins.push({lo:lo,hi:lo+binSize,mid:lo+binSize/2,vol:0,trd:0});
-      }
-      // Distribute each bar's volume + trades uniformly across spanned bins
-      for(var bi=0;bi<bars.length;bi++){
-        var bar=bars[bi];
-        var v=bar.v||0,n=bar.n||0;
-        var loIdx=Math.floor((bar.l-binLo)/binSize);
-        var hiIdx=Math.floor((bar.h-binLo)/binSize);
-        if(loIdx<0)loIdx=0;if(hiIdx>=nBins)hiIdx=nBins-1;if(hiIdx<loIdx)hiIdx=loIdx;
-        var span=hiIdx-loIdx+1;
-        var vPer=v/span,nPer=n/span;
-        for(var k=loIdx;k<=hiIdx;k++){bins[k].vol+=vPer;bins[k].trd+=nPer;}
-      }
-
-      // Total + POC
-      var totalVol=0,totalTrd=0,pocIdx=0,maxVol=0;
-      for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;totalTrd+=bins[c].trd;if(bins[c].vol>maxVol){maxVol=bins[c].vol;pocIdx=c;}}
-
-      // Value Area (70% of volume) — expand from POC
-      var target=totalVol*0.70;
-      var acc=bins[pocIdx].vol;var lo2=pocIdx,hi2=pocIdx;
-      while(acc<target&&(lo2>0||hi2<nBins-1)){
-        var vBelow=lo2>0?bins[lo2-1].vol:-1;
-        var vAbove=hi2<nBins-1?bins[hi2+1].vol:-1;
-        if(vAbove>=vBelow){hi2++;acc+=bins[hi2].vol;}
-        else{lo2--;acc+=bins[lo2].vol;}
-      }
-      var vah=bins[hi2].hi,val=bins[lo2].lo;
-      var poc=bins[pocIdx].mid;
-
-      // HVN / LVN detection (local extrema, volume-weighted threshold)
-      var meanVol=totalVol/nBins;
-      var hvn=[],lvn=[];
-      for(var e=1;e<nBins-1;e++){
-        var cur=bins[e].vol,pv=bins[e-1].vol,nx=bins[e+1].vol;
-        if(cur>pv&&cur>nx&&cur>meanVol*1.3)hvn.push({price:bins[e].mid,vol:cur});
-        if(cur<pv&&cur<nx&&cur<meanVol*0.5&&cur>0)lvn.push({price:bins[e].mid,vol:cur});
-      }
-      hvn.sort(function(a,b){return b.vol-a.vol;});
-      hvn=hvn.slice(0,6);
-
-      // Last price (close of final bar)
-      var lastPrice=bars[bars.length-1].c;
-
-      setProf({ticker:tk,bars:bars,bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,binLo:binLo,
-        totalVol:totalVol,totalTrd:totalTrd,poc:poc,pocIdx:pocIdx,maxVol:maxVol,vah:vah,val:val,
-        hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l});
+      // Verify at least one timeframe returned data
+      var anyData=false;
+      for(var ck in collected){if(collected[ck].bars.length){anyData=true;break;}}
+      if(!anyData){setErr(tk+': no bar data returned. Check the ticker symbol.');setLoading(false);setProgMsg('');return;}
+      setRawData(collected);
+      setLoadedTicker(tk);
       setProgMsg('');
     }catch(e){setErr(e.message);setProgMsg('');}
     setLoading(false);
   };
+
+  // Derived profile — recomputes instantly when lookback / binMode / tickSize change
+  var prof=React.useMemo(function(){
+    if(!rawData||!rawData[lookback])return null;
+    var entry=rawData[lookback];
+    var pr=buildProfile(entry.bars,entry.opt,binMode,tickSize);
+    if(pr)pr.ticker=loadedTicker;
+    return pr;
+  },[rawData,lookback,binMode,tickSize,loadedTicker]);
+
 
   // ── SVG chart: price line + volume profile overlaid on right edge ──
   var renderChart=function(){
@@ -14253,18 +14248,18 @@ function VolumeProfileMTFPage(p){
           <label style={lS}>Ticker</label>
           <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')compute();}} style={iS} placeholder="e.g. NVDA"/>
         </div>
-        <button onClick={compute} disabled={loading} style={{padding:'9px 18px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00b880)',color:loading?C.txtDim:'#04231a',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:1,cursor:loading?'default':'pointer'}}>{loading?'...':'Analyze'}</button>
+        <button onClick={compute} disabled={loading} style={{padding:'9px 18px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00b880)',color:loading?C.txtDim:'#04231a',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:1,cursor:loading?'default':'pointer'}}>{loading?'Loading all...':'Analyze'}</button>
       </div>
 
       {/* Lookback */}
       <div style={{marginBottom:8}}>
-        <label style={lS}>Lookback / Granularity</label>
+        <label style={lS}>Lookback / Granularity {rawData?<span style={{color:C.accent,fontWeight:400}}>· all loaded, tap to switch instantly</span>:''}</label>
         <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-          {lookbackOpts.map(function(o){return <button key={o.v} onClick={function(){setLookback(o.v);}}
+          {lookbackOpts.map(function(o){var loaded=rawData&&rawData[o.v];var nb=loaded?rawData[o.v].bars.length:0;return <button key={o.v} onClick={function(){setLookback(o.v);}}
             style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
-              border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}</button>;})}
+              border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}{loaded?' ('+nb+')':''}</button>;})}
         </div>
-        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).mult}-min bars</div>
+        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).mult}-min bars{rawData?' · bin/metric changes also instant':''}</div>
       </div>
 
       {/* Bin mode */}
