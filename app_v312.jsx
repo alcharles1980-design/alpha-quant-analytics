@@ -14131,7 +14131,11 @@ function VolumeProfileMTFPage(p){
       if(cur<pv&&cur<nx&&cur<meanVol*0.5&&cur>0)lvn.push({price:bins[e].mid,vol:cur});
     }
     hvn.sort(function(a,b){return b.vol-a.vol;});hvn=hvn.slice(0,6);
-    var lastPrice=bars[bars.length-1].c;
+    // Last price = last FINITE close (a bad final bar shouldn't break the LAST line / range logic)
+    var lastPrice=poc;
+    for(var lp=bars.length-1;lp>=0;lp--){if(isFinite(bars[lp].c)){lastPrice=bars[lp].c;break;}}
+    // Sort LVN gaps by proximity to current price — the nearest gaps matter most to a trader
+    lvn.sort(function(a,b){return Math.abs(a.price-lastPrice)-Math.abs(b.price-lastPrice);});
     return {bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,binLo:binLo,bars:bars,
       totalVol:totalVol,totalTrd:totalTrd,poc:poc,pocIdx:pocIdx,maxVol:maxVol,vah:vah,val:val,
       hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l};
@@ -14193,13 +14197,22 @@ function VolumeProfileMTFPage(p){
     var yMin=prof.pLo-pad,yMax=prof.pHi+pad;
     var yFor=function(price){return padT+(yMax-price)/(yMax-yMin)*chartH;};
     var xFor=function(i){return padL+(prof.barCount<=1?0:i/(prof.barCount-1)*chartW);};
-    // Price line points (close)
-    var pts='';
-    for(var i=0;i<prof.bars.length;i++){pts+=(i===0?'':' ')+xFor(i).toFixed(1)+','+yFor(prof.bars[i].c).toFixed(1);}
-    // Area fill path
-    var areaPath='M'+padL.toFixed(1)+','+yFor(prof.bars[0].c).toFixed(1);
-    for(var a=1;a<prof.bars.length;a++)areaPath+=' L'+xFor(a).toFixed(1)+','+yFor(prof.bars[a].c).toFixed(1);
-    areaPath+=' L'+xFor(prof.bars.length-1).toFixed(1)+','+(padT+chartH).toFixed(1)+' L'+padL.toFixed(1)+','+(padT+chartH).toFixed(1)+' Z';
+    // Price line points (close) — skip any non-finite close to avoid broken SVG path
+    var pts='';var firstPt=true;var firstFiniteIdx=-1;
+    for(var i=0;i<prof.bars.length;i++){
+      var cv=prof.bars[i].c;
+      if(!isFinite(cv))continue;
+      if(firstFiniteIdx<0)firstFiniteIdx=i;
+      pts+=(firstPt?'':' ')+xFor(i).toFixed(1)+','+yFor(cv).toFixed(1);firstPt=false;
+    }
+    // Area fill path (only if we have at least one finite point)
+    var areaPath='';
+    if(firstFiniteIdx>=0){
+      areaPath='M'+xFor(firstFiniteIdx).toFixed(1)+','+yFor(prof.bars[firstFiniteIdx].c).toFixed(1);
+      var lastFiniteIdx=firstFiniteIdx;
+      for(var a=firstFiniteIdx+1;a<prof.bars.length;a++){var ca=prof.bars[a].c;if(!isFinite(ca))continue;areaPath+=' L'+xFor(a).toFixed(1)+','+yFor(ca).toFixed(1);lastFiniteIdx=a;}
+      areaPath+=' L'+xFor(lastFiniteIdx).toFixed(1)+','+(padT+chartH).toFixed(1)+' L'+xFor(firstFiniteIdx).toFixed(1)+','+(padT+chartH).toFixed(1)+' Z';
+    }
     // Profile bars anchored right
     var profMaxW=chartW*0.42;
     var metricMax=metric==='volume'?prof.maxVol:prof.bins.reduce(function(m,x){return x.trd>m?x.trd:m;},0);
@@ -14290,7 +14303,7 @@ function VolumeProfileMTFPage(p){
       {/* Summary header */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
         <div><span style={{color:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{prof.ticker}</span>
-          <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{prof.lookbackLabel} | {prof.barCount} bars | bin ${prof.binSize.toFixed(2)}</span></div>
+          <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{prof.lookbackLabel} | {prof.barCount} bars | bin ${prof.binSize<0.01?prof.binSize.toFixed(4):prof.binSize.toFixed(2)}</span></div>
         <div style={{textAlign:'right'}}>
           <div style={{color:C.warn,fontSize:11,fontWeight:700,fontFamily:F}}>Last ${prof.lastPrice.toFixed(2)}</div>
         </div>
