@@ -14068,7 +14068,7 @@ function VolumeProfileMTFPage(p){
   var s10=useState(''),progMsg=s10[0],setProgMsg=s10[1];
   var s11=useState(''),loadedTicker=s11[0],setLoadedTicker=s11[1];
 
-  var lookbackOpts=[{v:'1',l:'1 Day',mult:1,span:'minute',days:1},{v:'5',l:'5 Days',mult:5,span:'minute',days:7},{v:'20',l:'20 Days',mult:15,span:'minute',days:30},{v:'60',l:'60 Days',mult:60,span:'minute',days:90}];
+  var lookbackOpts=[{v:'1',l:'1 Day',mult:10,span:'second',days:1},{v:'5',l:'5 Days',mult:1,span:'minute',days:7},{v:'20',l:'20 Days',mult:15,span:'minute',days:30},{v:'60',l:'60 Days',mult:60,span:'minute',days:90}];
   var tickOpts=[{v:'0.01',l:'$0.01'},{v:'0.05',l:'$0.05'},{v:'0.10',l:'$0.10'},{v:'0.25',l:'$0.25'},{v:'0.50',l:'$0.50'},{v:'1.00',l:'$1.00'}];
 
   var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
@@ -14259,7 +14259,7 @@ function VolumeProfileMTFPage(p){
             style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
               border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}{loaded?' ('+nb+')':''}</button>;})}
         </div>
-        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).mult}-min bars{rawData?' · bin/metric changes also instant':''}</div>
+        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(function(){var o=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};return o.mult+(o.span==='second'?'-sec':'-min')+' bars';})()}{rawData?' · bin/metric changes also instant':''}</div>
       </div>
 
       {/* Bin mode */}
