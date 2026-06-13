@@ -14081,8 +14081,13 @@ function VolumeProfileMTFPage(p){
   var buildProfile=function(bars,opt,bMode,tSize){
     if(!bars||!bars.length)return null;
     var pLo=Infinity,pHi=-Infinity;
-    for(var i=0;i<bars.length;i++){if(bars[i].l<pLo)pLo=bars[i].l;if(bars[i].h>pHi)pHi=bars[i].h;}
-    if(!isFinite(pLo)||!isFinite(pHi)||pHi<=pLo)return null;
+    for(var i=0;i<bars.length;i++){
+      var bl=bars[i].l,bh=bars[i].h;
+      if(typeof bl!=='number'||typeof bh!=='number'||!isFinite(bl)||!isFinite(bh))continue; // skip bad bars
+      if(bl<pLo)pLo=bl;if(bh>pHi)pHi=bh;
+    }
+    if(!isFinite(pLo)||!isFinite(pHi)||pHi<pLo)return null;
+    if(pHi===pLo){pHi=pLo+0.01;} // flat/halted stock: give a minimal range so profile still renders
     var binSize;
     if(bMode==='tick'){binSize=parseFloat(tSize);}
     else{
@@ -14101,6 +14106,7 @@ function VolumeProfileMTFPage(p){
     for(var b=0;b<nBins;b++){var lo=binLo+b*binSize;bins.push({lo:lo,hi:lo+binSize,mid:lo+binSize/2,vol:0,trd:0});}
     for(var bi=0;bi<bars.length;bi++){
       var bar=bars[bi];var v=bar.v||0,n=bar.n||0;
+      if(!isFinite(bar.l)||!isFinite(bar.h)||v<=0)continue; // skip bad/empty bars
       var loIdx=Math.floor((bar.l-binLo)/binSize);
       var hiIdx=Math.floor((bar.h-binLo)/binSize);
       if(loIdx<0)loIdx=0;if(hiIdx>=nBins)hiIdx=nBins-1;if(hiIdx<loIdx)hiIdx=loIdx;
@@ -14109,6 +14115,7 @@ function VolumeProfileMTFPage(p){
     }
     var totalVol=0,totalTrd=0,pocIdx=0,maxVol=0;
     for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;totalTrd+=bins[c].trd;if(bins[c].vol>maxVol){maxVol=bins[c].vol;pocIdx=c;}}
+    if(totalVol<=0)return null; // no usable volume — caller shows 'no data'
     var target=totalVol*0.70;
     var acc=bins[pocIdx].vol;var lo2=pocIdx,hi2=pocIdx;
     while(acc<target&&(lo2>0||hi2<nBins-1)){
@@ -14195,7 +14202,8 @@ function VolumeProfileMTFPage(p){
     areaPath+=' L'+xFor(prof.bars.length-1).toFixed(1)+','+(padT+chartH).toFixed(1)+' L'+padL.toFixed(1)+','+(padT+chartH).toFixed(1)+' Z';
     // Profile bars anchored right
     var profMaxW=chartW*0.42;
-    var metricMax=metric==='volume'?prof.maxVol:Math.max.apply(null,prof.bins.map(function(x){return x.trd;}));
+    var metricMax=metric==='volume'?prof.maxVol:prof.bins.reduce(function(m,x){return x.trd>m?x.trd:m;},0);
+    if(!(metricMax>0))metricMax=1; // guard divide-by-zero when all values are 0
     var profBars=prof.bins.map(function(bin,idx){
       var val2=metric==='volume'?bin.vol:bin.trd;
       if(val2<=0)return null;
@@ -14275,6 +14283,7 @@ function VolumeProfileMTFPage(p){
 
       {progMsg&&<div style={{fontSize:8,fontFamily:F,color:C.purple,marginBottom:6}}>{progMsg}</div>}
       {err&&<div style={{padding:8,background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>{err}</div>}
+      {rawData&&!prof&&!progMsg&&<div style={{padding:8,background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>No volume data for {loadedTicker} on the {(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).l} timeframe. Try another lookback.</div>}
     </Cd>
 
     {prof&&<Cd>
