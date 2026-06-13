@@ -14188,15 +14188,37 @@ function VolumeProfileMTFPage(p){
   },[rawData,lookback,binMode,tickSize,loadedTicker]);
 
 
-  // ── SVG chart: price line + volume profile overlaid on right edge ──
+  // ── SVG chart: price axis + price line + volume profile overlaid on right edge ──
   var renderChart=function(){
     if(!prof)return null;
-    var W=360,H=380,padL=4,padR=4,padT=8,padB=8;
+    var W=360,H=380,padL=40,padR=4,padT=8,padB=8; // padL widened for price axis labels
     var chartW=W-padL-padR,chartH=H-padT-padB;
     var pr=prof.pHi-prof.pLo;var pad=pr*0.02;
     var yMin=prof.pLo-pad,yMax=prof.pHi+pad;
     var yFor=function(price){return padT+(yMax-price)/(yMax-yMin)*chartH;};
     var xFor=function(i){return padL+(prof.barCount<=1?0:i/(prof.barCount-1)*chartW);};
+
+    // ── Price axis: compute ~6 "nice" round tick levels across the range ──
+    var span=yMax-yMin;
+    var rawStep=span/6;
+    var magT=Math.pow(10,Math.floor(Math.log10(rawStep)));
+    var normT=rawStep/magT;
+    var niceStep=(normT<1.5?1:normT<3?2:normT<7?5:10)*magT;
+    var firstTick=Math.ceil(yMin/niceStep)*niceStep;
+    var axisTicks=[];
+    for(var tv=firstTick;tv<=yMax+1e-9;tv+=niceStep){axisTicks.push(tv);}
+    var tickDec=Math.max(0,-Math.floor(Math.log10(niceStep))); // clean precision per step size
+    var axisEls=[];
+    for(var ti=0;ti<axisTicks.length;ti++){
+      var tp=axisTicks[ti];var ty=yFor(tp);
+      // gridline across plot area
+      axisEls.push(React.createElement('line',{key:'gl'+ti,x1:padL,y1:ty.toFixed(1),x2:W-padR,y2:ty.toFixed(1),stroke:C.grid,strokeWidth:0.5,opacity:0.6}));
+      // tick label on left
+      axisEls.push(React.createElement('text',{key:'gt'+ti,x:padL-3,y:(ty+2.5).toFixed(1),fill:C.txtDim,fontSize:7,fontFamily:F,textAnchor:'end'},'$'+tp.toFixed(tickDec)));
+    }
+    // Axis spine
+    axisEls.push(React.createElement('line',{key:'spine',x1:padL,y1:padT,x2:padL,y2:(padT+chartH).toFixed(1),stroke:C.border,strokeWidth:0.8}));
+
     // Price line points (close) — skip any non-finite close to avoid broken SVG path
     var pts='';var firstPt=true;var firstFiniteIdx=-1;
     for(var i=0;i<prof.bars.length;i++){
@@ -14232,6 +14254,7 @@ function VolumeProfileMTFPage(p){
     var pocY=yFor(prof.poc),vahY=yFor(prof.vah),valY=yFor(prof.val);
     var lastY=yFor(prof.lastPrice);
     return React.createElement('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:'auto',display:'block',background:C.bgDeep,borderRadius:8}},[
+      axisEls,
       React.createElement('path',{key:'area',d:areaPath,fill:C.accent,opacity:0.06}),
       React.createElement('polyline',{key:'line',points:pts,fill:'none',stroke:C.txtBright,strokeWidth:0.8,opacity:0.55}),
       profBars,
