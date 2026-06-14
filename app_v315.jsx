@@ -17616,6 +17616,7 @@ function MicroVolScreenerPage(p){
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
             <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'})}>Ticker</th>
+            <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Links</th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('micro_score');}} style={thS('micro_score')}>MicroS</th>
             <th onClick={function(){doSort('avg_osc_dollar');}} style={thS('avg_osc_dollar')}>Osc$</th>
@@ -17641,6 +17642,10 @@ function MicroVolScreenerPage(p){
               return <tr key={idx} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={{padding:'3px 2px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
                 <td style={{padding:'3px 2px',color:C.gold,fontWeight:700}}>{r.ticker}</td>
+                <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}} title="Yahoo Finance">Y</a>
+                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Cheat Sheet">{'\u2197'}</a>}
+                </td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${fmt3(r.price)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:scoreColor,fontWeight:700}}>{r.micro_score}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>${fmt3(r.avg_osc_dollar)}</td>
@@ -29037,7 +29042,7 @@ function App(){
     {page==='alpacafinder'&&<AlpacaTradeFinderPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='alpaca24atr'&&<Alpaca24AtrPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='microvolscreen'&&<MicroVolScreenerPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='microvolscreen'&&<MicroVolScreenerPage pgKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
