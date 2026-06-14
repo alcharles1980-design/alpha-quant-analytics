@@ -14591,16 +14591,7 @@ function HedgeCalcPage(p){
           <input value={rangePct>0?rangePct.toFixed(2)+'%':'—'} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Shares/Level</label>
           <input value={sharesPerLevel} onChange={function(e){onSharesChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
-        <div style={{display:'flex',alignItems:'flex-end'}}>
-          <button onClick={fetchPuts} disabled={loading}
-            style={{width:'100%',padding:'10px',border:'none',borderRadius:8,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
-              color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,cursor:loading?'default':'pointer'}}>
-            {loading?'Loading...':'Calculate Hedge'}
-          </button>
-        </div>
       </div>
-      {prog&&<div style={{marginTop:6,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
-      {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
     </div>
 
     {/* Exposure Summary */}
@@ -14697,6 +14688,17 @@ function HedgeCalcPage(p){
         Each row shows exposure if price drops to that level. Gold = top range price. Red tint = {'>'} 50% capital loss.
       </div>
     </div>}
+
+    {/* Calculate Hedge action */}
+    <div style={card}>
+      <button onClick={fetchPuts} disabled={loading}
+        style={{width:'100%',padding:'12px',border:'none',borderRadius:8,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
+          color:loading?C.txtDim:'#000',fontFamily:F,fontSize:12,fontWeight:700,cursor:loading?'default':'pointer'}}>
+        {loading?'Loading...':'Calculate Hedge'}
+      </button>
+      {prog&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
+      {err&&<div style={{marginTop:8,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
+    </div>
 
     {/* Protective Put Options */}
     {expOrder.length>0&&<div>
