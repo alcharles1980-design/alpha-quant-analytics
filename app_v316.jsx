@@ -14340,7 +14340,7 @@ function HedgeCalcPage(p){
     if(!p.alpKey||!p.alpSecret){setHlErr('Set Alpaca API keys in Settings');return;}
     var sym=symbol.trim().toUpperCase();
     if(!sym){setHlErr('Enter a symbol');return;}
-    setHlLoading(true);setHlErr('');setHlLevels(null);
+    setHlLoading(true);setHlErr('');setHlLevels(null);setLastPrice(null);
     try{
       // Alpaca Basic/IEX: today's data 403s — end at yesterday. Pull 1 year of daily
       // bars once (one page covers ~252 rows), then slice each window client-side.
@@ -14361,6 +14361,9 @@ function HedgeCalcPage(p){
       if(!bars.length){throw new Error('No daily bars returned for '+sym);}
       // bars are chronological asc; ensure sorted by time
       bars.sort(function(a,b2){return a.t<b2.t?-1:1;});
+      // Most recent bar's close = latest available price (IEX is ~1 day delayed)
+      var latest=bars[bars.length-1];
+      if(latest&&latest.c)setLastPrice(latest.c);
       var hiLo=function(slice){
         var hi=-Infinity,lo=Infinity;
         for(var i=0;i<slice.length;i++){if(slice[i].h>hi)hi=slice[i].h;if(slice[i].l<lo)lo=slice[i].l;}
@@ -14523,7 +14526,11 @@ function HedgeCalcPage(p){
     <div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Oscillation Config</div>
       <div style={{marginBottom:12}}>
-        <label style={lS}>Symbol</label>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+          <label style={Object.assign({},lS,{marginBottom:0})}>Symbol</label>
+          {hlLoading?<span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>loading…</span>
+            :(lastPrice?<span style={{fontSize:10,fontFamily:F,fontWeight:700,color:C.accent}}>${fmt2(lastPrice)}<span style={{fontSize:7,color:C.txtDim,fontWeight:400,marginLeft:4}}>last</span></span>:null)}
+        </div>
         <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}} style={Object.assign({},iS,{textTransform:'uppercase'})} placeholder="NVDA"/>
       </div>
       {/* High/Low level presets — set grid top/bottom from historical ranges */}
