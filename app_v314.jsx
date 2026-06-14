@@ -18263,6 +18263,7 @@ function ATRScreenerPage(p){
   var s13a=useState('all'),mcapMax=s13a[0],setMcapMax=s13a[1];
   var s14a=useState(''),priceMin=s14a[0],setPriceMin=s14a[1];
   var s15a=useState(''),priceMax=s15a[0],setPriceMax=s15a[1];
+  var s16a=useState('all'),typeFilter=s16a[0],setTypeFilter=s16a[1];
   var pollRef=useRef(null);
 
   var mcapVals={'all':0,'100m':100e6,'500m':500e6,'1b':1e9,'5b':5e9,'10b':10e9,'50b':50e9,'100b':100e9};
@@ -18347,6 +18348,10 @@ function ATRScreenerPage(p){
     if(mcapMax!=='all'&&(r.market_cap||0)>(mcapVals[mcapMax]||Infinity))return false;
     if(priceMin&&(r.price||0)<parseFloat(priceMin))return false;
     if(priceMax&&(r.price||0)>parseFloat(priceMax))return false;
+    var isETF=r.ticker_type==='ETF'||r.ticker_type==='ETV'||r.ticker_type==='ETS'||r.ticker_type==='ETN';
+    var isStock=r.ticker_type==='CS'||r.ticker_type==='ADRC';
+    if(typeFilter==='stocks'&&!isStock)return false;
+    if(typeFilter==='etf'&&!isETF)return false;
     if(!r._hatr)return false;
     var hKeys=Object.keys(hourFilters);
     for(var i=0;i<hKeys.length;i++){
@@ -18396,6 +18401,7 @@ function ATRScreenerPage(p){
         <label style={lS}>Filter Ticker</label>
         <input value={filter} onChange={function(e){setFilter(e.target.value.toUpperCase());}} style={iS} placeholder="Search..."/>
       </div>
+      <div style={{display:'flex',gap:4,marginBottom:8}}><span style={{fontSize:7,fontFamily:F,color:C.txtDim,fontWeight:600,display:'flex',alignItems:'center'}}>Type:</span>{[['all','All'],['stocks','Stocks'],['etf','ETFs']].map(function(t){return <button key={t[0]} onClick={function(){setTypeFilter(t[0]);}} style={{padding:'5px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',border:'1px solid '+(typeFilter===t[0]?C.blue+'66':C.border),background:typeFilter===t[0]?C.blue+'10':'transparent',color:typeFilter===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;})}</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
         <div><label style={lS}>Min MCap</label><select value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} style={iS}>{mcapOpts.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
         <div><label style={lS}>Max MCap</label><select value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} style={iS}>{mcapOptsMax.map(function(o){return <option key={o.v} value={o.v}>{o.l}</option>;})}</select></div>
@@ -18425,6 +18431,7 @@ function ATRScreenerPage(p){
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
             <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
+            <th style={{padding:'3px 2px',color:C.txtDim,textAlign:'left'}}>Links</th>
             <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('_score');}} style={thS('_score')}>Avg</th>
@@ -18434,6 +18441,10 @@ function ATRScreenerPage(p){
             return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
               <td style={{padding:'2px',color:C.txtDim,fontSize:5}}>{idx+1}</td>
               <td style={{padding:'2px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
+              <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}} title="Yahoo Finance">Y</a>
+                {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Cheat Sheet">{'\u2197'}</a>}
+              </td>
               <td style={{padding:'2px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(0)}</td>
               <td style={{padding:'2px',color:C.txtDim,textAlign:'right',fontSize:5}}>{fmtMcap(r.market_cap)}</td>
               <td style={{padding:'2px',color:C.accent,textAlign:'right',fontWeight:700}}>{r._avgAtr.toFixed(2)}</td>
@@ -29586,7 +29597,7 @@ function App(){
     {page==='alpaca24atr'&&<Alpaca24AtrPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='microvolscreen'&&<MicroVolScreenerPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
+    {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='overnighthourly'&&<OvernightHourlyPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
