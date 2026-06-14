@@ -14404,9 +14404,12 @@ function HedgeCalcPage(p){
   var rp=parseFloat(refPrice)||0; // reference price for drawdown calc
 
   // How many levels are filled (between grid top and reference price)
+  // Use round (not floor): grid levels are evenly spaced, and float error
+  // makes (top-rp)/increment land at e.g. 33.9999 instead of 34, which would
+  // floor to one level too few. round matches the drawdown-ladder calc.
   var filledLevels=0;
   if(rp>0&&rp<=top&&top>bot&&lvls>1){
-    filledLevels=Math.min(lvls,Math.max(0,Math.floor((top-rp)/increment)+1));
+    filledLevels=Math.min(lvls,Math.max(0,Math.round((top-rp)/increment)+1));
   }else if(rp>0&&rp<bot&&top>bot&&lvls>1){
     filledLevels=lvls; // price below grid bottom = all levels filled
   }
