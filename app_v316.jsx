@@ -14250,6 +14250,8 @@ function HedgeCalcPage(p){
   var s12=useState('30'),hlWindow=s12[0],setHlWindow=s12[1]; // selected high/low window, default 30d
   var s13=useState(false),hlLoading=s13[0],setHlLoading=s13[1];
   var s14=useState(''),hlErr=s14[0],setHlErr=s14[1];
+  var hlDebounceRef=useRef(null);
+  var hlFetchRef=useRef(null);
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -14337,6 +14339,18 @@ function HedgeCalcPage(p){
     }catch(e){setHlErr(e.message||'Failed to load levels');}
     finally{setHlLoading(false);}
   };
+  hlFetchRef.current=fetchHighLowLevels;
+
+  // Auto-load high/low levels shortly after the ticker is entered (debounced).
+  useEffect(function(){
+    var sym=(symbol||'').trim();
+    if(hlDebounceRef.current)clearTimeout(hlDebounceRef.current);
+    if(!sym||sym.length<1||sym.length>5||!p.alpKey||!p.alpSecret)return;
+    hlDebounceRef.current=setTimeout(function(){
+      if(hlFetchRef.current)hlFetchRef.current();
+    },700);
+    return function(){if(hlDebounceRef.current)clearTimeout(hlDebounceRef.current);};
+  },[symbol,p.alpKey,p.alpSecret]);
 
   // Calculations — use refPrice (user-entered) for exposure analysis
   var top=parseFloat(gridTop)||0;
