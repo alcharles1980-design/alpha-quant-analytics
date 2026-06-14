@@ -14246,6 +14246,10 @@ function HedgeCalcPage(p){
   var s8=useState(false),loading=s8[0],setLoading=s8[1];
   var s9=useState(null),err=s9[0],setErr=s9[1];
   var s10=useState(''),prog=s10[0],setProg=s10[1];
+  var s11=useState(null),hlLevels=s11[0],setHlLevels=s11[1]; // {5:{hi,lo},10:{...},...}
+  var s12=useState('30'),hlWindow=s12[0],setHlWindow=s12[1]; // selected high/low window, default 30d
+  var s13=useState(false),hlLoading=s13[0],setHlLoading=s13[1];
+  var s14=useState(''),hlErr=s14[0],setHlErr=s14[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
@@ -14272,6 +14276,62 @@ function HedgeCalcPage(p){
   var onIncrementChange=function(val){
     setGridIncrement(val);
     setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(gridBottom)||0,parseFloat(val)||0));
+  };
+
+  // --- High/Low levels across lookback windows ---
+  // Windows defined as trading-day counts (5/10/30/90) or calendar months (6mo/1yr).
+  var HL_WINDOWS=[['5','5D'],['10','10D'],['30','30D'],['90','90D'],['180','6M'],['365','1Y']];
+  var applyHlWindow=function(win,lvlsObj){
+    var src=lvlsObj||hlLevels;
+    if(!src||!src[win])return;
+    var hi=src[win].hi,lo=src[win].lo;
+    var topStr=String(hi),botStr=String(lo);
+    setGridTop(topStr);
+    setGridBottom(botStr);
+    setHlWindow(win);
+    setLevels(calcLevels(hi,lo,parseFloat(gridIncrement)||0));
+  };
+  var fetchHighLowLevels=async function(){
+    if(!p.alpKey||!p.alpSecret){setHlErr('Set Alpaca API keys in Settings');return;}
+    var sym=symbol.trim().toUpperCase();
+    if(!sym){setHlErr('Enter a symbol');return;}
+    setHlLoading(true);setHlErr('');setHlLevels(null);
+    try{
+      // Alpaca Basic/IEX: today's data 403s — end at yesterday. Pull 1 year of daily
+      // bars once (one page covers ~252 rows), then slice each window client-side.
+      var end=new Date(Date.now()-86400000).toISOString().split('T')[0];
+      var start=new Date(Date.now()-400*86400000).toISOString().split('T')[0];
+      var bars=[];var pageToken=null;
+      do{
+        var apiPath='/v2/stocks/bars?symbols='+encodeURIComponent(sym)+'&timeframe=1Day&start='+start+'&end='+end+'&limit=10000&feed=iex';
+        if(pageToken)apiPath+='&page_token='+pageToken;
+        var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':apiPath,'X-Alpaca-Base':'data'}});
+        if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t.slice(0,80));}
+        var d=await r.json();
+        var b=(d.bars&&d.bars[sym])?d.bars[sym]:[];
+        bars=bars.concat(b);
+        pageToken=d.next_page_token||null;
+      }while(pageToken);
+      if(!bars.length){throw new Error('No daily bars returned for '+sym);}
+      // bars are chronological asc; ensure sorted by time
+      bars.sort(function(a,b2){return a.t<b2.t?-1:1;});
+      var hiLo=function(slice){
+        var hi=-Infinity,lo=Infinity;
+        for(var i=0;i<slice.length;i++){if(slice[i].h>hi)hi=slice[i].h;if(slice[i].l<lo)lo=slice[i].l;}
+        return {hi:Math.round(hi*100)/100,lo:Math.round(lo*100)/100};
+      };
+      var byDays=function(n){return hiLo(bars.slice(Math.max(0,bars.length-n)));};
+      var byCal=function(days){
+        var cut=new Date(Date.now()-days*86400000).toISOString();
+        var slice=bars.filter(function(x){return x.t>=cut;});
+        return hiLo(slice.length?slice:bars);
+      };
+      var out={'5':byDays(5),'10':byDays(10),'30':byDays(30),'90':byDays(90),'180':byCal(182),'365':byCal(365)};
+      setHlLevels(out);
+      applyHlWindow(hlWindow,out); // default 30d applied automatically
+    }catch(e){setHlErr(e.message||'Failed to load levels');}
+    finally{setHlLoading(false);}
   };
 
   // Calculations — use refPrice (user-entered) for exposure analysis
@@ -14398,6 +14458,29 @@ function HedgeCalcPage(p){
     {/* Config Input */}
     <div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Oscillation Config</div>
+      {/* High/Low level presets — set grid top/bottom from historical ranges */}
+      <div style={{marginBottom:12,padding:'10px',background:C.bg,border:'1px solid '+C.border,borderRadius:8}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:hlLevels?8:0,gap:8}}>
+          <span style={{fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,color:C.txtDim,textTransform:'uppercase'}}>High / Low Levels</span>
+          <button onClick={fetchHighLowLevels} disabled={hlLoading}
+            style={{padding:'6px 12px',border:'1px solid '+C.blue+'66',borderRadius:6,background:hlLoading?C.border:C.blue+'14',
+              color:hlLoading?C.txtDim:C.blue,fontFamily:F,fontSize:9,fontWeight:700,cursor:hlLoading?'default':'pointer',whiteSpace:'nowrap'}}>
+            {hlLoading?'Loading...':(hlLevels?'↻ Refresh':'Load Levels')}
+          </button>
+        </div>
+        {hlErr&&<div style={{color:C.warn,fontSize:8,fontFamily:F,marginTop:6}}>{hlErr}</div>}
+        {hlLevels&&<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+          {HL_WINDOWS.map(function(w){var key=w[0],lbl=w[1],lv=hlLevels[key],sel=hlWindow===key;
+            return <button key={key} onClick={function(){applyHlWindow(key);}}
+              style={{padding:'7px 4px',borderRadius:6,cursor:'pointer',textAlign:'center',fontFamily:F,
+                border:'1px solid '+(sel?C.gold+'aa':C.border),background:sel?C.gold+'18':'transparent'}}>
+              <div style={{fontSize:9,fontWeight:700,color:sel?C.gold:C.txtBright,marginBottom:2}}>{lbl}</div>
+              <div style={{fontSize:7.5,color:C.accent,fontWeight:600}}>H {lv?lv.hi:'--'}</div>
+              <div style={{fontSize:7.5,color:C.warn,fontWeight:600}}>L {lv?lv.lo:'--'}</div>
+            </button>;})}
+        </div>}
+        {hlLevels&&<div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:6}}>Click a window to set Grid Top = high, Grid Bottom = low. Default: 30D.</div>}
+      </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Symbol</label>
           <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}} style={Object.assign({},iS,{textTransform:'uppercase'})} placeholder="NVDA"/></div>
