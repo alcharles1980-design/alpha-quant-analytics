@@ -14414,6 +14414,8 @@ function HedgeCalcPage(p){
   // certain prices. Fall back to (top-bot)/(lvls-1) only if increment unset.
   var increment=parseFloat(gridIncrement)||((lvls>1)?(top-bot)/(lvls-1):0);
   var rp=parseFloat(refPrice)||0; // reference price for drawdown calc
+  // Range covered by the grid, as a % drop from top to bottom price.
+  var rangePct=(top>0&&bot>0&&top>bot)?((top-bot)/top*100):0;
 
   // How many levels are filled (between grid top and reference price)
   // Use round (not floor): grid levels are evenly spaced, and float error
@@ -14576,6 +14578,8 @@ function HedgeCalcPage(p){
           <input value={capitalExpose} onChange={function(e){onCapitalChange(e.target.value);}} style={iS} type="number" step="100" placeholder="Sets increment"/></div>
         <div><label style={lS}>Levels (calculated)</label>
           <input value={levels} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
+        <div><label style={lS}>Range Covered (%)</label>
+          <input value={rangePct>0?rangePct.toFixed(2)+'%':'—'} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Shares/Level</label>
           <input value={sharesPerLevel} onChange={function(e){onSharesChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Reference Price ($)</label>
