@@ -14240,6 +14240,7 @@ function HedgeCalcPage(p){
   var s5h=useState('manual'),incMode=s5h[0],setIncMode=s5h[1]; // 'manual'|'capital' — which input drives the increment
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
+  var s5i=useState(''),scenarioPrice=s5i[0],setScenarioPrice=s5i[1]; // exposure-summary reference price
   var s5d=useState(null),selectedPut=s5d[0],setSelectedPut=s5d[1];
   var s5f=useState(''),hedgeContracts=s5f[0],setHedgeContracts=s5f[1];
   var s5e=useState({}),expandedExps=s5e[0],setExpandedExps=s5e[1];
@@ -14349,7 +14350,7 @@ function HedgeCalcPage(p){
     if(!p.alpKey||!p.alpSecret){setHlErr('Set Alpaca API keys in Settings');return;}
     var sym=symbol.trim().toUpperCase();
     if(!sym){setHlErr('Enter a symbol');return;}
-    setHlLoading(true);setHlErr('');setHlLevels(null);setLastPrice(null);
+    setHlLoading(true);setHlErr('');setHlLevels(null);setLastPrice(null);setScenarioPrice('');
     try{
       // Alpaca Basic/IEX: today's data 403s — end at yesterday. Pull 1 year of daily
       // bars once (one page covers ~252 rows), then slice each window client-side.
@@ -14372,7 +14373,7 @@ function HedgeCalcPage(p){
       bars.sort(function(a,b2){return a.t<b2.t?-1:1;});
       // Most recent bar's close = latest available price (IEX is ~1 day delayed)
       var latest=bars[bars.length-1];
-      if(latest&&latest.c)setLastPrice(latest.c);
+      if(latest&&latest.c){setLastPrice(latest.c);if(!scenarioPrice)setScenarioPrice(String(latest.c));}
       var hiLo=function(slice){
         var hi=-Infinity,lo=Infinity;
         for(var i=0;i<slice.length;i++){if(slice[i].h>hi)hi=slice[i].h;if(slice[i].l<lo)lo=slice[i].l;}
@@ -14413,18 +14414,19 @@ function HedgeCalcPage(p){
   // slightly-too-large step that over-counted filled levels by one at
   // certain prices. Fall back to (top-bot)/(lvls-1) only if increment unset.
   var increment=parseFloat(gridIncrement)||((lvls>1)?(top-bot)/(lvls-1):0);
-  var rp=parseFloat(refPrice)||0; // reference price for drawdown calc
+  var rp=parseFloat(refPrice)||0; // Top Range Price — drives the drawdown ladder top
+  var sp=parseFloat(scenarioPrice)||0; // Reference Price — drives the exposure summary tiles
   // Range covered by the grid, as a % drop from top to bottom price.
   var rangePct=(top>0&&bot>0&&top>bot)?((top-bot)/top*100):0;
 
-  // How many levels are filled (between grid top and reference price)
+  // How many levels are filled when price sits at the scenario reference price.
   // Use round (not floor): grid levels are evenly spaced, and float error
-  // makes (top-rp)/increment land at e.g. 33.9999 instead of 34, which would
+  // makes (top-sp)/increment land at e.g. 33.9999 instead of 34, which would
   // floor to one level too few. round matches the drawdown-ladder calc.
   var filledLevels=0;
-  if(rp>0&&rp<=top&&top>bot&&lvls>1){
-    filledLevels=Math.min(lvls,Math.max(0,Math.round((top-rp)/increment)+1));
-  }else if(rp>0&&rp<bot&&top>bot&&lvls>1){
+  if(sp>0&&sp<=top&&top>bot&&lvls>1){
+    filledLevels=Math.min(lvls,Math.max(0,Math.round((top-sp)/increment)+1));
+  }else if(sp>0&&sp<bot&&top>bot&&lvls>1){
     filledLevels=lvls; // price below grid bottom = all levels filled
   }
   var totalShares=filledLevels*spl;
@@ -14433,8 +14435,8 @@ function HedgeCalcPage(p){
   for(var li=0;li<filledLevels;li++){
     capitalDeployed+=(top-li*increment)*spl;
   }
-  // Drawdown from reference price
-  var currentValue=totalShares*rp;
+  // Drawdown from scenario reference price
+  var currentValue=totalShares*sp;
   var unrealizedPL=currentValue-capitalDeployed;
   // Max loss if stock goes to grid bottom
   var valueAtBottom=totalShares*bot;
@@ -14595,19 +14597,23 @@ function HedgeCalcPage(p){
     </div>
 
     {/* Exposure Summary */}
-    {(rp>0||lastPrice)&&<div style={card}>
+    {(rp>0||sp>0||lastPrice)&&<div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Exposure Analysis</div>
-      <div style={{marginBottom:4,color:C.accent,fontSize:12,fontWeight:700,fontFamily:F}}>{symbol.toUpperCase()} {lastPrice?'Market: $'+fmt2(lastPrice):''}{rp>0?' | Ref: $'+fmt2(rp):''}</div>
+      <div style={{marginBottom:4,color:C.accent,fontSize:12,fontWeight:700,fontFamily:F}}>{symbol.toUpperCase()} {lastPrice?'Market: $'+fmt2(lastPrice):''}{sp>0?' | Ref: $'+fmt2(sp):''}</div>
       <div style={{marginBottom:8,fontSize:9,fontFamily:F,color:C.txtDim}}>Grid: ${fmt2(top)} {'\u2192'} ${fmt2(bot)} | {lvls.toLocaleString()} levels | ${gridIncrement} increment</div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
         <div><label style={lS}>Top Range Price ($)</label>
-          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Current / scenario price"/></div>
+          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Ladder top"/></div>
         <div><label style={lS}>Bottom Range Price ($)</label>
-          <input value={bottomRef} onChange={function(e){setBottomRef(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Drawdown ladder floor"/></div>
+          <input value={bottomRef} onChange={function(e){setBottomRef(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Ladder floor"/></div>
       </div>
-      {rp>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+      <div style={{marginBottom:10}}>
+        <label style={lS}>Reference Price ($) — exposure scenario</label>
+        <input value={scenarioPrice} onChange={function(e){setScenarioPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Price to evaluate exposure at"/>
+      </div>
+      {sp>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'30'}}>
-          <div style={sml}>LEVELS FILLED AT ${fmt2(rp)}</div>
+          <div style={sml}>LEVELS FILLED AT ${fmt2(sp)}</div>
           <div style={Object.assign({},val2,{color:C.accent})}>{filledLevels.toLocaleString()} / {lvls.toLocaleString()}</div>
           <div style={sml}>{totalShares.toLocaleString()} shares | Avg: ${fmt2(filledLevels>0?capitalDeployed/totalShares:0)}</div>
         </div>
@@ -14617,7 +14623,7 @@ function HedgeCalcPage(p){
           <div style={sml}>Current value: ${currentValue.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
         </div>
         <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+(unrealizedPL>=0?C.accent:C.warn)+'30'}}>
-          <div style={sml}>UNREALIZED P/L AT ${fmt2(rp)}</div>
+          <div style={sml}>UNREALIZED P/L AT ${fmt2(sp)}</div>
           <div style={Object.assign({},val2,{color:unrealizedPL>=0?C.accent:C.warn})}>{unrealizedPL>=0?'+':''}${unrealizedPL.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           <div style={sml}>{capitalDeployed>0?(unrealizedPL/capitalDeployed*100).toFixed(1):0}% of capital</div>
         </div>
@@ -14626,8 +14632,8 @@ function HedgeCalcPage(p){
           <div style={Object.assign({},val2,{color:C.warn})}>${maxLoss.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           <div style={sml}>{capitalDeployed>0?(maxLoss/capitalDeployed*100).toFixed(1):0}% of capital</div>
         </div>
-      </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:8}}>Enter a Top Range Price to see exposure analysis.</div>}
-      {rp>0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
+      </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:8}}>Enter a Reference Price to see exposure analysis.</div>}
+      {sp>0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
         Increment: ${increment>0?increment.toFixed(4):'0'} | Max capital if all {lvls.toLocaleString()} levels fill: ${(function(){var mc=0;for(var x=0;x<lvls;x++)mc+=(top-x*increment)*spl;return mc.toLocaleString(undefined,{maximumFractionDigits:0})})()}
       </div>}
     </div>}
