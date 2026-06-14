@@ -14236,6 +14236,7 @@ function HedgeCalcPage(p){
   var s4=useState('15001'),levels=s4[0],setLevels=s4[1];
   var s4b=useState('0.01'),gridIncrement=s4b[0],setGridIncrement=s4b[1];
   var s5=useState('1'),sharesPerLevel=s5[0],setSharesPerLevel=s5[1];
+  var s5g=useState(''),capitalExpose=s5g[0],setCapitalExpose=s5g[1];
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
   var s5d=useState(null),selectedPut=s5d[0],setSelectedPut=s5d[1];
@@ -14280,6 +14281,23 @@ function HedgeCalcPage(p){
   var onIncrementChange=function(val){
     setGridIncrement(val);
     setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(gridBottom)||0,parseFloat(val)||0));
+  };
+  // Solve increment so that capital deployed at full fill ~= target capital.
+  // Full-fill capital = shares * N * (top+bot)/2, where N = number of levels.
+  // => N = K / (shares * (top+bot)/2); increment = (top-bot)/(N-1).
+  var onCapitalChange=function(val){
+    setCapitalExpose(val);
+    var K=parseFloat(val)||0;
+    var t2=parseFloat(gridTop)||0,b2=parseFloat(gridBottom)||0,sh=parseFloat(sharesPerLevel)||0;
+    if(K<=0||t2<=b2||sh<=0){return;} // leave increment as-is on invalid input
+    var midSum=(t2+b2)/2; // avg price per level
+    var N=K/(sh*midSum);   // target number of levels
+    if(N<2){return;}       // need at least 2 levels for a spacing
+    var inc=(t2-b2)/(N-1);
+    var incR=Math.round(inc*10000)/10000; // round to 4dp tick
+    if(incR<=0){return;}
+    setGridIncrement(String(incR));
+    setLevels(calcLevels(t2,b2,incR));
   };
 
   // --- High/Low levels across lookback windows ---
@@ -14512,6 +14530,8 @@ function HedgeCalcPage(p){
           <input value={gridBottom} onChange={function(e){onBottomChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Increment ($)</label>
           <input value={gridIncrement} onChange={function(e){onIncrementChange(e.target.value);}} style={iS} type="number" step="0.0001"/></div>
+        <div><label style={lS}>Capital to Expose ($)</label>
+          <input value={capitalExpose} onChange={function(e){onCapitalChange(e.target.value);}} style={iS} type="number" step="100" placeholder="Sets increment"/></div>
         <div><label style={lS}>Levels (calculated)</label>
           <input value={levels} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Shares/Level</label>
