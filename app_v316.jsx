@@ -14443,6 +14443,12 @@ function HedgeCalcPage(p){
   var maxLoss=capitalDeployed-valueAtBottom;
   // Max loss if stock goes to 0
   var totalLossToZero=capitalDeployed;
+  // Capital exposed if the entire grid fills (every level from top to bottom).
+  // This is what the configured grid would deploy regardless of scenario price.
+  var maxGridCapital=0;
+  if(top>bot&&lvls>1&&increment>0){
+    for(var mg=0;mg<lvls;mg++)maxGridCapital+=(top-mg*increment)*spl;
+  }
 
   var fetchPuts=async function(){
     if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings');return;}
@@ -14577,7 +14583,8 @@ function HedgeCalcPage(p){
         <div><label style={lS}>Increment ($)</label>
           <input value={gridIncrement} onChange={function(e){onIncrementChange(e.target.value);}} style={iS} type="number" step="0.0001"/></div>
         <div><label style={lS}>Capital to Expose ($)</label>
-          <input value={capitalExpose} onChange={function(e){onCapitalChange(e.target.value);}} style={iS} type="number" step="100" placeholder="Sets increment"/></div>
+          <input value={capitalExpose} onChange={function(e){onCapitalChange(e.target.value);}} style={iS} type="number" step="100" placeholder="Sets increment"/>
+          {!(parseFloat(capitalExpose)>0)&&maxGridCapital>0&&<div style={{fontSize:7.5,fontFamily:F,color:C.accent,marginTop:3}}>Grid deploys: ${maxGridCapital.toLocaleString(undefined,{maximumFractionDigits:0})} if fully filled</div>}</div>
         <div><label style={lS}>Levels (calculated)</label>
           <input value={levels} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Range Covered (%)</label>
@@ -14634,7 +14641,7 @@ function HedgeCalcPage(p){
         </div>
       </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:8}}>Enter a Reference Price to see exposure analysis.</div>}
       {sp>0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
-        Increment: ${increment>0?increment.toFixed(4):'0'} | Max capital if all {lvls.toLocaleString()} levels fill: ${(function(){var mc=0;for(var x=0;x<lvls;x++)mc+=(top-x*increment)*spl;return mc.toLocaleString(undefined,{maximumFractionDigits:0})})()}
+        Increment: ${increment>0?increment.toFixed(4):'0'} | Max capital if all {lvls.toLocaleString()} levels fill: ${maxGridCapital.toLocaleString(undefined,{maximumFractionDigits:0})}
       </div>}
     </div>}
 
