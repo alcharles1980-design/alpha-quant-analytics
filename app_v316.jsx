@@ -14278,12 +14278,21 @@ function HedgeCalcPage(p){
     setBottomRef(val);
   };
   var onIncrementChange=function(val){
-    setIncMode('manual'); // typing the increment makes it the driver
+    setIncMode('manual');     // typing the increment makes it the driver
     setGridIncrement(val);
+    setCapitalExpose('');     // capital no longer drives; clear its stale value
   };
   var onCapitalChange=function(val){
     setCapitalExpose(val);
-    setIncMode((parseFloat(val)>0)?'capital':'manual'); // capital drives; clearing reverts to manual
+    if(parseFloat(val)>0){
+      setIncMode('capital'); // capital drives the increment
+    }else{
+      // Cleared/invalid: revert to manual mode and restore field defaults
+      setIncMode('manual');
+      setGridIncrement('0.01');
+      setSharesPerLevel('1');
+      // levels recompute via the matrix effect from the restored increment
+    }
   };
   var onSharesChange=function(val){
     setSharesPerLevel(val);
