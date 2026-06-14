@@ -14522,6 +14522,10 @@ function HedgeCalcPage(p){
     {/* Config Input */}
     <div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Oscillation Config</div>
+      <div style={{marginBottom:12}}>
+        <label style={lS}>Symbol</label>
+        <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}} style={Object.assign({},iS,{textTransform:'uppercase'})} placeholder="NVDA"/>
+      </div>
       {/* High/Low level presets — set grid top/bottom from historical ranges */}
       <div style={{marginBottom:12,padding:'10px',background:C.bg,border:'1px solid '+C.border,borderRadius:8}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:hlLevels?8:0,gap:8}}>
@@ -14546,8 +14550,6 @@ function HedgeCalcPage(p){
         {hlLevels&&<div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:6}}>Click a window to set Top Price Range = high, Bottom Price Range = low. Default: 30D.</div>}
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-        <div><label style={lS}>Symbol</label>
-          <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}} style={Object.assign({},iS,{textTransform:'uppercase'})} placeholder="NVDA"/></div>
         <div><label style={lS}>Top Price Range ($)</label>
           <input value={gridTop} onChange={function(e){onTopChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Bottom Price Range ($)</label>
