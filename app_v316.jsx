@@ -14267,10 +14267,12 @@ function HedgeCalcPage(p){
   };
   var onTopChange=function(val){
     setGridTop(val);
+    setRefPrice(val);
     setLevels(calcLevels(parseFloat(val)||0,parseFloat(gridBottom)||0,parseFloat(gridIncrement)||0));
   };
   var onBottomChange=function(val){
     setGridBottom(val);
+    setBottomRef(val);
     setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(val)||0,parseFloat(gridIncrement)||0));
   };
   var onIncrementChange=function(val){
@@ -14288,6 +14290,8 @@ function HedgeCalcPage(p){
     var topStr=String(hi),botStr=String(lo);
     setGridTop(topStr);
     setGridBottom(botStr);
+    setRefPrice(topStr);
+    setBottomRef(botStr);
     setHlWindow(win);
     setLevels(calcLevels(hi,lo,parseFloat(gridIncrement)||0));
   };
