@@ -14237,6 +14237,7 @@ function HedgeCalcPage(p){
   var s4b=useState('0.01'),gridIncrement=s4b[0],setGridIncrement=s4b[1];
   var s5=useState('1'),sharesPerLevel=s5[0],setSharesPerLevel=s5[1];
   var s5g=useState(''),capitalExpose=s5g[0],setCapitalExpose=s5g[1];
+  var s5h=useState('manual'),incMode=s5h[0],setIncMode=s5h[1]; // 'manual'|'capital' — which input drives the increment
   var s5b=useState(''),refPrice=s5b[0],setRefPrice=s5b[1];
   var s5c=useState(''),bottomRef=s5c[0],setBottomRef=s5c[1];
   var s5d=useState(null),selectedPut=s5d[0],setSelectedPut=s5d[1];
@@ -14271,34 +14272,54 @@ function HedgeCalcPage(p){
   var onTopChange=function(val){
     setGridTop(val);
     setRefPrice(val);
-    setLevels(calcLevels(parseFloat(val)||0,parseFloat(gridBottom)||0,parseFloat(gridIncrement)||0));
   };
   var onBottomChange=function(val){
     setGridBottom(val);
     setBottomRef(val);
-    setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(val)||0,parseFloat(gridIncrement)||0));
   };
   var onIncrementChange=function(val){
+    setIncMode('manual'); // typing the increment makes it the driver
     setGridIncrement(val);
-    setLevels(calcLevels(parseFloat(gridTop)||0,parseFloat(gridBottom)||0,parseFloat(val)||0));
   };
-  // Solve increment so that capital deployed at full fill ~= target capital.
-  // Full-fill capital = shares * N * (top+bot)/2, where N = number of levels.
-  // => N = K / (shares * (top+bot)/2); increment = (top-bot)/(N-1).
   var onCapitalChange=function(val){
     setCapitalExpose(val);
-    var K=parseFloat(val)||0;
-    var t2=parseFloat(gridTop)||0,b2=parseFloat(gridBottom)||0,sh=parseFloat(sharesPerLevel)||0;
-    if(K<=0||t2<=b2||sh<=0){return;} // leave increment as-is on invalid input
-    var midSum=(t2+b2)/2; // avg price per level
-    var N=K/(sh*midSum);   // target number of levels
-    if(N<2){return;}       // need at least 2 levels for a spacing
-    var inc=(t2-b2)/(N-1);
-    var incR=Math.round(inc*10000)/10000; // round to 4dp tick
-    if(incR<=0){return;}
-    setGridIncrement(String(incR));
-    setLevels(calcLevels(t2,b2,incR));
+    setIncMode((parseFloat(val)>0)?'capital':'manual'); // capital drives; clearing reverts to manual
   };
+  var onSharesChange=function(val){
+    setSharesPerLevel(val);
+  };
+
+  // Single source of truth for derived fields. Recomputes whenever any input
+  // in the matrix changes, so increment/levels stay consistent regardless of
+  // which field the user edits.
+  //  - manual mode:  levels    = f(top, bottom, increment)
+  //  - capital mode: increment = f(top, bottom, shares, capital), then levels
+  // Setters are guarded to no-op when the value is unchanged (avoids loops).
+  useEffect(function(){
+    var t2=parseFloat(gridTop)||0,b2=parseFloat(gridBottom)||0;
+    var sh=parseFloat(sharesPerLevel)||0;
+    if(incMode==='capital'){
+      var K=parseFloat(capitalExpose)||0;
+      if(K>0&&t2>b2&&sh>0){
+        var N=K/(sh*((t2+b2)/2)); // target number of levels
+        if(N>=2){
+          var inc=(t2-b2)/(N-1);
+          var incR=Math.round(inc*10000)/10000; // 4dp tick
+          if(incR>0){
+            var incStr=String(incR);
+            if(incStr!==gridIncrement)setGridIncrement(incStr);
+            var lv=calcLevels(t2,b2,incR);
+            if(lv!==levels)setLevels(lv);
+            return;
+          }
+        }
+      }
+      // invalid capital config: fall through to manual recompute of levels
+    }
+    // manual mode (or capital fallback): levels from current increment
+    var lv2=calcLevels(t2,b2,parseFloat(gridIncrement)||0);
+    if(lv2!==levels)setLevels(lv2);
+  },[gridTop,gridBottom,gridIncrement,sharesPerLevel,capitalExpose,incMode]);
 
   // --- High/Low levels across lookback windows ---
   // Windows defined as trading-day counts (5/10/30/90) or calendar months (6mo/1yr).
@@ -14313,7 +14334,7 @@ function HedgeCalcPage(p){
     setRefPrice(topStr);
     setBottomRef(botStr);
     setHlWindow(win);
-    setLevels(calcLevels(hi,lo,parseFloat(gridIncrement)||0));
+    // levels (and increment, in capital mode) recompute via the matrix effect
   };
   var fetchHighLowLevels=async function(){
     if(!p.alpKey||!p.alpSecret){setHlErr('Set Alpaca API keys in Settings');return;}
@@ -14535,7 +14556,7 @@ function HedgeCalcPage(p){
         <div><label style={lS}>Levels (calculated)</label>
           <input value={levels} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Shares/Level</label>
-          <input value={sharesPerLevel} onChange={function(e){setSharesPerLevel(e.target.value);}} style={iS} type="number" step="0.01"/></div>
+          <input value={sharesPerLevel} onChange={function(e){onSharesChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Reference Price ($)</label>
           <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Current / scenario price"/></div>
         <div><label style={lS}>Bottom Ref Price ($)</label>
