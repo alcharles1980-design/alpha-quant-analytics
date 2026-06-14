@@ -14479,14 +14479,14 @@ function HedgeCalcPage(p){
               <div style={{fontSize:7.5,color:C.warn,fontWeight:600}}>L {lv?lv.lo:'--'}</div>
             </button>;})}
         </div>}
-        {hlLevels&&<div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:6}}>Click a window to set Grid Top = high, Grid Bottom = low. Default: 30D.</div>}
+        {hlLevels&&<div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:6}}>Click a window to set Top Price Range = high, Bottom Price Range = low. Default: 30D.</div>}
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div><label style={lS}>Symbol</label>
           <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}} style={Object.assign({},iS,{textTransform:'uppercase'})} placeholder="NVDA"/></div>
-        <div><label style={lS}>Grid Top ($)</label>
+        <div><label style={lS}>Top Price Range ($)</label>
           <input value={gridTop} onChange={function(e){onTopChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
-        <div><label style={lS}>Grid Bottom ($)</label>
+        <div><label style={lS}>Bottom Price Range ($)</label>
           <input value={gridBottom} onChange={function(e){onBottomChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
         <div><label style={lS}>Increment ($)</label>
           <input value={gridIncrement} onChange={function(e){onIncrementChange(e.target.value);}} style={iS} type="number" step="0.0001"/></div>
