@@ -14357,7 +14357,11 @@ function HedgeCalcPage(p){
   var bot=parseFloat(gridBottom)||0;
   var lvls=parseInt(levels)||0;
   var spl=parseFloat(sharesPerLevel)||0;
-  var increment=lvls>0?(top-bot)/lvls:0;
+  // Use the user's actual grid increment for spacing. Recomputing as
+  // (top-bot)/lvls used the fencepost count (lvls = gaps+1), giving a
+  // slightly-too-large step that over-counted filled levels by one at
+  // certain prices. Fall back to (top-bot)/(lvls-1) only if increment unset.
+  var increment=parseFloat(gridIncrement)||((lvls>1)?(top-bot)/(lvls-1):0);
   var rp=parseFloat(refPrice)||0; // reference price for drawdown calc
 
   // How many levels are filled (between grid top and reference price)
