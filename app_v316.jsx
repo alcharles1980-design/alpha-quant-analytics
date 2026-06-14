@@ -14600,9 +14600,9 @@ function HedgeCalcPage(p){
       <div style={{marginBottom:4,color:C.accent,fontSize:12,fontWeight:700,fontFamily:F}}>{symbol.toUpperCase()} {lastPrice?'Market: $'+fmt2(lastPrice):''}{rp>0?' | Ref: $'+fmt2(rp):''}</div>
       <div style={{marginBottom:8,fontSize:9,fontFamily:F,color:C.txtDim}}>Grid: ${fmt2(top)} {'\u2192'} ${fmt2(bot)} | {lvls.toLocaleString()} levels | ${gridIncrement} increment</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
-        <div><label style={lS}>Reference Price ($)</label>
+        <div><label style={lS}>Top Range Price ($)</label>
           <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Current / scenario price"/></div>
-        <div><label style={lS}>Bottom Ref Price ($)</label>
+        <div><label style={lS}>Bottom Range Price ($)</label>
           <input value={bottomRef} onChange={function(e){setBottomRef(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Drawdown ladder floor"/></div>
       </div>
       {rp>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
@@ -14626,7 +14626,7 @@ function HedgeCalcPage(p){
           <div style={Object.assign({},val2,{color:C.warn})}>${maxLoss.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           <div style={sml}>{capitalDeployed>0?(maxLoss/capitalDeployed*100).toFixed(1):0}% of capital</div>
         </div>
-      </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:8}}>Enter a Reference Price to see exposure analysis.</div>}
+      </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:8}}>Enter a Top Range Price to see exposure analysis.</div>}
       {rp>0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>
         Increment: ${increment>0?increment.toFixed(4):'0'} | Max capital if all {lvls.toLocaleString()} levels fill: ${(function(){var mc=0;for(var x=0;x<lvls;x++)mc+=(top-x*increment)*spl;return mc.toLocaleString(undefined,{maximumFractionDigits:0})})()}
       </div>}
@@ -14681,7 +14681,7 @@ function HedgeCalcPage(p){
         </table>
       </div>
       <div style={{marginTop:6,fontSize:7,fontFamily:F,color:C.txtDim}}>
-        Each row shows exposure if price drops to that level. Gold = reference price. Red tint = {'>'} 50% capital loss.
+        Each row shows exposure if price drops to that level. Gold = top range price. Red tint = {'>'} 50% capital loss.
       </div>
     </div>}
 
