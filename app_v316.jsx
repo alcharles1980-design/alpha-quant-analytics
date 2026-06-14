@@ -14582,10 +14582,6 @@ function HedgeCalcPage(p){
           <input value={rangePct>0?rangePct.toFixed(2)+'%':'—'} readOnly style={Object.assign({},iS,{opacity:0.7,cursor:'default'})} /></div>
         <div><label style={lS}>Shares/Level</label>
           <input value={sharesPerLevel} onChange={function(e){onSharesChange(e.target.value);}} style={iS} type="number" step="0.01"/></div>
-        <div><label style={lS}>Reference Price ($)</label>
-          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Current / scenario price"/></div>
-        <div><label style={lS}>Bottom Ref Price ($)</label>
-          <input value={bottomRef} onChange={function(e){setBottomRef(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Drawdown ladder floor"/></div>
         <div style={{display:'flex',alignItems:'flex-end'}}>
           <button onClick={fetchPuts} disabled={loading}
             style={{width:'100%',padding:'10px',border:'none',borderRadius:8,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
@@ -14603,6 +14599,12 @@ function HedgeCalcPage(p){
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Exposure Analysis</div>
       <div style={{marginBottom:4,color:C.accent,fontSize:12,fontWeight:700,fontFamily:F}}>{symbol.toUpperCase()} {lastPrice?'Market: $'+fmt2(lastPrice):''}{rp>0?' | Ref: $'+fmt2(rp):''}</div>
       <div style={{marginBottom:8,fontSize:9,fontFamily:F,color:C.txtDim}}>Grid: ${fmt2(top)} {'\u2192'} ${fmt2(bot)} | {lvls.toLocaleString()} levels | ${gridIncrement} increment</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+        <div><label style={lS}>Reference Price ($)</label>
+          <input value={refPrice} onChange={function(e){setRefPrice(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Current / scenario price"/></div>
+        <div><label style={lS}>Bottom Ref Price ($)</label>
+          <input value={bottomRef} onChange={function(e){setBottomRef(e.target.value);}} style={iS} type="number" step="0.01" placeholder="Drawdown ladder floor"/></div>
+      </div>
       {rp>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         <div style={{padding:'8px 10px',background:C.bgDeep,borderRadius:6,border:'1px solid '+C.accent+'30'}}>
           <div style={sml}>LEVELS FILLED AT ${fmt2(rp)}</div>
