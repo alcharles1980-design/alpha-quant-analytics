@@ -17692,7 +17692,7 @@ function MicroVolScreenerPage(p){
           'intraday_hurst,intraday_osc_ratio,intraday_reversal_rate,avg_vwap_crossings,'+
           'avg_osc_pct,avg_osc_dollar,osc_per_day,avg_up_osc_pct,avg_dn_osc_pct,'+
           'avg_up_osc_dollar,avg_dn_osc_dollar,autocorr_60d,reversal_pct,atr_pct,yz_vol'+
-          '&order=osc_score.desc.nullslast',{headers:ph});
+          '&order=osc_score.desc.nullslast,ticker.asc',{headers:ph});
         var chunk=await pr.json();
         if(!Array.isArray(chunk))break;
         all=all.concat(chunk);
@@ -18632,7 +18632,7 @@ function DailyLowSwingPage(p){
       var allRows=[];var pg=0;var gen=++loadGen.current;
       while(true){
         var ph=getSbHeaders();ph['Range']=''+(pg*1000)+'-'+((pg+1)*1000-1);
-        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&daily_low_high_profile=not.is.null&select=ticker,price,market_cap,ticker_type,daily_low_high_profile&order=osc_score.desc.nullslast',{headers:ph});
+        var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&daily_low_high_profile=not.is.null&select=ticker,price,market_cap,ticker_type,daily_low_high_profile&order=osc_score.desc.nullslast,ticker.asc',{headers:ph});
         var batch=pr.ok?await pr.json():[];
         if(!batch.length)break;
         for(var i=0;i<batch.length;i++){
