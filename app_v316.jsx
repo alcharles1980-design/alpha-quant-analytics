@@ -17030,6 +17030,22 @@ function ExtendedHoursVolumePage(p){
 
 
 // Shared: auto-backfill missing market_cap from Polygon for screener data
+// Per-screener retry counters (module-level so they persist across the
+// component's re-rendered load() closures). One slot per screener page.
+var SCREENER_RETRY={oscscreener:{n:0},atrscreener:{n:0},minuteswing:{n:0},hourlyswing:{n:0},dailyclosehigh:{n:0},hourlyclosehigh:{n:0},dirbias:{n:0},recovery:{n:0},pullback:{n:0},zscore:{n:0},squeeze:{n:0},rangepos:{n:0},confluence:{n:0},volregime:{n:0},hourlyregime:{n:0}};
+// Shared retry guard for screener loads. The pipeline does a full delete+reload
+// of cached_oscillation_screener, so a load() firing mid-rewrite can read an
+// empty table and show "0 stocks". If rows is empty, schedule a retry of loadFn
+// (up to 5x at 2.5s) and return true so the caller bails out; returns false to
+// proceed normally. `state` is a per-component {n:0} object held in a ref.
+function retryIfEmpty(rows,state,loadFn){
+  if(rows&&rows.length){if(state)state.n=0;return false;}
+  if(!state)return false;
+  if((state.n||0)>=5){state.n=0;return false;} // give up, show empty
+  state.n=(state.n||0)+1;
+  setTimeout(function(){try{loadFn();}catch(e){}},2500);
+  return true;
+}
 async function backfillMcap(rows,pgKey,setDataFn){
   if(!pgKey||!rows||!rows.length)return;
   var missing=[];
@@ -17223,6 +17239,7 @@ function OscillationScreenerPage(p){
         if(batch.length<pageSize)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.oscscreener,load))return;
       setData(allRows);
       backfillMcap(allRows,p.apiKey,setData);
     }catch(e){setErr(e.message);}
@@ -17957,6 +17974,7 @@ function ATRScreenerPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.atrscreener,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -18160,7 +18178,7 @@ function MinuteSwingScreenerPage(p){
   var pollProgress=function(){if(pollRef.current)clearInterval(pollRef.current);pollRef.current=setInterval(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;if(rows[0].status==='complete')load();}}}catch(e){}},3000);};
   useEffect(function(){return function(){if(pollRef.current)clearInterval(pollRef.current);};},[]);
   var triggerScan=async function(){if(!p.ghToken){setErr('Add GitHub PAT in Settings');return;}setErr(null);setScanning(true);try{var r=await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+p.ghToken,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'screener',tickers:'SP500'}})});if(r.status===204){pollProgress();setTimeout(function(){setScanning(false);},2000);}else{var d=await r.json();setErr('GitHub: '+(d.message||r.status));setScanning(false);}}catch(e){setErr('Trigger failed: '+e.message);setScanning(false);}};
-  var load=async function(){if(!SB_URL||!SB_KEY)return;setLoading(true);setErr(null);try{var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});var dateRows=rDate.ok?await rDate.json():[];if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}var sd=dateRows[0].scan_date;setScanDate(sd);if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}var allRows=[];var page=0;while(true){var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type,osc_score,scan_date,minute_swing_profile&scan_date=eq.'+sd+'&minute_swing_profile=not.is.null&order=osc_score.desc,ticker.asc',{headers:ph});var batch=pr.ok?await pr.json():[];if(!batch.length)break;for(var i=0;i<batch.length;i++){var row=batch[i];try{row._min=typeof row.minute_swing_profile==='string'?JSON.parse(row.minute_swing_profile):row.minute_swing_profile;}catch(e2){row._min={};}allRows.push(row);}if(batch.length<1000)break;page++;}setData(allRows);backfillMcap(allRows,p.pgKey,setData);}catch(e){setErr(e.message);}setLoading(false);};
+  var load=async function(){if(!SB_URL||!SB_KEY)return;setLoading(true);setErr(null);try{var rDate=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date,created_at&order=scan_date.desc,created_at.asc&limit=1',{headers:getSbHeaders()});var dateRows=rDate.ok?await rDate.json():[];if(!dateRows.length){setErr('No screener data.');setLoading(false);return;}var sd=dateRows[0].scan_date;setScanDate(sd);if(dateRows[0].created_at){var ct=new Date(dateRows[0].created_at);setScanTime(ct.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}));}var allRows=[];var page=0;while(true){var ph=getSbHeaders();ph['Range']=''+(page*1000)+'-'+((page+1)*1000-1);var pr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,price,market_cap,ticker_type,osc_score,scan_date,minute_swing_profile&scan_date=eq.'+sd+'&minute_swing_profile=not.is.null&order=osc_score.desc,ticker.asc',{headers:ph});var batch=pr.ok?await pr.json():[];if(!batch.length)break;for(var i=0;i<batch.length;i++){var row=batch[i];try{row._min=typeof row.minute_swing_profile==='string'?JSON.parse(row.minute_swing_profile):row.minute_swing_profile;}catch(e2){row._min={};}allRows.push(row);}if(batch.length<1000)break;page++;}if(retryIfEmpty(allRows,SCREENER_RETRY.minuteswing,load))return;setData(allRows);backfillMcap(allRows,p.pgKey,setData);}catch(e){setErr(e.message);}setLoading(false);};
   useEffect(function(){load();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running')pollProgress();}}catch(e){}})();},[]);
   var setHourFilter=function(h,val){var nf=Object.assign({},hourFilters);if(val==='')delete nf[h];else nf[h]=parseFloat(val);setHourFilters(nf);};
   var doSort=function(col){if(sortBy===col)setSortAsc(!sortAsc);else{setSortBy(col);setSortAsc(false);}};
@@ -18357,6 +18375,7 @@ function SwingScreenerPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.hourlyswing,load))return;
       setData(allRows);
       backfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
@@ -18953,6 +18972,7 @@ function CloseHighScreenerPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.hourlyclosehigh,load))return;
       setData(allRows);
       backfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
@@ -19205,6 +19225,7 @@ function DailySwingScreenerPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.dailyclosehigh,load))return;
       setData(allRows);
       backfillMcap(allRows,p.pgKey,setData);
     }catch(e){setErr(e.message);}
@@ -19466,6 +19487,7 @@ function DirBiasPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.dirbias,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -19702,6 +19724,7 @@ function RecoveryPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.recovery,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -19955,6 +19978,7 @@ function PullbackPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.pullback,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -20207,6 +20231,7 @@ function ZScorePage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.zscore,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -20484,6 +20509,7 @@ function SqueezePage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.squeeze,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -20733,6 +20759,7 @@ function RangePositionPage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.rangepos,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -20968,6 +20995,7 @@ function ConfluencePage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.confluence,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -21239,6 +21267,7 @@ function VolRegimePage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.volregime,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
@@ -21469,6 +21498,7 @@ function HourlyRegimePage(p){
         if(batch.length<1000)break;
         page++;
       }
+      if(retryIfEmpty(allRows,SCREENER_RETRY.hourlyregime,load))return;
       setData(allRows);
     }catch(e){setErr(e.message);}
     setLoading(false);
