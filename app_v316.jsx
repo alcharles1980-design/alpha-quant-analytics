@@ -18601,6 +18601,7 @@ function DailyLowSwingPage(p){
   var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
   var s15d=useState('30'),lookback=s15d[0],setLookback=s15d[1];
   var loadGen=useRef(0); // generation counter to cancel stale backfills
+  var loadRetry=useRef(0); // retry counter for empty mid-scan loads
   var s16e=useState(false),scanning=s16e[0],setScanning=s16e[1];
   var s17e=useState(null),pipeStatus=s17e[0],setPipeStatus=s17e[1];
   var pollRef2=useRef(null);
@@ -18646,6 +18647,15 @@ function DailyLowSwingPage(p){
       }
       if(gen!==loadGen.current)return; // stale load cancelled
       setData(allRows);
+      // Mid-scan the table is briefly empty during its delete+reload. If we got
+      // 0 rows, retry a few times before settling, so the screener doesn't show
+      // "0 stocks" against a table that's still committing.
+      if(allRows.length===0&&(loadRetry.current||0)<5){
+        loadRetry.current=(loadRetry.current||0)+1;
+        setTimeout(function(){if(gen===loadGen.current)load();},2500);
+        return;
+      }
+      loadRetry.current=0;
       backfillMcap(allRows,p.pgKey,function(updated){if(gen===loadGen.current)setData(updated);});
     }catch(e){setErr(e.message);}
     setLoading(false);
