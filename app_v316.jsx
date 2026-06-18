@@ -12830,7 +12830,7 @@ function MostActivesPage(p){
   var s5=useState('volume'),sortBy=s5[0],setSortBy=s5[1];
   var s6=useState(100),topN=s6[0],setTopN=s6[1];
   var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
-  var s8=useState(''),minPrice=s8[0],setMinPrice=s8[1];
+  var s8=useState('2'),minPrice=s8[0],setMinPrice=s8[1];
   var s9=useState(''),maxPrice=s9[0],setMaxPrice=s9[1];
   var s10=useState(''),minCap=s10[0],setMinCap=s10[1];
   var s10b=useState(''),maxCap=s10b[0],setMaxCap=s10b[1];
