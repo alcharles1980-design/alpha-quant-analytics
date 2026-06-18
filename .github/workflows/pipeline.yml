@@ -4,6 +4,8 @@ on:
   schedule:
     # Screener: 8PM ET = 1AM UTC next day (Mon-Fri → Tue-Sat UTC)
     - cron: '0 1 * * 2-6'
+    # Chop screener: ~9:30PM ET = 2:30AM UTC, after the screener populates the universe
+    - cron: '30 2 * * 2-6'
     # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
     - cron: '5 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0 * * 1-5'
   workflow_dispatch:
@@ -19,6 +21,7 @@ on:
           - backfill
           - autotune
           - screener
+          - chop-screener
           - backfill-mcap
           - mfe
           - extended-volume
@@ -79,6 +82,10 @@ jobs:
               "0 1 * * 2-6")
                 echo "mode=screener" >> $GITHUB_OUTPUT
                 echo "tickers=SP500" >> $GITHUB_OUTPUT
+                ;;
+              "30 2 * * 2-6")
+                echo "mode=chop-screener" >> $GITHUB_OUTPUT
+                echo "tickers=ALL" >> $GITHUB_OUTPUT
                 ;;
               *)
                 echo "mode=hourly" >> $GITHUB_OUTPUT

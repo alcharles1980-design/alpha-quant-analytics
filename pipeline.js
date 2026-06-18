@@ -5310,7 +5310,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
+  var mode = args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -5344,6 +5344,14 @@ async function main() {
     try { await runScreener(); } catch (e) {
       console.error('SCREENER CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'chop-screener') {
+    try {
+      var chop = require('./chop_pipeline.js');
+      await chop.runChopScreener({ POLYGON_KEY, SB_URL, sbHeaders, sbUpsert, sbFetchPaginated, reportProgress });
+    } catch (e) {
+      console.error('CHOP-SCREENER CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'chop-screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'mfe') {
     try { await runMFE(); } catch (e) {
