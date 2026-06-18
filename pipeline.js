@@ -5348,7 +5348,10 @@ async function main() {
   } else if (mode === 'chop-screener') {
     try {
       var chop = require('./chop_pipeline.js');
-      await chop.runChopScreener({ POLYGON_KEY, SB_URL, sbHeaders, sbUpsert, sbFetchPaginated, reportProgress });
+      // tickers === ['ALL'] (cron) or a single 'ONON' default → full universe.
+      // An explicit list (e.g. RVI,MSTR,JNJ) restricts to a test subset.
+      var chopTickerOverride = (tickers.length === 1 && (tickers[0] === 'ALL' || tickers[0] === 'ONON' || tickers[0] === 'SP500')) ? null : tickers;
+      await chop.runChopScreener({ POLYGON_KEY, SB_URL, sbHeaders, sbUpsert, sbFetchPaginated, reportProgress, tickerOverride: chopTickerOverride });
     } catch (e) {
       console.error('CHOP-SCREENER CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'chop-screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });

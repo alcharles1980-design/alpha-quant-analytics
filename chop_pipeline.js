@@ -231,6 +231,21 @@ async function runChopScreener(deps) {
     off += 1000;
   }
   console.log('Chop universe: ' + universe.length + ' tickers (scan ' + uniScan + ')');
+
+  // Test-scan override: restrict to an explicit ticker list if provided.
+  if (deps.tickerOverride && deps.tickerOverride.length) {
+    var want = {};
+    deps.tickerOverride.forEach(function (t) { want[t.toUpperCase()] = 1; });
+    var filtered = universe.filter(function (u) { return want[u.ticker.toUpperCase()]; });
+    // Include any override tickers not in the cached universe (fetch minimal stub)
+    var have = {}; filtered.forEach(function (u) { have[u.ticker.toUpperCase()] = 1; });
+    deps.tickerOverride.forEach(function (t) {
+      if (!have[t.toUpperCase()]) filtered.push({ ticker: t.toUpperCase(), price: null, market_cap: null, ticker_type: null });
+    });
+    universe = filtered;
+    console.log('Ticker override active → ' + universe.length + ' tickers: ' + universe.map(function (u) { return u.ticker; }).join(', '));
+  }
+
   if (universe.length === 0) { await reportProgress({ mode: 'chop-screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Universe empty.' }); return; }
 
   var days = lastTradingDays(CHOP_LOOKBACK_DAYS);
