@@ -288,6 +288,7 @@ async function runChopScreener(deps) {
 
   // ---- Concurrency-limited sweep --------------------------------------------
   var results = [];
+  var keptTotal = 0;   // cumulative kept rows (results[] is emptied on each flush)
   var done = 0;
   var idx = 0;
   async function worker() {
@@ -295,10 +296,10 @@ async function runChopScreener(deps) {
       var my = idx++;
       var row = await processTicker(universe[my]);
       done++;
-      if (row) results.push(row);
+      if (row) { results.push(row); keptTotal++; }
       if (done % 25 === 0 || done === universe.length) {
         var pct = Math.round((done / universe.length) * 95);
-        await reportProgress({ mode: 'chop-screener', ticker: universe[my].ticker, status: 'running', progress_pct: pct, message: 'Scanning ' + done + '/' + universe.length + ' (kept ' + results.length + ')' });
+        await reportProgress({ mode: 'chop-screener', ticker: universe[my].ticker, status: 'running', progress_pct: pct, message: 'Scanning ' + done + '/' + universe.length + ' (kept ' + keptTotal + ')' });
       }
       // periodic flush so a long run persists progressively & frees memory
       if (results.length >= 200) {
