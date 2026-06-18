@@ -13166,10 +13166,10 @@ function MostActivesPage(p){
                 color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
           })}
         </div>
-        <button onClick={function(){setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
-          style={{padding:'6px 14px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#ffb020,#e09000)',
-            color:loading?C.txtDim:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer'}}>
-          {loading?'Loading...':'Refresh'}
+        <button onClick={function(){if(!loading)setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
+          style={{padding:'6px 14px',minWidth:78,textAlign:'center',border:'none',borderRadius:6,background:'linear-gradient(135deg,#ffb020,#e09000)',
+            color:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer',opacity:loading?0.7:1,transition:'opacity 0.2s'}}>
+          {loading?'\u21BB Refresh':'Refresh'}
         </button>
       </div>
       {/* Asset type + Auto-refresh row */}
@@ -13315,7 +13315,7 @@ function MostActivesPage(p){
       <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>No stocks match the current filters. Try adjusting price range or tier.</div>
     </div>}
 
-    {loading&&<div style={card}>
+    {loading&&(!actives||actives.length===0)&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Loading market data...</div>
     </div>}
 
