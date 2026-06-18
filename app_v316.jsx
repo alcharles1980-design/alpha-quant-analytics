@@ -17119,7 +17119,7 @@ function OscillationScreenerPage(p){
   var s8=useState(''),prog=s8[0],setProg=s8[1];
   var s12=useState(null),scanTime=s12[0],setScanTime=s12[1];
   var s13=useState(false),showColGuide=s13[0],setShowColGuide=s13[1];
-  var s14=useState('stocks'),etfFilter=s14[0],setEtfFilter=s14[1];
+  var s14=useState('all'),etfFilter=s14[0],setEtfFilter=s14[1];
   var s14b=useState(''),priceMin=s14b[0],setPriceMin=s14b[1];
   var s14c=useState(''),priceMax=s14c[0],setPriceMax=s14c[1];
   var s14d=useState(200),showCount=s14d[0],setShowCount=s14d[1];
