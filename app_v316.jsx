@@ -12845,15 +12845,34 @@ function MostActivesPage(p){
   var s18=useState(true),tblDesc=s18[0],setTblDesc=s18[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+  var inFlight=useRef(false); // guards against overlapping fetches
 
+  // Chunked market-cap/type lookup from the screener cache. Chunks the ticker
+  // list so the ticker=in.(...) URL never exceeds length limits (which would
+  // silently truncate and drop caps for later tickers). Returns {sym:{mc,tt}}.
+  var fetchScreenerMcap=async function(symbols){
+    var map={};
+    for(var c=0;c<symbols.length;c+=80){
+      var chunk=symbols.slice(c,c+80);
+      try{
+        var url=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+chunk.map(encodeURIComponent).join(',')+')&select=ticker,market_cap,ticker_type,scan_date&order=scan_date.desc,ticker.asc&limit=10000';
+        var r=await fetch(url,{headers:getSbHeaders()});
+        if(r.ok){var d=await r.json();for(var i=0;i<d.length;i++){if(!map[d[i].ticker])map[d[i].ticker]={mc:d[i].market_cap,tt:d[i].ticker_type};}}
+      }catch(e){}
+    }
+    return map;
+  };
   // Polygon fallback: fetch market cap for stocks not in screener cache
   var polygonFillMcap=async function(arr){
     if(!p.pgKey)return;
     var missing=[];
     for(var mi5=0;mi5<arr.length;mi5++){if(arr[mi5].marketCap==null&&arr[mi5].tickerType==null)missing.push(mi5);}
     if(missing.length===0)return;
-    for(var pi5=0;pi5<missing.length;pi5++){
-      var idx5=missing[pi5];var sym5=arr[idx5].symbol;
+    // Polygon has no batch reference endpoint, so fetch per-symbol — but do it in
+    // concurrency-limited parallel batches (10 at a time) instead of fully serial,
+    // to cut latency and stay within rate limits.
+    var fetchOne=async function(idx5){
+      var sym5=arr[idx5].symbol;
       try{
         var pr5=await fetch('https://api.polygon.io/v3/reference/tickers/'+encodeURIComponent(sym5)+'?apiKey='+p.pgKey);
         if(pr5.ok){
@@ -12861,6 +12880,10 @@ function MostActivesPage(p){
           if(pd5.results){arr[idx5].marketCap=pd5.results.market_cap||null;arr[idx5].tickerType=pd5.results.type||null;}
         }
       }catch(e6){}
+    };
+    for(var pb=0;pb<missing.length;pb+=10){
+      var slice5=missing.slice(pb,pb+10);
+      await Promise.all(slice5.map(fetchOne));
     }
   };
 
@@ -12872,6 +12895,8 @@ function MostActivesPage(p){
 
   var fetchData=async function(manual){
     if(!p.alpKey||!p.alpSecret){if(manual)setErr('Set Alpaca API keys in Settings');return;}
+    if(inFlight.current)return; // skip if a fetch is already running (avoid overlap on interval)
+    inFlight.current=true;
     setLoading(true);setErr(null);
     try{
       var rawActives=[];
@@ -12932,6 +12957,8 @@ function MostActivesPage(p){
           var bars=boatsMap[sym];
           if(!bars||bars.length===0)continue;
           var latest=bars[bars.length-1]; // most recent overnight session (may be in-progress)
+          var priorBar=bars.length>1?bars[bars.length-2]:null; // prior overnight session
+          var ovPrevClose=priorBar?priorBar.c:latest.o; // true prior close; fall back to this session's open
           var avgOvVol=0;for(var bi=0;bi<bars.length;bi++)avgOvVol+=bars[bi].v;avgOvVol=avgOvVol/bars.length;
           overnightActives.push({
             symbol:sym,volume:latest.v,trade_count:latest.n,
@@ -12939,21 +12966,16 @@ function MostActivesPage(p){
             boatsChange:latest.c-latest.o,boatsChangePct:latest.o?(latest.c-latest.o)/latest.o*100:0,
             avgVol:avgOvVol,avgDays:bars.length,
             relVol:avgOvVol>0?(latest.v/avgOvVol*100):0,
-            price:latest.c,prevClose:latest.o,change:latest.c-latest.o,changePct:latest.o?(latest.c-latest.o)/latest.o*100:0
+            price:latest.c,prevClose:ovPrevClose,change:latest.c-ovPrevClose,changePct:ovPrevClose?(latest.c-ovPrevClose)/ovPrevClose*100:0
           });
         }
         overnightActives.sort(function(a,b){return b.volume-a.volume;});
-        // Enrich with market cap
+        // Enrich with market cap (chunked to avoid URL-length truncation)
         try{
           var symList2=overnightActives.map(function(a2){return a2.symbol;});
           if(symList2.length>0){
-            var mcUrl2=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList2.join(',')+')&select=ticker,market_cap,ticker_type&order=scan_date.desc&limit=10000';
-            var mcR2=await fetch(mcUrl2,{headers:getSbHeaders()});
-            if(mcR2.ok){
-              var mcData2=await mcR2.json();var mcMap2={};
-              for(var mi2=0;mi2<mcData2.length;mi2++){if(!mcMap2[mcData2[mi2].ticker])mcMap2[mcData2[mi2].ticker]={mc:mcData2[mi2].market_cap,tt:mcData2[mi2].ticker_type};}
-              for(var ai4=0;ai4<overnightActives.length;ai4++){var m2=mcMap2[overnightActives[ai4].symbol];overnightActives[ai4].marketCap=m2?m2.mc:null;overnightActives[ai4].tickerType=m2?m2.tt:null;}
-            }
+            var mcMap2=await fetchScreenerMcap(symList2);
+            for(var ai4=0;ai4<overnightActives.length;ai4++){var m2=mcMap2[overnightActives[ai4].symbol];overnightActives[ai4].marketCap=m2?m2.mc:null;overnightActives[ai4].tickerType=m2?m2.tt:null;}
           }
         }catch(e5){}
         await polygonFillMcap(overnightActives);
@@ -12982,40 +13004,40 @@ function MostActivesPage(p){
             if(!rawActives[ai].volume&&snap.dailyBar){rawActives[ai].volume=snap.dailyBar.v||0;rawActives[ai].trade_count=snap.dailyBar.n||0;}
           }else{rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;}
         }
-        // Market cap
+        // Market cap (chunked to avoid URL-length truncation)
         try{
           var symList=rawActives.map(function(a2){return a2.symbol;});
-          var mcUrl=SB_URL+'/rest/v1/cached_oscillation_screener?ticker=in.('+symList.join(',')+')&select=ticker,market_cap,ticker_type&order=scan_date.desc&limit=10000';
-          var mcR=await fetch(mcUrl,{headers:getSbHeaders()});
-          if(mcR.ok){
-            var mcData=await mcR.json();var mcMap={};
-            for(var mi=0;mi<mcData.length;mi++){if(!mcMap[mcData[mi].ticker])mcMap[mcData[mi].ticker]={mc:mcData[mi].market_cap,tt:mcData[mi].ticker_type};}
-            for(var ai2=0;ai2<rawActives.length;ai2++){var m3=mcMap[rawActives[ai2].symbol];rawActives[ai2].marketCap=m3?m3.mc:null;rawActives[ai2].tickerType=m3?m3.tt:null;}
-          }
+          var mcMap=await fetchScreenerMcap(symList);
+          for(var ai2=0;ai2<rawActives.length;ai2++){var m3=mcMap[rawActives[ai2].symbol];rawActives[ai2].marketCap=m3?m3.mc:null;rawActives[ai2].tickerType=m3?m3.tt:null;}
         }catch(e3){}
         await polygonFillMcap(rawActives);
-        // 20-day avg volume (SIP)
+        // 20-day avg volume (IEX — SIP 403s for today's data on Basic plan)
         try{
-          var startDate=new Date(Date.now()-30*86400000).toISOString().split('T')[0];
+          var startDate=new Date(Date.now()-40*86400000).toISOString().split('T')[0];
           for(var vBatch=0;vBatch<rawActives.length;vBatch+=50){
             var vChunk=rawActives.slice(vBatch,vBatch+50).map(function(a3){return a3.symbol;}).join(',');
             var rv=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&limit=10000&feed=sip','X-Alpaca-Base':'data'}});
+              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&limit=10000&feed=iex','X-Alpaca-Base':'data'}});
             if(rv.ok){
               var dv2=await rv.json();
               if(dv2.bars){for(var sym2 in dv2.bars){
                 var dayBars=dv2.bars[sym2];
                 if(dayBars&&dayBars.length>0){
-                  var totalV=0;for(var vi=0;vi<dayBars.length;vi++)totalV+=dayBars[vi].v;var avgVol=totalV/dayBars.length;
+                  var lastBar=dayBars[dayBars.length-1];
+                  // Average over prior days only — exclude the most recent (current/partial)
+                  // bar so today's volume isn't both the numerator and part of the average.
+                  var histBars=dayBars.length>1?dayBars.slice(0,-1):dayBars;
+                  // Cap at trailing 20 sessions for a true 20-day average
+                  if(histBars.length>20)histBars=histBars.slice(histBars.length-20);
+                  var totalV=0;for(var vi=0;vi<histBars.length;vi++)totalV+=histBars[vi].v;var avgVol=histBars.length?totalV/histBars.length:0;
                   for(var ai3=0;ai3<rawActives.length;ai3++){
                     if(rawActives[ai3].symbol===sym2){
-                      rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=dayBars.length;
-                      // For My Lists mode: fill volume/trades from SIP (initially 0)
+                      rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=histBars.length;
+                      // For My Lists mode: fill volume/trades from the latest bar (initially 0)
                       // For RTH screener mode: screener already has accurate values, don't overwrite
                       if(session==='mylists'){
-                        var latestBarVol=dayBars[dayBars.length-1].v;
-                        if(latestBarVol>rawActives[ai3].volume)rawActives[ai3].volume=latestBarVol;
-                        if(dayBars[dayBars.length-1].n>(rawActives[ai3].trade_count||0))rawActives[ai3].trade_count=dayBars[dayBars.length-1].n;
+                        if(lastBar.v>rawActives[ai3].volume)rawActives[ai3].volume=lastBar.v;
+                        if((lastBar.n||0)>(rawActives[ai3].trade_count||0))rawActives[ai3].trade_count=lastBar.n;
                       }
                       rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;break;}
                   }
@@ -13035,10 +13057,20 @@ function MostActivesPage(p){
       var d2=await r2.json();
       setMovers(d2);
     }catch(e){setErr(e.message);}
-    setLoading(false);
+    finally{setLoading(false);inFlight.current=false;}
   };
 
   useEffect(function(){if((autoRefresh||refreshTrigger>0)&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
+
+  // Keep a ref to the latest fetchData so the interval always calls current state.
+  var fetchRef=useRef(fetchData);fetchRef.current=fetchData;
+  // Real periodic auto-refresh: re-fetch every 30s while the toggle is on and
+  // keys are present. (Previously the toggle gated fetches but never ran a timer.)
+  useEffect(function(){
+    if(!autoRefresh||!p.alpKey||!p.alpSecret)return;
+    var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},30000);
+    return function(){clearInterval(iv);};
+  },[autoRefresh,p.alpKey,p.alpSecret]);
 
   var isOvernightView=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
