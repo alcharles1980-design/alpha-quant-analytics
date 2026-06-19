@@ -17951,7 +17951,7 @@ function ViolentChopScreenerPage(p){
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
   var s12=useState('composite'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
-  var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
+  var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
@@ -18171,6 +18171,7 @@ function ViolentChopScreenerPage(p){
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'})}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:7}}>Links</th>
             {th('price','Price')}
@@ -18189,6 +18190,7 @@ function ViolentChopScreenerPage(p){
           <tbody>
             {visible.map(function(r,idx){
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
+                <td style={{padding:'3px',color:idx<10?C.gold:C.txtDim,textAlign:'right',fontWeight:idx<10?700:400}}>{idx+1}</td>
                 <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
                 <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}} title="Yahoo Finance">Y</a>
@@ -18212,7 +18214,7 @@ function ViolentChopScreenerPage(p){
         </table>
       </div>
       {showCount<rows.length&&<div style={{display:'flex',gap:6,justifyContent:'center',marginTop:10}}>
-        <button onClick={function(){setShowCount(showCount+200);}} style={{padding:'6px 16px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show More (+200)</button>
+        <button onClick={function(){setShowCount(showCount+500);}} style={{padding:'6px 16px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show More (+500)</button>
         <button onClick={function(){setShowCount(rows.length);}} style={{padding:'6px 16px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show All ({rows.length.toLocaleString()})</button>
       </div>}
       <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + swing\u03C3/avg). Green swings-of-swings ({'\u2265'}2) = erratic, RVI-style violence.</div>
