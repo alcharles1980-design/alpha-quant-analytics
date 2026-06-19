@@ -18197,6 +18197,7 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}} title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
+                  <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:11,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:8,lineHeight:1}} title="TipRanks">TR</a>
                 </td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+r.price.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
