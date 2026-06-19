@@ -18074,23 +18074,24 @@ function ViolentChopScreenerPage(p){
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Bar size used to detect swings. 10-second is the default ranking.</span>
       </div>
 
-      {/* Filters */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:8,marginTop:12}}>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Search</label>
-          <input value={filter} onChange={function(e){setFilter(e.target.value);}} placeholder="Ticker..." style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Min Price</label>
-          <input value={minPrice} onChange={function(e){setMinPrice(e.target.value);}} placeholder="No Min" type="number" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Max Price</label>
-          <input value={maxPrice} onChange={function(e){setMaxPrice(e.target.value);}} placeholder="No Max" type="number" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>MCap Min (B)</label>
-          <input value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} placeholder="No Min" type="number" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>MCap Max (B)</label>
-          <input value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} placeholder="No Max" type="number" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Avg Swing $ Min</label>
-          <input value={swingUsdMin} onChange={function(e){setSwingUsdMin(e.target.value);}} placeholder="No Min" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
-        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Avg Swing $ Max</label>
-          <input value={swingUsdMax} onChange={function(e){setSwingUsdMax(e.target.value);}} placeholder="No Max" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
+      {/* Filters — Search full-width, then each Min/Max pair side by side */}
+      <div style={{marginTop:12}}>
+        <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Search</label>
+        <input value={filter} onChange={function(e){setFilter(e.target.value);}} placeholder="Ticker..." style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
       </div>
+      {[
+        ['Price',minPrice,setMinPrice,maxPrice,setMaxPrice,null],
+        ['Market Cap (B)',mcapMin,setMcapMin,mcapMax,setMcapMax,null],
+        ['Avg Swing $',swingUsdMin,setSwingUsdMin,swingUsdMax,setSwingUsdMax,'0.01']
+      ].map(function(grp){
+        return <div key={grp[0]} style={{marginTop:8}}>
+          <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{grp[0]}</label>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:2}}>
+            <input value={grp[1]} onChange={function(e){grp[2](e.target.value);}} placeholder="Min" type="number" step={grp[5]||undefined} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+            <input value={grp[3]} onChange={function(e){grp[4](e.target.value);}} placeholder="Max" type="number" step={grp[5]||undefined} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+          </div>
+        </div>;
+      })}
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
         {[['all','All'],['stocks','Stocks'],['etfs','ETFs']].map(function(t){
