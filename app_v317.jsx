@@ -17940,6 +17940,7 @@ function ViolentChopScreenerPage(p){
   var s3=useState(''),err=s3[0],setErr=s3[1];
   var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
   var s5=useState('10s'),res=s5[0],setRes=s5[1];               // resolution: 10s default
+  var s5b=useState('all'),lookback=s5b[0],setLookback=s5b[1];   // lookback days: all (full) default
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(''),minPrice=s7[0],setMinPrice=s7[1];
   var s8=useState(''),maxPrice=s8[0],setMaxPrice=s8[1];
@@ -18026,15 +18027,40 @@ function ViolentChopScreenerPage(p){
     }catch(e){setErr(e.message);setScanning(false);}
   };
 
-  // --- pull the selected resolution's avg block for each row ---
-  var getAvg=function(row){var cp=row.chop_profile;if(!cp)return null;var rr=cp[res];return rr&&rr.avg?rr.avg:null;};
-
   var num=function(x){var n=parseFloat(x);return isNaN(n)?0:n;};
+  // --- pull the selected resolution's avg block, honoring the lookback ---
+  // lookback==='all' uses the stored full-window avg (fast, matches the scan's
+  // composite). A numeric lookback (2/3/4) re-averages the most recent N days
+  // from the stored per-day array, replicating the pipeline's math exactly:
+  //   per-stat = mean over the last N days
+  //   composite = mean over those days of pathPct*(1+sdPct/avgPct)
+  var getAvg=function(row){
+    var cp=row.chop_profile;if(!cp)return null;
+    var rr=cp[res];if(!rr||!rr.avg)return null;
+    if(lookback==='all')return {avg:rr.avg,composite:num(row.composite_score)};
+    var n=parseInt(lookback,10);
+    var days=rr.days;
+    if(!Array.isArray(days)||days.length===0)return {avg:rr.avg,composite:num(row.composite_score)};
+    // days are stored oldest..newest; take the last N
+    var sel=days.slice(Math.max(0,days.length-n));
+    if(sel.length===0)return {avg:rr.avg,composite:num(row.composite_score)};
+    var keys=['cnt','avgPct','avgUsd','sdPct','sdUsd','maxPct','maxUsd','pathPct','pathUsd'];
+    var out={};
+    keys.forEach(function(k){var s=0;for(var i=0;i<sel.length;i++)s+=num(sel[i][k]);out[k]=s/sel.length;});
+    // coefVar = mean per-day sdPct/avgPct (skip days with avgPct<=0)
+    var cv=0,cvN=0;for(var i=0;i<sel.length;i++){var ap=num(sel[i].avgPct);if(ap>0){cv+=num(sel[i].sdPct)/ap;cvN++;}}
+    out.coefVar=cvN?cv/cvN:0;
+    out.nDays=sel.length;
+    // composite per-day then averaged
+    var cs=0,csN=0;for(var i=0;i<sel.length;i++){var ap2=num(sel[i].avgPct);if(ap2>0){cs+=num(sel[i].pathPct)*(1+num(sel[i].sdPct)/ap2);csN++;}}
+    return {avg:out,composite:csN?cs/csN:0};
+  };
+
   var rows=(data||[]).map(function(row){
-    var a=getAvg(row);
+    var g=getAvg(row);var a=g?g.avg:null;
     return {
       ticker:row.ticker,price:num(row.price),market_cap:row.market_cap,ticker_type:row.ticker_type,
-      composite:num(row.composite_score),lookback:row.lookback_days,
+      composite:g?num(g.composite):0,lookback:a&&a.nDays?a.nDays:row.lookback_days,
       cnt:a?num(a.cnt):0,
       avgPct:a?num(a.avgPct):0,avgUsd:a?num(a.avgUsd):0,
       sdPct:a?num(a.sdPct):0,sdUsd:a?num(a.sdUsd):0,
@@ -18091,6 +18117,16 @@ function ViolentChopScreenerPage(p){
             border:'1px solid '+(res===rk?C.accent:C.border),background:res===rk?C.accent+'14':'transparent',color:res===rk?C.accent:C.txtDim}}>{resLabel[rk]}</button>;
         })}
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Bar size used to detect swings. 10-second is the default ranking.</span>
+      </div>
+
+      {/* Lookback toggle — recomputed client-side from stored per-day data */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:10,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Lookback:</span>
+        {[['2','2 days'],['3','3 days'],['4','4 days'],['all','Full (5d)']].map(function(lb){
+          return <button key={lb[0]} onClick={function(){setLookback(lb[0]);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',
+            border:'1px solid '+(lookback===lb[0]?C.gold:C.border),background:lookback===lb[0]?C.gold+'14':'transparent',color:lookback===lb[0]?C.gold:C.txtDim}}>{lb[1]}</button>;
+        })}
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Averages the most recent N trading days. Recomputes instantly — no re-scan.</span>
       </div>
 
       {/* Filters — Search full-width, then each Min/Max pair side by side */}
