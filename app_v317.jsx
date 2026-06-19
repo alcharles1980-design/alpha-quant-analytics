@@ -18050,7 +18050,7 @@ function ViolentChopScreenerPage(p){
   // color scale for composite (chop intensity)
   var chopColor=function(v){if(v>=500)return C.accent;if(v>=300)return C.gold;if(v>=150)return C.blue;if(v>0)return C.txt;return C.txtDim;};
   var visible=rows.slice(0,showCount);
-  var resLabel={'10s':'10-second','30s':'30-second','60s':'1-minute'};
+  var resLabel={'10s':'10-second','30s':'30-second','60s':'1-minute','120s':'2-minute','180s':'3-minute'};
 
   return <div>
     <Cd glow>
@@ -18067,7 +18067,7 @@ function ViolentChopScreenerPage(p){
       {/* Resolution toggle */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:12,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Resolution:</span>
-        {['10s','30s','60s'].map(function(rk){
+        {['10s','30s','60s','120s','180s'].map(function(rk){
           return <button key={rk} onClick={function(){setRes(rk);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',
             border:'1px solid '+(res===rk?C.accent:C.border),background:res===rk?C.accent+'14':'transparent',color:res===rk?C.accent:C.txtDim}}>{resLabel[rk]}</button>;
         })}

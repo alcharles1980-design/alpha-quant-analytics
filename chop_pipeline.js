@@ -28,6 +28,8 @@ const CHOP_RES = [
   [10, 'second', '10s'],
   [30, 'second', '30s'],
   [1,  'minute', '60s'],
+  [2,  'minute', '120s'],
+  [3,  'minute', '180s'],
 ];
 const CHOP_LOOKBACK_DAYS = 5;     // max trading days to sample
 const CHOP_CONCURRENCY = 8;       // parallel tickers; retries handle transient failures
