@@ -17944,7 +17944,7 @@ function ViolentChopScreenerPage(p){
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(''),minPrice=s7[0],setMinPrice=s7[1];
   var s8=useState(''),maxPrice=s8[0],setMaxPrice=s8[1];
-  var s9=useState('1'),mcapMin=s9[0],setMcapMin=s9[1];
+  var s9=useState('50'),mcapMin=s9[0],setMcapMin=s9[1];
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
   var s10b=useState('0.03'),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
   var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
@@ -17988,7 +17988,7 @@ function ViolentChopScreenerPage(p){
       var all=[];var off=0;
       while(true){
         var h=getSbHeaders();h['Range']=off+'-'+(off+999);
-        var r=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,chop_profile,composite_score,lookback_days&order=composite_score.desc.nullslast,ticker.asc',{headers:h});
+        var r=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,chop_profile,composite_score,lookback_days&order=composite_score.desc.nullslast,ticker.asc',{headers:h});
         if(!r.ok)break;
         var batch=await r.json();
         if(!Array.isArray(batch)||batch.length===0)break;
@@ -18059,7 +18059,7 @@ function ViolentChopScreenerPage(p){
   var rows=(data||[]).map(function(row){
     var g=getAvg(row);var a=g?g.avg:null;
     return {
-      ticker:row.ticker,price:num(row.price),market_cap:row.market_cap,ticker_type:row.ticker_type,
+      ticker:row.ticker,price:num(row.price),market_cap:row.market_cap,ticker_type:row.ticker_type,adv:num(row.adv_dollars),
       composite:g?num(g.composite):0,lookback:a&&a.nDays?a.nDays:row.lookback_days,
       cnt:a?num(a.cnt):0,
       avgPct:a?num(a.avgPct):0,avgUsd:a?num(a.avgUsd):0,
@@ -18075,8 +18075,8 @@ function ViolentChopScreenerPage(p){
     if(filter&&r.ticker.indexOf(filter.toUpperCase())<0)return false;
     if(minPrice&&r.price<parseFloat(minPrice))return false;
     if(maxPrice&&r.price>parseFloat(maxPrice))return false;
-    if(mcapMin&&(r.market_cap||0)<parseFloat(mcapMin)*1e9)return false;
-    if(mcapMax&&(r.market_cap||0)>parseFloat(mcapMax)*1e9)return false;
+    if(mcapMin&&(r.adv||0)<parseFloat(mcapMin)*1e6)return false;
+    if(mcapMax&&(r.adv||0)>parseFloat(mcapMax)*1e6)return false;
     if(swingUsdMin&&r.avgUsd<parseFloat(swingUsdMin))return false;
     if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
     if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
@@ -18137,7 +18137,7 @@ function ViolentChopScreenerPage(p){
       </div>
       {[
         ['Price',minPrice,setMinPrice,maxPrice,setMaxPrice,null],
-        ['Market Cap (B)',mcapMin,setMcapMin,mcapMax,setMcapMax,null],
+        ['$ Vol / day (M)',mcapMin,setMcapMin,mcapMax,setMcapMax,null],
         ['Avg Swing $',swingUsdMin,setSwingUsdMin,swingUsdMax,setSwingUsdMax,'0.01']
       ].map(function(grp){
         return <div key={grp[0]} style={{marginTop:8}}>
@@ -18176,7 +18176,7 @@ function ViolentChopScreenerPage(p){
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'})}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:7}}>Links</th>
             {th('price','Price')}
-            {th('market_cap','MCap')}
+            {th('adv','$ Vol/d')}
             {th('composite','Chop Score')}
             {th('cnt','Swings/Day')}
             {th('avgPct','Avg Swing %')}
@@ -18200,7 +18200,7 @@ function ViolentChopScreenerPage(p){
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:11,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:8,lineHeight:1}} title="TipRanks">TR</a>
                 </td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+r.price.toFixed(2)}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
                 <td style={{padding:'3px',color:chopColor(r.composite),textAlign:'right',fontWeight:700}}>{r.composite.toFixed(1)}</td>
                 <td style={{padding:'3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'right'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.avgPct.toFixed(3)+'%'}</td>

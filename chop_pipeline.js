@@ -284,7 +284,7 @@ async function runChopScreener(deps) {
   var off = 0;
   while (true) {
     var uh = sbHeaders(); uh['Range'] = off + '-' + (off + 999);
-    var ur = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + uniScan + '&select=ticker,price,market_cap,ticker_type&order=ticker.asc', { headers: uh });
+    var ur = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + uniScan + '&select=ticker,price,market_cap,ticker_type,adv_dollars&order=ticker.asc', { headers: uh });
     if (!ur.ok) break;
     var batch = await ur.json();
     if (!Array.isArray(batch) || batch.length === 0) break;
@@ -355,6 +355,7 @@ async function runChopScreener(deps) {
         price: u.price,
         market_cap: u.market_cap,
         ticker_type: u.ticker_type,
+        adv_dollars: u.adv_dollars,
         chop_profile: profile,
         composite_score: bestComposite,
         lookback_days: nDaysSampled,
