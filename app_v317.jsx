@@ -17945,6 +17945,8 @@ function ViolentChopScreenerPage(p){
   var s8=useState(''),maxPrice=s8[0],setMaxPrice=s8[1];
   var s9=useState(''),mcapMin=s9[0],setMcapMin=s9[1];
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
+  var s10b=useState(''),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
+  var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
   var s12=useState('composite'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
@@ -18032,6 +18034,8 @@ function ViolentChopScreenerPage(p){
     if(maxPrice&&r.price>parseFloat(maxPrice))return false;
     if(mcapMin&&(r.market_cap||0)<parseFloat(mcapMin)*1e9)return false;
     if(mcapMax&&(r.market_cap||0)>parseFloat(mcapMax)*1e9)return false;
+    if(swingUsdMin&&r.avgUsd<parseFloat(swingUsdMin))return false;
+    if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
     if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
     if(typeFilter==='etfs'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
     return true;
@@ -18082,6 +18086,10 @@ function ViolentChopScreenerPage(p){
           <input value={mcapMin} onChange={function(e){setMcapMin(e.target.value);}} placeholder="No Min" type="number" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
         <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>MCap Max (B)</label>
           <input value={mcapMax} onChange={function(e){setMcapMax(e.target.value);}} placeholder="No Max" type="number" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
+        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Avg Swing $ Min</label>
+          <input value={swingUsdMin} onChange={function(e){setSwingUsdMin(e.target.value);}} placeholder="No Min" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
+        <div><label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Avg Swing $ Max</label>
+          <input value={swingUsdMax} onChange={function(e){setSwingUsdMax(e.target.value);}} placeholder="No Max" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/></div>
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
