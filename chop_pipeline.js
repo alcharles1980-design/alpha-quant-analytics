@@ -73,7 +73,12 @@ function computeChop(bars, maxDays) {
     var swP = [], swU = [];
     for (var j = 0; j + 1 < dayBars.length; j++) {
       var lo = dayBars[j].l, hi = dayBars[j + 1].h;
-      var u = hi - lo;            // swing in $  (low of this bar -> high of next)
+      // swing = captured up-move from this bar's low to the next bar's high.
+      // Floor at 0: if the next bar's high is below this low (a hard gap-down
+      // between sparse bars), there was no up-swing to capture in that window —
+      // it contributes zero, never negative "violence". Only matters for very
+      // illiquid names with large inter-bar gaps; liquid names are unaffected.
+      var u = Math.max(0, hi - lo);  // swing in $
       var p = lo > 0 ? (u / lo) * 100 : 0; // swing in %
       swU.push(u); swP.push(p);
     }
@@ -243,15 +248,19 @@ async function runChopScreener(deps) {
 
   var scanDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
-  // Concurrent-run guard (mirror runScreener)
+  // Concurrent-run guard. A live scan updates updated_at every ~25 tickers, so
+  // we treat a run as "alive" only if it reported progress recently. This way a
+  // crashed/stalled run (whose updated_at goes stale) stops blocking new scans
+  // within minutes instead of holding the lock for a full hour off started_at.
   try {
-    var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.running&select=started_at&order=started_at.desc&limit=5', { headers: sbHeaders() });
+    var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.running&select=started_at,updated_at&order=updated_at.desc&limit=5', { headers: sbHeaders() });
     if (lockR.ok) {
       var lockRows = await lockR.json();
       for (var li = 0; li < lockRows.length; li++) {
-        var ageSec = (Date.now() - new Date(lockRows[li].started_at).getTime()) / 1000;
-        if (ageSec < 3600) {
-          var msg = 'Another chop scan is running (started ' + Math.round(ageSec) + 's ago). Aborting.';
+        var stamp = lockRows[li].updated_at || lockRows[li].started_at;
+        var staleSec = (Date.now() - new Date(stamp).getTime()) / 1000;
+        if (staleSec < 300) { // progressed within the last 5 min → genuinely running
+          var msg = 'Another chop scan is active (last progress ' + Math.round(staleSec) + 's ago). Aborting.';
           await reportProgress({ mode: 'chop-screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: msg });
           return;
         }
