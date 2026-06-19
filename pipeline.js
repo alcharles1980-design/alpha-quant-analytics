@@ -52,13 +52,36 @@ async function sbFetchPaginated(path) {
 }
 
 async function sbUpsert(table, rows) {
-  // Delete then insert (PATCH unreliable)
+  // Upsert in batches; surface failures (previously swallowed) and retry once.
   var h = sbHeaders();
-  h['Prefer'] = 'return=minimal';
-  for (var i = 0; i < rows.length; i += 500) {
-    var batch = rows.slice(i, i + 500);
-    await fetch(SB_URL + '/rest/v1/' + table, { method: 'POST', headers: Object.assign({}, h, { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify(batch) });
+  var failed = 0;
+  for (var i = 0; i < rows.length; i += 200) {
+    var batch = rows.slice(i, i + 200);
+    var body = JSON.stringify(batch);
+    var ok = false;
+    for (var attempt = 0; attempt < 2 && !ok; attempt++) {
+      try {
+        var r = await fetch(SB_URL + '/rest/v1/' + table, {
+          method: 'POST',
+          headers: Object.assign({}, h, { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+          body: body,
+        });
+        if (r.ok) { ok = true; }
+        else {
+          var txt = '';
+          try { txt = await r.text(); } catch (e) { }
+          console.log('  sbUpsert ' + table + ' batch ' + i + ' HTTP ' + r.status + ' ' + txt.slice(0, 200));
+          await new Promise(function (res) { setTimeout(res, 1000); });
+        }
+      } catch (e) {
+        console.log('  sbUpsert ' + table + ' batch ' + i + ' threw: ' + e.message);
+        await new Promise(function (res) { setTimeout(res, 1000); });
+      }
+    }
+    if (!ok) failed += batch.length;
   }
+  if (failed) console.log('  sbUpsert ' + table + ': ' + failed + ' rows FAILED to write');
+  return failed;
 }
 
 // ── Core Engine (must match app exactly) ─────────────────
