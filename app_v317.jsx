@@ -18028,6 +18028,8 @@ function ViolentChopScreenerPage(p){
   };
 
   var num=function(x){var n=parseFloat(x);return isNaN(n)?0:n;};
+  var typeLabel=function(t){return {CS:'Stock',ADRC:'ADR',ETF:'ETF',ETV:'ETF',ETS:'ETF',ETN:'ETN',FUND:'Fund',PFD:'Pref',SP:'Struct'}[t]||t||'--';};
+  var typeColor=function(t){if(t==='CS')return C.txt;if(t==='ADRC')return C.blue;if(t==='ETF'||t==='ETV'||t==='ETS')return C.accent;if(t==='ETN')return C.gold;return C.txtDim;};
   // --- pull the selected resolution's avg block, honoring the lookback ---
   // lookback==='all' uses the stored full-window avg (fast, matches the scan's
   // composite). A numeric lookback (2/3/4) re-averages the most recent N days
@@ -18175,6 +18177,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'})}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:7}}>Links</th>
+            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'left'})}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             {th('price','Price')}
             {th('adv','$ Vol/d')}
             {th('market_cap','MCap')}
@@ -18200,6 +18203,7 @@ function ViolentChopScreenerPage(p){
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:11,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:8,lineHeight:1}} title="TipRanks">TR</a>
                 </td>
+                <td style={{padding:'3px',color:typeColor(r.ticker_type),textAlign:'left',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+r.price.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
