@@ -18199,7 +18199,7 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+r.price.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'3px',color:chopColor(r.composite),textAlign:'right',fontWeight:700}}>{r.composite.toFixed(1)}</td>
-                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{Math.round(r.cnt).toLocaleString()}</td>
+                <td style={{padding:'3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'right'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.avgPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+r.avgUsd.toFixed(3)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.sdPct.toFixed(3)+'%'}</td>
@@ -18218,6 +18218,7 @@ function ViolentChopScreenerPage(p){
         <button onClick={function(){setShowCount(rows.length);}} style={{padding:'6px 16px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show All ({rows.length.toLocaleString()})</button>
       </div>}
       <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + swing\u03C3/avg). Green swings-of-swings ({'\u2265'}2) = erratic, RVI-style violence.</div>
+      {(res==='120s'||res==='180s')&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.gold,lineHeight:1.5}}>{'\u26A0 At '+resLabel[res]+' bars, every liquid name fills almost every bar, so Swings/Day saturates near '+(res==='120s'?'~194':'~129')+' and stops distinguishing names. At these resolutions the chop signal lives in swing SIZE \u2014 rank by Avg Swing, Path, or Swings-of-Swings, not swing count. Use 10-second for frequency-based ranking.'}</div>}
     </Cd>}
 
     {data&&data.length===0&&!loading&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No chop data yet. Tap "Run New Scan" to populate the screener (takes a few minutes).</div></Cd>}
