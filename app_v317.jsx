@@ -17953,10 +17953,26 @@ function ViolentChopScreenerPage(p){
   var s14=useState(200),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
+  var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
   var pollRef=useRef(null);
   var loadGen=useRef(0);
 
   var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
+
+  // Format the last successful scan completion into a "x ago" + local time string.
+  var fmtLastRun=function(ts){
+    if(!ts)return null;
+    var t=new Date(ts);if(isNaN(t.getTime()))return null;
+    var diffMs=Date.now()-t.getTime();
+    var mins=Math.floor(diffMs/60000), hrs=Math.floor(mins/60), days=Math.floor(hrs/24);
+    var rel;
+    if(mins<1)rel='just now';
+    else if(mins<60)rel=mins+'m ago';
+    else if(hrs<24)rel=hrs+'h ago';
+    else rel=days+'d ago';
+    var local=t.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return {rel:rel,local:local,stale:hrs>=24};
+  };
 
   var loadData=async function(){
     var gen=++loadGen.current;
@@ -17987,7 +18003,7 @@ function ViolentChopScreenerPage(p){
     if(gen===loadGen.current)setLoading(false);
   };
 
-  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();},[]);
+  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();},[]);
 
   var pollProgress=function(){
     if(pollRef.current)return;
@@ -17995,7 +18011,7 @@ function ViolentChopScreenerPage(p){
       try{
         var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});
         var rows=r.ok?await r.json():[];
-        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;setScanning(false);if(rows[0].status==='complete')loadData();}}
+        if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='complete'||rows[0].status==='error'){clearInterval(pollRef.current);pollRef.current=null;setScanning(false);if(rows[0].status==='complete'){setLastRunTs(rows[0].updated_at);loadData();}}}
       }catch(e){}
     },3000);
   };
@@ -18061,7 +18077,10 @@ function ViolentChopScreenerPage(p){
             Ranks tickers by within-day chop intensity over a 5-day lookback. A swing = each bar's low to the next bar's high, counted unconditionally (downtrends still have up-swings between bars). The composite weights total path by how uneven the swings are ("swings of the swings") — so erratic, RVI-style violence ranks above steady metronomic chop.
           </div>
         </div>
-        {scanDate&&<div style={{background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,whiteSpace:'nowrap'}}>{'SCAN: '+scanDate+' | '+(data?data.length:0)+' tickers'}</div>}
+        {scanDate&&<div style={{textAlign:'right'}}>
+          <div style={{background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,whiteSpace:'nowrap'}}>{'SCAN: '+scanDate+' | '+(data?data.length:0)+' tickers'}</div>
+          {(function(){var lr=fmtLastRun(lastRunTs);return lr?<div style={{fontSize:7,fontFamily:F,color:lr.stale?C.warn:C.txtDim,marginTop:3,whiteSpace:'nowrap'}}>{'Last run: '+lr.rel+' \u00B7 '+lr.local}</div>:null;})()}
+        </div>}
       </div>
 
       {/* Resolution toggle */}
