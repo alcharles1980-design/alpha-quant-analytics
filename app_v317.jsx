@@ -18067,6 +18067,7 @@ function ViolentChopScreenerPage(p){
       maxPct:a?num(a.maxPct):0,maxUsd:a?num(a.maxUsd):0,
       pathPct:a?num(a.pathPct):0,pathUsd:a?num(a.pathUsd):0,
       coefVar:a?num(a.coefVar):0,
+      dailyPot:a?num(a.cnt)*num(a.avgUsd):0,
       hasRes:!!a
     };
   }).filter(function(r){
@@ -18180,6 +18181,7 @@ function ViolentChopScreenerPage(p){
             {th('cnt','Swings/Day')}
             {th('avgPct','Avg Swing %')}
             {th('avgUsd','Avg Swing $')}
+            {th('dailyPot','Daily $ Pot.')}
             {th('sdPct','Swing \u03C3 %')}
             {th('coefVar','Swings-of-Swings')}
             {th('maxPct','Max %')}
@@ -18202,6 +18204,7 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'right'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.avgPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+r.avgUsd.toFixed(3)}</td>
+                <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.sdPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'right',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.maxPct.toFixed(2)+'%'}</td>
