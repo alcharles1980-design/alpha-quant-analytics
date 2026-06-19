@@ -148,7 +148,7 @@ async function fetchPage(urlStr, attempts) {
   var lastErr = null;
   for (var a = 0; a < attempts; a++) {
     var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 45000);
+    var timer = setTimeout(function () { ctrl.abort(); }, 20000);
     try {
       var r = await fetch(urlStr, { signal: ctrl.signal });
       clearTimeout(timer);
@@ -186,8 +186,11 @@ async function fetchAggs(POLYGON_KEY, ticker, mult, unit, start, end) {
   var next = url;
   var guard = 0;
   var pagesOk = 0;
-  while (next && guard < 12) { // very active names can need several pages
-    var res = await fetchPage(next, 3);
+  // Cap pages at 3. Page 1 already returns ~8k bars (~3 RTH days) for liquid
+  // names — plenty, since the metric averages per-day. Paginating 12 deep on
+  // ultra-liquid names was taking minutes/ticker and stalling the whole scan.
+  while (next && guard < 3) {
+    var res = await fetchPage(next, 2);
     if (!res.ok) {
       // first page failed entirely → no data; otherwise salvage what we have
       return { bars: all, status: guard === 0 ? 'failed' : 'partial' };
@@ -199,7 +202,7 @@ async function fetchAggs(POLYGON_KEY, ticker, mult, unit, start, end) {
     guard++;
   }
   // hit the page cap with more data remaining = partial (still usable)
-  var status = (next && guard >= 12) ? 'partial' : 'ok';
+  var status = (next && guard >= 3) ? 'partial' : 'ok';
   return { bars: all, status: status };
 }
 
