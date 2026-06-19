@@ -349,7 +349,7 @@ async function runChopScreener(deps) {
     if (!force && debugBuf.length < 100) return;
     var batch = debugBuf.splice(0, debugBuf.length);
     try {
-      await fetch(SB_URL + '/rest/v1/chop_scan_debug', {
+      await fetch(SB_URL + '/rest/v1/chop_debug', {
         method: 'POST',
         headers: Object.assign({}, sbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
         body: JSON.stringify(batch),
