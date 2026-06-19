@@ -55,7 +55,7 @@ function etParts(ms) {
 // Returns { days: [{date,cnt,avgPct,avgUsd,sdPct,sdUsd,maxPct,maxUsd,pathPct,pathUsd}],
 //           avg: {cnt,avgPct,avgUsd,sdPct,sdUsd,maxPct,maxUsd,pathPct,pathUsd,coefVar},
 //           composite }
-function computeChop(bars) {
+function computeChop(bars, maxDays) {
   // 1. Group RTH bars by ET trading day, preserving ascending order.
   var byDay = {}; // date -> [bar,...]
   for (var i = 0; i < bars.length; i++) {
@@ -84,6 +84,12 @@ function computeChop(bars) {
   }
 
   if (dayStats.length === 0) return null;
+  // Keep only the most recent maxDays completed sessions (dayStats is date-asc).
+  // The fetch window requests N+1 days so a dataless "today" doesn't shrink the
+  // average; here we trim back to exactly N for consistency.
+  if (typeof maxDays === 'number' && maxDays > 0 && dayStats.length > maxDays) {
+    dayStats = dayStats.slice(dayStats.length - maxDays);
+  }
 
   // 2. Average each stat across the sampled days (equal weight per day).
   var avg = avgStats(dayStats);
@@ -207,15 +213,19 @@ async function fetchAggs(POLYGON_KEY, ticker, mult, unit, start, end) {
 }
 
 // ---- date window helpers (last N trading days, ET) --------------------------
+// Requests N+1 calendar trading days ending today. When the scan runs before
+// the US session completes, "today" has no/sparse RTH bars and is naturally
+// excluded by computeChop (needs >=2 RTH bars/day) — the extra day ensures we
+// still average a full N completed sessions. Uses UTC throughout for
+// consistency with the GitHub Actions runner.
 function lastTradingDays(n) {
   var days = [];
   var d = new Date();
-  // start from yesterday (Polygon Developer is 15-min delayed; today may be partial
-  // but is fine — we still want the most recent session if it has bars). Include today.
-  while (days.length < n) {
-    var dow = d.getDay();
+  var want = n + 1; // one extra so a dataless "today" doesn't cost a session
+  while (days.length < want) {
+    var dow = d.getUTCDay();
     if (dow !== 0 && dow !== 6) days.push(d.toISOString().slice(0, 10));
-    d.setDate(d.getDate() - 1);
+    d.setUTCDate(d.getUTCDate() - 1);
   }
   days.reverse();
   return days; // oldest..newest
@@ -314,7 +324,7 @@ async function runChopScreener(deps) {
         }
         if (res[2] === '10s') { dbg.bars_10s = bars ? bars.length : 0; dbg.fetch_status = fr.status; }
         if (!bars || bars.length < 2) { profile[res[2]] = null; continue; }
-        var c = computeChop(bars);
+        var c = computeChop(bars, CHOP_LOOKBACK_DAYS);
         if (!c) { profile[res[2]] = null; continue; }
         profile[res[2]] = { avg: c.avg, days: c.days };
         if (res[2] === '10s') { bestComposite = c.composite; nDaysSampled = c.avg.nDays; }
@@ -345,9 +355,12 @@ async function runChopScreener(deps) {
     }
   }
 
-  // Diagnostic buffer + flusher (writes to chop_scan_debug for SQL inspection)
+  // Diagnostic buffer + flusher — only active when CHOP_DEBUG env is set AND the
+  // chop_debug table exists. Off by default (table dropped after debugging).
   var debugBuf = [];
+  var debugEnabled = !!process.env.CHOP_DEBUG;
   async function flushDebug(force) {
+    if (!debugEnabled) { debugBuf.length = 0; return; }
     if (debugBuf.length === 0) return;
     if (!force && debugBuf.length < 100) return;
     var batch = debugBuf.splice(0, debugBuf.length);
@@ -395,13 +408,27 @@ async function runChopScreener(deps) {
   console.log('Chop sweep done: kept=' + keptTotal + ' no-data=' + dropNoData + ' fetch-fail=' + dropFetch);
 
   // ---- Cleanup: keep only the latest 2 scan_dates ---------------------------
+  // Find DISTINCT scan_dates. A plain select is capped at 1000 rows by PostgREST,
+  // and with thousands of rows sharing one date that window can be entirely the
+  // newest date — hiding older dates and silently skipping cleanup. Page through
+  // ordered-ascending and collect distinct dates until we've seen them all.
   try {
-    var keepR = await fetch(SB_URL + '/rest/v1/cached_chop_screener?select=scan_date&order=scan_date.desc', { headers: sbHeaders() });
-    var allDates = await keepR.json();
-    var uniqueDates = [];
-    for (var z = 0; z < allDates.length; z++) { if (uniqueDates.indexOf(allDates[z].scan_date) < 0) uniqueDates.push(allDates[z].scan_date); }
-    if (uniqueDates.length > 2) {
-      var cutoff = uniqueDates[2];
+    var seenDates = [];
+    var coff = 0;
+    while (true) {
+      var ch = sbHeaders(); ch['Range'] = coff + '-' + (coff + 999);
+      var cr = await fetch(SB_URL + '/rest/v1/cached_chop_screener?select=scan_date&order=scan_date.asc', { headers: ch });
+      if (!cr.ok) break;
+      var cbatch = await cr.json();
+      if (!Array.isArray(cbatch) || cbatch.length === 0) break;
+      for (var z = 0; z < cbatch.length; z++) { if (seenDates.indexOf(cbatch[z].scan_date) < 0) seenDates.push(cbatch[z].scan_date); }
+      if (cbatch.length < 1000) break;
+      coff += 1000;
+    }
+    seenDates.sort(); // ascending; oldest first
+    if (seenDates.length > 2) {
+      // delete everything older than the 2nd-newest date
+      var cutoff = seenDates[seenDates.length - 2];
       await fetch(SB_URL + '/rest/v1/cached_chop_screener?scan_date=lt.' + cutoff, { method: 'DELETE', headers: Object.assign({}, sbHeaders(), { Prefer: 'return=minimal' }) });
     }
   } catch (e) { /* best-effort */ }
