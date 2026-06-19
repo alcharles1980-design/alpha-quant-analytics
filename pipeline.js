@@ -51,17 +51,22 @@ async function sbFetchPaginated(path) {
   return all;
 }
 
-async function sbUpsert(table, rows) {
+async function sbUpsert(table, rows, conflictCols) {
   // Upsert in batches; surface failures (previously swallowed) and retry once.
+  // conflictCols: optional comma-separated unique columns for ON CONFLICT.
+  // Required when a table has BOTH a serial PK and a separate UNIQUE constraint
+  // (e.g. cached_chop_screener: id PK + UNIQUE(ticker,scan_date)) — otherwise
+  // PostgREST can't pick the merge target and the batch fails on conflict.
   var h = sbHeaders();
   var failed = 0;
+  var onConflict = conflictCols ? ('?on_conflict=' + conflictCols) : '';
   for (var i = 0; i < rows.length; i += 200) {
     var batch = rows.slice(i, i + 200);
     var body = JSON.stringify(batch);
     var ok = false;
     for (var attempt = 0; attempt < 2 && !ok; attempt++) {
       try {
-        var r = await fetch(SB_URL + '/rest/v1/' + table, {
+        var r = await fetch(SB_URL + '/rest/v1/' + table + onConflict, {
           method: 'POST',
           headers: Object.assign({}, h, { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
           body: body,

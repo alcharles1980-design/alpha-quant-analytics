@@ -378,7 +378,7 @@ async function runChopScreener(deps) {
       // periodic flush so a long run persists progressively & frees memory
       if (results.length >= 200) {
         var flush = results.splice(0, results.length);
-        await sbUpsert('cached_chop_screener', flush);
+        await sbUpsert('cached_chop_screener', flush, 'ticker,scan_date');
       }
       await flushDebug(false);
     }
@@ -387,7 +387,7 @@ async function runChopScreener(deps) {
   for (var w = 0; w < CHOP_CONCURRENCY; w++) workers.push(worker());
   await Promise.all(workers);
 
-  if (results.length) await sbUpsert('cached_chop_screener', results);
+  if (results.length) await sbUpsert('cached_chop_screener', results, 'ticker,scan_date');
   await flushDebug(true);
   console.log('Chop sweep done: kept=' + keptTotal + ' no-data=' + dropNoData + ' fetch-fail=' + dropFetch);
 
