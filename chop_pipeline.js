@@ -291,6 +291,7 @@ async function runChopScreener(deps) {
 
   // ---- Process one ticker: 3 resolutions -> chop_profile row -----------------
   async function processTicker(u) {
+    var dbg = { ticker: u.ticker, bars_10s: 0, fetch_status: null, days_sampled: 0, err: null };
     try {
       var profile = {};
       var bestComposite = 0;
@@ -308,15 +309,22 @@ async function runChopScreener(deps) {
           bars = fr.bars;
           if (fr.status === 'failed') tenSecFailed = true;
         }
+        if (res[2] === '10s') { dbg.bars_10s = bars ? bars.length : 0; dbg.fetch_status = fr.status; }
         if (!bars || bars.length < 2) { profile[res[2]] = null; continue; }
         var c = computeChop(bars);
         if (!c) { profile[res[2]] = null; continue; }
         profile[res[2]] = { avg: c.avg, days: c.days };
         if (res[2] === '10s') { bestComposite = c.composite; nDaysSampled = c.avg.nDays; }
       }
+      dbg.days_sampled = nDaysSampled;
       // Drop ONLY when the 10s resolution genuinely has no data after a retry.
-      // Distinguish a true fetch failure from "no bars" so we can report it.
-      if (!profile['10s']) return { _drop: true, ticker: u.ticker, reason: tenSecFailed ? 'fetch_failed' : 'no_data' };
+      if (!profile['10s']) {
+        dbg.outcome = tenSecFailed ? 'drop_fetch_failed' : 'drop_no_data';
+        debugBuf.push(dbg);
+        return { _drop: true, ticker: u.ticker, reason: tenSecFailed ? 'fetch_failed' : 'no_data' };
+      }
+      dbg.outcome = 'kept';
+      debugBuf.push(dbg);
       return {
         ticker: u.ticker,
         scan_date: scanDate,
@@ -328,9 +336,25 @@ async function runChopScreener(deps) {
         lookback_days: nDaysSampled,
       };
     } catch (e) {
+      dbg.outcome = 'exception'; dbg.err = e.message; debugBuf.push(dbg);
       console.log('  ' + u.ticker + ' error: ' + e.message);
       return { _drop: true, ticker: u.ticker, reason: 'exception' };
     }
+  }
+
+  // Diagnostic buffer + flusher (writes to chop_scan_debug for SQL inspection)
+  var debugBuf = [];
+  async function flushDebug(force) {
+    if (debugBuf.length === 0) return;
+    if (!force && debugBuf.length < 100) return;
+    var batch = debugBuf.splice(0, debugBuf.length);
+    try {
+      await fetch(SB_URL + '/rest/v1/chop_scan_debug', {
+        method: 'POST',
+        headers: Object.assign({}, sbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+        body: JSON.stringify(batch),
+      });
+    } catch (e) { console.log('debug flush failed: ' + e.message); }
   }
 
   // ---- Concurrency-limited sweep --------------------------------------------
@@ -356,6 +380,7 @@ async function runChopScreener(deps) {
         var flush = results.splice(0, results.length);
         await sbUpsert('cached_chop_screener', flush);
       }
+      await flushDebug(false);
     }
   }
   var workers = [];
@@ -363,6 +388,7 @@ async function runChopScreener(deps) {
   await Promise.all(workers);
 
   if (results.length) await sbUpsert('cached_chop_screener', results);
+  await flushDebug(true);
   console.log('Chop sweep done: kept=' + keptTotal + ' no-data=' + dropNoData + ' fetch-fail=' + dropFetch);
 
   // ---- Cleanup: keep only the latest 2 scan_dates ---------------------------
