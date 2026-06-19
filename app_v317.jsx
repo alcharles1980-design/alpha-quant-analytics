@@ -18177,6 +18177,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:7}}>Links</th>
             {th('price','Price')}
             {th('adv','$ Vol/d')}
+            {th('market_cap','MCap')}
             {th('composite','Chop Score')}
             {th('cnt','Swings/Day')}
             {th('avgPct','Avg Swing %')}
@@ -18201,6 +18202,7 @@ function ViolentChopScreenerPage(p){
                 </td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+r.price.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
+                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'3px',color:chopColor(r.composite),textAlign:'right',fontWeight:700}}>{r.composite.toFixed(1)}</td>
                 <td style={{padding:'3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'right'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.avgPct.toFixed(3)+'%'}</td>
