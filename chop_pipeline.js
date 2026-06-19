@@ -30,7 +30,7 @@ const CHOP_RES = [
   [1,  'minute', '60s'],
 ];
 const CHOP_LOOKBACK_DAYS = 5;     // max trading days to sample
-const CHOP_CONCURRENCY = 12;      // parallel tickers (no Polygon per-min throttle on Developer plan)
+const CHOP_CONCURRENCY = 8;       // parallel tickers; retries handle transient failures
 const RTH_START_MIN = 9 * 60 + 30; // 09:30 ET in minutes from midnight
 const RTH_END_MIN = 16 * 60;       // 16:00 ET
 
@@ -143,7 +143,41 @@ function avgStats(days) {
 
 function round(x, dp) { var m = Math.pow(10, dp); return Math.round((x + Number.EPSILON) * m) / m; }
 
+// ---- fetch one page with retry/backoff --------------------------------------
+async function fetchPage(urlStr, attempts) {
+  var lastErr = null;
+  for (var a = 0; a < attempts; a++) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 45000);
+    try {
+      var r = await fetch(urlStr, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r.status === 429) { // rate limited — wait and retry
+        await new Promise(function (res) { setTimeout(res, 1500 * (a + 1)); });
+        lastErr = new Error('HTTP 429'); continue;
+      }
+      if (!r.ok) { lastErr = new Error('HTTP ' + r.status); 
+        // 4xx other than 429 won't fix on retry; bail early
+        if (r.status >= 400 && r.status < 500) break;
+        await new Promise(function (res) { setTimeout(res, 800 * (a + 1)); });
+        continue;
+      }
+      var d = await r.json();
+      return { ok: true, data: d };
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e; // timeout/abort/network — backoff and retry
+      await new Promise(function (res) { setTimeout(res, 800 * (a + 1)); });
+    }
+  }
+  return { ok: false, error: lastErr ? lastErr.message : 'unknown' };
+}
+
 // ---- fetch one resolution's 5-day bar range for a ticker --------------------
+// Returns { bars: [...], status: 'ok'|'partial'|'failed' }.
+//   ok      = every requested page fetched cleanly
+//   partial = at least one page succeeded but a later page failed (data salvaged)
+//   failed  = the very first page failed (no usable data)
 async function fetchAggs(POLYGON_KEY, ticker, mult, unit, start, end) {
   var url = 'https://api.polygon.io/v2/aggs/ticker/' + encodeURIComponent(ticker) +
     '/range/' + mult + '/' + unit + '/' + start + '/' + end +
@@ -151,18 +185,22 @@ async function fetchAggs(POLYGON_KEY, ticker, mult, unit, start, end) {
   var all = [];
   var next = url;
   var guard = 0;
-  while (next && guard < 6) { // paginate defensively though 5d rarely exceeds 50k
-    var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 30000);
-    var r;
-    try { r = await fetch(next, { signal: ctrl.signal }); } finally { clearTimeout(timer); }
-    if (!r.ok) { if (guard === 0) throw new Error('HTTP ' + r.status); break; }
-    var d = await r.json();
+  var pagesOk = 0;
+  while (next && guard < 12) { // very active names can need several pages
+    var res = await fetchPage(next, 3);
+    if (!res.ok) {
+      // first page failed entirely → no data; otherwise salvage what we have
+      return { bars: all, status: guard === 0 ? 'failed' : 'partial' };
+    }
+    var d = res.data;
     if (Array.isArray(d.results)) all = all.concat(d.results);
+    pagesOk++;
     next = d.next_url ? d.next_url + '&apiKey=' + POLYGON_KEY : null;
     guard++;
   }
-  return all;
+  // hit the page cap with more data remaining = partial (still usable)
+  var status = (next && guard >= 12) ? 'partial' : 'ok';
+  return { bars: all, status: status };
 }
 
 // ---- date window helpers (last N trading days, ET) --------------------------
@@ -257,19 +295,28 @@ async function runChopScreener(deps) {
       var profile = {};
       var bestComposite = 0;
       var nDaysSampled = 0;
+      var tenSecFailed = false;
       for (var ri = 0; ri < CHOP_RES.length; ri++) {
         var res = CHOP_RES[ri];
-        var bars;
-        try { bars = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], startDate, endDate); }
-        catch (e) { bars = []; }
+        var fr = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], startDate, endDate);
+        var bars = fr.bars;
+        // Retry once for the ranking-critical 10s resolution if the fetch failed
+        // outright (transient timeout/429 under concurrency) — don't silently drop.
+        if (res[2] === '10s' && fr.status === 'failed') {
+          await new Promise(function (r2) { setTimeout(r2, 1200); });
+          fr = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], startDate, endDate);
+          bars = fr.bars;
+          if (fr.status === 'failed') tenSecFailed = true;
+        }
         if (!bars || bars.length < 2) { profile[res[2]] = null; continue; }
         var c = computeChop(bars);
         if (!c) { profile[res[2]] = null; continue; }
         profile[res[2]] = { avg: c.avg, days: c.days };
         if (res[2] === '10s') { bestComposite = c.composite; nDaysSampled = c.avg.nDays; }
       }
-      // require the 10s resolution to have produced a result (it drives ranking)
-      if (!profile['10s']) return null;
+      // Drop ONLY when the 10s resolution genuinely has no data after a retry.
+      // Distinguish a true fetch failure from "no bars" so we can report it.
+      if (!profile['10s']) return { _drop: true, ticker: u.ticker, reason: tenSecFailed ? 'fetch_failed' : 'no_data' };
       return {
         ticker: u.ticker,
         scan_date: scanDate,
@@ -281,14 +328,16 @@ async function runChopScreener(deps) {
         lookback_days: nDaysSampled,
       };
     } catch (e) {
-      console.log('  ' + u.ticker + ' failed: ' + e.message);
-      return null;
+      console.log('  ' + u.ticker + ' error: ' + e.message);
+      return { _drop: true, ticker: u.ticker, reason: 'exception' };
     }
   }
 
   // ---- Concurrency-limited sweep --------------------------------------------
   var results = [];
   var keptTotal = 0;   // cumulative kept rows (results[] is emptied on each flush)
+  var dropFetch = 0;   // dropped due to fetch failure (should be ~0 now)
+  var dropNoData = 0;  // dropped due to genuinely no bars (correct exclusions)
   var done = 0;
   var idx = 0;
   async function worker() {
@@ -296,10 +345,11 @@ async function runChopScreener(deps) {
       var my = idx++;
       var row = await processTicker(universe[my]);
       done++;
-      if (row) { results.push(row); keptTotal++; }
+      if (row && !row._drop) { results.push(row); keptTotal++; }
+      else if (row && row._drop) { if (row.reason === 'no_data') dropNoData++; else dropFetch++; }
       if (done % 25 === 0 || done === universe.length) {
         var pct = Math.round((done / universe.length) * 95);
-        await reportProgress({ mode: 'chop-screener', ticker: universe[my].ticker, status: 'running', progress_pct: pct, message: 'Scanning ' + done + '/' + universe.length + ' (kept ' + keptTotal + ')' });
+        await reportProgress({ mode: 'chop-screener', ticker: universe[my].ticker, status: 'running', progress_pct: pct, message: 'Scanning ' + done + '/' + universe.length + ' (kept ' + keptTotal + ', no-data ' + dropNoData + ', fetch-fail ' + dropFetch + ')' });
       }
       // periodic flush so a long run persists progressively & frees memory
       if (results.length >= 200) {
@@ -313,6 +363,7 @@ async function runChopScreener(deps) {
   await Promise.all(workers);
 
   if (results.length) await sbUpsert('cached_chop_screener', results);
+  console.log('Chop sweep done: kept=' + keptTotal + ' no-data=' + dropNoData + ' fetch-fail=' + dropFetch);
 
   // ---- Cleanup: keep only the latest 2 scan_dates ---------------------------
   try {
