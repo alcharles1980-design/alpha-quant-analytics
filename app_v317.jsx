@@ -18543,7 +18543,7 @@ function ViolentChopScreenerPage(p){
           </div>
           <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
             <span style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,minWidth:48}}>Date range (period shown):</span>
-            {[['1D','1D'],['5D','5D'],['1M','1M'],['3M','3M'],['12M','1Y'],['36M','3Y'],['60M','5Y']].map(function(rg){
+            {[['1D','1D'],['5D','5D'],['1M','1M'],['3M','3M'],['12M','1Y'],['60M','5Y']].map(function(rg){
               return <button key={rg[0]} onClick={function(){setChartRange(rg[0]);}} style={{padding:'3px 8px',border:'1px solid '+(chartRange===rg[0]?C.blue:C.border),borderRadius:4,background:chartRange===rg[0]?C.blue+'22':'transparent',color:chartRange===rg[0]?C.blue:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{rg[1]}</button>;
             })}
           </div>
