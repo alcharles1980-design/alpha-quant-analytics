@@ -18053,6 +18053,9 @@ function ViolentChopScreenerPage(p){
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s15b=useState(false),showColInfo=s15b[0],setShowColInfo=s15b[1];
+  var sCh=useState(null),chartTk=sCh[0],setChartTk=sCh[1];          // null = closed; else ticker
+  var sChI=useState('5'),chartInt=sChI[0],setChartInt=sChI[1];      // chart modal interval (default 5m)
+  var sChR=useState('5D'),chartRange=sChR[0],setChartRange=sChR[1]; // chart modal range (default 5D)
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
@@ -18161,6 +18164,49 @@ function ViolentChopScreenerPage(p){
       setDaysLoading(false);
     })();
   },[lookback,scanDate]);
+
+  // ---- Chart popup: embed the TradingView widget for the selected ticker ----
+  // Self-contained (independent of the Trading View page) so that page can be
+  // removed later without breaking this. Opens at the defined params (5m / 5D).
+  useEffect(function(){
+    if(!chartTk)return;
+    var cid='tv_chop_chart_modal';
+    var make=function(){
+      var el=document.getElementById(cid);
+      if(!window.TradingView||!el)return;
+      el.innerHTML='';
+      try{
+        new window.TradingView.widget({
+          autosize:true,
+          symbol:chartTk,
+          interval:chartInt,
+          range:chartRange,
+          timezone:'America/New_York',
+          theme:'dark',
+          style:'1',
+          locale:'en',
+          toolbar_bg:'#0a0e17',
+          enable_publishing:false,
+          allow_symbol_change:true,
+          hide_side_toolbar:false,
+          withdateranges:true,
+          container_id:cid
+        });
+      }catch(e){}
+    };
+    if(window.TradingView){make();}
+    else{
+      var sid='tv-tvjs-script';
+      var existing=document.getElementById(sid);
+      if(existing){existing.addEventListener('load',make);}
+      else{
+        var sc=document.createElement('script');
+        sc.id=sid;sc.src='https://s3.tradingview.com/tv.js';sc.async=true;
+        sc.onload=make;
+        document.body.appendChild(sc);
+      }
+    }
+  },[chartTk,chartInt,chartRange]);
 
 
   var pollProgress=function(){
@@ -18402,6 +18448,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -18443,6 +18490,9 @@ function ViolentChopScreenerPage(p){
                     </td>
                   ];
                 })()}
+                <td style={{padding:'3px 5px',textAlign:'center'}}>
+                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'2px 8px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+chartInt+'m / '+chartRange+')'}>{'\u25F0'}</button>
+                </td>
               </tr>;
             })}
           </tbody>
@@ -18477,6 +18527,25 @@ function ViolentChopScreenerPage(p){
         </div>
       </div>
     </CollapseStage>
+
+    {chartTk&&<div onClick={function(){setChartTk(null);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
+      <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:1000,height:'88vh',background:C.bgCard||C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexWrap:'wrap',gap:8}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{chartTk} <span style={{fontSize:7,color:C.txtDim,fontWeight:600}}>TradingView</span></div>
+          <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+            {[['1','1m'],['5','5m'],['15','15m'],['60','1h'],['D','1D']].map(function(iv){
+              return <button key={iv[0]} onClick={function(){setChartInt(iv[0]);}} style={{padding:'3px 7px',border:'1px solid '+(chartInt===iv[0]?C.gold:C.border),borderRadius:4,background:chartInt===iv[0]?C.gold+'22':'transparent',color:chartInt===iv[0]?C.gold:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{iv[1]}</button>;
+            })}
+            <span style={{width:6}}/>
+            {[['1D','1D'],['5D','5D'],['1M','1M'],['3M','3M']].map(function(rg){
+              return <button key={rg[0]} onClick={function(){setChartRange(rg[0]);}} style={{padding:'3px 7px',border:'1px solid '+(chartRange===rg[0]?C.blue:C.border),borderRadius:4,background:chartRange===rg[0]?C.blue+'22':'transparent',color:chartRange===rg[0]?C.blue:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{rg[1]}</button>;
+            })}
+            <button onClick={function(){setChartTk(null);}} style={{padding:'3px 10px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:11,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          </div>
+        </div>
+        <div id="tv_chop_chart_modal" style={{flex:1,width:'100%'}}/>
+      </div>
+    </div>}
 
     {showColInfo&&<div onClick={function(){setShowColInfo(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',zIndex:9999,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'24px 12px',overflowY:'auto'}}>
       <div onClick={function(e){e.stopPropagation();}} style={{maxWidth:560,width:'100%',background:C.card||C.bg,border:'1px solid '+C.border,borderRadius:10,padding:18,fontFamily:F}}>
