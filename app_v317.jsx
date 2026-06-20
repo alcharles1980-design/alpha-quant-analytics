@@ -17988,17 +17988,41 @@ function ViolentChopScreenerPage(p){
       var sd=dRows[0].scan_date;setScanDate(sd);
       // Lightweight load via RPC: returns only the per-resolution avg blocks
       // (drops the heavy per-day arrays), ~80% smaller payload (12MB->2.3MB).
-      // Per-day data is fetched on demand only when a 2/3/4-day lookback is used.
-      var all=[];var off=0;
-      while(true){
-        var h=getSbHeaders();h['Range']=off+'-'+(off+999);h['Content-Type']='application/json';
-        var r=await fetch(SB_URL+'/rest/v1/rpc/chop_screener_light',{method:'POST',headers:h,body:JSON.stringify({p_scan_date:sd})});
-        if(!r.ok)break;
-        var batch=await r.json();
-        if(!Array.isArray(batch)||batch.length===0)break;
-        all=all.concat(batch);
-        if(batch.length<1000)break;
-        off+=1000;
+      // PostgREST caps RPC results at 1000, so paginate via p_offset/p_limit.
+      var all=[];
+      try{
+        var off=0;var guard=0;
+        while(guard<10){
+          var h=getSbHeaders();h['Content-Type']='application/json';
+          var r=await fetch(SB_URL+'/rest/v1/rpc/chop_screener_light',{method:'POST',headers:h,body:JSON.stringify({p_scan_date:sd,p_offset:off,p_limit:1000})});
+          if(!r.ok)break;
+          var batch=await r.json();
+          if(!Array.isArray(batch)||batch.length===0)break;
+          all=all.concat(batch);
+          if(batch.length<1000)break;
+          off+=1000;guard++;
+        }
+      }catch(e){}
+      // Fallback: if the RPC returned nothing, load directly from the table
+      // (avg-only via a lighter select) so the page never hangs on the RPC.
+      if(all.length===0){
+        var off=0;
+        while(true){
+          var h2=getSbHeaders();h2['Range']=off+'-'+(off+999);
+          var r2=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,composite_score,lookback_days,chop_profile&order=composite_score.desc.nullslast,ticker.asc',{headers:h2});
+          if(!r2.ok)break;
+          var b2=await r2.json();
+          if(!Array.isArray(b2)||b2.length===0)break;
+          // normalize to the light shape (avg_profile)
+          b2.forEach(function(row){
+            var cp=row.chop_profile||{};var ap={};
+            ['10s','30s','60s','120s','180s'].forEach(function(rk){if(cp[rk]&&cp[rk].avg)ap[rk]=cp[rk].avg;});
+            row.avg_profile=ap;delete row.chop_profile;
+          });
+          all=all.concat(b2);
+          if(b2.length<1000)break;
+          off+=1000;
+        }
       }
       if(gen!==loadGen.current)return;
       // mid-scan retry guard (table is delete+reloaded each scan)
