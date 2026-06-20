@@ -18453,45 +18453,45 @@ function ViolentChopScreenerPage(p){
           <tbody>
             {visible.map(function(r,idx){
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
-                <td style={{padding:'3px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400}}>{idx+1}</td>
-                <td style={{padding:'3px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'}}>{r.ticker}</td>
+                <td style={{padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400}}>{idx+1}</td>
+                <td style={{padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'}}>{r.ticker}</td>
                 <td style={{padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'}}>
-                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
-                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:12,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
-                  <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
+                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
+                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
+                  <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
                 </td>
-                <td style={{padding:'3px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
-                <td style={{padding:'3px 5px',color:C.txt,textAlign:'center'}}>{'$'+r.price.toFixed(2)}</td>
-                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
-                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
-                <td style={{padding:'3px 5px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
-                <td style={{padding:'3px 5px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
-                <td style={{padding:'3px 5px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
-                <td style={{padding:'3px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
-                <td style={{padding:'3px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for a grid.">{'$'+r.dailyPot.toFixed(0)}</td>
-                <td style={{padding:'3px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily dollar path as % of current share price. Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
+                <td style={{padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
+                <td style={{padding:'4px 5px',color:C.txt,textAlign:'center'}}>{'$'+r.price.toFixed(2)}</td>
+                <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
+                <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
+                <td style={{padding:'4px 5px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
+                <td style={{padding:'4px 5px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
+                <td style={{padding:'4px 5px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'4px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
+                <td style={{padding:'4px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for a grid.">{'$'+r.dailyPot.toFixed(0)}</td>
+                <td style={{padding:'4px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily dollar path as % of current share price. Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
                     var up=rt.target_mean&&r.price?((rt.target_mean/r.price-1)*100):null;
                     return [
-                      <td key="c" style={{padding:'3px 5px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
-                      <td key="l" style={{padding:'3px 5px',textAlign:'center',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
-                      <td key="m" style={{padding:'3px 5px',textAlign:'center',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
-                      <td key="h" style={{padding:'3px 5px',textAlign:'center',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
-                      <td key="n" style={{padding:'3px 5px',textAlign:'center',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
+                      <td key="c" style={{padding:'4px 5px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
+                      <td key="l" style={{padding:'4px 5px',textAlign:'center',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
+                      <td key="m" style={{padding:'4px 5px',textAlign:'center',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
+                      <td key="h" style={{padding:'4px 5px',textAlign:'center',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
+                      <td key="n" style={{padding:'4px 5px',textAlign:'center',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
                     ];
                   }
                   return [
-                    <td key="c" colSpan={5} style={{padding:'3px 5px',textAlign:'center'}}>
+                    <td key="c" colSpan={5} style={{padding:'4px 5px',textAlign:'center'}}>
                       {fetchingRating[r.ticker]
                         ? <span style={{fontSize:7,color:C.gold,fontFamily:F}}>{'\u25CF fetching...'}</span>
                         : <button onClick={function(){fetchRatingFor(r.ticker);}} style={{padding:'2px 8px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:7,fontFamily:F,fontWeight:600,cursor:'pointer'}}>Fetch ratings</button>}
                     </td>
                   ];
                 })()}
-                <td style={{padding:'3px 5px',textAlign:'center'}}>
-                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'2px 8px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+chartInt+'m / '+chartRange+')'}>{'\u25F0'}</button>
+                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+chartInt+'m / '+chartRange+')'}>{'\u25F0'}</button>
                 </td>
               </tr>;
             })}
