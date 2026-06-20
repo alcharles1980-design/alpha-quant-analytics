@@ -5377,7 +5377,7 @@ async function main() {
     try {
       var yr = require('./yahoo_ratings.js');
       var yrTickers = (tickers.length === 1 && (tickers[0] === 'ALL' || tickers[0] === 'ONON' || tickers[0] === 'SP500')) ? null : tickers;
-      var yrLimit = parseInt((args.find(function (a) { return a.indexOf('--limit=') === 0; }) || '--limit=1000').split('=')[1], 10) || 1000;
+      var yrLimit = parseInt((args.find(function (a) { return a.indexOf('--limit=') === 0; }) || '--limit=3000').split('=')[1], 10) || 3000;
       await yr.runYahooRatings({ SB_URL, sbHeaders, sbUpsert, reportProgress }, { tickers: yrTickers, limit: yrLimit });
     } catch (e) {
       console.error('YAHOO-RATINGS CRASHED:', e.message, e.stack);

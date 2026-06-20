@@ -17,7 +17,7 @@
 // ============================================================================
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const YR_DEFAULT_LIMIT = 1000;     // nightly: top N by chop score
+const YR_DEFAULT_LIMIT = 3000;     // safety ceiling; covers the full ratable set (~1,700 stocks+ADRs)
 const YR_BASE_DELAY = 350;         // ms, base spacing between calls
 const YR_JITTER = 450;             // ms, random extra (250-800ms total-ish)
 const YR_MAX_BACKOFF = 60000;      // cap a single backoff at 60s
@@ -115,7 +115,10 @@ async function runYahooRatings(deps, opts) {
   if (explicitTickers) {
     tickers = explicitTickers.map(function (t) { return t.toUpperCase(); });
   } else {
-    // top N by chop composite_score from the latest chop scan
+    // Full RATABLE universe: every stock (CS) + ADR (ADRC) from the latest chop
+    // scan, ordered by chop score. ETFs/ETNs/funds/preferreds are skipped —
+    // they have no analyst coverage, so fetching them only wastes calls and
+    // adds block risk. `limit` remains a safety ceiling.
     var sdR = await fetch(SB_URL + '/rest/v1/cached_chop_screener?select=scan_date&order=scan_date.desc&limit=1', { headers: sbHeaders() });
     var sdRows = await sdR.json();
     if (!sdRows.length) { await reportProgress({ mode: 'yahoo-ratings', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'No chop scan found.' }); return; }
@@ -123,7 +126,7 @@ async function runYahooRatings(deps, opts) {
     var off = 0;
     while (tickers.length < limit) {
       var h = sbHeaders(); h['Range'] = off + '-' + (off + 999);
-      var tr = await fetch(SB_URL + '/rest/v1/cached_chop_screener?scan_date=eq.' + sd + '&select=ticker&order=composite_score.desc.nullslast,ticker.asc', { headers: h });
+      var tr = await fetch(SB_URL + '/rest/v1/cached_chop_screener?scan_date=eq.' + sd + '&ticker_type=in.(CS,ADRC)&select=ticker&order=composite_score.desc.nullslast,ticker.asc', { headers: h });
       if (!tr.ok) break;
       var batch = await tr.json();
       if (!Array.isArray(batch) || batch.length === 0) break;
