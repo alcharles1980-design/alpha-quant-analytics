@@ -18024,7 +18024,7 @@ function ViolentChopScreenerPage(p){
           // normalize to the light shape (avg_profile)
           b2.forEach(function(row){
             var cp=row.chop_profile||{};var ap={};
-            ['10s','30s','60s','120s','180s'].forEach(function(rk){if(cp[rk]&&cp[rk].avg)ap[rk]=cp[rk].avg;});
+            ['10s','30s','60s','120s','180s','1h','4h','1d'].forEach(function(rk){if(cp[rk]&&cp[rk].avg)ap[rk]=cp[rk].avg;});
             row.avg_profile=ap;delete row.chop_profile;
           });
           all=all.concat(b2);
@@ -18058,7 +18058,7 @@ function ViolentChopScreenerPage(p){
           if(!Array.isArray(batch)||batch.length===0)break;
           batch.forEach(function(row){
             var cp=row.chop_profile;if(!cp)return;
-            var perRes={};['10s','30s','60s','120s','180s'].forEach(function(rk){if(cp[rk]&&cp[rk].days)perRes[rk]=cp[rk].days;});
+            var perRes={};['10s','30s','60s','120s','180s','1h','4h','1d'].forEach(function(rk){if(cp[rk]&&cp[rk].days)perRes[rk]=cp[rk].days;});
             map[row.ticker]=perRes;
           });
           if(batch.length<1000)break;
@@ -18248,7 +18248,8 @@ function ViolentChopScreenerPage(p){
   // color scale for composite (chop intensity)
   var chopColor=function(v){if(v>=500)return C.accent;if(v>=300)return C.gold;if(v>=150)return C.blue;if(v>0)return C.txt;return C.txtDim;};
   var visible=rows.slice(0,showCount);
-  var resLabel={'10s':'10-second','30s':'30-second','60s':'1-minute','120s':'2-minute','180s':'3-minute'};
+  var resLabel={'10s':'10-second','30s':'30-second','60s':'1-minute','120s':'2-minute','180s':'3-minute','1h':'1-hour','4h':'4-hour','1d':'1-day'};
+  var resAcross={'4h':1,'1d':1};  // higher timeframes: across-window metric, lookback toggle N/A
 
   return <div>
     <Cd glow>
@@ -18268,11 +18269,11 @@ function ViolentChopScreenerPage(p){
       {/* Resolution toggle */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:12,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Resolution:</span>
-        {['10s','30s','60s','120s','180s'].map(function(rk){
+        {['10s','30s','60s','120s','180s','1h','4h','1d'].map(function(rk){
           return <button key={rk} onClick={function(){setRes(rk);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',
             border:'1px solid '+(res===rk?C.accent:C.border),background:res===rk?C.accent+'14':'transparent',color:res===rk?C.accent:C.txtDim}}>{resLabel[rk]}</button>;
         })}
-        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Bar size used to detect swings. 10-second is the default ranking.</span>
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Bar size used to detect swings. 10-second is the default ranking. 4-hour & 1-day use a multi-day "across-window" metric (see note below).</span>
       </div>
 
       {/* Lookback toggle — recomputed client-side from stored per-day data */}
@@ -18409,6 +18410,7 @@ function ViolentChopScreenerPage(p){
       </div>}
       <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + spread/avg) — rewards big and uneven movement, ranking RVI-style violence above steady choppers.</div>
       {(res==='120s'||res==='180s')&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.gold,lineHeight:1.5}}>{'\u26A0 At '+resLabel[res]+' bars, every liquid name fills almost every bar, so Swings/Day saturates near '+(res==='120s'?'~194':'~129')+' and stops distinguishing names. At these resolutions the chop signal lives in swing SIZE \u2014 rank by Avg Swing, Path, or Swings-of-Swings, not swing count. Use 10-second for frequency-based ranking.'}</div>}
+      {resAcross[res]&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.gold,lineHeight:1.5}}>{'\u26A0 '+resLabel[res]+' is a multi-day "across-window" metric, not a within-day one. There are too few '+resLabel[res]+' bars per session to count swings inside a day, so swings are measured across a continuous '+(res==='1d'?'~20':'~10')+'-trading-day window (no RTH filter, no per-day reset), then normalized per day. The Lookback toggle does NOT apply here. Swings/Day, Avg Swing, and Chop Score are on a per-day basis and are comparable BETWEEN names at this resolution, but NOT comparable to the intraday resolutions \u2014 rank within '+resLabel[res]+' only. (4-hour bars include extended-hours sessions.)'}</div>}
     </Cd>}
 
     {data&&data.length===0&&!loading&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No chop data yet. Tap "Run New Scan" to populate the screener (takes a few minutes).</div></Cd>}

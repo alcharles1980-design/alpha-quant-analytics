@@ -25,11 +25,19 @@
 
 // Resolutions: [multiplier, unit, json-key]
 const CHOP_RES = [
-  [10, 'second', '10s'],
-  [30, 'second', '30s'],
-  [1,  'minute', '60s'],
-  [2,  'minute', '120s'],
-  [3,  'minute', '180s'],
+  // [mult, unit, key, mode, lookbackDays]
+  //   mode 'within' = swings between consecutive RTH bars inside each trading day
+  //   mode 'across' = swings across the continuous series over the window (no RTH
+  //                   filter, no per-day reset), normalized per trading day so the
+  //                   columns stay dimensionally consistent with the within-day set.
+  [10, 'second', '10s',  'within', 5],
+  [30, 'second', '30s',  'within', 5],
+  [1,  'minute', '60s',  'within', 5],
+  [2,  'minute', '120s', 'within', 5],
+  [3,  'minute', '180s', 'within', 5],
+  [1,  'hour',   '1h',   'within', 5],
+  [4,  'hour',   '4h',   'across', 10],
+  [1,  'day',    '1d',   'across', 20],
 ];
 const CHOP_LOOKBACK_DAYS = 5;     // max trading days to sample
 const CHOP_CONCURRENCY = 8;       // parallel tickers; retries handle transient failures
@@ -110,6 +118,45 @@ function computeChop(bars, maxDays) {
   var composite = compN ? compSum / compN : 0;
 
   return { days: dayStats, avg: avg, composite: round(composite, 2) };
+}
+
+// ---- across-window swing chop (for higher timeframes: 4h, 1D) ----------------
+// At 4h/1D there are too few RTH bars per day for within-day swing counting, so
+// instead measure swings across the continuous series of bars over the window
+// (no RTH filter, no per-day reset). Count and path are normalized PER TRADING
+// DAY so the resulting avg block is dimensionally consistent with the within-day
+// resolutions (Swings/Day, Daily $ Pot, Chop Score all read on a per-day basis).
+// Returns the same { days, avg, composite } shape, with an empty days array
+// (the lookback toggle does not apply to these fixed-window resolutions).
+function computeChopAcross(bars) {
+  var b = bars.slice().sort(function (x, y) { return x.t - y.t; });
+  if (b.length < 2) return null;
+  // distinct trading days covered (for per-day normalization)
+  var dset = {};
+  for (var i = 0; i < b.length; i++) dset[etParts(b[i].t).date] = 1;
+  var nDays = Object.keys(dset).length || 1;
+  var swP = [], swU = [];
+  for (var j = 0; j + 1 < b.length; j++) {
+    var lo = b[j].l, hi = b[j + 1].h;
+    var u = Math.max(0, hi - lo);            // swing in $ (floored at 0)
+    var p = lo > 0 ? (u / lo) * 100 : 0;     // swing in %
+    swU.push(u); swP.push(p);
+  }
+  if (swP.length === 0) return null;
+  var st = summarize(swP, swU);
+  // per-swing stats stay as-is (intensive); count & path normalized per day.
+  var avg = {
+    cnt: round(st.cnt / nDays, 2),
+    avgPct: st.avgPct, avgUsd: st.avgUsd,
+    sdPct: st.sdPct, sdUsd: st.sdUsd,
+    maxPct: st.maxPct, maxUsd: st.maxUsd,
+    pathPct: round(st.pathPct / nDays, 2),
+    pathUsd: round(st.pathUsd / nDays, 2),
+    coefVar: st.avgPct > 0 ? round(st.sdPct / st.avgPct, 3) : 0,
+    nDays: nDays,
+  };
+  var composite = avg.avgPct > 0 ? avg.pathPct * (1 + avg.sdPct / avg.avgPct) : avg.pathPct;
+  return { days: [], avg: avg, composite: round(composite, 2) };
 }
 
 // ---- summary stats for one day's swing list ---------------------------------
@@ -310,8 +357,8 @@ async function runChopScreener(deps) {
 
   if (universe.length === 0) { await reportProgress({ mode: 'chop-screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Universe empty.' }); return; }
 
-  var days = lastTradingDays(CHOP_LOOKBACK_DAYS);
-  var startDate = days[0], endDate = days[days.length - 1];
+  // Date windows are now computed per-resolution inside processTicker (each
+  // resolution has its own lookback: intraday 5d, 4h 10d, 1D 20d).
 
   // ---- Process one ticker: 3 resolutions -> chop_profile row -----------------
   async function processTicker(u) {
@@ -323,19 +370,25 @@ async function runChopScreener(deps) {
       var tenSecFailed = false;
       for (var ri = 0; ri < CHOP_RES.length; ri++) {
         var res = CHOP_RES[ri];
-        var fr = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], startDate, endDate);
+        var resMode = res[3] || 'within';
+        var resLookback = res[4] || CHOP_LOOKBACK_DAYS;
+        // Each resolution fetches its own window (1D needs ~20d, 4h ~10d, the
+        // intraday set 5d). The window is sized by the resolution's lookback.
+        var rDays = lastTradingDays(resLookback);
+        var rStart = rDays[0], rEnd = rDays[rDays.length - 1];
+        var fr = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], rStart, rEnd);
         var bars = fr.bars;
         // Retry once for the ranking-critical 10s resolution if the fetch failed
         // outright (transient timeout/429 under concurrency) — don't silently drop.
         if (res[2] === '10s' && fr.status === 'failed') {
           await new Promise(function (r2) { setTimeout(r2, 1200); });
-          fr = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], startDate, endDate);
+          fr = await fetchAggs(POLYGON_KEY, u.ticker, res[0], res[1], rStart, rEnd);
           bars = fr.bars;
           if (fr.status === 'failed') tenSecFailed = true;
         }
         if (res[2] === '10s') { dbg.bars_10s = bars ? bars.length : 0; dbg.fetch_status = fr.status; }
         if (!bars || bars.length < 2) { profile[res[2]] = null; continue; }
-        var c = computeChop(bars, CHOP_LOOKBACK_DAYS);
+        var c = (resMode === 'across') ? computeChopAcross(bars) : computeChop(bars, resLookback);
         if (!c) { profile[res[2]] = null; continue; }
         profile[res[2]] = { avg: c.avg, days: c.days };
         if (res[2] === '10s') { bestComposite = c.composite; nDaysSampled = c.avg.nDays; }
