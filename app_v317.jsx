@@ -18171,8 +18171,8 @@ function ViolentChopScreenerPage(p){
       maxPct:a?num(a.maxPct):0,maxUsd:a?num(a.maxUsd):0,
       pathPct:a?num(a.pathPct):0,pathUsd:a?num(a.pathUsd):0,
       coefVar:a?num(a.coefVar):0,
-      dailyPot:a?num(a.cnt)*num(a.avgUsd):0,
-      capEff:(a&&num(row.price)>0)?(num(a.cnt)*num(a.avgUsd))/num(row.price)*100:0,
+      dailyPot:a?num(a.pathUsd):0,
+      capEff:(a&&num(row.price)>0)?num(a.pathUsd)/num(row.price)*100:0,
       hasRes:!!a
     };
   }).filter(function(r){
@@ -18326,8 +18326,8 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px 5px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
                 <td style={{padding:'3px 5px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
-                <td style={{padding:'3px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
-                <td style={{padding:'3px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily path as % of share price (= Count × Avg Swing %). Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
+                <td style={{padding:'3px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for a grid.">{'$'+r.dailyPot.toFixed(0)}</td>
+                <td style={{padding:'3px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily dollar path as % of current share price. Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
@@ -18400,8 +18400,8 @@ function ViolentChopScreenerPage(p){
           ['Swings/Day','Frequency','Number of up-swings per day at the selected resolution. More swings = more grid fills. Saturates at coarse bars (2m/3m) where every name fills every bar.'],
           ['Avg Swing %','Typical size (%)','Average swing magnitude in percent. Scale-independent, so comparable across price levels.'],
           ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your grid — is each swing big enough to clear your take-profit?'],
-          ['Daily $ Pot.','Profit potential','Count \u00D7 Avg Swing $ = total dollar distance the price travels per day. The raw harvestable opportunity — how many dollars of movement a grid can capture.'],
-          ['Cap Eff.','Capital efficiency','Daily $ Pot \u00F7 Price (= Count \u00D7 Avg Swing %). Capital-FAIR ranking: harvestable movement per dollar of capital required. Raw Daily $ Pot favors expensive stocks (bigger $ swings need more capital); this normalizes it so a $20 and a $400 stock rank equally if they offer the same % of movement. A relative score, not a literal daily return.'],
+          ['Daily $ Pot.','Profit potential','Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. The raw harvestable opportunity: how many dollars of movement a grid can capture.'],
+          ['Cap Eff.','Capital efficiency','Daily $ Pot \u00F7 current Price = total daily dollar path as a % of share price. Capital-FAIR ranking: harvestable movement per dollar of capital required. Raw Daily $ Pot favors expensive stocks (bigger $ swings need more capital); this normalizes it so a $20 and a $400 stock rank equally if they offer the same % of movement. A relative score, not a literal daily return.'],
           ['Consensus','Analyst rating','Yahoo analyst consensus (Strong Buy..Strong Sell), color-coded; hover for the mean 1-5 score. Pulled nightly for stocks; tap "Fetch ratings" for others.'],
           ['PT Low / Mean / High','Price targets','Analyst price targets — lowest, average, highest. Hover the mean for implied upside vs current price.'],
           ['Analysts','Coverage','Number of analyst opinions behind the consensus and targets. More = more reliable signal.']
