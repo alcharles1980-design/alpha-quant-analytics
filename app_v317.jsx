@@ -17959,6 +17959,8 @@ function ViolentChopScreenerPage(p){
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
+  var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
+  var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
   var pollRef=useRef(null);
   var loadGen=useRef(0);
 
@@ -18034,7 +18036,7 @@ function ViolentChopScreenerPage(p){
     if(gen===loadGen.current)setLoading(false);
   };
 
-  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();},[]);
+  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();(async function(){try{var map={};var off=0;while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/yahoo_ratings?select=ticker,reco_mean,reco_key,target_mean,target_high,target_low,current_price,num_analysts,fetched_at',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(x){map[x.ticker]=x;});if(batch.length<1000)break;off+=1000;}setRatings(map);}catch(e){}})();},[]);
 
   // Lazy-load per-day arrays only when a 2/3/4-day lookback is first selected.
   // Keeps the initial load light (avg-only); this heavier fetch is on demand.
@@ -18089,6 +18091,37 @@ function ViolentChopScreenerPage(p){
   var num=function(x){var n=parseFloat(x);return isNaN(n)?0:n;};
   var typeLabel=function(t){return {CS:'Stock',ADRC:'ADR',ETF:'ETF',ETV:'ETF',ETS:'ETF',ETN:'ETN',FUND:'Fund',PFD:'Pref',SP:'Struct'}[t]||t||'--';};
   var typeColor=function(t){if(t==='CS')return C.txt;if(t==='ADRC')return C.blue;if(t==='ETF'||t==='ETV'||t==='ETS')return C.accent;if(t==='ETN')return C.gold;return C.txtDim;};
+
+  // Analyst consensus label + color from Yahoo reco_key / reco_mean.
+  var recoLabel=function(k){return {strong_buy:'Strong Buy',buy:'Buy',hold:'Hold',sell:'Sell',strong_sell:'Strong Sell',underperform:'Underperf',outperform:'Outperf'}[k]||(k||'');};
+  var recoColor=function(k){if(k==='strong_buy')return C.accent;if(k==='buy'||k==='outperform')return C.green||C.accent;if(k==='hold')return C.gold;if(k==='sell'||k==='strong_sell'||k==='underperform')return C.red||'#ef4444';return C.txtDim;};
+
+  // On-demand Yahoo ratings fetch for a single ticker (for names outside the
+  // nightly top-1000). Dispatches the pipeline, then polls yahoo_ratings.
+  var fetchRatingFor=function(tk){
+    if(fetchingRating[tk])return;
+    setFetchingRating(function(p){var n=Object.assign({},p);n[tk]=true;return n;});
+    (async function(){
+      try{
+        var pat=(p&&p.ghToken)||'';
+        // trigger the pipeline workflow for this single ticker
+        if(pat){
+          await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'yahoo-ratings',tickers:tk}})});
+        }
+        // poll the table for up to ~60s for the row to appear
+        var tries=0;
+        var poll=setInterval(async function(){
+          tries++;
+          try{
+            var r=await fetch(SB_URL+'/rest/v1/yahoo_ratings?ticker=eq.'+encodeURIComponent(tk)+'&select=ticker,reco_mean,reco_key,target_mean,target_high,target_low,current_price,num_analysts,fetched_at',{headers:getSbHeaders()});
+            var rows=r.ok?await r.json():[];
+            if(rows.length){setRatings(function(p){var n=Object.assign({},p);n[tk]=rows[0];return n;});clearInterval(poll);setFetchingRating(function(p){var n=Object.assign({},p);delete n[tk];return n;});return;}
+          }catch(e){}
+          if(tries>=20){clearInterval(poll);setFetchingRating(function(p){var n=Object.assign({},p);delete n[tk];return n;});}
+        },3000);
+      }catch(e){setFetchingRating(function(p){var n=Object.assign({},p);delete n[tk];return n;});}
+    })();
+  };
   // --- pull the selected resolution's avg block, honoring the lookback ---
   // lookback==='all' uses the stored full-window avg (fast, matches the scan's
   // composite). A numeric lookback (2/3/4) re-averages the most recent N days
@@ -18258,6 +18291,11 @@ function ViolentChopScreenerPage(p){
             {th('coefVar','Swings-of-Swings')}
             {th('maxPct','Max %')}
             {th('maxUsd','Max $')}
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7}}>Consensus</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT Low</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT Mean</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT High</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>Analysts</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -18282,6 +18320,26 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'right',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.maxPct.toFixed(2)+'%'}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+r.maxUsd.toFixed(2)}</td>
+                {(function(){
+                  var rt=ratings[r.ticker];
+                  if(rt){
+                    var up=rt.target_mean&&r.price?((rt.target_mean/r.price-1)*100):null;
+                    return [
+                      <td key="c" style={{padding:'3px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
+                      <td key="l" style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
+                      <td key="m" style={{padding:'3px',textAlign:'right',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
+                      <td key="h" style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
+                      <td key="n" style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
+                    ];
+                  }
+                  return [
+                    <td key="c" colSpan={5} style={{padding:'3px',textAlign:'center'}}>
+                      {fetchingRating[r.ticker]
+                        ? <span style={{fontSize:7,color:C.gold,fontFamily:F}}>{'\u25CF fetching...'}</span>
+                        : <button onClick={function(){fetchRatingFor(r.ticker);}} style={{padding:'2px 8px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:7,fontFamily:F,fontWeight:600,cursor:'pointer'}}>Fetch ratings</button>}
+                    </td>
+                  ];
+                })()}
               </tr>;
             })}
           </tbody>
