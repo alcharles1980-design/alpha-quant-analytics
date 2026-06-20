@@ -2094,7 +2094,21 @@ async function runScreener() {
         var mcTimer = setTimeout(function() { mcCtrl.abort(); }, 15000);
         var tkR = await fetch('https://api.polygon.io/v3/reference/tickers/' + missingMcap[mi2].ticker + '?apiKey=' + POLYGON_KEY, { signal: mcCtrl.signal });
         clearTimeout(mcTimer);
-        if (tkR.ok) { var tkD = await tkR.json(); if (tkD.results && tkD.results.market_cap) { missingMcap[mi2].market_cap = tkD.results.market_cap; mcUpdated++; } if (tkD.results && tkD.results.type && !missingMcap[mi2].ticker_type) missingMcap[mi2].ticker_type = tkD.results.type; }
+        if (tkR.ok) {
+          var tkD = await tkR.json();
+          var rr = tkD && tkD.results;
+          if (rr && rr.market_cap) {
+            missingMcap[mi2].market_cap = rr.market_cap; mcUpdated++;
+          } else if (rr) {
+            // Fallback: Polygon leaves market_cap null for some multi-share-class
+            // stocks (e.g. Class A listings) where it lacks total weighted shares.
+            // Approximate with price × listed-class shares outstanding.
+            var sh = rr.weighted_shares_outstanding || rr.share_class_shares_outstanding;
+            var px = missingMcap[mi2].price;
+            if (sh && px) { missingMcap[mi2].market_cap = Math.round(sh * px); mcUpdated++; }
+          }
+          if (rr && rr.type && !missingMcap[mi2].ticker_type) missingMcap[mi2].ticker_type = rr.type;
+        }
       } catch (e) {}
       if (mi2 % 5 === 0) await sleep(100);
       if (mi2 % 200 === 0) {
@@ -3453,9 +3467,9 @@ async function backfillMcap() {
   var sd = dateRows[0].scan_date;
   console.log('Scan date: ' + sd);
 
-  // Get tickers missing market cap or ticker_type
+  // Get tickers missing market cap or ticker_type (include price for the fallback calc)
   var h = sbHeaders(); h['Range'] = '0-4999';
-  var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + sd + '&or=(market_cap.is.null,ticker_type.is.null)&select=ticker', { headers: h });
+  var r = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?scan_date=eq.' + sd + '&or=(market_cap.is.null,ticker_type.is.null)&select=ticker,price', { headers: h });
   var rows = await r.json();
   console.log('Tickers missing market cap or type: ' + rows.length);
   if (!rows.length) { console.log('All tickers already have market cap and type'); return; }
@@ -3467,15 +3481,25 @@ async function backfillMcap() {
       var pr = await fetch('https://api.polygon.io/v3/reference/tickers/' + tk + '?apiKey=' + POLYGON_KEY);
       if (pr.ok) {
         var pd = await pr.json();
-        if (pd.results && (pd.results.market_cap || pd.results.type)) {
+        var rr2 = pd && pd.results;
+        if (rr2 && (rr2.market_cap || rr2.type || rr2.share_class_shares_outstanding || rr2.weighted_shares_outstanding)) {
           var patch = {};
-          if (pd.results.market_cap) patch.market_cap = Math.round(pd.results.market_cap);
-          if (pd.results.type) patch.ticker_type = pd.results.type;
-          await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?ticker=eq.' + tk + '&scan_date=eq.' + sd, {
-            method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }),
-            body: JSON.stringify(patch)
-          });
-          updated++;
+          if (rr2.market_cap) {
+            patch.market_cap = Math.round(rr2.market_cap);
+          } else {
+            // Fallback for multi-class stocks Polygon leaves null: price × shares.
+            var sh2 = rr2.weighted_shares_outstanding || rr2.share_class_shares_outstanding;
+            var px2 = rows[i].price;
+            if (sh2 && px2) patch.market_cap = Math.round(sh2 * px2);
+          }
+          if (rr2.type) patch.ticker_type = rr2.type;
+          if (Object.keys(patch).length) {
+            await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?ticker=eq.' + tk + '&scan_date=eq.' + sd, {
+              method: 'PATCH', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal' }),
+              body: JSON.stringify(patch)
+            });
+            updated++;
+          }
         }
       }
     } catch (e) {}
