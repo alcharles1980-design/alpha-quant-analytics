@@ -18303,7 +18303,7 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'}}>{r.ticker}</td>
                 <td style={{padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'}}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
-                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:12,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
+                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:12,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1}} title="TipRanks">TR</a>
                 </td>
                 <td style={{padding:'3px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
@@ -29452,8 +29452,12 @@ function App(){
     };
     var onPop=function(){setPageRaw(parseHash());};
     window.addEventListener('popstate',onPop);
+    // Also listen for hashchange: clicking a same-tab '#cheatsheet:TICKER' link
+    // fires hashchange (NOT popstate), so without this the target lagged a click
+    // behind ("shows previous ticker, click twice"). Re-parse on every hash change.
+    window.addEventListener('hashchange',onPop);
     if(!window.location.hash)window.location.hash='home';
-    return function(){window.removeEventListener('popstate',onPop);};
+    return function(){window.removeEventListener('popstate',onPop);window.removeEventListener('hashchange',onPop);};
   },[]);
   var ss=useState(typeof sessionStorage!=='undefined'&&sessionStorage.getItem('aq_auth')==='1'?false:true),showSplash=ss[0],setShowSplash=ss[1];
   var ms=useState(false),menuOpen=ms[0],setMenuOpen=ms[1];
