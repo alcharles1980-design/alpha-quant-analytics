@@ -17950,10 +17950,10 @@ function ViolentChopScreenerPage(p){
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
   var s10b=useState('0.03'),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
   var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
-  var s10d=useState(''),mktCapMin=s10d[0],setMktCapMin=s10d[1];   // market cap filter (B), separate from $Vol
+  var s10d=useState('1'),mktCapMin=s10d[0],setMktCapMin=s10d[1];   // market cap filter (B), separate from $Vol
   var s10e=useState(''),mktCapMax=s10e[0],setMktCapMax=s10e[1];
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
-  var s12=useState('composite'),sortKey=s12[0],setSortKey=s12[1];
+  var s12=useState('avgPct'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
