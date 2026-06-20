@@ -18396,7 +18396,7 @@ function ViolentChopScreenerPage(p){
           ['Price','Last price','Current share price. Sets the scale — a $0.10 swing means more on a $20 stock than a $200 one.'],
           ['$ Vol/day','Liquidity','Average daily dollar volume. The size/liquidity gate that works for stocks AND ETFs (unlike market cap). Higher = easier to fill a grid without moving price.'],
           ['MCap','Market cap','Company size (stocks only; ETFs/funds show -- since their size concept is AUM, not market cap).'],
-          ['Chop Score','Composite rank','The headline metric: path% \u00D7 (1 + spread/avg). Rewards names that move a lot AND move erratically — ranking RVI-style violence above steady metronomic chop.'],
+          ['Chop Score','Composite rank','The headline metric: path% \u00D7 (1 + spread/avg). Rewards names that move a lot AND move erratically — ranking RVI-style violence above steady metronomic chop. Caveat: each swing % is measured against its own bar price, so a stock that ran up hard during the lookback (cheap early, expensive now) shows inflated scores that overstate today\u2019s opportunity — Cap Eff (which divides by current price) is the fairer read for those.'],
           ['Swings/Day','Frequency','Number of up-swings per day at the selected resolution. More swings = more grid fills. Saturates at coarse bars (2m/3m) where every name fills every bar.'],
           ['Avg Swing %','Typical size (%)','Average swing magnitude in percent. Scale-independent, so comparable across price levels.'],
           ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your grid — is each swing big enough to clear your take-profit?'],
