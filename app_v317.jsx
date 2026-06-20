@@ -18296,9 +18296,6 @@ function ViolentChopScreenerPage(p){
             {th('avgUsd',['Avg',<br key="b"/>,'Swing $'])}
             {th('dailyPot',['Daily $',<br key="b"/>,'Pot.'])}
             {th('capEff',['Cap',<br key="b"/>,'Eff.'])}
-            {th('sdPct',['Swing',<br key="b"/>,'Spread %'])}
-            {th('sdUsd',['Swing',<br key="b"/>,'Spread $'])}
-            {th('coefVar',['Uneven-',<br key="b"/>,'ness'])}
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Consen{'\u00AD'}sus</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Low</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
@@ -18325,9 +18322,6 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
                 <td style={{padding:'3px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
                 <td style={{padding:'3px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily path as % of share price (= Count × Avg Swing %). Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
-                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}} title="Standard deviation of swing sizes in % — how much swing magnitude varies day to day">{r.sdPct.toFixed(3)+'%'}</td>
-                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}} title="Standard deviation of swing sizes in $ — dollar spread of swing magnitudes">{'$'+r.sdUsd.toFixed(3)}</td>
-                <td style={{padding:'3px 5px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'center',fontWeight:r.coefVar>=2?700:400}} title="Unevenness = swing spread ÷ avg swing (coefficient of variation). Higher = more erratic, RVI-style violence; lower = steady metronomic chop.">{r.coefVar.toFixed(2)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
@@ -18357,7 +18351,7 @@ function ViolentChopScreenerPage(p){
         <button onClick={function(){setShowCount(showCount+500);}} style={{padding:'6px 16px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show More (+500)</button>
         <button onClick={function(){setShowCount(rows.length);}} style={{padding:'6px 16px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show All ({rows.length.toLocaleString()})</button>
       </div>}
-      <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + spread/avg). Green Unevenness ({'\u2265'}2) = erratic, RVI-style violence.</div>
+      <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + spread/avg) — rewards big and uneven movement, ranking RVI-style violence above steady choppers.</div>
       {(res==='120s'||res==='180s')&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.gold,lineHeight:1.5}}>{'\u26A0 At '+resLabel[res]+' bars, every liquid name fills almost every bar, so Swings/Day saturates near '+(res==='120s'?'~194':'~129')+' and stops distinguishing names. At these resolutions the chop signal lives in swing SIZE \u2014 rank by Avg Swing, Path, or Swings-of-Swings, not swing count. Use 10-second for frequency-based ranking.'}</div>}
     </Cd>}
 
@@ -18402,9 +18396,6 @@ function ViolentChopScreenerPage(p){
           ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your grid — is each swing big enough to clear your take-profit?'],
           ['Daily $ Pot.','Profit potential','Count \u00D7 Avg Swing $ = total dollar distance the price travels per day. The raw harvestable opportunity — how many dollars of movement a grid can capture.'],
           ['Cap Eff.','Capital efficiency','Daily $ Pot \u00F7 Price (= Count \u00D7 Avg Swing %). Capital-FAIR ranking: harvestable movement per dollar of capital required. Raw Daily $ Pot favors expensive stocks (bigger $ swings need more capital); this normalizes it so a $20 and a $400 stock rank equally if they offer the same % of movement. A relative score, not a literal daily return.'],
-          ['Swing Spread %','Dispersion (%)','Standard deviation of swing sizes in percent — how much swing magnitude varies.'],
-          ['Swing Spread $','Dispersion ($)','Standard deviation of swing sizes in dollars — the dollar spread of swing magnitudes.'],
-          ['Unevenness','Variability ratio','Swing spread \u00F7 avg swing (coefficient of variation). Low (~0.5-1) = steady, uniform chop. High (~2+) = erratic, lumpy, RVI-style violence. Same average can hide very different character.'],
           ['Consensus','Analyst rating','Yahoo analyst consensus (Strong Buy..Strong Sell), color-coded; hover for the mean 1-5 score. Pulled nightly for stocks; tap "Fetch ratings" for others.'],
           ['PT Low / Mean / High','Price targets','Analyst price targets — lowest, average, highest. Hover the mean for implied upside vs current price.'],
           ['Analysts','Coverage','Number of analyst opinions behind the consensus and targets. More = more reliable signal.']
