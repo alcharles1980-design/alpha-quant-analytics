@@ -17941,6 +17941,8 @@ function ViolentChopScreenerPage(p){
   var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
   var s5=useState('10s'),res=s5[0],setRes=s5[1];               // resolution: 10s default
   var s5b=useState('all'),lookback=s5b[0],setLookback=s5b[1];   // lookback days: all (full) default
+  var s5c=useState(null),daysData=s5c[0],setDaysData=s5c[1];    // lazily-loaded per-day arrays {ticker:{res:[days]}}
+  var s5d=useState(false),daysLoading=s5d[0],setDaysLoading=s5d[1];
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(''),minPrice=s7[0],setMinPrice=s7[1];
   var s8=useState(''),maxPrice=s8[0],setMaxPrice=s8[1];
@@ -17984,11 +17986,13 @@ function ViolentChopScreenerPage(p){
       var dRows=await dR.json();
       if(!Array.isArray(dRows)||dRows.length===0){if(gen===loadGen.current){setData([]);setLoading(false);}return;}
       var sd=dRows[0].scan_date;setScanDate(sd);
-      // paginated load (unique tiebreaker)
+      // Lightweight load via RPC: returns only the per-resolution avg blocks
+      // (drops the heavy per-day arrays), ~80% smaller payload (12MB->2.3MB).
+      // Per-day data is fetched on demand only when a 2/3/4-day lookback is used.
       var all=[];var off=0;
       while(true){
-        var h=getSbHeaders();h['Range']=off+'-'+(off+999);
-        var r=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,chop_profile,composite_score,lookback_days&order=composite_score.desc.nullslast,ticker.asc',{headers:h});
+        var h=getSbHeaders();h['Range']=off+'-'+(off+999);h['Content-Type']='application/json';
+        var r=await fetch(SB_URL+'/rest/v1/rpc/chop_screener_light',{method:'POST',headers:h,body:JSON.stringify({p_scan_date:sd})});
         if(!r.ok)break;
         var batch=await r.json();
         if(!Array.isArray(batch)||batch.length===0)break;
@@ -18005,6 +18009,35 @@ function ViolentChopScreenerPage(p){
   };
 
   useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();},[]);
+
+  // Lazy-load per-day arrays only when a 2/3/4-day lookback is first selected.
+  // Keeps the initial load light (avg-only); this heavier fetch is on demand.
+  useEffect(function(){
+    if(lookback==='all'||daysData||daysLoading||!scanDate)return;
+    setDaysLoading(true);
+    (async function(){
+      try{
+        var map={};var off=0;
+        while(true){
+          var h=getSbHeaders();h['Range']=off+'-'+(off+999);
+          var r=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+scanDate+'&select=ticker,chop_profile&order=composite_score.desc.nullslast,ticker.asc',{headers:h});
+          if(!r.ok)break;
+          var batch=await r.json();
+          if(!Array.isArray(batch)||batch.length===0)break;
+          batch.forEach(function(row){
+            var cp=row.chop_profile;if(!cp)return;
+            var perRes={};['10s','30s','60s','120s','180s'].forEach(function(rk){if(cp[rk]&&cp[rk].days)perRes[rk]=cp[rk].days;});
+            map[row.ticker]=perRes;
+          });
+          if(batch.length<1000)break;
+          off+=1000;
+        }
+        setDaysData(map);
+      }catch(e){}
+      setDaysLoading(false);
+    })();
+  },[lookback,scanDate]);
+
 
   var pollProgress=function(){
     if(pollRef.current)return;
@@ -18037,15 +18070,18 @@ function ViolentChopScreenerPage(p){
   //   per-stat = mean over the last N days
   //   composite = mean over those days of pathPct*(1+sdPct/avgPct)
   var getAvg=function(row){
-    var cp=row.chop_profile;if(!cp)return null;
-    var rr=cp[res];if(!rr||!rr.avg)return null;
-    if(lookback==='all')return {avg:rr.avg,composite:num(row.composite_score)};
+    // Light payload: row.avg_profile[res] is the avg block directly.
+    var rr=row.avg_profile?row.avg_profile[res]:null;
+    if(!rr)return null;
+    if(lookback==='all')return {avg:rr,composite:num(row.composite_score)};
     var n=parseInt(lookback,10);
-    var days=rr.days;
-    if(!Array.isArray(days)||days.length===0)return {avg:rr.avg,composite:num(row.composite_score)};
+    // Per-day data only present once lazily fetched (daysByTicker map).
+    var full=daysData&&daysData[row.ticker]?daysData[row.ticker]:null;
+    var days=full&&full[res]?full[res]:null;
+    if(!Array.isArray(days)||days.length===0)return {avg:rr,composite:num(row.composite_score)};
     // days are stored oldest..newest; take the last N
     var sel=days.slice(Math.max(0,days.length-n));
-    if(sel.length===0)return {avg:rr.avg,composite:num(row.composite_score)};
+    if(sel.length===0)return {avg:rr,composite:num(row.composite_score)};
     var keys=['cnt','avgPct','avgUsd','sdPct','sdUsd','maxPct','maxUsd','pathPct','pathUsd'];
     var out={};
     keys.forEach(function(k){var s=0;for(var i=0;i<sel.length;i++)s+=num(sel[i][k]);out[k]=s/sel.length;});
@@ -18130,6 +18166,7 @@ function ViolentChopScreenerPage(p){
             border:'1px solid '+(lookback===lb[0]?C.gold:C.border),background:lookback===lb[0]?C.gold+'14':'transparent',color:lookback===lb[0]?C.gold:C.txtDim}}>{lb[1]}</button>;
         })}
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Averages the most recent N trading days. Recomputes instantly — no re-scan.</span>
+        {daysLoading&&lookback!=='all'&&<span style={{fontSize:7,fontFamily:F,color:C.gold}}>{'\u25CF loading per-day data...'}</span>}
       </div>
 
       {/* Filters — Search full-width, then each Min/Max pair side by side */}
