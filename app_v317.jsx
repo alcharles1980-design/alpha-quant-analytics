@@ -18133,15 +18133,23 @@ function ViolentChopScreenerPage(p){
     // Light payload: row.avg_profile[res] is the avg block directly.
     var rr=row.avg_profile?row.avg_profile[res]:null;
     if(!rr)return null;
-    if(lookback==='all')return {avg:rr,composite:num(row.composite_score)};
+    // Composite for the SELECTED resolution, recomputed from its own avg block:
+    //   path% × (1 + spread%/avg%).  The stored composite_score is the 10s value
+    //   only, so using it for 30s/1m/2m/3m would mismatch the rest of the row.
+    var resComposite=function(blk){
+      var ap=num(blk.avgPct);
+      return ap>0?num(blk.pathPct)*(1+num(blk.sdPct)/ap):num(blk.pathPct);
+    };
+    if(lookback==='all')return {avg:rr,composite:(res==='10s')?num(row.composite_score):resComposite(rr)};
     var n=parseInt(lookback,10);
     // Per-day data only present once lazily fetched (daysByTicker map).
     var full=daysData&&daysData[row.ticker]?daysData[row.ticker]:null;
     var days=full&&full[res]?full[res]:null;
-    if(!Array.isArray(days)||days.length===0)return {avg:rr,composite:num(row.composite_score)};
+    var fallbackComposite=(res==='10s')?num(row.composite_score):resComposite(rr);
+    if(!Array.isArray(days)||days.length===0)return {avg:rr,composite:fallbackComposite};
     // days are stored oldest..newest; take the last N
     var sel=days.slice(Math.max(0,days.length-n));
-    if(sel.length===0)return {avg:rr,composite:num(row.composite_score)};
+    if(sel.length===0)return {avg:rr,composite:fallbackComposite};
     var keys=['cnt','avgPct','avgUsd','sdPct','sdUsd','maxPct','maxUsd','pathPct','pathUsd'];
     var out={};
     keys.forEach(function(k){var s=0;for(var i=0;i<sel.length;i++)s+=num(sel[i][k]);out[k]=s/sel.length;});
