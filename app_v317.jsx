@@ -17946,7 +17946,7 @@ function ViolentChopScreenerPage(p){
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
   var s7=useState(''),minPrice=s7[0],setMinPrice=s7[1];
   var s8=useState(''),maxPrice=s8[0],setMaxPrice=s8[1];
-  var s9=useState('50'),mcapMin=s9[0],setMcapMin=s9[1];
+  var s9=useState(''),mcapMin=s9[0],setMcapMin=s9[1];
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
   var s10b=useState('0.03'),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
   var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
