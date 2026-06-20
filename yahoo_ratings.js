@@ -51,9 +51,15 @@ async function fetchRating(ticker, sess) {
   } catch (e) { return { _err: 'fetch ' + e.message }; }
   if (r.status === 429) return { _rateLimited: true };
   if (r.status === 401) return { _crumbExpired: true };
+  // 404 (and 400/422 from the quoteSummary "not found" path) means Yahoo has
+  // no fundamentals for this symbol — almost always an ETF/ETN/fund/preferred
+  // with no analyst coverage. That's NO-DATA, not a failure.
+  if (r.status === 404 || r.status === 422 || r.status === 400) return null;
   if (!r.ok) return { _err: 'HTTP ' + r.status };
   var body;
   try { body = await r.json(); } catch (e) { return { _err: 'json' }; }
+  // Yahoo sometimes returns 200 with an error envelope for unknown symbols.
+  if (body && body.quoteSummary && body.quoteSummary.error) return null;
   var res = body && body.quoteSummary && body.quoteSummary.result && body.quoteSummary.result[0];
   if (!res) return null; // no data for this ticker (delisted/ETF/etc.)
   var fd = res.financialData || {};
