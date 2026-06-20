@@ -13,6 +13,12 @@ const POLYGON_KEY = process.env.POLYGON_API_KEY;
 const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_KEY;
 const CAP_PER_LEVEL = 200;
+
+// Known tickers Polygon mislabels (e.g. funds tagged as common stock "CS").
+// Applied when building the universe so the type/label is correct everywhere.
+const TICKER_TYPE_OVERRIDE = {
+  VCX: 'FUND',   // Fundrise Innovation Fund, LLC — Polygon returns CS
+};
 const FEE_PER_SHARE = 0.005;
 
 // ── Timezone ─────────────────────────────────────────────
@@ -2805,7 +2811,7 @@ async function runScreener() {
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,
       adv_dollars: Math.round(cand.adv), market_cap: cand.market_cap ? Math.round(cand.market_cap) : null,
-      ticker_type: cand.ticker_type || null,
+      ticker_type: TICKER_TYPE_OVERRIDE[cand.ticker] || cand.ticker_type || null,
       yz_vol: Math.round(yzVol * 10) / 10,
       yz_vol_252d: regimeBlock.yz_vol_252d,
       yz_vol_63d: regimeBlock.yz_vol_63d,
