@@ -18438,7 +18438,10 @@ function ViolentChopScreenerPage(p){
         <div style={{padding:'8px 12px',borderBottom:'1px solid '+C.border}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:7}}>
             <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{chartTk} <span style={{fontSize:7,color:C.txtDim,fontWeight:600}}>TradingView</span></div>
-            <button onClick={function(){setChartTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <a href={'https://www.tradingview.com/chart/?symbol='+encodeURIComponent(chartTk)+'&interval='+chartInt} target="_blank" rel="noopener noreferrer" style={{padding:'3px 10px',border:'1px solid '+C.accent+'80',borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}} title="Open this chart on TradingView">Open in TradingView {'\u2197'}</a>
+              <button onClick={function(){setChartTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+            </div>
           </div>
           <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',marginBottom:5}}>
             <span style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,minWidth:48}}>Interval (bar size):</span>
