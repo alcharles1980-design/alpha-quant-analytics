@@ -17957,6 +17957,7 @@ function ViolentChopScreenerPage(p){
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
+  var s15b=useState(false),showColInfo=s15b[0],setShowColInfo=s15b[1];
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
@@ -18272,6 +18273,12 @@ function ViolentChopScreenerPage(p){
     {loading&&(!data||data.length===0)&&<Cd><div style={{textAlign:'center',color:C.gold,fontSize:10,fontFamily:F,padding:20}}>Loading chop data...</div></Cd>}
 
     {data&&data.length>0&&<Cd>
+      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',marginBottom:6}}>
+        <button onClick={function(){setShowColInfo(true);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 10px',border:'1px solid '+C.accent+'55',borderRadius:5,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:600,cursor:'pointer'}} title="What does each column mean?">
+          <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:13,height:13,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:8,fontWeight:700,fontStyle:'italic'}}>i</span>
+          Column guide
+        </button>
+      </div>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
@@ -18372,6 +18379,42 @@ function ViolentChopScreenerPage(p){
         </div>
       </div>
     </CollapseStage>
+
+    {showColInfo&&<div onClick={function(){setShowColInfo(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',zIndex:9999,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'24px 12px',overflowY:'auto'}}>
+      <div onClick={function(e){e.stopPropagation();}} style={{maxWidth:560,width:'100%',background:C.card||C.bg,border:'1px solid '+C.border,borderRadius:10,padding:18,fontFamily:F}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.txtBright}}>Column Guide</div>
+          <button onClick={function(){setShowColInfo(false);}} style={{border:'1px solid '+C.border,background:'transparent',color:C.txtDim,borderRadius:5,fontSize:12,padding:'2px 9px',cursor:'pointer',fontFamily:F}}>{'\u2715'}</button>
+        </div>
+        <div style={{fontSize:9,color:C.txtDim,marginBottom:12,lineHeight:1.5}}>Every column ranks within-day chop intensity for grid trading. Swing = each bar's low to the next bar's high (floored at 0). Tap outside to close.</div>
+        {[
+          ['#','Rank','Position in the current sort. Re-sorting any column renumbers it. Top 10 are gold.'],
+          ['Type','Asset class','Stock / ETF / ADR / ETN / Fund etc. ETFs (e.g. leveraged SOXL) chop differently than single stocks and have no analyst ratings.'],
+          ['Price','Last price','Current share price. Sets the scale — a $0.10 swing means more on a $20 stock than a $200 one.'],
+          ['$ Vol/day','Liquidity','Average daily dollar volume. The size/liquidity gate that works for stocks AND ETFs (unlike market cap). Higher = easier to fill a grid without moving price.'],
+          ['MCap','Market cap','Company size (stocks only; ETFs/funds show -- since their size concept is AUM, not market cap).'],
+          ['Chop Score','Composite rank','The headline metric: path% \u00D7 (1 + spread/avg). Rewards names that move a lot AND move erratically — ranking RVI-style violence above steady metronomic chop.'],
+          ['Swings/Day','Frequency','Number of up-swings per day at the selected resolution. More swings = more grid fills. Saturates at coarse bars (2m/3m) where every name fills every bar.'],
+          ['Avg Swing %','Typical size (%)','Average swing magnitude in percent. Scale-independent, so comparable across price levels.'],
+          ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your grid — is each swing big enough to clear your take-profit?'],
+          ['Daily $ Pot.','Profit potential','Count \u00D7 Avg Swing $ = total dollar distance the price travels per day. The raw harvestable opportunity — how many dollars of movement a grid can capture.'],
+          ['Swing Spread %','Dispersion (%)','Standard deviation of swing sizes in percent — how much swing magnitude varies.'],
+          ['Swing Spread $','Dispersion ($)','Standard deviation of swing sizes in dollars — the dollar spread of swing magnitudes.'],
+          ['Unevenness','Variability ratio','Swing spread \u00F7 avg swing (coefficient of variation). Low (~0.5-1) = steady, uniform chop. High (~2+) = erratic, lumpy, RVI-style violence. Same average can hide very different character.'],
+          ['Consensus','Analyst rating','Yahoo analyst consensus (Strong Buy..Strong Sell), color-coded; hover for the mean 1-5 score. Pulled nightly for stocks; tap "Fetch ratings" for others.'],
+          ['PT Low / Mean / High','Price targets','Analyst price targets — lowest, average, highest. Hover the mean for implied upside vs current price.'],
+          ['Analysts','Coverage','Number of analyst opinions behind the consensus and targets. More = more reliable signal.']
+        ].map(function(c,i){
+          return <div key={i} style={{display:'flex',gap:10,padding:'7px 0',borderTop:i?'1px solid '+C.grid:'none'}}>
+            <div style={{flex:'0 0 96px'}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.accent}}>{c[0]}</div>
+              <div style={{fontSize:7,color:C.txtDim,fontStyle:'italic'}}>{c[1]}</div>
+            </div>
+            <div style={{flex:1,fontSize:8,color:C.txt,lineHeight:1.5}}>{c[2]}</div>
+          </div>;
+        })}
+      </div>
+    </div>}
   </div>;
 }
 
