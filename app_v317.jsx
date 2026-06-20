@@ -18166,6 +18166,7 @@ function ViolentChopScreenerPage(p){
       pathPct:a?num(a.pathPct):0,pathUsd:a?num(a.pathUsd):0,
       coefVar:a?num(a.coefVar):0,
       dailyPot:a?num(a.cnt)*num(a.avgUsd):0,
+      capEff:(a&&num(row.price)>0)?(num(a.cnt)*num(a.avgUsd))/num(row.price)*100:0,
       hasRes:!!a
     };
   }).filter(function(r){
@@ -18294,6 +18295,7 @@ function ViolentChopScreenerPage(p){
             {th('avgPct',['Avg',<br key="b"/>,'Swing %'])}
             {th('avgUsd',['Avg',<br key="b"/>,'Swing $'])}
             {th('dailyPot',['Daily $',<br key="b"/>,'Pot.'])}
+            {th('capEff',['Cap',<br key="b"/>,'Eff.'])}
             {th('sdPct',['Swing',<br key="b"/>,'Spread %'])}
             {th('sdUsd',['Swing',<br key="b"/>,'Spread $'])}
             {th('coefVar',['Uneven-',<br key="b"/>,'ness'])}
@@ -18322,6 +18324,7 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px 5px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
                 <td style={{padding:'3px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
+                <td style={{padding:'3px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily path as % of share price (= Count × Avg Swing %). Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
                 <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}} title="Standard deviation of swing sizes in % — how much swing magnitude varies day to day">{r.sdPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}} title="Standard deviation of swing sizes in $ — dollar spread of swing magnitudes">{'$'+r.sdUsd.toFixed(3)}</td>
                 <td style={{padding:'3px 5px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'center',fontWeight:r.coefVar>=2?700:400}} title="Unevenness = swing spread ÷ avg swing (coefficient of variation). Higher = more erratic, RVI-style violence; lower = steady metronomic chop.">{r.coefVar.toFixed(2)}</td>
@@ -18398,6 +18401,7 @@ function ViolentChopScreenerPage(p){
           ['Avg Swing %','Typical size (%)','Average swing magnitude in percent. Scale-independent, so comparable across price levels.'],
           ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your grid — is each swing big enough to clear your take-profit?'],
           ['Daily $ Pot.','Profit potential','Count \u00D7 Avg Swing $ = total dollar distance the price travels per day. The raw harvestable opportunity — how many dollars of movement a grid can capture.'],
+          ['Cap Eff.','Capital efficiency','Daily $ Pot \u00F7 Price (= Count \u00D7 Avg Swing %). Capital-FAIR ranking: harvestable movement per dollar of capital required. Raw Daily $ Pot favors expensive stocks (bigger $ swings need more capital); this normalizes it so a $20 and a $400 stock rank equally if they offer the same % of movement. A relative score, not a literal daily return.'],
           ['Swing Spread %','Dispersion (%)','Standard deviation of swing sizes in percent — how much swing magnitude varies.'],
           ['Swing Spread $','Dispersion ($)','Standard deviation of swing sizes in dollars — the dollar spread of swing magnitudes.'],
           ['Unevenness','Variability ratio','Swing spread \u00F7 avg swing (coefficient of variation). Low (~0.5-1) = steady, uniform chop. High (~2+) = erratic, lumpy, RVI-style violence. Same average can hide very different character.'],
