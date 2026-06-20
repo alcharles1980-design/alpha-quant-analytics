@@ -17950,6 +17950,8 @@ function ViolentChopScreenerPage(p){
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
   var s10b=useState('0.03'),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
   var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
+  var s10d=useState(''),mktCapMin=s10d[0],setMktCapMin=s10d[1];   // market cap filter (B), separate from $Vol
+  var s10e=useState(''),mktCapMax=s10e[0],setMktCapMax=s10e[1];
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
   var s12=useState('composite'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
@@ -18141,6 +18143,10 @@ function ViolentChopScreenerPage(p){
     if(mcapMax&&(r.adv||0)>parseFloat(mcapMax)*1e6)return false;
     if(swingUsdMin&&r.avgUsd<parseFloat(swingUsdMin))return false;
     if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
+    // Market cap filter (B). ETFs have null mcap — treat null as pass so the
+    // mcap filter never silently excludes funds (use $ Vol/day to gate those).
+    if(mktCapMin&&r.market_cap!=null&&r.market_cap<parseFloat(mktCapMin)*1e9)return false;
+    if(mktCapMax&&r.market_cap!=null&&r.market_cap>parseFloat(mktCapMax)*1e9)return false;
     if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
     if(typeFilter==='etfs'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
     return true;
@@ -18201,6 +18207,7 @@ function ViolentChopScreenerPage(p){
       {[
         ['Price',minPrice,setMinPrice,maxPrice,setMaxPrice,null],
         ['$ Vol / day (M)',mcapMin,setMcapMin,mcapMax,setMcapMax,null],
+        ['Market Cap (B)',mktCapMin,setMktCapMin,mktCapMax,setMktCapMax,null],
         ['Avg Swing $',swingUsdMin,setSwingUsdMin,swingUsdMax,setSwingUsdMax,'0.01']
       ].map(function(grp){
         return <div key={grp[0]} style={{marginTop:8}}>
