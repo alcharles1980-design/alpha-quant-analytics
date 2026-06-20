@@ -18287,8 +18287,9 @@ function ViolentChopScreenerPage(p){
             {th('avgPct',['Avg',<br key="b"/>,'Swing %'])}
             {th('avgUsd',['Avg',<br key="b"/>,'Swing $'])}
             {th('dailyPot',['Daily $',<br key="b"/>,'Pot.'])}
-            {th('sdPct',['Swing',<br key="b"/>,'\u03C3 %'])}
-            {th('coefVar',['Swings-of',<br key="b"/>,'Swings'])}
+            {th('sdPct',['Swing',<br key="b"/>,'Spread %'])}
+            {th('sdUsd',['Swing',<br key="b"/>,'Spread $'])}
+            {th('coefVar',['Uneven-',<br key="b"/>,'ness'])}
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Consen{'\u00AD'}sus</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Low</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
@@ -18314,8 +18315,9 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px 5px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
                 <td style={{padding:'3px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
-                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}}>{r.sdPct.toFixed(3)+'%'}</td>
-                <td style={{padding:'3px 5px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'center',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
+                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}} title="Standard deviation of swing sizes in % — how much swing magnitude varies day to day">{r.sdPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'3px 5px',color:C.txtDim,textAlign:'center'}} title="Standard deviation of swing sizes in $ — dollar spread of swing magnitudes">{'$'+r.sdUsd.toFixed(3)}</td>
+                <td style={{padding:'3px 5px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'center',fontWeight:r.coefVar>=2?700:400}} title="Unevenness = swing spread ÷ avg swing (coefficient of variation). Higher = more erratic, RVI-style violence; lower = steady metronomic chop.">{r.coefVar.toFixed(2)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
@@ -18345,7 +18347,7 @@ function ViolentChopScreenerPage(p){
         <button onClick={function(){setShowCount(showCount+500);}} style={{padding:'6px 16px',border:'1px solid '+C.accent,borderRadius:6,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show More (+500)</button>
         <button onClick={function(){setShowCount(rows.length);}} style={{padding:'6px 16px',border:'1px solid '+C.gold,borderRadius:6,background:'transparent',color:C.gold,fontFamily:F,fontSize:8,fontWeight:700,cursor:'pointer'}}>Show All ({rows.length.toLocaleString()})</button>
       </div>}
-      <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + swing\u03C3/avg). Green swings-of-swings ({'\u2265'}2) = erratic, RVI-style violence.</div>
+      <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim}}>Showing {visible.length} of {rows.length} ({resLabel[res]} bars). Chop Score = path% {'\u00D7'} (1 + spread/avg). Green Unevenness ({'\u2265'}2) = erratic, RVI-style violence.</div>
       {(res==='120s'||res==='180s')&&<div style={{marginTop:4,fontSize:7,fontFamily:F,color:C.gold,lineHeight:1.5}}>{'\u26A0 At '+resLabel[res]+' bars, every liquid name fills almost every bar, so Swings/Day saturates near '+(res==='120s'?'~194':'~129')+' and stops distinguishing names. At these resolutions the chop signal lives in swing SIZE \u2014 rank by Avg Swing, Path, or Swings-of-Swings, not swing count. Use 10-second for frequency-based ranking.'}</div>}
     </Cd>}
 
