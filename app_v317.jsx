@@ -18276,15 +18276,18 @@ function ViolentChopScreenerPage(p){
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Bar size used to detect swings. 10-second is the default ranking. 4-hour & 1-day use a multi-day "across-window" metric (see note below).</span>
       </div>
 
-      {/* Lookback toggle — recomputed client-side from stored per-day data */}
+      {/* Lookback toggle — applies to within-day resolutions only; recomputed client-side */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:10,flexWrap:'wrap'}}>
-        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Lookback:</span>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600,opacity:resAcross[res]?0.5:1}}>Lookback:</span>
         {[['2','2 days'],['3','3 days'],['4','4 days'],['all','Full (5d)']].map(function(lb){
-          return <button key={lb[0]} onClick={function(){setLookback(lb[0]);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',
-            border:'1px solid '+(lookback===lb[0]?C.gold:C.border),background:lookback===lb[0]?C.gold+'14':'transparent',color:lookback===lb[0]?C.gold:C.txtDim}}>{lb[1]}</button>;
+          var off=!!resAcross[res];
+          var on=!off&&lookback===lb[0];
+          return <button key={lb[0]} disabled={off} title={off?'Lookback applies to the intraday resolutions only':''} onClick={function(){if(!off)setLookback(lb[0]);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:off?'not-allowed':'pointer',opacity:off?0.35:1,
+            border:'1px solid '+(on?C.gold:C.border),background:on?C.gold+'14':'transparent',color:on?C.gold:C.txtDim}}>{lb[1]}</button>;
         })}
-        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Averages the most recent N trading days. Recomputes instantly — no re-scan.</span>
-        {daysLoading&&lookback!=='all'&&<span style={{fontSize:7,fontFamily:F,color:C.gold}}>{'\u25CF loading per-day data...'}</span>}
+        {!resAcross[res]&&<span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Averages within-day chop over the most recent N trading days (Full = all 5). Recomputes instantly — no re-scan.</span>}
+        {resAcross[res]&&<span style={{fontSize:7,fontFamily:F,color:C.gold}}>{'\u2014 N/A at '+resLabel[res]+'. This across-window resolution uses a fixed '+(res==='1d'?'20':'10')+'-trading-day window set at scan time; the lookback slider only re-slices the intraday resolutions.'}</span>}
+        {daysLoading&&lookback!=='all'&&!resAcross[res]&&<span style={{fontSize:7,fontFamily:F,color:C.gold}}>{'\u25CF loading per-day data...'}</span>}
       </div>
 
       {/* Filters — Search full-width, then each Min/Max pair side by side */}
