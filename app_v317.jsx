@@ -18101,14 +18101,12 @@ function ViolentChopScreenerPage(p){
   // nightly top-1000). Dispatches the pipeline, then polls yahoo_ratings.
   var fetchRatingFor=function(tk){
     if(fetchingRating[tk])return;
-    setFetchingRating(function(p){var n=Object.assign({},p);n[tk]=true;return n;});
+    if(!p||!p.ghToken){setErr&&setErr('GitHub token not set in Settings — cannot fetch ratings on demand.');return;}
+    setFetchingRating(function(pf){var n=Object.assign({},pf);n[tk]=true;return n;});
     (async function(){
       try{
-        var pat=(p&&p.ghToken)||'';
-        // trigger the pipeline workflow for this single ticker
-        if(pat){
-          await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'yahoo-ratings',tickers:tk}})});
-        }
+        var pat=p.ghToken;
+        await fetch('https://api.github.com/repos/alcharles1980-design/alpha-quant-analytics/actions/workflows/pipeline.yml/dispatches',{method:'POST',headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{mode:'yahoo-ratings',tickers:tk}})});
         // poll the table for up to ~60s for the row to appear
         var tries=0;
         var poll=setInterval(async function(){
