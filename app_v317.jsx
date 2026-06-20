@@ -18258,8 +18258,6 @@ function ViolentChopScreenerPage(p){
             {th('coefVar','Swings-of-Swings')}
             {th('maxPct','Max %')}
             {th('maxUsd','Max $')}
-            {th('pathPct','Path %')}
-            {th('pathUsd','Path $')}
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -18284,8 +18282,6 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'right',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.maxPct.toFixed(2)+'%'}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+r.maxUsd.toFixed(2)}</td>
-                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.pathPct.toFixed(0)+'%'}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+r.pathUsd.toFixed(0)}</td>
               </tr>;
             })}
           </tbody>
