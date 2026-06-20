@@ -17937,12 +17937,14 @@ function MicroVolScreenerPage(p){
 function TradingViewPage(p){
   var s1=useState('NASDAQ:NVDA'),tvSymbol=s1[0],setTvSymbol=s1[1];
   var s2=useState('5'),tvInt=s2[0],setTvInt=s2[1];
+  var s2b=useState('5D'),tvRange=s2b[0],setTvRange=s2b[1];
   var s3=useState('NVDA'),inputVal=s3[0],setInputVal=s3[1];
   var s4=useState('NASDAQ'),exch=s4[0],setExch=s4[1];
   var containerId='tv_adv_chart_sample';
 
   // TradingView interval codes (free widget: minute+ only, no seconds)
   var intervals=[['1','1m'],['3','3m'],['5','5m'],['15','15m'],['30','30m'],['60','1h'],['120','2h'],['240','4h'],['D','1D'],['W','1W']];
+  var ranges=[['1D','1D'],['5D','5D'],['1M','1M'],['3M','3M'],['6M','6M'],['12M','1Y'],['ALL','All']];
   var exchanges=['NASDAQ','NYSE','AMEX'];
 
   useEffect(function(){
@@ -17955,6 +17957,7 @@ function TradingViewPage(p){
           autosize:true,
           symbol:tvSymbol,
           interval:tvInt,
+          range:tvRange,
           timezone:'America/New_York',
           theme:'dark',
           style:'1',
@@ -17980,7 +17983,7 @@ function TradingViewPage(p){
         document.body.appendChild(sc);
       }
     }
-  },[tvSymbol,tvInt]);
+  },[tvSymbol,tvInt,tvRange]);
 
   var applySymbol=function(){
     var t=(inputVal||'').trim().toUpperCase();
@@ -17991,7 +17994,7 @@ function TradingViewPage(p){
   return <div style={{maxWidth:1100,margin:'0 auto'}}>
     <Cd>
       <div style={{fontSize:16,fontWeight:800,color:C.txtBright,fontFamily:F}}>Trading View <span style={{fontSize:8,color:C.gold,fontWeight:700,verticalAlign:'middle'}}>SAMPLE</span></div>
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Embedded TradingView Advanced Chart for review — easy to delete later. Free widget supports minute-and-up intervals only (no 10s/30s — use the in-app Polygon chart for those). Set the exchange + ticker, pick an interval, and use the date-range buttons on the chart for the timeframe.</div>
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Embedded TradingView Advanced Chart for review — easy to delete later. Free widget supports minute-and-up intervals only (no 10s/30s — use the in-app Polygon chart for those). Set the exchange + ticker, pick an interval, and choose a date range (defaults to 5 days).</div>
     </Cd>
 
     <Cd>
@@ -18008,6 +18011,12 @@ function TradingViewPage(p){
         <span style={{fontSize:8,color:C.txtDim,fontFamily:F,fontWeight:700}}>Interval:</span>
         {intervals.map(function(iv){
           return <button key={iv[0]} onClick={function(){setTvInt(iv[0]);}} style={{padding:'4px 9px',border:'1px solid '+(tvInt===iv[0]?C.gold:C.border),borderRadius:5,background:tvInt===iv[0]?C.gold+'22':'transparent',color:tvInt===iv[0]?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{iv[1]}</button>;
+        })}
+      </div>
+      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginTop:8}}>
+        <span style={{fontSize:8,color:C.txtDim,fontFamily:F,fontWeight:700}}>Date range:</span>
+        {ranges.map(function(rg){
+          return <button key={rg[0]} onClick={function(){setTvRange(rg[0]);}} style={{padding:'4px 9px',border:'1px solid '+(tvRange===rg[0]?C.blue:C.border),borderRadius:5,background:tvRange===rg[0]?C.blue+'22':'transparent',color:tvRange===rg[0]?C.blue:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{rg[1]}</button>;
         })}
       </div>
     </Cd>
