@@ -18289,8 +18289,6 @@ function ViolentChopScreenerPage(p){
             {th('dailyPot','Daily $ Pot.')}
             {th('sdPct','Swing \u03C3 %')}
             {th('coefVar','Swings-of-Swings')}
-            {th('maxPct','Max %')}
-            {th('maxUsd','Max $')}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7}}>Consensus</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT Low</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT Mean</th>
@@ -18318,8 +18316,6 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.sdPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'3px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'right',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
-                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.maxPct.toFixed(2)+'%'}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{'$'+r.maxUsd.toFixed(2)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
