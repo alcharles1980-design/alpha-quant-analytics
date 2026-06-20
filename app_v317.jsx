@@ -18530,17 +18530,22 @@ function ViolentChopScreenerPage(p){
 
     {chartTk&&<div onClick={function(){setChartTk(null);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
       <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:1000,height:'88vh',background:C.bgCard||C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexWrap:'wrap',gap:8}}>
-          <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{chartTk} <span style={{fontSize:7,color:C.txtDim,fontWeight:600}}>TradingView</span></div>
-          <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{padding:'8px 12px',borderBottom:'1px solid '+C.border}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:7}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{chartTk} <span style={{fontSize:7,color:C.txtDim,fontWeight:600}}>TradingView</span></div>
+            <button onClick={function(){setChartTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          </div>
+          <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',marginBottom:5}}>
+            <span style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,minWidth:48}}>Interval (bar size):</span>
             {[['1','1m'],['5','5m'],['15','15m'],['60','1h'],['D','1D']].map(function(iv){
-              return <button key={iv[0]} onClick={function(){setChartInt(iv[0]);}} style={{padding:'3px 7px',border:'1px solid '+(chartInt===iv[0]?C.gold:C.border),borderRadius:4,background:chartInt===iv[0]?C.gold+'22':'transparent',color:chartInt===iv[0]?C.gold:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{iv[1]}</button>;
+              return <button key={iv[0]} onClick={function(){setChartInt(iv[0]);}} style={{padding:'3px 8px',border:'1px solid '+(chartInt===iv[0]?C.gold:C.border),borderRadius:4,background:chartInt===iv[0]?C.gold+'22':'transparent',color:chartInt===iv[0]?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{iv[1]}</button>;
             })}
-            <span style={{width:6}}/>
-            {[['1D','1D'],['5D','5D'],['1M','1M'],['3M','3M']].map(function(rg){
-              return <button key={rg[0]} onClick={function(){setChartRange(rg[0]);}} style={{padding:'3px 7px',border:'1px solid '+(chartRange===rg[0]?C.blue:C.border),borderRadius:4,background:chartRange===rg[0]?C.blue+'22':'transparent',color:chartRange===rg[0]?C.blue:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{rg[1]}</button>;
+          </div>
+          <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,minWidth:48}}>Date range (period shown):</span>
+            {[['1D','1D'],['5D','5D'],['1M','1M'],['3M','3M'],['12M','1Y'],['36M','3Y'],['60M','5Y']].map(function(rg){
+              return <button key={rg[0]} onClick={function(){setChartRange(rg[0]);}} style={{padding:'3px 8px',border:'1px solid '+(chartRange===rg[0]?C.blue:C.border),borderRadius:4,background:chartRange===rg[0]?C.blue+'22':'transparent',color:chartRange===rg[0]?C.blue:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{rg[1]}</button>;
             })}
-            <button onClick={function(){setChartTk(null);}} style={{padding:'3px 10px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:11,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
           </div>
         </div>
         <div id="tv_chop_chart_modal" style={{flex:1,width:'100%'}}/>
