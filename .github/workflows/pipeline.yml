@@ -6,6 +6,8 @@ on:
     - cron: '0 1 * * 2-6'
     # Chop screener: ~9:30PM ET = 2:30AM UTC, after the screener populates the universe
     - cron: '30 2 * * 2-6'
+    # Yahoo ratings: ~11PM ET = 4AM UTC, separate slot after chop completes
+    - cron: '0 4 * * 2-6'
     # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
     - cron: '5 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0 * * 1-5'
   workflow_dispatch:
@@ -22,6 +24,7 @@ on:
           - autotune
           - screener
           - chop-screener
+          - yahoo-ratings
           - backfill-mcap
           - mfe
           - extended-volume
@@ -85,6 +88,10 @@ jobs:
                 ;;
               "30 2 * * 2-6")
                 echo "mode=chop-screener" >> $GITHUB_OUTPUT
+                echo "tickers=ALL" >> $GITHUB_OUTPUT
+                ;;
+              "0 4 * * 2-6")
+                echo "mode=yahoo-ratings" >> $GITHUB_OUTPUT
                 echo "tickers=ALL" >> $GITHUB_OUTPUT
                 ;;
               *)

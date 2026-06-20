@@ -5338,7 +5338,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
+  var mode = args.includes('--yahoo-ratings') ? 'yahoo-ratings' : args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -5372,6 +5372,16 @@ async function main() {
     try { await runScreener(); } catch (e) {
       console.error('SCREENER CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'screener', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'yahoo-ratings') {
+    try {
+      var yr = require('./yahoo_ratings.js');
+      var yrTickers = (tickers.length === 1 && (tickers[0] === 'ALL' || tickers[0] === 'ONON' || tickers[0] === 'SP500')) ? null : tickers;
+      var yrLimit = parseInt((args.find(function (a) { return a.indexOf('--limit=') === 0; }) || '--limit=1000').split('=')[1], 10) || 1000;
+      await yr.runYahooRatings({ SB_URL, sbHeaders, sbUpsert, reportProgress }, { tickers: yrTickers, limit: yrLimit });
+    } catch (e) {
+      console.error('YAHOO-RATINGS CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'yahoo-ratings', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else if (mode === 'chop-screener') {
     try {
