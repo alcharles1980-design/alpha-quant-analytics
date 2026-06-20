@@ -18188,7 +18188,7 @@ function ViolentChopScreenerPage(p){
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'){return sortDesc?bv.localeCompare(av):av.localeCompare(bv);}return sortDesc?bv-av:av-bv;});
 
   var doSort=function(k){if(sortKey===k)setSortDesc(!sortDesc);else{setSortKey(k);setSortDesc(true);}};
-  var thS=function(k){return{padding:'4px 3px',textAlign:'right',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,whiteSpace:'nowrap'};};
+  var thS=function(k){return{padding:'4px 2px',textAlign:'center',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,lineHeight:1.15,verticalAlign:'bottom'};};
   var th=function(k,label){return <th onClick={function(){doSort(k);}} style={thS(k)}>{label}{sortKey===k?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
 
   // color scale for composite (chop intensity)
@@ -18275,61 +18275,61 @@ function ViolentChopScreenerPage(p){
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>#</th>
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'}}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'})}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left',fontSize:7}}>Links</th>
-            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'left'})}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'}}>Links</th>
+            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'})}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             {th('price','Price')}
-            {th('adv','$ Vol/d')}
+            {th('adv',['$ Vol',<br key="b"/>,'/day'])}
             {th('market_cap','MCap')}
-            {th('composite','Chop Score')}
-            {th('cnt','Swings/Day')}
-            {th('avgPct','Avg Swing %')}
-            {th('avgUsd','Avg Swing $')}
-            {th('dailyPot','Daily $ Pot.')}
-            {th('sdPct','Swing \u03C3 %')}
-            {th('coefVar','Swings-of-Swings')}
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7}}>Consensus</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT Low</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT Mean</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>PT High</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'right',fontSize:7}}>Analysts</th>
+            {th('composite',['Chop',<br key="b"/>,'Score'])}
+            {th('cnt',['Swings',<br key="b"/>,'/Day'])}
+            {th('avgPct',['Avg',<br key="b"/>,'Swing %'])}
+            {th('avgUsd',['Avg',<br key="b"/>,'Swing $'])}
+            {th('dailyPot',['Daily $',<br key="b"/>,'Pot.'])}
+            {th('sdPct',['Swing',<br key="b"/>,'\u03C3 %'])}
+            {th('coefVar',['Swings-of',<br key="b"/>,'Swings'])}
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Consen{'\u00AD'}sus</th>
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Low</th>
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
+            <th style={{padding:'4px 2px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
-                <td style={{padding:'3px',color:idx<10?C.gold:C.txtDim,textAlign:'right',fontWeight:idx<10?700:400}}>{idx+1}</td>
-                <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
-                <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
-                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}} title="Yahoo Finance">Y</a>
-                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
-                  <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:11,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:8,lineHeight:1}} title="TipRanks">TR</a>
+                <td style={{padding:'3px 2px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400}}>{idx+1}</td>
+                <td style={{padding:'3px 2px',color:C.txtBright,fontWeight:700,textAlign:'left'}}>{r.ticker}</td>
+                <td style={{padding:'1px 2px',whiteSpace:'nowrap',textAlign:'center'}}>
+                  <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
+                  {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:12,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
+                  <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'2px 5px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1}} title="TipRanks">TR</a>
                 </td>
-                <td style={{padding:'3px',color:typeColor(r.ticker_type),textAlign:'left',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
-                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+r.price.toFixed(2)}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
-                <td style={{padding:'3px',color:chopColor(r.composite),textAlign:'right',fontWeight:700}}>{r.composite.toFixed(1)}</td>
-                <td style={{padding:'3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'right'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
-                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{r.avgPct.toFixed(3)+'%'}</td>
-                <td style={{padding:'3px',color:C.gold,textAlign:'right'}}>{'$'+r.avgUsd.toFixed(3)}</td>
-                <td style={{padding:'3px',color:C.accent,textAlign:'right',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
-                <td style={{padding:'3px',color:C.txtDim,textAlign:'right'}}>{r.sdPct.toFixed(3)+'%'}</td>
-                <td style={{padding:'3px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'right',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
+                <td style={{padding:'3px 2px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
+                <td style={{padding:'3px 2px',color:C.txt,textAlign:'center'}}>{'$'+r.price.toFixed(2)}</td>
+                <td style={{padding:'3px 2px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
+                <td style={{padding:'3px 2px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
+                <td style={{padding:'3px 2px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
+                <td style={{padding:'3px 2px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
+                <td style={{padding:'3px 2px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'3px 2px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
+                <td style={{padding:'3px 2px',color:C.accent,textAlign:'center',fontWeight:700}} title="Count × Avg Swing $ = total dollar distance the price travels per day (harvestable profit potential for a grid).">{'$'+r.dailyPot.toFixed(0)}</td>
+                <td style={{padding:'3px 2px',color:C.txtDim,textAlign:'center'}}>{r.sdPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'3px 2px',color:r.coefVar>=2?C.accent:r.coefVar>=1?C.gold:C.txtDim,textAlign:'center',fontWeight:r.coefVar>=2?700:400}}>{r.coefVar.toFixed(2)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
                     var up=rt.target_mean&&r.price?((rt.target_mean/r.price-1)*100):null;
                     return [
-                      <td key="c" style={{padding:'3px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
-                      <td key="l" style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
-                      <td key="m" style={{padding:'3px',textAlign:'right',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
-                      <td key="h" style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
-                      <td key="n" style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
+                      <td key="c" style={{padding:'3px 2px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
+                      <td key="l" style={{padding:'3px 2px',textAlign:'center',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
+                      <td key="m" style={{padding:'3px 2px',textAlign:'center',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
+                      <td key="h" style={{padding:'3px 2px',textAlign:'center',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
+                      <td key="n" style={{padding:'3px 2px',textAlign:'center',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
                     ];
                   }
                   return [
-                    <td key="c" colSpan={5} style={{padding:'3px',textAlign:'center'}}>
+                    <td key="c" colSpan={5} style={{padding:'3px 2px',textAlign:'center'}}>
                       {fetchingRating[r.ticker]
                         ? <span style={{fontSize:7,color:C.gold,fontFamily:F}}>{'\u25CF fetching...'}</span>
                         : <button onClick={function(){fetchRatingFor(r.ticker);}} style={{padding:'2px 8px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:7,fontFamily:F,fontWeight:600,cursor:'pointer'}}>Fetch ratings</button>}
