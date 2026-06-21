@@ -17731,6 +17731,7 @@ function NextDayRangePage(p){
     var pr=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
     return x>0?1-pr:pr;
   }
+  function probit(pp){ if(pp<=0)return -6; if(pp>=1)return 6; var lo=-6,hi=6,m; for(var i=0;i<60;i++){ m=(lo+hi)/2; if(ncdf(m)<pp)lo=m; else hi=m; } return (lo+hi)/2; }
   function bsCall(S,K,T,r,sig){ var sq=sig*Math.sqrt(T); var d1=(Math.log(S/K)+(r+sig*sig/2)*T)/sq, d2=d1-sq; return S*ncdf(d1)-K*Math.exp(-r*T)*ncdf(d2); }
   function bsPut(S,K,T,r,sig){ return bsCall(S,K,T,r,sig)-S+K*Math.exp(-r*T); }
   function ivFromPrice(price,S,K,T,r,isCall){
@@ -17852,7 +17853,9 @@ function NextDayRangePage(p){
           var ivA=(ivC&&ivP)?(ivC+ivP)/2:(ivC||ivP);
           var straddle=(cc&&pp)?cc.mid+pp.mid:null;
           var move1=ivA?priorClose*ivA*Math.sqrt(1/252):null;
-          iv={exp:ne,dte:dte,strike:atmK,ivC:ivC,ivP:ivP,iv:ivA,straddle:straddle,move1:move1,cSpread:cc?cc.spread:null,pSpread:pp?pp.spread:null};
+          var sigD=ivA?ivA*Math.sqrt(1/252):null;
+          var ivBands=sigD?COVS.map(function(C2){var z=probit((1+C2)/2);var lo=priorClose*Math.exp(-z*sigD),hi=priorClose*Math.exp(z*sigD);return {cov:C2,lo:lo,hi:hi,width:hi-lo};}):null;
+          iv={exp:ne,dte:dte,strike:atmK,ivC:ivC,ivP:ivP,iv:ivA,straddle:straddle,move1:move1,bands:ivBands,cSpread:cc?cc.spread:null,pSpread:pp?pp.spread:null};
         } else { iv={note:'No near-term options found for '+t+'.'}; }
       }catch(e){ iv={note:'Options/IV unavailable: '+(e.message||e)}; }
 
@@ -17914,6 +17917,21 @@ function NextDayRangePage(p){
           })}
         </div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>Out-of-sample coverage (multiplier fit on older 60%, tested on recent 40%): {R.bands.map(function(b){return Math.round(b.cov*100)+'\u2192'+Math.round(b.oos*100)+'%';}).join('  \u00b7  ')}. Realized near target = trustworthy.</div>
+        {R.iv&&R.iv.bands&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+C.border}}>
+          <div style={{color:C.blue,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.5}}>OPTIONS-IMPLIED RANGE <span style={{color:C.txtDim,fontWeight:400}}>&middot; terminal price from {(R.iv.iv*100).toFixed(0)}% ATM IV</span></div>
+          <div style={{marginTop:6}}>
+            {R.iv.bands.map(function(b){
+              return <div key={b.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'6px 10px',marginBottom:5,border:'1px solid '+C.blueDim,borderRadius:8}}>
+                <div style={{minWidth:48}}><div style={{color:C.blue,fontSize:13,fontWeight:800,fontFamily:F}}>{Math.round(b.cov*100)}%</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>prob</div></div>
+                <div style={{textAlign:'center'}}><div style={{color:C.warn,fontSize:8,fontFamily:F}}>LOW</div><div style={{color:C.txtBright,fontSize:13,fontWeight:700,fontFamily:F}}>{fmtUsd(b.lo)}</div></div>
+                <div style={{color:C.txtDim,fontSize:12}}>&#8596;</div>
+                <div style={{textAlign:'center'}}><div style={{color:C.accent,fontSize:8,fontFamily:F}}>HIGH</div><div style={{color:C.txtBright,fontSize:13,fontWeight:700,fontFamily:F}}>{fmtUsd(b.hi)}</div></div>
+                <div style={{textAlign:'right',minWidth:64}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>width</div><div style={{color:C.txtBright,fontSize:11,fontFamily:F}}>{fmtUsd(b.width)}</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{(b.width/R.priorClose*100).toFixed(1)}%</div></div>
+              </div>;
+            })}
+          </div>
+          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2,lineHeight:1.5}}>Where tomorrow <i>closes</i> (lognormal from ATM IV) &#8212; vs the high-low <i>envelope</i> above. Narrower than the envelope unless IV is elevated (catalyst). {R.iv.dte}DTE ATM, indicative quotes.</div>
+        </div>}
       </Cd>
 
       <Cd>
