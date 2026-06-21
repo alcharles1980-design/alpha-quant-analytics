@@ -17718,6 +17718,10 @@ function NextDayRangePage(p){
   var [prog,setProg]=useState('');
   var [err,setErr]=useState('');
   var [res,setRes]=useState(null);
+  var [btLoading,setBtLoading]=useState(false);
+  var [btProg,setBtProg]=useState('');
+  var [btErr,setBtErr]=useState('');
+  var [bt,setBt]=useState(null);
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var WIN=30;
@@ -17859,6 +17863,13 @@ function NextDayRangePage(p){
         } else { iv={note:'No near-term options found for '+t+'.'}; }
       }catch(e){ iv={note:'Options/IV unavailable: '+(e.message||e)}; }
 
+      if(p.sb&&p.supaUrl&&iv&&iv.iv){
+        try{
+          var ivHdr=Object.assign({},p.sb(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'});
+          fetch(p.supaUrl+'/rest/v1/iv_history?on_conflict=ticker,log_date',{method:'POST',headers:ivHdr,body:JSON.stringify({ticker:t,log_date:tsd,spot:priorClose,atm_strike:iv.strike,expiry:iv.exp,dte:iv.dte,atm_iv:iv.iv,iv_call:iv.ivC,iv_put:iv.ivP,straddle:iv.straddle,source:'tool-indicative'})}).catch(function(){});
+        }catch(e3){}
+      }
+
       var realizedAnnual=sigNow*Math.sqrt(252);
       var histMove1=sigNow*priorClose;
 
@@ -17868,6 +17879,73 @@ function NextDayRangePage(p){
       setProg('');
     }catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
+  }
+
+  async function backtest(){
+    var t=(tk||'').trim().toUpperCase();
+    if(!t){setBtErr('Enter a ticker symbol.');return;}
+    setBtErr('');setBt(null);setBtLoading(true);setBtProg('Fetching ~3y daily history\u2026');
+    try{
+      var FITW=120, ROLL=60;
+      var now=new Date();
+      var fromD=new Date(now.getTime()-1180*86400000);
+      var fs=fromD.toISOString().slice(0,10), tsd=now.toISOString().slice(0,10);
+      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
+      var dr=await fetch(url);
+      if(!dr.ok){var eb=await dr.text();throw new Error('Polygon HTTP '+dr.status+': '+eb.slice(0,140));}
+      var dj=await dr.json();
+      var bars=(dj.results||[]).map(function(b){return {o:b.o,h:b.h,l:b.l,c:b.c};});
+      var N=bars.length;
+      if(N<WIN+FITW+60)throw new Error('Not enough history for backtest ('+N+' bars; need ~'+(WIN+FITW+60)+'). Try a more liquid / older ticker.');
+      setBtProg('Running walk-forward backtest\u2026');
+      await new Promise(function(r){setTimeout(r,20);});
+
+      var sig=new Array(N), up=new Array(N), dn=new Array(N), i;
+      for(i=WIN+1;i<N;i++){
+        var s=yz(bars.slice(i-WIN,i)); sig[i]=s;
+        if(s){var pc=bars[i-1].c; up[i]=(bars[i].h-pc)/pc/s; dn[i]=(pc-bars[i].l)/pc/s;}
+      }
+      function qS(sorted,q){ if(!sorted.length)return 0; var idx=(sorted.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,sorted.length-1); return sorted[f]+(idx-f)*(sorted[c]-sorted[f]); }
+
+      var start=WIN+FITW+1;
+      var lev=COVS.map(function(C){return {cov:C,hits:[],widths:[],iscore:[]};});
+      var roll=COVS.map(function(){return [];});
+      var bHi=0,bLo=0,bTot=0, travErr=[], tt;
+      for(tt=start;tt<N;tt++){
+        if(!sig[tt])continue;
+        var pc2=bars[tt-1].c, H=bars[tt].h, Lo=bars[tt].l;
+        var us=[],ds=[],rs=[],j;
+        for(j=tt-FITW;j<tt;j++){ if(up[j]!=null){us.push(up[j]);ds.push(dn[j]);} if(bars[j-1])rs.push((bars[j].h-bars[j].l)/bars[j-1].c); }
+        us.sort(function(a,b){return a-b;}); ds.sort(function(a,b){return a-b;}); rs.sort(function(a,b){return a-b;});
+        travErr.push(((H-Lo)/pc2)-qS(rs,0.5));
+        for(var ci=0;ci<COVS.length;ci++){
+          var C=COVS[ci], a=0.5,b=0.9995,k;
+          for(k=0;k<30;k++){
+            var mq=(a+b)/2, qu=qS(us,mq), qd=qS(ds,mq), hit=0,tot=0,jj;
+            for(jj=tt-FITW;jj<tt;jj++){ if(!sig[jj])continue; tot++; var p3=bars[jj-1].c; if(bars[jj].h<=p3*(1+sig[jj]*qu)&&bars[jj].l>=p3*(1-sig[jj]*qd))hit++; }
+            if(tot&&hit/tot<C)a=mq; else b=mq;
+          }
+          var q=(a+b)/2, QU=qS(us,q), QD=qS(ds,q);
+          var hiB=pc2*(1+sig[tt]*QU), loB=pc2*(1-sig[tt]*QD), contained=(H<=hiB&&Lo>=loB), alpha=1-C;
+          lev[ci].hits.push(contained?1:0);
+          lev[ci].widths.push((hiB-loB)/pc2);
+          lev[ci].iscore.push(((hiB-loB)+(2/alpha)*Math.max(0,H-hiB)+(2/alpha)*Math.max(0,loB-Lo))/pc2);
+          var hh=lev[ci].hits, lo2=Math.max(0,hh.length-ROLL), sum=0,z; for(z=lo2;z<hh.length;z++)sum+=hh[z];
+          roll[ci].push(sum/(hh.length-lo2));
+          if(C===0.80){ bTot++; if(H>hiB)bHi++; if(Lo<loB)bLo++; }
+        }
+      }
+      var summary=lev.map(function(l){var n=l.hits.length;return {cov:l.cov,
+        realized:l.hits.reduce(function(a,b){return a+b;},0)/n,
+        width:l.widths.reduce(function(a,b){return a+b;},0)/n,
+        iscore:l.iscore.reduce(function(a,b){return a+b;},0)/n};});
+      var teMean=travErr.reduce(function(a,b){return a+b;},0)/travErr.length;
+      var teMAE=travErr.reduce(function(a,b){return a+Math.abs(b);},0)/travErr.length;
+      setBt({t:t,N:N,tested:lev[0].hits.length,fitw:FITW,roll:ROLL,summary:summary,
+             r68:roll[0],r80:roll[1],r90:roll[2],bHi:bHi,bLo:bLo,bTot:bTot,teMean:teMean,teMAE:teMAE});
+      setBtProg('');
+    }catch(e){setBtErr(e.message||String(e));}
+    setBtLoading(false);
   }
 
   var R=res;
@@ -17892,6 +17970,11 @@ function NextDayRangePage(p){
       </div>
       {prog&&<div style={{color:C.gold,fontSize:9,fontFamily:F,marginTop:8}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:10,fontFamily:F,marginTop:8}}>{err}</div>}
+      <div style={{marginTop:10,paddingTop:10,borderTop:'1px dashed '+C.border,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <button onClick={backtest} disabled={btLoading} style={Object.assign({},bB,{width:'auto',background:'transparent',border:'1px solid '+C.blue,color:C.blue,minWidth:175,fontSize:10})}>{btLoading?'Backtesting\u2026':'Rolling Backtest (~3y)'}</button>
+        {btProg&&<span style={{color:C.gold,fontSize:9,fontFamily:F}}>{btProg}</span>}
+        {btErr&&<span style={{color:C.warn,fontSize:9,fontFamily:F}}>{btErr}</span>}
+      </div>
     </Cd>
 
     {R&&<div>
@@ -17958,6 +18041,41 @@ function NextDayRangePage(p){
       </Cd>
 
       <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.5,padding:'0 4px'}}>Method: Yang-Zhang daily vol over a {WIN}-day window (gap + intraday decomposition). Bands = prior close &#215; (1 &#177; &#963; &#215; Q), Q = per-side standardized-extension quantile tuned to the target joint coverage. Estimates only; not financial advice.</div>
+    </div>}
+
+    {bt&&<div>
+      <Cd glow>
+        <SectionHead title="Rolling Backtest (walk-forward)" sub={'Envelope bands re-fit on a trailing '+bt.fitw+'d window, scored against the next day. '+bt.tested+' test days.'} info="For each historical day the band is built from prior data only, then checked against that day's actual high-low. Rolling coverage = trailing-60d hit rate; reveals when bands lag a vol regime shift."/>
+        <div style={{marginTop:8}}>
+          {bt.summary.map(function(s){
+            var off=Math.abs(s.realized-s.cov), col=off<=0.04?C.accent:(off<=0.08?C.gold:C.warn);
+            return <div key={s.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'6px 10px',marginBottom:5,border:'1px solid '+C.border,borderRadius:8}}>
+              <div style={{minWidth:62}}><span style={{color:C.txtBright,fontSize:12,fontWeight:800,fontFamily:F}}>{Math.round(s.cov*100)}%</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F}}> target</span></div>
+              <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>realized</div><div style={{color:col,fontSize:13,fontWeight:800,fontFamily:F}}>{(s.realized*100).toFixed(1)}%</div></div>
+              <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>avg width</div><div style={{color:C.txtBright,fontSize:12,fontFamily:F}}>{(s.width*100).toFixed(1)}%</div></div>
+              <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>int score</div><div style={{color:C.txtBright,fontSize:12,fontFamily:F}}>{(s.iscore*100).toFixed(2)}</div></div>
+            </div>;
+          })}
+        </div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,marginBottom:2}}>Rolling {bt.roll}-day coverage &#183; <span style={{color:C.gold}}>68</span> / <span style={{color:C.accent}}>80</span> / <span style={{color:C.blue}}>90</span>, dashed = target</div>
+        {(function(){
+          var w=320,h=140,pl=24,pr=8,ptp=8,pb=14,ymin=0.4,ymax=1.0;
+          function yOf(v){return h-pb-(h-ptp-pb)*((Math.max(ymin,Math.min(ymax,v))-ymin)/(ymax-ymin));}
+          function pts(ser){var n=ser.length;if(n<2)return '';return ser.map(function(v,i){return (pl+(w-pl-pr)*i/(n-1)).toFixed(1)+','+yOf(v).toFixed(1);}).join(' ');}
+          return <svg viewBox={'0 0 '+w+' '+h} style={{width:'100%',height:'auto',background:C.bgInput,borderRadius:6}}>
+            {[0.5,0.7,0.9].map(function(g){return <g key={'g'+g}><line x1={pl} y1={yOf(g)} x2={w-pr} y2={yOf(g)} stroke={C.border} strokeWidth="0.5"/><text x={pl-2} y={yOf(g)+2.5} fontSize="6.5" fill={C.txtDim} textAnchor="end">{g.toFixed(1)}</text></g>;})}
+            {[[0.68,C.gold],[0.80,C.accent],[0.90,C.blue]].map(function(r){return <line key={'t'+r[0]} x1={pl} y1={yOf(r[0])} x2={w-pr} y2={yOf(r[0])} stroke={r[1]} strokeWidth="0.7" strokeDasharray="3 3" opacity="0.45"/>;})}
+            <polyline points={pts(bt.r68)} fill="none" stroke={C.gold} strokeWidth="1.1"/>
+            <polyline points={pts(bt.r80)} fill="none" stroke={C.accent} strokeWidth="1.4"/>
+            <polyline points={pts(bt.r90)} fill="none" stroke={C.blue} strokeWidth="1.1"/>
+          </svg>;
+        })()}
+        <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginTop:10}}>
+          <div><div style={lS}>80% breach rate</div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{((bt.bHi+bt.bLo)/bt.bTot*100).toFixed(1)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>high {(bt.bHi/bt.bTot*100).toFixed(0)}% &middot; low {(bt.bLo/bt.bTot*100).toFixed(0)}%</div></div>
+          <div><div style={lS}>Median-travel error</div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{(bt.teMAE*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>MAE &middot; bias {(bt.teMean*100>=0?'+':'')}{(bt.teMean*100).toFixed(2)}%</div></div>
+        </div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.5}}>Realized within ~4% of target = well-calibrated (green). A rolling-coverage dip means the bands lagged a vol spike. Breach split flags directional bias (gap-prone names skew one side); median-travel bias shows if range is systematically under/over-predicted. Envelope bands only &#8212; implied-band accuracy needs logged IV (accruing now).</div>
+      </Cd>
     </div>}
   </div>;
 }
@@ -29959,7 +30077,7 @@ function App(){
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='fullmarketscan'&&<FullMarketScanPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} initialTicker={csTarget} onBack={function(){setCsTarget('');setPage('home');}}/>}
