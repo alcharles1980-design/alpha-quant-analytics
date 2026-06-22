@@ -17782,9 +17782,9 @@ function NextDayRangePage(p){
     setErr('');setRes(null);setLoading(true);setProg('Fetching daily history\u2026');
     try{
       var now=new Date();
-      var fromD=new Date(now.getTime()-400*86400000);
+      var fromD=new Date(now.getTime()-800*86400000);
       var fs=fromD.toISOString().slice(0,10), tsd=now.toISOString().slice(0,10);
-      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=500&apiKey='+p.apiKey;
+      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=1000&apiKey='+p.apiKey;
       var dr=await fetch(url);
       if(!dr.ok){var eb=await dr.text();throw new Error('Polygon HTTP '+dr.status+': '+eb.slice(0,140));}
       var dj=await dr.json();
@@ -17812,13 +17812,35 @@ function NextDayRangePage(p){
       function findQR(target,lo,hi){var a=0.5,b=0.9995,k;for(k=0;k<42;k++){var m=(a+b)/2;if(jcR(m,lo,hi).cov<target)a=m;else b=m;}return (a+b)/2;}
 
       var split=Math.floor(L*0.6);
+      // --- Calibrated band construction (same walk-forward method the Rolling Backtest scores) ---
+      // Shape: joint-fit quantile multiplier on a trailing FITW window. Calibration: scale by m =
+      // C-quantile of historical tau (tau_d = how much that day's trailing-fit band had to scale to
+      // just contain day d), which de-biases the trailing in-sample fit so realized coverage hits the
+      // stated target out-of-sample. Every input for day d uses only days < d (no lookahead).
+      var FITW=120, MLO=0.85, MHI=1.40, canCal=(L>=FITW+50);
+      function qAt(s,q){ if(!s.length)return 0; var idx=(s.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,s.length-1); return s[f]+(idx-f)*(s[c]-s[f]); }
+      function fitWin(lo,hi,C2){
+        var wu=ups.slice(lo,hi), wd=dns.slice(lo,hi), su=wu.slice().sort(function(a,b){return a-b;}), sd=wd.slice().sort(function(a,b){return a-b;});
+        var a=0.5,b=0.9995,k,n2=wu.length;
+        for(k=0;k<30;k++){ var mq=(a+b)/2, qu=qAt(su,mq), qd=qAt(sd,mq), hit=0,j; for(j=0;j<n2;j++){ if(wu[j]<=qu&&wd[j]<=qd)hit++; } if(n2&&hit/n2<C2)a=mq; else b=mq; }
+        var q=(a+b)/2; return {qu:qAt(su,q), qd:qAt(sd,q)};
+      }
       var bands=COVS.map(function(C2){
-        var qF=findQR(C2,0,L), full=jcR(qF,0,L);                 // displayed band uses ALL history
-        var tr=jcR(findQR(C2,0,split),0,split);                  // fit on older 60%
-        var oos=covWith(tr.qu,tr.qd,split,L);                    // honest out-of-sample coverage on recent 40%
-        return {cov:C2,qu:full.qu,qd:full.qd,oos:oos,
-                hi:priorClose*(1+sigNow*full.qu),lo:priorClose*(1-sigNow*full.qd),
-                width:priorClose*sigNow*(full.qu+full.qd)};
+        if(!canCal){                                              // short-history fallback: full-history joint fit (legacy)
+          var qF=findQR(C2,0,L), full=jcR(qF,0,L), tr=jcR(findQR(C2,0,split),0,split);
+          return {cov:C2,qu:full.qu,qd:full.qd,m:1,oos:covWith(tr.qu,tr.qd,split,L),
+                  hi:priorClose*(1+sigNow*full.qu),lo:priorClose*(1-sigNow*full.qd),width:priorClose*sigNow*(full.qu+full.qd)};
+        }
+        var tau=new Array(L), d;
+        for(d=FITW; d<L; d++){ var fw=fitWin(d-FITW,d,C2); tau[d]=(fw.qu>0&&fw.qd>0)?Math.max(ups[d]/fw.qu, dns[d]/fw.qd):null; }
+        var allTau=[]; for(d=FITW;d<L;d++)if(tau[d]!=null)allTau.push(tau[d]);
+        var m=allTau.length>30?Math.min(MHI,Math.max(MLO,quantile(allTau,C2))):1.0;
+        var fT=fitWin(L-FITW,L,C2), quT=fT.qu*m, qdT=fT.qd*m;
+        // recent out-of-sample coverage of the calibrated band: trailing 60d, m re-fit on prior tau only
+        var ROLL=60, hits=0,cnt=0, startD=Math.max(FITW+31, L-ROLL), z;
+        for(d=startD; d<L; d++){ if(tau[d]==null)continue; var pri=[]; for(z=FITW;z<d;z++)if(tau[z]!=null)pri.push(tau[z]); if(pri.length<=30)continue; var md=Math.min(MHI,Math.max(MLO,quantile(pri,C2))); cnt++; if(tau[d]<=md)hits++; }
+        return {cov:C2,qu:quT,qd:qdT,m:m,oos:cnt?hits/cnt:C2,
+                hi:priorClose*(1+sigNow*quT),lo:priorClose*(1-sigNow*qdT),width:priorClose*sigNow*(quT+qdT)};
       });
 
       var medRange=quantile(rngs,0.5), meanRange=rngs.reduce(function(a,b){return a+b;},0)/rngs.length;
@@ -17908,7 +17930,7 @@ function NextDayRangePage(p){
       function qS(sorted,q){ if(!sorted.length)return 0; var idx=(sorted.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,sorted.length-1); return sorted[f]+(idx-f)*(sorted[c]-sorted[f]); }
 
       var start=WIN+FITW+1;
-      var lev=COVS.map(function(C){return {cov:C,hits:[],widths:[],iscore:[]};});
+      var lev=COVS.map(function(C){return {cov:C,hits:[],widths:[],iscore:[],tau:[]};});
       var roll=COVS.map(function(){return [];});
       var bHi=0,bLo=0,bTot=0, travErr=[], tt;
       for(tt=start;tt<N;tt++){
@@ -17926,10 +17948,15 @@ function NextDayRangePage(p){
             if(tot&&hit/tot<C)a=mq; else b=mq;
           }
           var q=(a+b)/2, QU=qS(us,q), QD=qS(ds,q);
-          var hiB=pc2*(1+sig[tt]*QU), loB=pc2*(1-sig[tt]*QD), contained=(H<=hiB&&Lo>=loB), alpha=1-C;
+          // walk-forward calibration multiplier from PRIOR tau only (de-bias to target OOS); identical to live projection
+          var tA=lev[ci].tau, m=1.0;
+          if(tA.length>30){ var ts=tA.slice().sort(function(x,y){return x-y;}); m=Math.min(1.40,Math.max(0.85,qS(ts,C))); }
+          var QUc=QU*m, QDc=QD*m;
+          var hiB=pc2*(1+sig[tt]*QUc), loB=pc2*(1-sig[tt]*QDc), contained=(H<=hiB&&Lo>=loB), alpha=1-C;
           lev[ci].hits.push(contained?1:0);
           lev[ci].widths.push((hiB-loB)/pc2);
           lev[ci].iscore.push(((hiB-loB)+(2/alpha)*Math.max(0,H-hiB)+(2/alpha)*Math.max(0,loB-Lo))/pc2);
+          if(QU>0&&QD>0&&up[tt]!=null)tA.push(Math.max(up[tt]/QU, dn[tt]/QD));
           var hh=lev[ci].hits, lo2=Math.max(0,hh.length-ROLL), sum=0,z; for(z=lo2;z<hh.length;z++)sum+=hh[z];
           roll[ci].push(sum/(hh.length-lo2));
           if(C===0.80){ bTot++; if(H>hiB)bHi++; if(Lo<loB)bLo++; }
@@ -17986,7 +18013,7 @@ function NextDayRangePage(p){
       </Cd>
 
       <Cd glow>
-        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored, overnight gap included. 80% band = sensible grid boundary." info="Each band is the [low, high] that historically contained the next day's full high-low range at the stated probability, using vol-scaled empirical extension quantiles (asymmetric up/down)."/>
+        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored, overnight gap included. 80% band = sensible grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from vol-scaled empirical extension quantiles (asymmetric up/down) fit on a trailing 120-day window, then calibrated so realized coverage matches the target out-of-sample. This is the same construction the Rolling Backtest scores."/>
         <div style={{marginTop:8}}>
           {R.bands.map(function(b){
             var pri=(b.cov===0.80);
@@ -17999,7 +18026,7 @@ function NextDayRangePage(p){
             </div>;
           })}
         </div>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>Out-of-sample coverage (multiplier fit on older 60%, tested on recent 40%): {R.bands.map(function(b){return Math.round(b.cov*100)+'\u2192'+Math.round(b.oos*100)+'%';}).join('  \u00b7  ')}. Realized near target = trustworthy.</div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>Recent out-of-sample coverage (trailing 60d, walk-forward): {R.bands.map(function(b){return Math.round(b.cov*100)+'\u2192'+Math.round(b.oos*100)+'%';}).join('  \u00b7  ')} &middot; calibration {R.bands.map(function(b){return '\u00d7'+b.m.toFixed(2);}).join(' / ')}. Bands are de-biased to hit target out-of-sample; run the Rolling Backtest below for the full-history check.</div>
         {R.iv&&R.iv.bands&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+C.border}}>
           <div style={{color:C.blue,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.5}}>OPTIONS-IMPLIED RANGE <span style={{color:C.txtDim,fontWeight:400}}>&middot; terminal price from {(R.iv.iv*100).toFixed(0)}% ATM IV</span></div>
           <div style={{marginTop:6}}>
@@ -18045,7 +18072,7 @@ function NextDayRangePage(p){
 
     {bt&&<div>
       <Cd glow>
-        <SectionHead title="Rolling Backtest (walk-forward)" sub={'Envelope bands re-fit on a trailing '+bt.fitw+'d window, scored against the next day. '+bt.tested+' test days.'} info="For each historical day the band is built from prior data only, then checked against that day's actual high-low. Rolling coverage = trailing-60d hit rate; reveals when bands lag a vol regime shift."/>
+        <SectionHead title="Rolling Backtest (walk-forward)" sub={'Calibrated envelope band (same construction as the projection) re-fit on a trailing '+bt.fitw+'d window, scored against the next day. '+bt.tested+' test days.'} info="For each historical day the band is built and calibrated from prior data only, then checked against that day's actual high-low. Rolling coverage = trailing-60d hit rate; reveals when bands lag a vol regime shift."/>
         <div style={{marginTop:8}}>
           {bt.summary.map(function(s){
             var off=Math.abs(s.realized-s.cov), col=off<=0.04?C.accent:(off<=0.08?C.gold:C.warn);
