@@ -17937,7 +17937,7 @@ function NextDayRangePage(p){
 
       var realizedAnnual=sigNow*Math.sqrt(252);
       var forecastAnnual=sigStarNext*Math.sqrt(252);
-      var histMove1=sigEff*priorClose;
+      var histMove1=sigNow*priorClose;
 
       setRes({t:t,lastDate:lastDate,priorClose:priorClose,sigNow:sigNow,realizedAnnual:realizedAnnual,
               forecastVol:sigStarNext,sigEff:sigEff,forecastAnnual:forecastAnnual,beta:HS.beta,regimeNext:HS.regimeNext,ivWidened:ivWidened,
@@ -18087,8 +18087,8 @@ function NextDayRangePage(p){
           })}
         </div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>{bt?('Validated over '+bt.tested+' days (~3y walk-forward): '+bt.summary.map(function(s){return Math.round(s.cov*100)+'\u2192'+Math.round(s.realized*100)+'%';}).join('  \u00b7  ')+'.  Green = realized within 4% of target.'):(btErr?('Validation unavailable: '+btErr):(btLoading?'Validating against ~3 years of history\u2026':''))}</div>
-        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}><span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+ivPrem.toFixed(2)+'\u00d7 realized (likely earnings/catalyst). '+(R.ivWidened?'Band auto-widened toward the IV-implied move (live only \\u2014 not in the historical backtest below).':'Consider widening or pausing the grid.')):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,lineHeight:1.5}}>Vol engine: HAR next-day forecast {(R.forecastVol*100).toFixed(2)}% daily{(R.sigEff&&R.ivWidened)?(' \\u2192 '+(R.sigEff*100).toFixed(2)+'% after IV'):''} &middot; market regime &#215;{R.regimeNext!=null?R.regimeNext.toFixed(2):'1.00'}{R.beta!=null?(' (\\u03b2 '+R.beta.toFixed(2)+')'):''} &middot; shape on {Math.min(R.nDays,504)}d.</div>
+        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}><span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+ivPrem.toFixed(2)+'\u00d7 realized (likely earnings/catalyst). '+(R.ivWidened?'Band auto-widened toward the IV-implied move (live only \u2014 not in the historical backtest below).':'Consider widening or pausing the grid.')):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,lineHeight:1.5}}>Vol engine: HAR next-day forecast {(R.forecastVol*100).toFixed(2)}% daily{(R.sigEff&&R.ivWidened)?(' \u2192 '+(R.sigEff*100).toFixed(2)+'% after IV'):''} &middot; market regime &#215;{R.regimeNext!=null?R.regimeNext.toFixed(2):'1.00'}{R.beta!=null?(' (\u03b2 '+R.beta.toFixed(2)+')'):''} &middot; shape on {Math.min(R.nDays,504)}d.</div>
       </Cd>
 
       <Cd>
