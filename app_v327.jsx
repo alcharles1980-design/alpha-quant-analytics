@@ -17777,6 +17777,34 @@ function NextDayRangePage(p){
     return r.json();
   };
 
+  // ---- Next-day vol engine: per-day GKYZ realized vol -> HAR one-day-ahead forecast -> SPY market-regime multiplier ----
+  function harSig(bars, spyBars){
+    var N=bars.length, i;
+    function harAt(r,idx){ if(idx<1)return r[0]; var d1=r[idx-1], lo5=Math.max(0,idx-5), lo22=Math.max(0,idx-22), w5=0,n5=0,w22=0,n22=0,k; for(k=lo5;k<idx;k++){w5+=r[k];n5++;} for(k=lo22;k<idx;k++){w22+=r[k];n22++;} return 0.5*d1+0.3*(w5/n5)+0.2*(w22/n22); }
+    function rvArr(bs){ var r=new Array(bs.length), k; for(k=0;k<bs.length;k++){ var b=bs[k], pc=k>0?bs[k-1].c:b.o; if(!(b.o>0&&b.h>0&&b.l>0&&b.c>0&&pc>0)){ r[k]=k>0?r[k-1]:0.01; continue; } var gap=Math.log(b.o/pc), gk=0.5*Math.pow(Math.log(b.h/b.l),2)-(2*Math.LN2-1)*Math.pow(Math.log(b.c/b.o),2); r[k]=Math.sqrt(Math.max(gap*gap+Math.max(0,gk),1e-12)); } return r; }
+    var rv=rvArr(bars), sigF=new Array(N); for(i=0;i<N;i++)sigF[i]=harAt(rv,i);
+    var sigFNext=harAt(rv,N), regime=new Array(N), regimeNext=1, beta=null; for(i=0;i<N;i++)regime[i]=1;
+    if(spyBars&&spyBars.length){
+      var byDate={}, k; for(k=0;k<spyBars.length;k++){ byDate[new Date(spyBars[k].t).toISOString().slice(0,10)]=spyBars[k]; }
+      var sp=new Array(N), cov=0; for(i=0;i<N;i++){ sp[i]=byDate[new Date(bars[i].t).toISOString().slice(0,10)]||null; if(sp[i])cov++; }
+      if(cov>=0.9*N){
+        var srv=new Array(N);
+        for(i=0;i<N;i++){ if(!sp[i]){srv[i]=null;continue;} var pc=(i>0&&sp[i-1])?sp[i-1].c:sp[i].o, b=sp[i]; var gap=Math.log(b.o/pc), gk=0.5*Math.pow(Math.log(b.h/b.l),2)-(2*Math.LN2-1)*Math.pow(Math.log(b.c/b.o),2); srv[i]=Math.sqrt(Math.max(gap*gap+Math.max(0,gk),1e-12)); }
+        for(i=0;i<N;i++)if(srv[i]==null)srv[i]=i>0?srv[i-1]:rv[i];
+        var ssigF=new Array(N); for(i=0;i<N;i++)ssigF[i]=harAt(srv,i);
+        var ssigFNext=harAt(srv,N), med=ssigF.slice().sort(function(a,b){return a-b;})[Math.floor(N/2)];
+        var b0=Math.max(1,N-252), sx=0,sy=0,sxy=0,syy=0,cnt=0;
+        for(i=b0;i<N;i++){ if(!sp[i]||!sp[i-1]||!(bars[i-1].c>0))continue; var rsx=Math.log(bars[i].c/bars[i-1].c), rsy=Math.log(sp[i].c/sp[i-1].c); sx+=rsx;sy+=rsy;sxy+=rsx*rsy;syy+=rsy*rsy;cnt++; }
+        if(cnt>30){ var cvv=sxy/cnt-(sx/cnt)*(sy/cnt), vrr=syy/cnt-(sy/cnt)*(sy/cnt); beta=vrr>0?cvv/vrr:null; }
+        var bf=(beta!=null&&isFinite(beta))?Math.min(2,Math.max(0.5,beta)):1;
+        var reg=function(sv){ if(!med||med<=0||!isFinite(sv))return 1; return Math.min(1.4,Math.max(0.85,Math.pow(sv/med,0.5*bf))); };
+        for(i=0;i<N;i++)regime[i]=reg(ssigF[i]); regimeNext=reg(ssigFNext);
+      }
+    }
+    var sigStar=new Array(N); for(i=0;i<N;i++)sigStar[i]=sigF[i]*regime[i];
+    return {rv:rv,sigF:sigF,regime:regime,sigStar:sigStar,beta:beta,sigStarNext:sigFNext*regimeNext,sigFNext:sigFNext,regimeNext:regimeNext};
+  }
+
   async function run(){
     var t=(tk||'').trim().toUpperCase();
     if(!t){setErr('Enter a ticker symbol.');return;}
@@ -17793,17 +17821,29 @@ function NextDayRangePage(p){
       if(bars.length<WIN+50)throw new Error('Not enough daily history for '+t+' ('+bars.length+' bars; need ~'+(WIN+50)+').');
       var n=bars.length, priorClose=bars[n-1].c, lastDate=new Date(bars[n-1].t).toISOString().slice(0,10);
 
-      var sigNow=yz(bars.slice(n-WIN));
+      var sigNow=yz(bars.slice(n-WIN));   // trailing Yang-Zhang, kept for reference display only
       if(!sigNow)throw new Error('Volatility computation failed (bad bar data).');
 
-      var ups=[],dns=[],rngs=[],perDay=[],i2;
-      for(i2=WIN+1;i2<n;i2++){
-        var s=yz(bars.slice(i2-WIN,i2)); if(!s)continue;
+      // SPY market context for the regime multiplier (graceful: regime collapses to 1 if it fails)
+      var spyBars=null;
+      try{
+        var su2='https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=1000&apiKey='+p.apiKey;
+        var sr2=await fetch(su2);
+        if(sr2.ok){ var sj2=await sr2.json(); spyBars=(sj2.results||[]).map(function(b){return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c};}); if(spyBars.length<60)spyBars=null; }
+      }catch(e){ spyBars=null; }
+
+      // Next-day vol forecast: HAR(per-day GKYZ) x SPY market regime -> sigStar[d] (forecast made FOR day d from data < d)
+      var HS=harSig(bars, spyBars), sigStar=HS.sigStar, sigStarNext=HS.sigStarNext;
+      if(!(sigStarNext>0&&isFinite(sigStarNext)))throw new Error('Volatility forecast failed (bad bar data).');
+
+      var ups=[],dns=[],rngs=[],perDay=[],i2, WARM=Math.max(WIN+1,23);
+      for(i2=WARM;i2<n;i2++){
+        var sg=sigStar[i2]; if(!(sg>0&&isFinite(sg)))continue;
         var pc=bars[i2-1].c;
-        ups.push((bars[i2].h-pc)/pc/s);
-        dns.push((pc-bars[i2].l)/pc/s);
+        ups.push((bars[i2].h-pc)/pc/sg);
+        dns.push((pc-bars[i2].l)/pc/sg);
         rngs.push((bars[i2].h-bars[i2].l)/pc);
-        perDay.push({s:s,pc:pc,hi:bars[i2].h,lo:bars[i2].l});
+        perDay.push({s:sg,pc:pc,hi:bars[i2].h,lo:bars[i2].l});
       }
       var L=perDay.length;
       if(L<40)throw new Error('Not enough usable days after vol windowing.');
@@ -17813,12 +17853,12 @@ function NextDayRangePage(p){
       function findQR(target,lo,hi){var a=0.5,b=0.9995,k;for(k=0;k<42;k++){var m=(a+b)/2;if(jcR(m,lo,hi).cov<target)a=m;else b=m;}return (a+b)/2;}
 
       var split=Math.floor(L*0.6);
-      // --- Calibrated band construction (same walk-forward method the Rolling Backtest scores) ---
-      // Shape: joint-fit quantile multiplier on a trailing FITW window. Calibration: scale by m =
-      // C-quantile of historical tau (tau_d = how much that day's trailing-fit band had to scale to
-      // just contain day d), which de-biases the trailing in-sample fit so realized coverage hits the
-      // stated target out-of-sample. Every input for day d uses only days < d (no lookahead).
-      var FITW=120, MLO=0.85, MHI=1.40, canCal=(L>=FITW+50);
+      // --- Calibrated band SHAPE (joint-fit quantile on a long, decoupled window) + tau de-bias ---
+      // sigStar (HAR forecast x regime) carries the vol level/regime, so the standardized-extension SHAPE
+      // is stationary and is fit on a long trailing window SHP (decoupled from the responsive level). m =
+      // C-quantile of tau (how much today's shape must scale to just contain each day) de-biases to target
+      // OOS. For the live forecast every historical day is in the past, so today's shape is causal for all tau.
+      var SHP=Math.min(L,504), MLO=0.85, MHI=1.40, canCal=(L>=170);
       function qAt(s,q){ if(!s.length)return 0; var idx=(s.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,s.length-1); return s[f]+(idx-f)*(s[c]-s[f]); }
       function fitWin(lo,hi,C2){
         var wu=ups.slice(lo,hi), wd=dns.slice(lo,hi), su=wu.slice().sort(function(a,b){return a-b;}), sd=wd.slice().sort(function(a,b){return a-b;});
@@ -17826,22 +17866,17 @@ function NextDayRangePage(p){
         for(k=0;k<30;k++){ var mq=(a+b)/2, qu=qAt(su,mq), qd=qAt(sd,mq), hit=0,j; for(j=0;j<n2;j++){ if(wu[j]<=qu&&wd[j]<=qd)hit++; } if(n2&&hit/n2<C2)a=mq; else b=mq; }
         var q=(a+b)/2; return {qu:qAt(su,q), qd:qAt(sd,q)};
       }
-      var bands=COVS.map(function(C2){
+      var shapes=COVS.map(function(C2){
         if(!canCal){                                              // short-history fallback: full-history joint fit (legacy)
           var qF=findQR(C2,0,L), full=jcR(qF,0,L), tr=jcR(findQR(C2,0,split),0,split);
-          return {cov:C2,qu:full.qu,qd:full.qd,m:1,oos:covWith(tr.qu,tr.qd,split,L),
-                  hi:priorClose*(1+sigNow*full.qu),lo:priorClose*(1-sigNow*full.qd),width:priorClose*sigNow*(full.qu+full.qd)};
+          return {cov:C2,quT:full.qu,qdT:full.qd,m:1,oos:covWith(tr.qu,tr.qd,split,L)};
         }
-        var tau=new Array(L), d;
-        for(d=FITW; d<L; d++){ var fw=fitWin(d-FITW,d,C2); tau[d]=(fw.qu>0&&fw.qd>0)?Math.max(ups[d]/fw.qu, dns[d]/fw.qd):null; }
-        var allTau=[]; for(d=FITW;d<L;d++)if(tau[d]!=null)allTau.push(tau[d]);
-        var m=allTau.length>30?Math.min(MHI,Math.max(MLO,quantile(allTau,C2))):1.0;
-        var fT=fitWin(L-FITW,L,C2), quT=fT.qu*m, qdT=fT.qd*m;
-        // recent out-of-sample coverage of the calibrated band: trailing 60d, m re-fit on prior tau only
-        var ROLL=60, hits=0,cnt=0, startD=Math.max(FITW+31, L-ROLL), z;
-        for(d=startD; d<L; d++){ if(tau[d]==null)continue; var pri=[]; for(z=FITW;z<d;z++)if(tau[z]!=null)pri.push(tau[z]); if(pri.length<=30)continue; var md=Math.min(MHI,Math.max(MLO,quantile(pri,C2))); cnt++; if(tau[d]<=md)hits++; }
-        return {cov:C2,qu:quT,qd:qdT,m:m,oos:cnt?hits/cnt:C2,
-                hi:priorClose*(1+sigNow*quT),lo:priorClose*(1-sigNow*qdT),width:priorClose*sigNow*(quT+qdT)};
+        var fT=fitWin(L-SHP,L,C2), quBase=fT.qu, qdBase=fT.qd;     // today's shape on trailing SHP
+        var tau=[], d; for(d=0;d<L;d++){ if(quBase>0&&qdBase>0)tau.push(Math.max(ups[d]/quBase, dns[d]/qdBase)); }
+        var m=tau.length>30?Math.min(MHI,Math.max(MLO,quantile(tau,C2))):1.0;
+        var ROLL=60, hits=0,cnt=0, startD=Math.max(31,L-ROLL), z;   // recent OOS: trailing 60d, m from prior tau only
+        for(d=startD;d<L;d++){ var pri=tau.slice(0,d); if(pri.length<=30)continue; var md=Math.min(MHI,Math.max(MLO,quantile(pri,C2))); cnt++; if(tau[d]<=md)hits++; }
+        return {cov:C2,quT:quBase*m,qdT:qdBase*m,m:m,oos:cnt?hits/cnt:C2};
       });
 
       var medRange=quantile(rngs,0.5), meanRange=rngs.reduce(function(a,b){return a+b;},0)/rngs.length;
@@ -17893,10 +17928,19 @@ function NextDayRangePage(p){
         }catch(e3){}
       }
 
+      // IV catalyst widening (LIVE band only; no historical IV yet for the backtest). If ATM-IV's implied
+      // 1-day move materially exceeds the HAR forecast (an event is priced in), blend the vol up toward IV.
+      var sigEff=sigStarNext, ivWidened=false;
+      if(iv&&iv.iv>0){ var sIV=iv.iv*Math.sqrt(1/252); if(sIV>1.25*sigStarNext){ sigEff=Math.min(3*sigStarNext, 0.6*sIV+0.4*sigStarNext); ivWidened=true; } }
+      var bands=shapes.map(function(s){ return {cov:s.cov,qu:s.quT,qd:s.qdT,m:s.m,oos:s.oos,
+        hi:priorClose*(1+sigEff*s.quT), lo:priorClose*(1-sigEff*s.qdT), width:priorClose*sigEff*(s.quT+s.qdT)}; });
+
       var realizedAnnual=sigNow*Math.sqrt(252);
-      var histMove1=sigNow*priorClose;
+      var forecastAnnual=sigStarNext*Math.sqrt(252);
+      var histMove1=sigEff*priorClose;
 
       setRes({t:t,lastDate:lastDate,priorClose:priorClose,sigNow:sigNow,realizedAnnual:realizedAnnual,
+              forecastVol:sigStarNext,sigEff:sigEff,forecastAnnual:forecastAnnual,beta:HS.beta,regimeNext:HS.regimeNext,ivWidened:ivWidened,
               bands:bands,medRange:medRange,meanRange:meanRange,expParam:expParam,meanGap:meanGap,
               nDays:L,split:split,iv:iv,histMove1:histMove1});
       setProg('');
@@ -17910,7 +17954,7 @@ function NextDayRangePage(p){
     if(!t){setBtErr('Enter a ticker symbol.');return;}
     setBtErr('');setBt(null);setBtLoading(true);setBtProg('Fetching ~3y daily history\u2026');
     try{
-      var FITW=120, ROLL=60;
+      var FITW=504, ROLL=60;   // shape window: long & decoupled (sigStar carries the vol level/regime)
       var now=new Date();
       var fromD=new Date(now.getTime()-1180*86400000);
       var fs=fromD.toISOString().slice(0,10), tsd=now.toISOString().slice(0,10);
@@ -17918,16 +17962,24 @@ function NextDayRangePage(p){
       var dr=await fetch(url);
       if(!dr.ok){var eb=await dr.text();throw new Error('Polygon HTTP '+dr.status+': '+eb.slice(0,140));}
       var dj=await dr.json();
-      var bars=(dj.results||[]).map(function(b){return {o:b.o,h:b.h,l:b.l,c:b.c};});
+      var bars=(dj.results||[]).map(function(b){return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c};});
       var N=bars.length;
       if(N<WIN+FITW+60)throw new Error('Not enough history for backtest ('+N+' bars; need ~'+(WIN+FITW+60)+'). Try a more liquid / older ticker.');
+      setBtProg('Fetching SPY market context\u2026');
+      var spyBars=null;
+      try{
+        var su2='https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
+        var sr2=await fetch(su2);
+        if(sr2.ok){ var sj2=await sr2.json(); spyBars=(sj2.results||[]).map(function(b){return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c};}); if(spyBars.length<60)spyBars=null; }
+      }catch(e){ spyBars=null; }
       setBtProg('Running walk-forward backtest\u2026');
       await new Promise(function(r){setTimeout(r,20);});
 
-      var sig=new Array(N), up=new Array(N), dn=new Array(N), i;
+      // sigStar[i] = HAR(per-day GKYZ) x SPY regime, the forecast made FOR day i from data < i -- same engine as the live projection
+      var HS=harSig(bars, spyBars), sig=HS.sigStar, up=new Array(N), dn=new Array(N), i;
       for(i=WIN+1;i<N;i++){
-        var s=yz(bars.slice(i-WIN,i)); sig[i]=s;
-        if(s){var pc=bars[i-1].c; up[i]=(bars[i].h-pc)/pc/s; dn[i]=(pc-bars[i].l)/pc/s;}
+        var s=sig[i];
+        if(s>0&&isFinite(s)){var pc=bars[i-1].c; up[i]=(bars[i].h-pc)/pc/s; dn[i]=(pc-bars[i].l)/pc/s;}
       }
       function qS(sorted,q){ if(!sorted.length)return 0; var idx=(sorted.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,sorted.length-1); return sorted[f]+(idx-f)*(sorted[c]-sorted[f]); }
 
@@ -17986,7 +18038,7 @@ function NextDayRangePage(p){
     <Cd glow>
       <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F,letterSpacing:1}}>NEXT DAY RANGE TOOL</div>
       <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:4,lineHeight:1.6,maxWidth:580}}>
-        Estimates tomorrow&#39;s trading range for setting grid boundaries, anchored to today&#39;s close with the overnight gap included. Width comes from Yang-Zhang volatility; the multiplier is empirically calibrated so the band historically contains the full day&#39;s high&#8211;low at the stated coverage. An options-IV overlay (Black-Scholes from the ATM straddle) flags when the market is pricing an outsized move such as earnings. Intended for after-close / pre-open use.
+        Estimates tomorrow&#39;s trading range for setting grid boundaries, anchored to today&#39;s close with the overnight gap included. Width comes from a HAR next-day volatility forecast scaled by an SPY market-regime multiplier; the band multiplier is empirically calibrated so the band historically contains the full day&#39;s high&#8211;low at the stated coverage. An options-IV overlay (Black-Scholes from the ATM straddle) flags when the market is pricing an outsized move such as earnings. Intended for after-close / pre-open use.
       </div>
     </Cd>
     <Cd>
@@ -18006,14 +18058,14 @@ function NextDayRangePage(p){
       <Cd>
         <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
           <div><div style={lS}>Prior close</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{fmtUsd(R.priorClose)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{R.t} &middot; {R.lastDate}</div></div>
-          <div><div style={lS}>Daily vol (YZ)</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.sigNow*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.realizedAnnual*100).toFixed(0)}% ann &middot; {R.nDays}d</div></div>
+          <div><div style={lS}>Next-day vol</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.forecastVol*100).toFixed(2)}%{R.ivWidened?<span style={{color:C.warn,fontSize:9,fontWeight:700}}> +IV</span>:null}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>HAR fcast &middot; {(R.forecastAnnual*100).toFixed(0)}% ann &middot; YZ {(R.sigNow*100).toFixed(2)}%</div></div>
           <div><div style={lS}>Typical travel</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.medRange*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>median H&#8211;L &middot; {fmtUsd(R.medRange*R.priorClose)}</div></div>
           <div><div style={lS}>Overnight gap</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.meanGap*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>close&#8594;open risk</div></div>
         </div>
       </Cd>
 
       <Cd glow>
-        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored &middot; overnight gap included &middot; walk-forward validated. 80% band = grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from vol-scaled empirical extension quantiles fit on a trailing 120-day window and calibrated so realized coverage matches target out-of-sample. 'real' = the actual realized coverage when this exact band is replayed across ~3 years of history."/>
+        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored &middot; overnight gap included &middot; walk-forward validated. 80% band = grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from forecast-vol-scaled empirical extension quantiles fit on a long 504-day window (decoupled from the responsive vol level) and calibrated so realized coverage matches target out-of-sample. 'real' = the actual realized coverage when this exact band is replayed across ~3 years of history."/>
         <div style={{marginTop:8}}>
           {R.bands.map(function(b){
             var pri=(b.cov===0.80);
@@ -18035,7 +18087,8 @@ function NextDayRangePage(p){
           })}
         </div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>{bt?('Validated over '+bt.tested+' days (~3y walk-forward): '+bt.summary.map(function(s){return Math.round(s.cov*100)+'\u2192'+Math.round(s.realized*100)+'%';}).join('  \u00b7  ')+'.  Green = realized within 4% of target.'):(btErr?('Validation unavailable: '+btErr):(btLoading?'Validating against ~3 years of history\u2026':''))}</div>
-        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}><span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+ivPrem.toFixed(2)+'\u00d7 realized (likely earnings/catalyst). Consider widening or pausing the grid.'):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
+        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}><span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+ivPrem.toFixed(2)+'\u00d7 realized (likely earnings/catalyst). '+(R.ivWidened?'Band auto-widened toward the IV-implied move (live only \\u2014 not in the historical backtest below).':'Consider widening or pausing the grid.')):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,lineHeight:1.5}}>Vol engine: HAR next-day forecast {(R.forecastVol*100).toFixed(2)}% daily{(R.sigEff&&R.ivWidened)?(' \\u2192 '+(R.sigEff*100).toFixed(2)+'% after IV'):''} &middot; market regime &#215;{R.regimeNext!=null?R.regimeNext.toFixed(2):'1.00'}{R.beta!=null?(' (\\u03b2 '+R.beta.toFixed(2)+')'):''} &middot; shape on {Math.min(R.nDays,504)}d.</div>
       </Cd>
 
       <Cd>
@@ -18097,7 +18150,7 @@ function NextDayRangePage(p){
             </div>}
           </div>:null}
 
-          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.5,marginTop:12}}>Method: Yang-Zhang daily vol over a {WIN}-day window (gap + intraday decomposition). Bands = prior close &#215; (1 &#177; &#963; &#215; Q), Q = per-side standardized-extension quantile tuned to the target joint coverage, then walk-forward calibrated. Estimates only; not financial advice.</div>
+          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.5,marginTop:12}}>Method: next-day vol = a HAR forecast (per-day Garman-Klass&#8211;Yang-Zhang realized vol, weighted 50/30/20 across daily/weekly/monthly horizons) &#215; an SPY market-regime multiplier (&#946;-scaled). Bands = prior close &#215; (1 &#177; &#963; &#215; Q), where &#963; is that forecast and Q = per-side standardized-extension quantile (target joint coverage) fit on a long 504-day window decoupled from the responsive level, then walk-forward &#964;-calibrated so realized coverage hits target. On a priced-in catalyst the live band widens toward the ATM-IV move (live only). Estimates only; not financial advice.</div>
         </div>}
       </Cd>
     </div>}
