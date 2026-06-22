@@ -17808,12 +17808,14 @@ function NextDayRangePage(p){
   async function run(){
     var t=(tk||'').trim().toUpperCase();
     if(!t){setErr('Enter a ticker symbol.');return;}
-    setErr('');setRes(null);setLoading(true);setProg('Fetching daily history\u2026');
+    setErr('');setRes(null);setBt(null);setBtErr('');setLoading(true);setProg('Fetching daily history\u2026');
     try{
+      var SHP=504, ROLL=60, MLO=0.85, MHI=1.40;
       var now=new Date();
-      var fromD=new Date(now.getTime()-800*86400000);
+      var fromD=new Date(now.getTime()-1180*86400000);
       var fs=fromD.toISOString().slice(0,10), tsd=now.toISOString().slice(0,10);
-      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=1000&apiKey='+p.apiKey;
+      // ONE fetch of stock + SPY over the full ~3y window feeds BOTH the live band and the walk-forward backtest
+      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
       var dr=await fetch(url);
       if(!dr.ok){var eb=await dr.text();throw new Error('Polygon HTTP '+dr.status+': '+eb.slice(0,140));}
       var dj=await dr.json();
@@ -17824,60 +17826,62 @@ function NextDayRangePage(p){
       var sigNow=yz(bars.slice(n-WIN));   // trailing Yang-Zhang, kept for reference display only
       if(!sigNow)throw new Error('Volatility computation failed (bad bar data).');
 
-      // SPY market context for the regime multiplier (graceful: regime collapses to 1 if it fails)
+      setProg('Fetching SPY market context\u2026');
       var spyBars=null;
       try{
-        var su2='https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=1000&apiKey='+p.apiKey;
+        var su2='https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
         var sr2=await fetch(su2);
         if(sr2.ok){ var sj2=await sr2.json(); spyBars=(sj2.results||[]).map(function(b){return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c};}); if(spyBars.length<60)spyBars=null; }
       }catch(e){ spyBars=null; }
 
-      // Next-day vol forecast: HAR(per-day GKYZ) x SPY market regime -> sigStar[d] (forecast made FOR day d from data < d)
-      var HS=harSig(bars, spyBars), sigStar=HS.sigStar, sigStarNext=HS.sigStarNext;
+      // Next-day vol forecast: HAR(per-day GKYZ) x SPY market regime -> sig[i] (forecast made FOR day i from data < i)
+      var HS=harSig(bars, spyBars), sig=HS.sigStar, sigStarNext=HS.sigStarNext;
       if(!(sigStarNext>0&&isFinite(sigStarNext)))throw new Error('Volatility forecast failed (bad bar data).');
 
-      var ups=[],dns=[],rngs=[],perDay=[],i2, WARM=Math.max(WIN+1,23);
-      for(i2=WARM;i2<n;i2++){
-        var sg=sigStar[i2]; if(!(sg>0&&isFinite(sg)))continue;
-        var pc=bars[i2-1].c;
-        ups.push((bars[i2].h-pc)/pc/sg);
-        dns.push((pc-bars[i2].l)/pc/sg);
-        rngs.push((bars[i2].h-bars[i2].l)/pc);
-        perDay.push({s:sg,pc:pc,hi:bars[i2].h,lo:bars[i2].l});
+      // Bar-indexed standardized extensions: the SINGLE source feeding both the backtest and today's band
+      var up=new Array(n), dn=new Array(n), rngs=[], i;
+      for(i=WIN+1;i<n;i++){
+        var s=sig[i]; if(!(s>0&&isFinite(s)))continue;
+        var pc=bars[i-1].c;
+        up[i]=(bars[i].h-pc)/pc/s; dn[i]=(pc-bars[i].l)/pc/s;
+        rngs.push((bars[i].h-bars[i].l)/pc);
       }
-      var L=perDay.length;
-      if(L<40)throw new Error('Not enough usable days after vol windowing.');
+      if(rngs.length<40)throw new Error('Not enough usable days after vol windowing.');
+      function qS(a,q){ if(!a.length)return 0; var idx=(a.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,a.length-1); return a[f]+(idx-f)*(a[c]-a[f]); }
+      // joint-coverage quantile fit in standardized space (us/ds pre-sorted): band covers day j iff up[j]<=qu & dn[j]<=qd
+      function jfit(us,ds,C2){ var a=0.5,b=0.9995,k,m=us.length; for(k=0;k<30;k++){ var mq=(a+b)/2, qu=qS(us,mq), qd=qS(ds,mq), hit=0,j; for(j=0;j<m;j++){ if(us[j]<=qu&&ds[j]<=qd)hit++; } if(m&&hit/m<C2)a=mq; else b=mq; } var q=(a+b)/2; return {qu:qS(us,q), qd:qS(ds,q)}; }
 
-      function covWith(qu,qd,lo,hi){var hit=0,tot=0,j;for(j=lo;j<hi;j++){var d=perDay[j];tot++;if(d.hi<=d.pc*(1+d.s*qu)&&d.lo>=d.pc*(1-d.s*qd))hit++;}return tot?hit/tot:0;}
-      function jcR(q,lo,hi){var qu=quantile(ups.slice(lo,hi),q),qd=quantile(dns.slice(lo,hi),q);return {cov:covWith(qu,qd,lo,hi),qu:qu,qd:qd};}
-      function findQR(target,lo,hi){var a=0.5,b=0.9995,k;for(k=0;k<42;k++){var m=(a+b)/2;if(jcR(m,lo,hi).cov<target)a=m;else b=m;}return (a+b)/2;}
-
-      var split=Math.floor(L*0.6);
-      // --- Calibrated band SHAPE (joint-fit quantile on a long, decoupled window) + tau de-bias ---
-      // sigStar (HAR forecast x regime) carries the vol level/regime, so the standardized-extension SHAPE
-      // is stationary and is fit on a long trailing window SHP (decoupled from the responsive level). m =
-      // C-quantile of tau (how much today's shape must scale to just contain each day) de-biases to target
-      // OOS. For the live forecast every historical day is in the past, so today's shape is causal for all tau.
-      var SHP=Math.min(L,504), MLO=0.85, MHI=1.40, canCal=(L>=170);
-      function qAt(s,q){ if(!s.length)return 0; var idx=(s.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,s.length-1); return s[f]+(idx-f)*(s[c]-s[f]); }
-      function fitWin(lo,hi,C2){
-        var wu=ups.slice(lo,hi), wd=dns.slice(lo,hi), su=wu.slice().sort(function(a,b){return a-b;}), sd=wd.slice().sort(function(a,b){return a-b;});
-        var a=0.5,b=0.9995,k,n2=wu.length;
-        for(k=0;k<30;k++){ var mq=(a+b)/2, qu=qAt(su,mq), qd=qAt(sd,mq), hit=0,j; for(j=0;j<n2;j++){ if(wu[j]<=qu&&wd[j]<=qd)hit++; } if(n2&&hit/n2<C2)a=mq; else b=mq; }
-        var q=(a+b)/2; return {qu:qAt(su,q), qd:qAt(sd,q)};
-      }
-      var shapes=COVS.map(function(C2){
-        if(!canCal){                                              // short-history fallback: full-history joint fit (legacy)
-          var qF=findQR(C2,0,L), full=jcR(qF,0,L), tr=jcR(findQR(C2,0,split),0,split);
-          return {cov:C2,quT:full.qu,qdT:full.qd,m:1,oos:covWith(tr.qu,tr.qd,split,L)};
+      // ---- Walk-forward construction (one pass): produces the backtest AND today's band as its t=n step ----
+      // Shape = joint-fit quantile on the trailing SHP; m = C-quantile of PRIOR tau (de-bias to target OOS).
+      // Each day uses only data < that day (no lookahead). canBt gates on having enough history to walk forward.
+      var start=WIN+SHP+1, canBt=(n>=start+60);
+      var lev=COVS.map(function(C){return {cov:C,hits:[],widths:[],iscore:[],tau:[]};});
+      var roll=COVS.map(function(){return [];});
+      var bHi=0,bLo=0,bTot=0, travErr=[], tt;
+      if(canBt){
+        setProg('Running walk-forward validation\u2026');
+        for(tt=start;tt<n;tt++){
+          if(!(sig[tt]>0))continue;
+          var pc2=bars[tt-1].c, H=bars[tt].h, Lo=bars[tt].l;
+          var us=[],ds=[],rs=[],j;
+          for(j=tt-SHP;j<tt;j++){ if(up[j]!=null){us.push(up[j]);ds.push(dn[j]);} if(bars[j-1])rs.push((bars[j].h-bars[j].l)/bars[j-1].c); }
+          us.sort(function(a,b){return a-b;}); ds.sort(function(a,b){return a-b;}); rs.sort(function(a,b){return a-b;});
+          travErr.push(((H-Lo)/pc2)-qS(rs,0.5));
+          for(var ci=0;ci<COVS.length;ci++){
+            var C=COVS[ci], fr=jfit(us,ds,C), QU=fr.qu, QD=fr.qd;
+            var tA=lev[ci].tau, m=1.0;
+            if(tA.length>30){ var ts=tA.slice().sort(function(x,y){return x-y;}); m=Math.min(MHI,Math.max(MLO,qS(ts,C))); }
+            var hiB=pc2*(1+sig[tt]*QU*m), loB=pc2*(1-sig[tt]*QD*m), contained=(H<=hiB&&Lo>=loB), alpha=1-C;
+            lev[ci].hits.push(contained?1:0);
+            lev[ci].widths.push((hiB-loB)/pc2);
+            lev[ci].iscore.push(((hiB-loB)+(2/alpha)*Math.max(0,H-hiB)+(2/alpha)*Math.max(0,loB-Lo))/pc2);
+            if(QU>0&&QD>0&&up[tt]!=null)tA.push(Math.max(up[tt]/QU, dn[tt]/QD));
+            var hh=lev[ci].hits, lo2=Math.max(0,hh.length-ROLL), sum=0,z; for(z=lo2;z<hh.length;z++)sum+=hh[z];
+            roll[ci].push(sum/(hh.length-lo2));
+            if(C===0.80){ bTot++; if(H>hiB)bHi++; if(Lo<loB)bLo++; }
+          }
         }
-        var fT=fitWin(L-SHP,L,C2), quBase=fT.qu, qdBase=fT.qd;     // today's shape on trailing SHP
-        var tau=[], d; for(d=0;d<L;d++){ if(quBase>0&&qdBase>0)tau.push(Math.max(ups[d]/quBase, dns[d]/qdBase)); }
-        var m=tau.length>30?Math.min(MHI,Math.max(MLO,quantile(tau,C2))):1.0;
-        var ROLL=60, hits=0,cnt=0, startD=Math.max(31,L-ROLL), z;   // recent OOS: trailing 60d, m from prior tau only
-        for(d=startD;d<L;d++){ var pri=tau.slice(0,d); if(pri.length<=30)continue; var md=Math.min(MHI,Math.max(MLO,quantile(pri,C2))); cnt++; if(tau[d]<=md)hits++; }
-        return {cov:C2,quT:quBase*m,qdT:qdBase*m,m:m,oos:cnt?hits/cnt:C2};
-      });
+      }
 
       var medRange=quantile(rngs,0.5), meanRange=rngs.reduce(function(a,b){return a+b;},0)/rngs.length;
       var expParam=sigNow*Math.sqrt(8/Math.PI);
@@ -17928,109 +17932,52 @@ function NextDayRangePage(p){
         }catch(e3){}
       }
 
-      // IV catalyst widening (LIVE band only; no historical IV yet for the backtest). If ATM-IV's implied
-      // 1-day move materially exceeds the HAR forecast (an event is priced in), blend the vol up toward IV.
+      // IV catalyst widening (LIVE band only; no historical IV for the backtest). If ATM-IV's implied 1-day
+      // move materially exceeds the HAR forecast (an event is priced in), blend the vol up toward IV.
       var sigEff=sigStarNext, ivWidened=false;
       if(iv&&iv.iv>0){ var sIV=iv.iv*Math.sqrt(1/252); if(sIV>1.25*sigStarNext){ sigEff=Math.min(3*sigStarNext, 0.6*sIV+0.4*sigStarNext); ivWidened=true; } }
-      var bands=shapes.map(function(s){ return {cov:s.cov,qu:s.quT,qd:s.qdT,m:s.m,oos:s.oos,
-        hi:priorClose*(1+sigEff*s.quT), lo:priorClose*(1-sigEff*s.qdT), width:priorClose*sigEff*(s.quT+s.qdT)}; });
 
-      var realizedAnnual=sigNow*Math.sqrt(252);
-      var forecastAnnual=sigStarNext*Math.sqrt(252);
-      var histMove1=sigNow*priorClose;
+      // ---- Today's band = the t=n step of the SAME walk-forward construction (exact parity with the backtest) ----
+      // shape = joint fit on the trailing SHP of standardized extensions; m = C-quantile of ALL accumulated tau
+      // (every historical day is prior to tomorrow, so this is causal); width then scaled by the IV-aware sigEff.
+      var lo0=Math.max(WIN+1,n-SHP), us0=[],ds0=[],j0;
+      for(j0=lo0;j0<n;j0++){ if(up[j0]!=null){us0.push(up[j0]);ds0.push(dn[j0]);} }
+      us0.sort(function(a,b){return a-b;}); ds0.sort(function(a,b){return a-b;});
+      var bands=COVS.map(function(C2,ci){
+        var fr=jfit(us0,ds0,C2), QU=fr.qu, QD=fr.qd, m=1.0;
+        var tA=canBt?lev[ci].tau:null;
+        if(tA&&tA.length>30){ var ts=tA.slice().sort(function(x,y){return x-y;}); m=Math.min(MHI,Math.max(MLO,qS(ts,C2))); }
+        else { var t2=[],j1; for(j1=WIN+1;j1<n;j1++){ if(up[j1]!=null&&QU>0&&QD>0)t2.push(Math.max(up[j1]/QU, dn[j1]/QD)); } if(t2.length>30){ t2.sort(function(x,y){return x-y;}); m=Math.min(MHI,Math.max(MLO,qS(t2,C2))); } }
+        var QUc=QU*m, QDc=QD*m;
+        return {cov:C2,qu:QUc,qd:QDc,m:m,hi:priorClose*(1+sigEff*QUc),lo:priorClose*(1-sigEff*QDc),width:priorClose*sigEff*(QUc+QDc)};
+      });
 
+      var realizedAnnual=sigNow*Math.sqrt(252), forecastAnnual=sigStarNext*Math.sqrt(252), histMove1=sigEff*priorClose;
       setRes({t:t,lastDate:lastDate,priorClose:priorClose,sigNow:sigNow,realizedAnnual:realizedAnnual,
               forecastVol:sigStarNext,sigEff:sigEff,forecastAnnual:forecastAnnual,beta:HS.beta,regimeNext:HS.regimeNext,ivWidened:ivWidened,
               bands:bands,medRange:medRange,meanRange:meanRange,expParam:expParam,meanGap:meanGap,
-              nDays:L,split:split,iv:iv,histMove1:histMove1});
+              nDays:rngs.length,split:Math.floor(rngs.length*0.6),iv:iv,histMove1:histMove1});
+
+      if(canBt){
+        var summary=lev.map(function(l){var nn=l.hits.length;return {cov:l.cov,
+          realized:l.hits.reduce(function(a,b){return a+b;},0)/nn,
+          width:l.widths.reduce(function(a,b){return a+b;},0)/nn,
+          iscore:l.iscore.reduce(function(a,b){return a+b;},0)/nn};});
+        var teMean=travErr.reduce(function(a,b){return a+b;},0)/travErr.length;
+        var teMAE=travErr.reduce(function(a,b){return a+Math.abs(b);},0)/travErr.length;
+        setBt({t:t,N:n,tested:lev[0].hits.length,fitw:SHP,roll:ROLL,summary:summary,
+               r68:roll[0],r80:roll[1],r90:roll[2],bHi:bHi,bLo:bLo,bTot:bTot,teMean:teMean,teMAE:teMAE});
+      } else {
+        setBt(null);
+        setBtErr('Need ~'+(WIN+SHP+60)+' bars to walk-forward validate; '+t+' has '+n+'. Projection is shown, coverage unvalidated.');
+      }
       setProg('');
-      backtest();   // auto-validate: run the walk-forward backtest on load
     }catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
   }
 
-  async function backtest(){
-    var t=(tk||'').trim().toUpperCase();
-    if(!t){setBtErr('Enter a ticker symbol.');return;}
-    setBtErr('');setBt(null);setBtLoading(true);setBtProg('Fetching ~3y daily history\u2026');
-    try{
-      var FITW=504, ROLL=60;   // shape window: long & decoupled (sigStar carries the vol level/regime)
-      var now=new Date();
-      var fromD=new Date(now.getTime()-1180*86400000);
-      var fs=fromD.toISOString().slice(0,10), tsd=now.toISOString().slice(0,10);
-      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
-      var dr=await fetch(url);
-      if(!dr.ok){var eb=await dr.text();throw new Error('Polygon HTTP '+dr.status+': '+eb.slice(0,140));}
-      var dj=await dr.json();
-      var bars=(dj.results||[]).map(function(b){return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c};});
-      var N=bars.length;
-      if(N<WIN+FITW+60)throw new Error('Not enough history for backtest ('+N+' bars; need ~'+(WIN+FITW+60)+'). Try a more liquid / older ticker.');
-      setBtProg('Fetching SPY market context\u2026');
-      var spyBars=null;
-      try{
-        var su2='https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/'+fs+'/'+tsd+'?adjusted=true&sort=asc&limit=2000&apiKey='+p.apiKey;
-        var sr2=await fetch(su2);
-        if(sr2.ok){ var sj2=await sr2.json(); spyBars=(sj2.results||[]).map(function(b){return {t:b.t,o:b.o,h:b.h,l:b.l,c:b.c};}); if(spyBars.length<60)spyBars=null; }
-      }catch(e){ spyBars=null; }
-      setBtProg('Running walk-forward backtest\u2026');
-      await new Promise(function(r){setTimeout(r,20);});
-
-      // sigStar[i] = HAR(per-day GKYZ) x SPY regime, the forecast made FOR day i from data < i -- same engine as the live projection
-      var HS=harSig(bars, spyBars), sig=HS.sigStar, up=new Array(N), dn=new Array(N), i;
-      for(i=WIN+1;i<N;i++){
-        var s=sig[i];
-        if(s>0&&isFinite(s)){var pc=bars[i-1].c; up[i]=(bars[i].h-pc)/pc/s; dn[i]=(pc-bars[i].l)/pc/s;}
-      }
-      function qS(sorted,q){ if(!sorted.length)return 0; var idx=(sorted.length-1)*q,f=Math.floor(idx),c=Math.min(f+1,sorted.length-1); return sorted[f]+(idx-f)*(sorted[c]-sorted[f]); }
-
-      var start=WIN+FITW+1;
-      var lev=COVS.map(function(C){return {cov:C,hits:[],widths:[],iscore:[],tau:[]};});
-      var roll=COVS.map(function(){return [];});
-      var bHi=0,bLo=0,bTot=0, travErr=[], tt;
-      for(tt=start;tt<N;tt++){
-        if(!sig[tt])continue;
-        var pc2=bars[tt-1].c, H=bars[tt].h, Lo=bars[tt].l;
-        var us=[],ds=[],rs=[],j;
-        for(j=tt-FITW;j<tt;j++){ if(up[j]!=null){us.push(up[j]);ds.push(dn[j]);} if(bars[j-1])rs.push((bars[j].h-bars[j].l)/bars[j-1].c); }
-        us.sort(function(a,b){return a-b;}); ds.sort(function(a,b){return a-b;}); rs.sort(function(a,b){return a-b;});
-        travErr.push(((H-Lo)/pc2)-qS(rs,0.5));
-        for(var ci=0;ci<COVS.length;ci++){
-          var C=COVS[ci], a=0.5,b=0.9995,k;
-          for(k=0;k<30;k++){
-            var mq=(a+b)/2, qu=qS(us,mq), qd=qS(ds,mq), hit=0,tot=0,jj;
-            for(jj=tt-FITW;jj<tt;jj++){ if(!sig[jj])continue; tot++; var p3=bars[jj-1].c; if(bars[jj].h<=p3*(1+sig[jj]*qu)&&bars[jj].l>=p3*(1-sig[jj]*qd))hit++; }
-            if(tot&&hit/tot<C)a=mq; else b=mq;
-          }
-          var q=(a+b)/2, QU=qS(us,q), QD=qS(ds,q);
-          // walk-forward calibration multiplier from PRIOR tau only (de-bias to target OOS); identical to live projection
-          var tA=lev[ci].tau, m=1.0;
-          if(tA.length>30){ var ts=tA.slice().sort(function(x,y){return x-y;}); m=Math.min(1.40,Math.max(0.85,qS(ts,C))); }
-          var QUc=QU*m, QDc=QD*m;
-          var hiB=pc2*(1+sig[tt]*QUc), loB=pc2*(1-sig[tt]*QDc), contained=(H<=hiB&&Lo>=loB), alpha=1-C;
-          lev[ci].hits.push(contained?1:0);
-          lev[ci].widths.push((hiB-loB)/pc2);
-          lev[ci].iscore.push(((hiB-loB)+(2/alpha)*Math.max(0,H-hiB)+(2/alpha)*Math.max(0,loB-Lo))/pc2);
-          if(QU>0&&QD>0&&up[tt]!=null)tA.push(Math.max(up[tt]/QU, dn[tt]/QD));
-          var hh=lev[ci].hits, lo2=Math.max(0,hh.length-ROLL), sum=0,z; for(z=lo2;z<hh.length;z++)sum+=hh[z];
-          roll[ci].push(sum/(hh.length-lo2));
-          if(C===0.80){ bTot++; if(H>hiB)bHi++; if(Lo<loB)bLo++; }
-        }
-      }
-      var summary=lev.map(function(l){var n=l.hits.length;return {cov:l.cov,
-        realized:l.hits.reduce(function(a,b){return a+b;},0)/n,
-        width:l.widths.reduce(function(a,b){return a+b;},0)/n,
-        iscore:l.iscore.reduce(function(a,b){return a+b;},0)/n};});
-      var teMean=travErr.reduce(function(a,b){return a+b;},0)/travErr.length;
-      var teMAE=travErr.reduce(function(a,b){return a+Math.abs(b);},0)/travErr.length;
-      setBt({t:t,N:N,tested:lev[0].hits.length,fitw:FITW,roll:ROLL,summary:summary,
-             r68:roll[0],r80:roll[1],r90:roll[2],bHi:bHi,bLo:bLo,bTot:bTot,teMean:teMean,teMAE:teMAE});
-      setBtProg('');
-    }catch(e){setBtErr(e.message||String(e));}
-    setBtLoading(false);
-  }
-
   var R=res;
-  var ivPrem=(R&&R.iv&&R.iv.iv&&R.realizedAnnual)?(R.iv.iv/R.realizedAnnual):null;
+  var ivPrem=(R&&R.iv&&R.iv.iv&&R.forecastAnnual)?(R.iv.iv/R.forecastAnnual):null;
   return <div>
     {p.onBack&&<div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>&#8592; Back</button>
@@ -18065,7 +18012,7 @@ function NextDayRangePage(p){
       </Cd>
 
       <Cd glow>
-        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored &middot; overnight gap included &middot; walk-forward validated. 80% band = grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from forecast-vol-scaled empirical extension quantiles fit on a long 504-day window (decoupled from the responsive vol level) and calibrated so realized coverage matches target out-of-sample. 'real' = the actual realized coverage when this exact band is replayed across ~3 years of history."/>
+        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored &middot; overnight gap included &middot; walk-forward validated. 80% band = grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from forecast-vol-scaled empirical extension quantiles fit on a long 504-day window (decoupled from the responsive vol level) and calibrated so realized coverage matches target out-of-sample. 'real' = the actual realized coverage when the same construction is replayed across ~3 years of history."/>
         <div style={{marginTop:8}}>
           {R.bands.map(function(b){
             var pri=(b.cov===0.80);
@@ -18087,7 +18034,7 @@ function NextDayRangePage(p){
           })}
         </div>
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>{bt?('Validated over '+bt.tested+' days (~3y walk-forward): '+bt.summary.map(function(s){return Math.round(s.cov*100)+'\u2192'+Math.round(s.realized*100)+'%';}).join('  \u00b7  ')+'.  Green = realized within 4% of target.'):(btErr?('Validation unavailable: '+btErr):(btLoading?'Validating against ~3 years of history\u2026':''))}</div>
-        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}><span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+ivPrem.toFixed(2)+'\u00d7 realized (likely earnings/catalyst). '+(R.ivWidened?'Band auto-widened toward the IV-implied move (live only \u2014 not in the historical backtest below).':'Consider widening or pausing the grid.')):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
+        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(R.ivWidened?C.warnDim:C.bgInput),border:'1px solid '+(R.ivWidened?C.warn:C.border)}}><span style={{color:(R.ivWidened?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{R.ivWidened?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7 the forecast (likely earnings/catalyst). Band auto-widened toward the IV-implied move (live only \u2014 not in the historical backtest below).'):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 forecast ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
         <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,lineHeight:1.5}}>Vol engine: HAR next-day forecast {(R.forecastVol*100).toFixed(2)}% daily{(R.sigEff&&R.ivWidened)?(' \u2192 '+(R.sigEff*100).toFixed(2)+'% after IV'):''} &middot; market regime &#215;{R.regimeNext!=null?R.regimeNext.toFixed(2):'1.00'}{R.beta!=null?(' (\u03b2 '+R.beta.toFixed(2)+')'):''} &middot; shape on {Math.min(R.nDays,504)}d.</div>
       </Cd>
 
