@@ -13629,8 +13629,18 @@ function VolumeProfileMTFPage(p){
   var s9=useState(false),showAllLevels=s9[0],setShowAllLevels=s9[1];
   var s10=useState(''),progMsg=s10[0],setProgMsg=s10[1];
   var s11=useState(''),loadedTicker=s11[0],setLoadedTicker=s11[1];
+  var s12=useState('body'),distMode=s12[0],setDistMode=s12[1];
 
-  var lookbackOpts=[{v:'1',l:'1 Day',mult:10,span:'second',days:1},{v:'5',l:'5 Days',mult:1,span:'minute',days:7},{v:'20',l:'20 Days',mult:15,span:'minute',days:30},{v:'60',l:'60 Days',mult:60,span:'minute',days:90}];
+  var lookbackOpts=[
+    {v:'1',l:'1 Day',mult:10,span:'second',days:1,binTarget:140,grp:'intraday'},
+    {v:'5',l:'5 Days',mult:1,span:'minute',days:7,binTarget:120,grp:'intraday'},
+    {v:'20',l:'20 Days',mult:15,span:'minute',days:30,binTarget:100,grp:'intraday'},
+    {v:'60',l:'60 Days',mult:60,span:'minute',days:90,binTarget:90,grp:'intraday'},
+    {v:'126',l:'6 Months',mult:1,span:'day',days:200,binTarget:90,grp:'daily'},
+    {v:'252',l:'1 Year',mult:1,span:'day',days:380,binTarget:110,grp:'daily'},
+    {v:'504',l:'2 Years',mult:1,span:'day',days:760,binTarget:130,grp:'daily'},
+    {v:'1260',l:'5 Years',mult:1,span:'day',days:1880,binTarget:150,grp:'daily'}
+  ];
   var tickOpts=[{v:'0.01',l:'$0.01'},{v:'0.05',l:'$0.05'},{v:'0.10',l:'$0.10'},{v:'0.25',l:'$0.25'},{v:'0.50',l:'$0.50'},{v:'1.00',l:'$1.00'}];
 
   var lS={color:C.txtDim,fontSize:7,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',fontFamily:F,display:'block',marginBottom:2};
@@ -13640,7 +13650,7 @@ function VolumeProfileMTFPage(p){
   var fmtNum=function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toString();};
 
   // Pure profile builder — no fetch, no state. Recomputes instantly on toggle.
-  var buildProfile=function(bars,opt,bMode,tSize){
+  var buildProfile=function(bars,opt,bMode,tSize,dMode){
     if(!bars||!bars.length)return null;
     var pLo=Infinity,pHi=-Infinity;
     for(var i=0;i<bars.length;i++){
@@ -13653,7 +13663,7 @@ function VolumeProfileMTFPage(p){
     var binSize;
     if(bMode==='tick'){binSize=parseFloat(tSize);}
     else{
-      var raw=(pHi-pLo)/50;
+      var raw=(pHi-pLo)/(opt&&opt.binTarget?opt.binTarget:50);
       var mag=Math.pow(10,Math.floor(Math.log10(raw)));
       var norm=raw/mag;
       var step=norm<1.5?1:norm<3.5?2:norm<7.5?5:10;
@@ -13666,14 +13676,26 @@ function VolumeProfileMTFPage(p){
     var nBins=Math.ceil((pHi-binLo)/binSize)+1;
     var bins=[];
     for(var b=0;b<nBins;b++){var lo=binLo+b*binSize;bins.push({lo:lo,hi:lo+binSize,mid:lo+binSize/2,vol:0,trd:0});}
+    var BODY_FRAC=0.70; // body-weighted: most volume trades within the open-close body; wicks get the remainder
     for(var bi=0;bi<bars.length;bi++){
       var bar=bars[bi];var v=bar.v||0,n=bar.n||0;
       if(!isFinite(bar.l)||!isFinite(bar.h)||v<=0)continue; // skip bad/empty bars
       var loIdx=Math.floor((bar.l-binLo)/binSize);
       var hiIdx=Math.floor((bar.h-binLo)/binSize);
       if(loIdx<0)loIdx=0;if(hiIdx>=nBins)hiIdx=nBins-1;if(hiIdx<loIdx)hiIdx=loIdx;
-      var span=hiIdx-loIdx+1;var vPer=v/span,nPer=n/span;
-      for(var k=loIdx;k<=hiIdx;k++){bins[k].vol+=vPer;bins[k].trd+=nPer;}
+      if(dMode==='body'&&isFinite(bar.o)&&isFinite(bar.c)){
+        // full-range (wicks+body) gets (1-BODY_FRAC); body [min(o,c),max(o,c)] gets BODY_FRAC -> body bins weighted heavier
+        var fSpan=hiIdx-loIdx+1;var fV=v*(1-BODY_FRAC)/fSpan,fN=n*(1-BODY_FRAC)/fSpan;
+        for(var fk=loIdx;fk<=hiIdx;fk++){bins[fk].vol+=fV;bins[fk].trd+=fN;}
+        var bLo=Math.min(bar.o,bar.c),bHi=Math.max(bar.o,bar.c);
+        var bLoIdx=Math.floor((bLo-binLo)/binSize),bHiIdx=Math.floor((bHi-binLo)/binSize);
+        if(bLoIdx<0)bLoIdx=0;if(bHiIdx>=nBins)bHiIdx=nBins-1;if(bHiIdx<bLoIdx)bHiIdx=bLoIdx;
+        var bSpan=bHiIdx-bLoIdx+1;var bV=v*BODY_FRAC/bSpan,bN=n*BODY_FRAC/bSpan;
+        for(var bk=bLoIdx;bk<=bHiIdx;bk++){bins[bk].vol+=bV;bins[bk].trd+=bN;}
+      }else{
+        var span=hiIdx-loIdx+1;var vPer=v/span,nPer=n/span;
+        for(var k=loIdx;k<=hiIdx;k++){bins[k].vol+=vPer;bins[k].trd+=nPer;}
+      }
     }
     var totalVol=0,totalTrd=0,pocIdx=0,maxVol=0;
     for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;totalTrd+=bins[c].trd;if(bins[c].vol>maxVol){maxVol=bins[c].vol;pocIdx=c;}}
@@ -13744,10 +13766,50 @@ function VolumeProfileMTFPage(p){
   var prof=React.useMemo(function(){
     if(!rawData||!rawData[lookback])return null;
     var entry=rawData[lookback];
-    var pr=buildProfile(entry.bars,entry.opt,binMode,tickSize);
+    var pr=buildProfile(entry.bars,entry.opt,binMode,tickSize,distMode);
     if(pr)pr.ticker=loadedTicker;
     return pr;
-  },[rawData,lookback,binMode,tickSize,loadedTicker]);
+  },[rawData,lookback,binMode,tickSize,distMode,loadedTicker]);
+
+  // Build a profile for EVERY loaded timeframe — powers the multi-timeframe panel
+  var allProfs=React.useMemo(function(){
+    if(!rawData)return [];
+    var out=[];
+    for(var oi=0;oi<lookbackOpts.length;oi++){
+      var o=lookbackOpts[oi];var entry=rawData[o.v];
+      if(!entry||!entry.bars||!entry.bars.length)continue;
+      var pr=buildProfile(entry.bars,o,binMode,tickSize,distMode);
+      if(pr){pr.label=o.l;pr.grp=o.grp;pr.v=o.v;out.push(pr);}
+    }
+    return out;
+  },[rawData,binMode,tickSize,distMode]);
+
+  // Confluence: cluster each timeframe's POC + top HVNs; zones where >=2 timeframes agree (within ~0.6%) = high-conviction S/R
+  var confluence=React.useMemo(function(){
+    if(allProfs.length<2)return [];
+    var lp=allProfs[allProfs.length-1].lastPrice||allProfs[0].lastPrice;
+    var cands=[];
+    allProfs.forEach(function(pr){
+      cands.push({price:pr.poc,w:3,tf:pr.label});
+      (pr.hvn||[]).slice(0,3).forEach(function(h){cands.push({price:h.price,w:2,tf:pr.label});});
+    });
+    cands.sort(function(a,b){return a.price-b.price;});
+    var clusters=[];var cur=null;
+    cands.forEach(function(c){
+      var tol=(lp||c.price)*0.006; // 0.6% proximity groups a confluence zone
+      if(cur&&Math.abs(c.price-cur.sumP/cur.wsum)<=tol){
+        cur.sumP+=c.price*c.w;cur.wsum+=c.w;cur.tfs[c.tf]=true;
+      }else{
+        cur={sumP:c.price*c.w,wsum:c.w,tfs:{}};cur.tfs[c.tf]=true;clusters.push(cur);
+      }
+    });
+    var zones=clusters.map(function(cl){
+      var tfList=Object.keys(cl.tfs);
+      return {price:cl.sumP/cl.wsum,strength:tfList.length,tfs:tfList,weight:cl.wsum};
+    }).filter(function(z){return z.strength>=2;});
+    zones.sort(function(a,b){return b.strength-a.strength||Math.abs(a.price-lp)-Math.abs(b.price-lp);});
+    return zones.slice(0,6);
+  },[allProfs]);
 
 
   // ── SVG chart: price axis + price line + volume profile overlaid on right edge ──
@@ -13846,7 +13908,7 @@ function VolumeProfileMTFPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume and trade count uniformly across the price bins its high-low range spans. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>
+      <SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume across the price bins it spans, by default body-weighted (most volume in the open-close body, less in the wicks); bin granularity adapts to the timeframe. The Multi-Timeframe panel finds price levels where intraday and daily profiles agree. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>
 
       {/* Ticker input */}
       <div style={{display:'flex',gap:6,alignItems:'flex-end',marginBottom:8}}>
@@ -13860,22 +13922,36 @@ function VolumeProfileMTFPage(p){
       {/* Lookback */}
       <div style={{marginBottom:8}}>
         <label style={lS}>Lookback / Granularity {rawData?<span style={{color:C.accent,fontWeight:400}}>· all loaded, tap to switch instantly</span>:''}</label>
-        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-          {lookbackOpts.map(function(o){var loaded=rawData&&rawData[o.v];var nb=loaded?rawData[o.v].bars.length:0;return <button key={o.v} onClick={function(){setLookback(o.v);}}
+        {[['intraday','Intraday'],['daily','Daily']].map(function(grp){return <div key={grp[0]} style={{marginBottom:4}}>
+          <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1,marginBottom:2}}>{grp[1]}</div>
+          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+          {lookbackOpts.filter(function(o){return o.grp===grp[0];}).map(function(o){var loaded=rawData&&rawData[o.v];var nb=loaded?rawData[o.v].bars.length:0;return <button key={o.v} onClick={function(){setLookback(o.v);}}
             style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
               border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}{loaded?' ('+nb+')':''}</button>;})}
-        </div>
-        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(function(){var o=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};return o.mult+(o.span==='second'?'-sec':'-min')+' bars';})()}{rawData?' · bin/metric changes also instant':''}</div>
+          </div>
+        </div>;})}
+        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(function(){var o=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};var u=o.span==='second'?'-sec':o.span==='day'?'-day':o.span==='week'?'-wk':'-min';return o.mult+u+' bars, ~'+(o.binTarget||50)+' bins';})()}{rawData?' · bin/metric changes also instant':''}</div>
       </div>
 
       {/* Bin mode */}
       <div style={{marginBottom:8}}>
         <label style={lS}>Price Bins</label>
         <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
-          {[['auto','Auto (~50)'],['tick','Fixed Tick']].map(function(m){return <button key={m[0]} onClick={function(){setBinMode(m[0]);}}
+          {[['auto','Auto (adaptive)'],['tick','Fixed Tick']].map(function(m){return <button key={m[0]} onClick={function(){setBinMode(m[0]);}}
             style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
               border:'1px solid '+(binMode===m[0]?C.gold+'88':C.border),background:binMode===m[0]?C.gold+'14':'transparent',color:binMode===m[0]?C.gold:C.txtDim}}>{m[1]}</button>;})}
           {binMode==='tick'&&<select value={tickSize} onChange={function(e){setTickSize(e.target.value);}} style={{background:C.bgInput,border:'1px solid '+C.gold,borderRadius:6,color:C.gold,fontFamily:F,fontSize:9,fontWeight:700,padding:'6px 8px',outline:'none',cursor:'pointer'}}>{tickOpts.map(function(o){return <option key={o.v} value={o.v} style={{background:C.bg,color:C.txtBright}}>{o.l}</option>;})}</select>}
+        </div>
+      </div>
+
+      {/* Volume spread model */}
+      <div style={{marginBottom:8}}>
+        <label style={lS}>Volume Spread</label>
+        <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+          {[['body','Body-weighted'],['uniform','Uniform (H-L)']].map(function(m){return <button key={m[0]} onClick={function(){setDistMode(m[0]);}}
+            style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+(distMode===m[0]?C.purple+'88':C.border),background:distMode===m[0]?C.purple+'14':'transparent',color:distMode===m[0]?C.purple:C.txtDim}}>{m[1]}</button>;})}
+          <span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{distMode==='body'?'70% of volume in the candle body':'evenly across each bar high-low'}</span>
         </div>
       </div>
 
@@ -13923,6 +13999,38 @@ function VolumeProfileMTFPage(p){
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>{prof.lookbackLabel}</div>
         </div>
       </div>
+    </Cd>}
+
+    {/* Multi-Timeframe profiles + confluence */}
+    {allProfs.length>1&&<Cd>
+      <SectionHead title="Multi-Timeframe" sub="Each loaded timeframe's profile, and where they agree" info="A compact volume profile per timeframe (POC, value area, and whether last price is above/in/below value), plus confluence zones: price levels where the POC or a high-volume node from two or more timeframes line up within ~0.6%. The more timeframes agreeing on a level, the stronger it tends to act as support or resistance."/>
+      <div style={{marginTop:4}}>
+        {allProfs.map(function(pr){
+          var posCol=pr.lastPrice>pr.vah?C.warn:pr.lastPrice<pr.val?C.blue:C.accent;
+          var posTxt=pr.lastPrice>pr.vah?'above':pr.lastPrice<pr.val?'below':'in value';
+          var mx=pr.maxVol||1;var rng=(pr.pHi-pr.pLo)||1;
+          return <div key={pr.v} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid '+C.grid}}>
+            <div style={{width:52,flexShrink:0}}><div style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{pr.label}</div><div style={{color:posCol,fontSize:7,fontFamily:F}}>{posTxt}</div></div>
+            <svg viewBox="0 0 60 100" preserveAspectRatio="none" style={{width:44,height:30,flexShrink:0,background:C.bgDeep,borderRadius:3}}>
+              {pr.bins.map(function(b,i){if(b.vol<=0)return null;var inVA=b.mid>=pr.val&&b.mid<=pr.vah;var isP=i===pr.pocIdx;var w=b.vol/mx*58;var yTop=(1-(b.hi-pr.pLo)/rng)*100;var yBot=(1-(b.lo-pr.pLo)/rng)*100;var hh=Math.max(0.8,yBot-yTop);return React.createElement('rect',{key:i,x:(60-w).toFixed(1),y:yTop.toFixed(1),width:w.toFixed(1),height:hh.toFixed(1),fill:isP?C.gold:inVA?C.accent:C.blue,opacity:isP?0.9:inVA?0.55:0.32});})}
+            </svg>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:8,fontFamily:F,color:C.txtDim}}>POC <span style={{color:C.gold,fontWeight:700}}>${pr.poc.toFixed(2)}</span></div>
+              <div style={{fontSize:8,fontFamily:F,color:C.txtDim}}>VA <span style={{color:C.accent}}>${pr.val.toFixed(2)}-${pr.vah.toFixed(2)}</span> &middot; {pr.barCount}b</div>
+            </div>
+          </div>;
+        })}
+      </div>
+      {confluence.length>0&&<div style={{marginTop:10}}>
+        <div style={{color:C.purple,fontWeight:700,fontSize:8,letterSpacing:1,marginBottom:5}}>CONFLUENCE ZONES (timeframes in agreement)</div>
+        {confluence.map(function(z,i){var lp=allProfs[allProfs.length-1].lastPrice;var dist=(z.price-lp)/lp*100;return <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',marginBottom:4,borderRadius:6,border:'1px solid '+C.purple+(z.strength>=3?'77':'33'),background:z.strength>=3?C.purple+'14':'transparent'}}>
+          <div style={{color:C.txtBright,fontSize:13,fontWeight:800,fontFamily:F,minWidth:62}}>${z.price.toFixed(2)}</div>
+          <div style={{background:C.purple,color:'#fff',fontSize:8,fontWeight:800,fontFamily:F,borderRadius:8,padding:'1px 7px',flexShrink:0}}>{z.strength}x</div>
+          <div style={{flex:1,minWidth:0,fontSize:7,fontFamily:F,color:C.txtDim,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{z.tfs.join(', ')}</div>
+          <div style={{fontSize:8,fontFamily:F,fontWeight:700,color:dist>=0?C.warn:C.blue,flexShrink:0}}>{dist>=0?'+':''}{dist.toFixed(1)}%</div>
+        </div>;})}
+      </div>}
+      {confluence.length===0&&<div style={{marginTop:8,fontSize:8,fontFamily:F,color:C.txtDim}}>No multi-timeframe confluence within 0.6% right now; the loaded timeframes disagree on value (common in a strongly trending name).</div>}
     </Cd>}
 
     {/* Trading ranges */}
