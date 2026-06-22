@@ -17722,6 +17722,7 @@ function NextDayRangePage(p){
   var [btProg,setBtProg]=useState('');
   var [btErr,setBtErr]=useState('');
   var [bt,setBt]=useState(null);
+  var [showDetails,setShowDetails]=useState(false);
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var WIN=30;
@@ -17899,6 +17900,7 @@ function NextDayRangePage(p){
               bands:bands,medRange:medRange,meanRange:meanRange,expParam:expParam,meanGap:meanGap,
               nDays:L,split:split,iv:iv,histMove1:histMove1});
       setProg('');
+      backtest();   // auto-validate: run the walk-forward backtest on load
     }catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
   }
@@ -17997,111 +17999,106 @@ function NextDayRangePage(p){
       </div>
       {prog&&<div style={{color:C.gold,fontSize:9,fontFamily:F,marginTop:8}}>{prog}</div>}
       {err&&<div style={{color:C.warn,fontSize:10,fontFamily:F,marginTop:8}}>{err}</div>}
-      <div style={{marginTop:10,paddingTop:10,borderTop:'1px dashed '+C.border,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-        <button onClick={backtest} disabled={btLoading} style={Object.assign({},bB,{width:'auto',background:'transparent',border:'1px solid '+C.blue,color:C.blue,minWidth:175,fontSize:10})}>{btLoading?'Backtesting\u2026':'Rolling Backtest (~3y)'}</button>
-        {btProg&&<span style={{color:C.gold,fontSize:9,fontFamily:F}}>{btProg}</span>}
-        {btErr&&<span style={{color:C.warn,fontSize:9,fontFamily:F}}>{btErr}</span>}
-      </div>
+      <div style={{marginTop:8,color:C.txtDim,fontSize:8,fontFamily:F}}>Each estimate auto-runs a ~3-year walk-forward backtest to validate the bands.{btProg&&<span style={{color:C.gold}}> &middot; {btProg}</span>}</div>
     </Cd>
 
     {R&&<div>
       <Cd>
-        <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
-          <div><div style={lS}>Anchor (prior close)</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{fmtUsd(R.priorClose)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{R.t} &middot; {R.lastDate}</div></div>
-          <div><div style={lS}>Daily vol (Yang-Zhang)</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.sigNow*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.realizedAnnual*100).toFixed(0)}% annualized &middot; {R.nDays}d</div></div>
+        <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+          <div><div style={lS}>Prior close</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{fmtUsd(R.priorClose)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{R.t} &middot; {R.lastDate}</div></div>
+          <div><div style={lS}>Daily vol (YZ)</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.sigNow*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.realizedAnnual*100).toFixed(0)}% ann &middot; {R.nDays}d</div></div>
+          <div><div style={lS}>Typical travel</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.medRange*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>median H&#8211;L &middot; {fmtUsd(R.medRange*R.priorClose)}</div></div>
+          <div><div style={lS}>Overnight gap</div><div style={{color:C.txtBright,fontSize:16,fontWeight:800,fontFamily:F}}>{(R.meanGap*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>close&#8594;open risk</div></div>
         </div>
       </Cd>
 
       <Cd glow>
-        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored, overnight gap included. 80% band = sensible grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from vol-scaled empirical extension quantiles (asymmetric up/down) fit on a trailing 120-day window, then calibrated so realized coverage matches the target out-of-sample. This is the same construction the Rolling Backtest scores."/>
+        <SectionHead title="Projected Next-Day Range" sub="Prior-close anchored &middot; overnight gap included &middot; walk-forward validated. 80% band = grid boundary." info="Each band is the [low, high] that aims to contain the next day's full high-low range at the stated probability. Built from vol-scaled empirical extension quantiles fit on a trailing 120-day window and calibrated so realized coverage matches target out-of-sample. 'real' = the actual realized coverage when this exact band is replayed across ~3 years of history."/>
         <div style={{marginTop:8}}>
           {R.bands.map(function(b){
             var pri=(b.cov===0.80);
+            var bs=(bt&&bt.summary)?bt.summary.filter(function(s){return s.cov===b.cov;})[0]:null;
+            var realized=bs?bs.realized:null;
+            var off=(realized!=null)?Math.abs(realized-b.cov):null;
+            var col=(off==null)?C.txtDim:(off<=0.04?C.accent:(off<=0.08?C.gold:C.warn));
             return <div key={b.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'8px 10px',marginBottom:6,border:'1px solid '+(pri?C.accent:C.border),borderRadius:8,background:pri?C.accentDim:'transparent'}}>
-              <div style={{minWidth:48}}><div style={{color:pri?C.accent:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{Math.round(b.cov*100)}%</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>cover</div></div>
+              <div style={{minWidth:50}}>
+                <div style={{color:pri?C.accent:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{Math.round(b.cov*100)}%</div>
+                <div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>target</div>
+                {(realized!=null)?<div style={{color:col,fontSize:8,fontWeight:700,fontFamily:F,marginTop:1}}>{Math.round(realized*100)}% real</div>:<div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:1}}>{btLoading?'\u2026':''}</div>}
+              </div>
               <div style={{textAlign:'center'}}><div style={{color:C.warn,fontSize:8,fontFamily:F}}>LOW</div><div style={{color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F}}>{fmtUsd(b.lo)}</div></div>
               <div style={{color:C.txtDim,fontSize:13}}>&#8596;</div>
               <div style={{textAlign:'center'}}><div style={{color:C.accent,fontSize:8,fontFamily:F}}>HIGH</div><div style={{color:C.txtBright,fontSize:14,fontWeight:700,fontFamily:F}}>{fmtUsd(b.hi)}</div></div>
-              <div style={{textAlign:'right',minWidth:64}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>width</div><div style={{color:C.txtBright,fontSize:11,fontFamily:F}}>{fmtUsd(b.width)}</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{(b.width/R.priorClose*100).toFixed(1)}%</div></div>
+              <div style={{textAlign:'right',minWidth:58}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>width</div><div style={{color:C.txtBright,fontSize:11,fontFamily:F}}>{fmtUsd(b.width)}</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{(b.width/R.priorClose*100).toFixed(1)}%</div></div>
             </div>;
           })}
         </div>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>Recent out-of-sample coverage (trailing 60d, walk-forward): {R.bands.map(function(b){return Math.round(b.cov*100)+'\u2192'+Math.round(b.oos*100)+'%';}).join('  \u00b7  ')} &middot; calibration {R.bands.map(function(b){return '\u00d7'+b.m.toFixed(2);}).join(' / ')}. Bands are de-biased to hit target out-of-sample; run the Rolling Backtest below for the full-history check.</div>
-        {R.iv&&R.iv.bands&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+C.border}}>
-          <div style={{color:C.blue,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.5}}>OPTIONS-IMPLIED RANGE <span style={{color:C.txtDim,fontWeight:400}}>&middot; terminal price from {(R.iv.iv*100).toFixed(0)}% ATM IV</span></div>
-          <div style={{marginTop:6}}>
-            {R.iv.bands.map(function(b){
-              return <div key={b.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'6px 10px',marginBottom:5,border:'1px solid '+C.blueDim,borderRadius:8}}>
-                <div style={{minWidth:48}}><div style={{color:C.blue,fontSize:13,fontWeight:800,fontFamily:F}}>{Math.round(b.cov*100)}%</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>prob</div></div>
-                <div style={{textAlign:'center'}}><div style={{color:C.warn,fontSize:8,fontFamily:F}}>LOW</div><div style={{color:C.txtBright,fontSize:13,fontWeight:700,fontFamily:F}}>{fmtUsd(b.lo)}</div></div>
-                <div style={{color:C.txtDim,fontSize:12}}>&#8596;</div>
-                <div style={{textAlign:'center'}}><div style={{color:C.accent,fontSize:8,fontFamily:F}}>HIGH</div><div style={{color:C.txtBright,fontSize:13,fontWeight:700,fontFamily:F}}>{fmtUsd(b.hi)}</div></div>
-                <div style={{textAlign:'right',minWidth:64}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>width</div><div style={{color:C.txtBright,fontSize:11,fontFamily:F}}>{fmtUsd(b.width)}</div><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>{(b.width/R.priorClose*100).toFixed(1)}%</div></div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:4,lineHeight:1.5}}>{bt?('Validated over '+bt.tested+' days (~3y walk-forward): '+bt.summary.map(function(s){return Math.round(s.cov*100)+'\u2192'+Math.round(s.realized*100)+'%';}).join('  \u00b7  ')+'.  Green = realized within 4% of target.'):(btErr?('Validation unavailable: '+btErr):(btLoading?'Validating against ~3 years of history\u2026':''))}</div>
+        {(R.iv&&R.iv.iv)?<div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}><span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?('\u26A0 Options are pricing an outsized move \u2014 ATM IV '+(R.iv.iv*100).toFixed(0)+'% is '+ivPrem.toFixed(2)+'\u00d7 realized (likely earnings/catalyst). Consider widening or pausing the grid.'):('Options IV '+(R.iv.iv*100).toFixed(0)+'% \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.')}</span></div>:null}
+      </Cd>
+
+      <Cd>
+        <div onClick={function(){setShowDetails(!showDetails);}} style={{display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
+          <div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F,letterSpacing:0.5}}>Backtest &amp; diagnostics</div>
+          <div style={{color:C.txtDim,fontSize:12,fontFamily:F}}>{showDetails?'\u25BE':'\u25B8'}</div>
+        </div>
+        {showDetails&&<div style={{marginTop:10}}>
+          {bt?<div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginBottom:4,lineHeight:1.5}}>Walk-forward over {bt.tested} test days; bands re-fit and calibrated on a trailing {bt.fitw}d window from prior data only.</div>
+            {bt.summary.map(function(s){
+              var off=Math.abs(s.realized-s.cov), col=off<=0.04?C.accent:(off<=0.08?C.gold:C.warn);
+              return <div key={s.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'5px 10px',marginBottom:4,border:'1px solid '+C.border,borderRadius:7}}>
+                <div style={{minWidth:54}}><span style={{color:C.txtBright,fontSize:11,fontWeight:800,fontFamily:F}}>{Math.round(s.cov*100)}%</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F}}> target</span></div>
+                <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>realized</div><div style={{color:col,fontSize:12,fontWeight:800,fontFamily:F}}>{(s.realized*100).toFixed(1)}%</div></div>
+                <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>avg width</div><div style={{color:C.txtBright,fontSize:11,fontFamily:F}}>{(s.width*100).toFixed(1)}%</div></div>
+                <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>int score</div><div style={{color:C.txtBright,fontSize:11,fontFamily:F}}>{(s.iscore*100).toFixed(2)}</div></div>
               </div>;
             })}
-          </div>
-          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2,lineHeight:1.5}}>Where tomorrow <i>closes</i> (lognormal from ATM IV) &#8212; vs the high-low <i>envelope</i> above. Narrower than the envelope unless IV is elevated (catalyst). {R.iv.dte}DTE ATM, indicative quotes.</div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,marginBottom:2}}>Rolling {bt.roll}-day coverage &#183; <span style={{color:C.gold}}>68</span> / <span style={{color:C.accent}}>80</span> / <span style={{color:C.blue}}>90</span>, dashed = target</div>
+            {(function(){
+              var w=320,h=140,pl=24,pr=8,ptp=8,pb=14,ymin=0.4,ymax=1.0;
+              function yOf(v){return h-pb-(h-ptp-pb)*((Math.max(ymin,Math.min(ymax,v))-ymin)/(ymax-ymin));}
+              function pts(ser){var n=ser.length;if(n<2)return '';return ser.map(function(v,i){return (pl+(w-pl-pr)*i/(n-1)).toFixed(1)+','+yOf(v).toFixed(1);}).join(' ');}
+              return <svg viewBox={'0 0 '+w+' '+h} style={{width:'100%',height:'auto',background:C.bgInput,borderRadius:6}}>
+                {[0.5,0.7,0.9].map(function(g){return <g key={'g'+g}><line x1={pl} y1={yOf(g)} x2={w-pr} y2={yOf(g)} stroke={C.border} strokeWidth="0.5"/><text x={pl-2} y={yOf(g)+2.5} fontSize="6.5" fill={C.txtDim} textAnchor="end">{g.toFixed(1)}</text></g>;})}
+                {[[0.68,C.gold],[0.80,C.accent],[0.90,C.blue]].map(function(rr){return <line key={'t'+rr[0]} x1={pl} y1={yOf(rr[0])} x2={w-pr} y2={yOf(rr[0])} stroke={rr[1]} strokeWidth="0.7" strokeDasharray="3 3" opacity="0.45"/>;})}
+                <polyline points={pts(bt.r68)} fill="none" stroke={C.gold} strokeWidth="1.1"/>
+                <polyline points={pts(bt.r80)} fill="none" stroke={C.accent} strokeWidth="1.4"/>
+                <polyline points={pts(bt.r90)} fill="none" stroke={C.blue} strokeWidth="1.1"/>
+              </svg>;
+            })()}
+            <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginTop:10}}>
+              <div><div style={lS}>80% breach rate</div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{((bt.bHi+bt.bLo)/bt.bTot*100).toFixed(1)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>high {(bt.bHi/bt.bTot*100).toFixed(0)}% &middot; low {(bt.bLo/bt.bTot*100).toFixed(0)}%</div></div>
+              <div><div style={lS}>Median-travel error</div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{(bt.teMAE*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>MAE &middot; bias {(bt.teMean*100>=0?'+':'')}{(bt.teMean*100).toFixed(2)}%</div></div>
+            </div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.5}}>A rolling-coverage dip = bands lagged a vol spike. Breach split flags directional bias; median-travel bias shows if range is systematically under/over-predicted.</div>
+          </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F}}>{btErr?('Backtest failed: '+btErr):(btLoading?'Running ~3-year walk-forward backtest\u2026':'Backtest runs automatically with each estimate.')}</div>}
+
+          {(R.iv&&R.iv.iv)?<div style={{marginTop:14,paddingTop:10,borderTop:'1px dashed '+C.border}}>
+            <div style={{color:C.blue,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.5}}>OPTIONS IV DETAIL</div>
+            <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginTop:6}}>
+              <div><div style={lS}>ATM implied vol</div><div style={{color:C.blue,fontSize:15,fontWeight:800,fontFamily:F}}>{(R.iv.iv*100).toFixed(0)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>annualized</div></div>
+              <div><div style={lS}>IV 1-day (1&#963;)</div><div style={{color:C.txtBright,fontSize:15,fontWeight:800,fontFamily:F}}>{fmtUsd(R.iv.move1)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.iv.move1/R.priorClose*100).toFixed(2)}%</div></div>
+              <div><div style={lS}>Realized 1&#963;</div><div style={{color:C.txtBright,fontSize:15,fontWeight:800,fontFamily:F}}>{fmtUsd(R.histMove1)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.histMove1/R.priorClose*100).toFixed(2)}%</div></div>
+            </div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,lineHeight:1.5}}>ATM {fmtUsd(R.iv.strike)} &middot; exp {R.iv.exp} ({R.iv.dte}DTE) &middot; straddle {fmtUsd(R.iv.straddle)} &middot; spreads {R.iv.cSpread!=null?(R.iv.cSpread*100).toFixed(0)+'%/'+(R.iv.pSpread*100).toFixed(0)+'%':'\u2014'}. Indicative quotes can be wide; sign the Alpaca OPRA agreement for exchange-grade IV.</div>
+            {R.iv.bands&&<div style={{marginTop:8}}>
+              <div style={{color:C.blue,fontSize:8,fontWeight:700,fontFamily:F,letterSpacing:0.5,marginBottom:4}}>IMPLIED RANGE WHERE IT CLOSES <span style={{color:C.txtDim,fontWeight:400}}>(lognormal from ATM IV &#8212; vs the high-low envelope above)</span></div>
+              {R.iv.bands.map(function(b){
+                return <div key={b.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'5px 10px',marginBottom:4,border:'1px solid '+C.blueDim,borderRadius:7}}>
+                  <div style={{minWidth:44}}><span style={{color:C.blue,fontSize:11,fontWeight:800,fontFamily:F}}>{Math.round(b.cov*100)}%</span></div>
+                  <div style={{textAlign:'center'}}><div style={{color:C.warn,fontSize:7,fontFamily:F}}>LOW</div><div style={{color:C.txtBright,fontSize:12,fontWeight:700,fontFamily:F}}>{fmtUsd(b.lo)}</div></div>
+                  <div style={{color:C.txtDim,fontSize:11}}>&#8596;</div>
+                  <div style={{textAlign:'center'}}><div style={{color:C.accent,fontSize:7,fontFamily:F}}>HIGH</div><div style={{color:C.txtBright,fontSize:12,fontWeight:700,fontFamily:F}}>{fmtUsd(b.hi)}</div></div>
+                  <div style={{textAlign:'right',minWidth:50}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>width</div><div style={{color:C.txtBright,fontSize:10,fontFamily:F}}>{(b.width/R.priorClose*100).toFixed(1)}%</div></div>
+                </div>;
+              })}
+            </div>}
+          </div>:null}
+
+          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.5,marginTop:12}}>Method: Yang-Zhang daily vol over a {WIN}-day window (gap + intraday decomposition). Bands = prior close &#215; (1 &#177; &#963; &#215; Q), Q = per-side standardized-extension quantile tuned to the target joint coverage, then walk-forward calibrated. Estimates only; not financial advice.</div>
         </div>}
-      </Cd>
-
-      <Cd>
-        <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
-          <div><div style={lS}>Typical daily travel</div><div style={{color:C.txtBright,fontSize:15,fontWeight:800,fontFamily:F}}>{(R.medRange*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>median high&#8211;low &middot; {fmtUsd(R.medRange*R.priorClose)}</div></div>
-          <div><div style={lS}>Avg overnight gap</div><div style={{color:C.txtBright,fontSize:15,fontWeight:800,fontFamily:F}}>{(R.meanGap*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>close&#8594;open magnitude</div></div>
-        </div>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.5}}>Use typical travel to size grid spacing/density; the gap figure is overnight boundary-break risk. (Parametric &#8730;(8/&#960;)&#215;&#963; = {(R.expParam*100).toFixed(2)}% overstates realized range &#8212; reference only.)</div>
-      </Cd>
-
-      <Cd>
-        <SectionHead title="Options IV Overlay" sub="Implied vs realized move (BS from ATM straddle, indicative feed)" info="Implied vol is inverted from ATM call/put mid prices via Black-Scholes. A large implied-over-realized premium signals an expected catalyst (earnings)."/>
-        {(R.iv&&R.iv.iv)?<div>
-          <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginTop:6}}>
-            <div><div style={lS}>ATM implied vol</div><div style={{color:C.blue,fontSize:15,fontWeight:800,fontFamily:F}}>{(R.iv.iv*100).toFixed(0)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>annualized</div></div>
-            <div><div style={lS}>IV 1-day (1&#963;)</div><div style={{color:C.txtBright,fontSize:15,fontWeight:800,fontFamily:F}}>{fmtUsd(R.iv.move1)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.iv.move1/R.priorClose*100).toFixed(2)}%</div></div>
-            <div><div style={lS}>Realized 1&#963;</div><div style={{color:C.txtBright,fontSize:15,fontWeight:800,fontFamily:F}}>{fmtUsd(R.histMove1)}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{(R.histMove1/R.priorClose*100).toFixed(2)}%</div></div>
-          </div>
-          <div style={{marginTop:8,padding:'6px 10px',borderRadius:6,background:(ivPrem>1.3?C.warnDim:C.bgInput),border:'1px solid '+(ivPrem>1.3?C.warn:C.border)}}>
-            <span style={{color:(ivPrem>1.3?C.warn:C.txtDim),fontSize:9,fontFamily:F,lineHeight:1.4}}>{ivPrem>1.3?'\u26A0 Implied vol is '+ivPrem.toFixed(2)+'\u00d7 realized \u2014 market pricing an outsized move (likely earnings/catalyst). Consider widening or pausing the grid.':'Implied \u2248 realized ('+(ivPrem?ivPrem.toFixed(2):'--')+'\u00d7) \u2014 no outsized move priced in.'}</span>
-          </div>
-          <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,lineHeight:1.5}}>ATM {fmtUsd(R.iv.strike)} &middot; exp {R.iv.exp} ({R.iv.dte}DTE) &middot; straddle {fmtUsd(R.iv.straddle)} &middot; spreads {R.iv.cSpread!=null?(R.iv.cSpread*100).toFixed(0)+'%/'+(R.iv.pSpread*100).toFixed(0)+'%':'\u2014'}. Indicative quotes can be wide; sign the Alpaca OPRA agreement for exchange-grade IV.</div>
-        </div>:<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6}}>{(R.iv&&R.iv.note)?R.iv.note:'IV overlay unavailable.'}</div>}
-      </Cd>
-
-      <div style={{color:C.txtDim,fontSize:8,fontFamily:F,lineHeight:1.5,padding:'0 4px'}}>Method: Yang-Zhang daily vol over a {WIN}-day window (gap + intraday decomposition). Bands = prior close &#215; (1 &#177; &#963; &#215; Q), Q = per-side standardized-extension quantile tuned to the target joint coverage. Estimates only; not financial advice.</div>
-    </div>}
-
-    {bt&&<div>
-      <Cd glow>
-        <SectionHead title="Rolling Backtest (walk-forward)" sub={'Calibrated envelope band (same construction as the projection) re-fit on a trailing '+bt.fitw+'d window, scored against the next day. '+bt.tested+' test days.'} info="For each historical day the band is built and calibrated from prior data only, then checked against that day's actual high-low. Rolling coverage = trailing-60d hit rate; reveals when bands lag a vol regime shift."/>
-        <div style={{marginTop:8}}>
-          {bt.summary.map(function(s){
-            var off=Math.abs(s.realized-s.cov), col=off<=0.04?C.accent:(off<=0.08?C.gold:C.warn);
-            return <div key={s.cov} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,padding:'6px 10px',marginBottom:5,border:'1px solid '+C.border,borderRadius:8}}>
-              <div style={{minWidth:62}}><span style={{color:C.txtBright,fontSize:12,fontWeight:800,fontFamily:F}}>{Math.round(s.cov*100)}%</span><span style={{color:C.txtDim,fontSize:8,fontFamily:F}}> target</span></div>
-              <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>realized</div><div style={{color:col,fontSize:13,fontWeight:800,fontFamily:F}}>{(s.realized*100).toFixed(1)}%</div></div>
-              <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>avg width</div><div style={{color:C.txtBright,fontSize:12,fontFamily:F}}>{(s.width*100).toFixed(1)}%</div></div>
-              <div style={{textAlign:'center'}}><div style={{color:C.txtDim,fontSize:7,fontFamily:F}}>int score</div><div style={{color:C.txtBright,fontSize:12,fontFamily:F}}>{(s.iscore*100).toFixed(2)}</div></div>
-            </div>;
-          })}
-        </div>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:6,marginBottom:2}}>Rolling {bt.roll}-day coverage &#183; <span style={{color:C.gold}}>68</span> / <span style={{color:C.accent}}>80</span> / <span style={{color:C.blue}}>90</span>, dashed = target</div>
-        {(function(){
-          var w=320,h=140,pl=24,pr=8,ptp=8,pb=14,ymin=0.4,ymax=1.0;
-          function yOf(v){return h-pb-(h-ptp-pb)*((Math.max(ymin,Math.min(ymax,v))-ymin)/(ymax-ymin));}
-          function pts(ser){var n=ser.length;if(n<2)return '';return ser.map(function(v,i){return (pl+(w-pl-pr)*i/(n-1)).toFixed(1)+','+yOf(v).toFixed(1);}).join(' ');}
-          return <svg viewBox={'0 0 '+w+' '+h} style={{width:'100%',height:'auto',background:C.bgInput,borderRadius:6}}>
-            {[0.5,0.7,0.9].map(function(g){return <g key={'g'+g}><line x1={pl} y1={yOf(g)} x2={w-pr} y2={yOf(g)} stroke={C.border} strokeWidth="0.5"/><text x={pl-2} y={yOf(g)+2.5} fontSize="6.5" fill={C.txtDim} textAnchor="end">{g.toFixed(1)}</text></g>;})}
-            {[[0.68,C.gold],[0.80,C.accent],[0.90,C.blue]].map(function(r){return <line key={'t'+r[0]} x1={pl} y1={yOf(r[0])} x2={w-pr} y2={yOf(r[0])} stroke={r[1]} strokeWidth="0.7" strokeDasharray="3 3" opacity="0.45"/>;})}
-            <polyline points={pts(bt.r68)} fill="none" stroke={C.gold} strokeWidth="1.1"/>
-            <polyline points={pts(bt.r80)} fill="none" stroke={C.accent} strokeWidth="1.4"/>
-            <polyline points={pts(bt.r90)} fill="none" stroke={C.blue} strokeWidth="1.1"/>
-          </svg>;
-        })()}
-        <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginTop:10}}>
-          <div><div style={lS}>80% breach rate</div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{((bt.bHi+bt.bLo)/bt.bTot*100).toFixed(1)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>high {(bt.bHi/bt.bTot*100).toFixed(0)}% &middot; low {(bt.bLo/bt.bTot*100).toFixed(0)}%</div></div>
-          <div><div style={lS}>Median-travel error</div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,fontFamily:F}}>{(bt.teMAE*100).toFixed(2)}%</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>MAE &middot; bias {(bt.teMean*100>=0?'+':'')}{(bt.teMean*100).toFixed(2)}%</div></div>
-        </div>
-        <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:8,lineHeight:1.5}}>Realized within ~4% of target = well-calibrated (green). A rolling-coverage dip means the bands lagged a vol spike. Breach split flags directional bias (gap-prone names skew one side); median-travel bias shows if range is systematically under/over-predicted. Envelope bands only &#8212; implied-band accuracy needs logged IV (accruing now).</div>
       </Cd>
     </div>}
   </div>;
