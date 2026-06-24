@@ -13652,7 +13652,7 @@ function VolumeProfileMTFPage(p){
   var fmtNum=function(v){if(v>=1e6)return (v/1e6).toFixed(2)+'M';if(v>=1e3)return (v/1e3).toFixed(1)+'K';return Math.round(v).toString();};
 
   // Pure profile builder — no fetch, no state. Recomputes instantly on toggle.
-  var buildProfile=function(bars,opt,bMode,tSize,dMode){
+  var buildProfile=function(bars,opt,bMode,tSize,dMode,met){
     if(!bars||!bars.length)return null;
     var pLo=Infinity,pHi=-Infinity;
     for(var i=0;i<bars.length;i++){
@@ -13662,8 +13662,8 @@ function VolumeProfileMTFPage(p){
     }
     if(!isFinite(pLo)||!isFinite(pHi)||pHi<pLo)return null;
     if(pHi===pLo){pHi=pLo+0.01;} // flat/halted stock: give a minimal range so profile still renders
-    var binSize;
-    if(bMode==='tick'){binSize=parseFloat(tSize);}
+    var binSize,tickCapped=false;
+    if(bMode==='tick'){binSize=parseFloat(tSize);if(!(binSize>0))binSize=0.01;}
     else{
       var raw=(pHi-pLo)/(opt&&opt.binTarget?opt.binTarget:50);
       var mag=Math.pow(10,Math.floor(Math.log10(raw)));
@@ -13673,7 +13673,7 @@ function VolumeProfileMTFPage(p){
       if(binSize<0.01)binSize=0.01;
     }
     var binCount=Math.ceil((pHi-pLo)/binSize)+1;
-    if(binCount>2000){binSize=(pHi-pLo)/2000;}
+    if(binCount>2000){if(bMode==='tick')tickCapped=true;binSize=(pHi-pLo)/2000;}
     var binLo=Math.floor(pLo/binSize)*binSize;
     var nBins=Math.ceil((pHi-binLo)/binSize)+1;
     var bins=[];
@@ -13699,22 +13699,26 @@ function VolumeProfileMTFPage(p){
         for(var k=loIdx;k<=hiIdx;k++){bins[k].vol+=vPer;bins[k].trd+=nPer;}
       }
     }
-    var totalVol=0,totalTrd=0,pocIdx=0,maxVol=0;
-    for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;totalTrd+=bins[c].trd;if(bins[c].vol>maxVol){maxVol=bins[c].vol;pocIdx=c;}}
-    if(totalVol<=0)return null; // no usable volume — caller shows 'no data'
-    var target=totalVol*0.70;
-    var acc=bins[pocIdx].vol;var lo2=pocIdx,hi2=pocIdx;
+    var FLD=met==='trades'?'trd':'vol'; // POC / value-area / nodes computed on the selected metric
+    var totalVol=0,totalTrd=0;
+    for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;totalTrd+=bins[c].trd;}
+    var totalSel=met==='trades'?totalTrd:totalVol;
+    var pocIdx=0,maxSel=0;
+    for(var c2=0;c2<nBins;c2++){if(bins[c2][FLD]>maxSel){maxSel=bins[c2][FLD];pocIdx=c2;}}
+    if(totalSel<=0)return null; // no usable volume — caller shows 'no data'
+    var target=totalSel*0.70;
+    var acc=bins[pocIdx][FLD];var lo2=pocIdx,hi2=pocIdx;
     while(acc<target&&(lo2>0||hi2<nBins-1)){
-      var vBelow=lo2>0?bins[lo2-1].vol:-1;
-      var vAbove=hi2<nBins-1?bins[hi2+1].vol:-1;
-      if(vAbove>=vBelow){hi2++;acc+=bins[hi2].vol;}else{lo2--;acc+=bins[lo2].vol;}
+      var vBelow=lo2>0?bins[lo2-1][FLD]:-1;
+      var vAbove=hi2<nBins-1?bins[hi2+1][FLD]:-1;
+      if(vAbove>=vBelow){hi2++;acc+=bins[hi2][FLD];}else{lo2--;acc+=bins[lo2][FLD];}
     }
     var vah=bins[hi2].hi,val=bins[lo2].lo,poc=bins[pocIdx].mid;
-    var meanVol=totalVol/nBins;var hvn=[],lvn=[];
+    var meanSel=totalSel/nBins;var hvn=[],lvn=[];
     for(var e=1;e<nBins-1;e++){
-      var cur=bins[e].vol,pv=bins[e-1].vol,nx=bins[e+1].vol;
-      if(cur>pv&&cur>nx&&cur>meanVol*1.3)hvn.push({price:bins[e].mid,vol:cur});
-      if(cur<pv&&cur<nx&&cur<meanVol*0.5&&cur>0)lvn.push({price:bins[e].mid,vol:cur});
+      var cur=bins[e][FLD],pv=bins[e-1][FLD],nx=bins[e+1][FLD];
+      if(cur>pv&&cur>nx&&cur>meanSel*1.3&&e!==pocIdx)hvn.push({price:bins[e].mid,vol:cur});
+      if(cur<pv&&cur<nx&&cur<meanSel*0.5)lvn.push({price:bins[e].mid,vol:cur,gap:cur<=0});
     }
     hvn.sort(function(a,b){return b.vol-a.vol;});hvn=hvn.slice(0,6);
     // Last price = last FINITE close (a bad final bar shouldn't break the LAST line / range logic)
@@ -13723,14 +13727,15 @@ function VolumeProfileMTFPage(p){
     // Sort LVN gaps by proximity to current price — the nearest gaps matter most to a trader
     lvn.sort(function(a,b){return Math.abs(a.price-lastPrice)-Math.abs(b.price-lastPrice);});
     return {bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,binLo:binLo,bars:bars,
-      totalVol:totalVol,totalTrd:totalTrd,poc:poc,pocIdx:pocIdx,maxVol:maxVol,vah:vah,val:val,
-      hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l};
+      totalVol:totalVol,totalTrd:totalTrd,totalSel:totalSel,metricFld:FLD,
+      poc:poc,pocIdx:pocIdx,maxVol:maxSel,maxSel:maxSel,vah:vah,val:val,
+      hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l,tickCapped:tickCapped};
   };
 
   // Fetch one timeframe's bars (handles Polygon pagination). Returns {bars,opt} or throws.
   var fetchTF=async function(tk,opt){
-    var toD=new Date();var frD=new Date();frD.setDate(frD.getDate()-opt.days);
-    var fromStr=frD.toISOString().slice(0,10);var toStr=toD.toISOString().slice(0,10);
+    var nowMs=Date.now();var fmtD=function(ms){return new Date(ms).toLocaleDateString('en-CA',{timeZone:'America/New_York'});};
+    var fromStr=fmtD(nowMs-opt.days*86400000);var toStr=fmtD(nowMs);
     var bars=[];
     var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(tk)+'/range/'+opt.mult+'/'+opt.span+'/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
     var pages=0;
@@ -13777,10 +13782,10 @@ function VolumeProfileMTFPage(p){
   var prof=React.useMemo(function(){
     if(!rawData||!rawData[lookback])return null;
     var entry=rawData[lookback];
-    var pr=buildProfile(entry.bars,entry.opt,binMode,tickSize,distMode);
+    var pr=buildProfile(entry.bars,entry.opt,binMode,tickSize,distMode,metric);
     if(pr)pr.ticker=loadedTicker;
     return pr;
-  },[rawData,lookback,binMode,tickSize,distMode,loadedTicker]);
+  },[rawData,lookback,binMode,tickSize,distMode,metric,loadedTicker]);
 
   // Build a profile for EVERY loaded timeframe — powers the multi-timeframe panel
   var allProfs=React.useMemo(function(){
@@ -13789,11 +13794,11 @@ function VolumeProfileMTFPage(p){
     for(var oi=0;oi<lookbackOpts.length;oi++){
       var o=lookbackOpts[oi];var entry=rawData[o.v];
       if(!entry||!entry.bars||!entry.bars.length)continue;
-      var pr=buildProfile(entry.bars,o,binMode,tickSize,distMode);
+      var pr=buildProfile(entry.bars,o,binMode,tickSize,distMode,metric);
       if(pr){pr.label=o.l;pr.grp=o.grp;pr.v=o.v;out.push(pr);}
     }
     return out;
-  },[rawData,binMode,tickSize,distMode]);
+  },[rawData,binMode,tickSize,distMode,metric]);
 
   // Confluence: cluster each timeframe's POC + top HVNs; zones where >=2 timeframes agree (within ~0.6%) = high-conviction S/R
   var confluence=React.useMemo(function(){
@@ -13824,7 +13829,7 @@ function VolumeProfileMTFPage(p){
 
 
   // Reset the crosshair whenever the chart's data or scale changes (avoids stale readouts)
-  React.useEffect(function(){setCross(null);},[lookback,binMode,tickSize,distMode,metric,rawData]);
+  React.useEffect(function(){setCross(null);},[lookback,binMode,tickSize,distMode]);
 
   // ── SVG chart: price axis + price line + volume profile overlaid on right edge ──
   var renderChart=function(){
@@ -13875,7 +13880,7 @@ function VolumeProfileMTFPage(p){
     }
     // Profile bars anchored right
     var profMaxW=chartW*0.42;
-    var metricMax=metric==='volume'?prof.maxVol:prof.bins.reduce(function(m,x){return x.trd>m?x.trd:m;},0);
+    var metricMax=prof.maxSel||1; // max of the selected metric (computed in buildProfile)
     if(!(metricMax>0))metricMax=1; // guard divide-by-zero when all values are 0
     var profBars=prof.bins.map(function(bin,idx){
       var val2=metric==='volume'?bin.vol:bin.trd;
@@ -13956,7 +13961,7 @@ function VolumeProfileMTFPage(p){
   };
 
   // Sorted levels for table (by volume desc)
-  var sortedLevels=prof?prof.bins.slice().filter(function(b){return b.vol>0;}).sort(function(a,b){return b.vol-a.vol;}):[];
+  var sortedLevels=prof?prof.bins.slice().filter(function(b){return b[prof.metricFld]>0;}).sort(function(a,b){return b[prof.metricFld]-a[prof.metricFld];}):[];
   var displayLevels=showAllLevels?sortedLevels:sortedLevels.slice(0,25);
 
   return <div>
@@ -13974,7 +13979,7 @@ function VolumeProfileMTFPage(p){
           <label style={lS}>Ticker</label>
           <input value={ticker} onChange={function(e){setTicker(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==='Enter')compute();}} style={iS} placeholder="e.g. NVDA"/>
         </div>
-        <button onClick={compute} disabled={loading} style={{padding:'9px 18px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00b880)',color:loading?C.txtDim:'#04231a',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:1,cursor:loading?'default':'pointer'}}>{loading?'Loading all...':'Analyze'}</button>
+        <button onClick={compute} disabled={loading} style={{padding:'9px 18px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#00e5a0,#00b880)',color:loading?C.txtDim:'#04231a',fontFamily:F,fontSize:10,fontWeight:800,letterSpacing:1,cursor:loading?'default':'pointer'}}>{loading?'Loading...':'Analyze'}</button>
       </div>
 
       {/* Lookback */}
@@ -14023,7 +14028,7 @@ function VolumeProfileMTFPage(p){
       {/* Summary header */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
         <div><span style={{color:C.gold,fontSize:16,fontWeight:800,fontFamily:F}}>{prof.ticker}</span>
-          <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{prof.lookbackLabel} | {prof.barCount} bars | bin ${prof.binSize<0.01?prof.binSize.toFixed(4):prof.binSize.toFixed(2)}</span></div>
+          <span style={{color:C.txtDim,fontSize:9,fontFamily:F,marginLeft:8}}>{prof.lookbackLabel} | {prof.barCount} bars | bin ${prof.binSize<0.01?prof.binSize.toFixed(4):prof.binSize.toFixed(2)}{prof.tickCapped?<span style={{color:C.warn,fontWeight:700}}> &middot; ${tickSize} tick capped (range too wide)</span>:''}</span></div>
         <div style={{textAlign:'right'}}>
           <div style={{color:C.warn,fontSize:11,fontWeight:700,fontFamily:F}}>Last ${prof.lastPrice.toFixed(2)}</div>
         </div>
@@ -14050,7 +14055,7 @@ function VolumeProfileMTFPage(p){
         <div style={{padding:8,background:C.accentDim,border:'1px solid '+C.accent+'55',borderRadius:6,textAlign:'center'}}>
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>VALUE AREA</div>
           <div style={{fontSize:11,color:C.accent,fontFamily:F,fontWeight:800}}>${prof.val.toFixed(2)}–${prof.vah.toFixed(2)}</div>
-          <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>70% of volume</div>
+          <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>70% of {metric==='volume'?'volume':'trades'}</div>
         </div>
         <div style={{padding:8,background:C.blueDim,border:'1px solid '+C.blue+'55',borderRadius:6,textAlign:'center'}}>
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>{metric==='volume'?'TOTAL VOL':'TOTAL TRADES'}</div>
@@ -14067,11 +14072,11 @@ function VolumeProfileMTFPage(p){
         {allProfs.map(function(pr){
           var posCol=pr.lastPrice>pr.vah?C.warn:pr.lastPrice<pr.val?C.blue:C.accent;
           var posTxt=pr.lastPrice>pr.vah?'above':pr.lastPrice<pr.val?'below':'in value';
-          var mx=pr.maxVol||1;var rng=(pr.pHi-pr.pLo)||1;
+          var fld=pr.metricFld||'vol';var mx=pr.maxSel||1;var rng=(pr.pHi-pr.pLo)||1;
           return <div key={pr.v} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid '+C.grid}}>
             <div style={{width:52,flexShrink:0}}><div style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{pr.label}</div><div style={{color:posCol,fontSize:7,fontFamily:F}}>{posTxt}</div></div>
             <svg viewBox="0 0 60 100" preserveAspectRatio="none" style={{width:44,height:30,flexShrink:0,background:C.bgDeep,borderRadius:3}}>
-              {pr.bins.map(function(b,i){if(b.vol<=0)return null;var inVA=b.mid>=pr.val&&b.mid<=pr.vah;var isP=i===pr.pocIdx;var w=b.vol/mx*58;var yTop=(1-(b.hi-pr.pLo)/rng)*100;var yBot=(1-(b.lo-pr.pLo)/rng)*100;var hh=Math.max(0.8,yBot-yTop);return React.createElement('rect',{key:i,x:(60-w).toFixed(1),y:yTop.toFixed(1),width:w.toFixed(1),height:hh.toFixed(1),fill:isP?C.gold:inVA?C.accent:C.blue,opacity:isP?0.9:inVA?0.55:0.32});})}
+              {pr.bins.map(function(b,i){if(b[fld]<=0)return null;var inVA=b.mid>=pr.val&&b.mid<=pr.vah;var isP=i===pr.pocIdx;var w=b[fld]/mx*58;var yTop=Math.max(0,(1-(b.hi-pr.pLo)/rng)*100);var yBot=Math.min(100,(1-(b.lo-pr.pLo)/rng)*100);var hh=Math.max(0.8,yBot-yTop);return React.createElement('rect',{key:i,x:(60-w).toFixed(1),y:yTop.toFixed(1),width:w.toFixed(1),height:hh.toFixed(1),fill:isP?C.gold:inVA?C.accent:C.blue,opacity:isP?0.9:inVA?0.55:0.32});})}
             </svg>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:8,fontFamily:F,color:C.txtDim}}>POC <span style={{color:C.gold,fontWeight:700}}>${pr.poc.toFixed(2)}</span></div>
@@ -14127,12 +14132,12 @@ function VolumeProfileMTFPage(p){
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>Price</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>Volume</th>
             <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>Trades</th>
-            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>% Vol</th>
+            <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>% {metric==='volume'?'Vol':'Trd'}</th>
             <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:'30%'}}></th>
           </tr></thead>
           <tbody>{displayLevels.map(function(bin,idx){
-            var pct=prof.totalVol>0?bin.vol/prof.totalVol*100:0;
-            var barW=bin.vol/prof.maxVol*100;
+            var pct=prof.totalSel>0?bin[prof.metricFld]/prof.totalSel*100:0;
+            var barW=prof.maxSel>0?bin[prof.metricFld]/prof.maxSel*100:0;
             var isPoc=Math.abs(bin.mid-prof.poc)<prof.binSize/2;
             var inVA=bin.mid>=prof.val&&bin.mid<=prof.vah;
             var col=isPoc?C.gold:inVA?C.accent:C.blue;
