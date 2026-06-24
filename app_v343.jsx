@@ -14500,6 +14500,156 @@ function OvernightHourlyPage(p){
   </div>;
 }
 
+// ===================== WORLD TRADING TIME ZONES =====================
+function WorldTradingTimeZonesPage(p){
+  var s1=useState(new Date()),now=s1[0],setNow=s1[1];
+  React.useEffect(function(){var id=setInterval(function(){setNow(new Date());},1000);return function(){clearInterval(id);};},[]);
+
+  // DST-correct time helpers - everything derived from each exchange's IANA time zone via Intl, never hardcoded UTC offsets
+  var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var partsInTz=function(tz,date){var o={};new Intl.DateTimeFormat('en-US',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(date).forEach(function(q){if(q.type!=='literal')o[q.type]=q.value;});var wd={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}[o.weekday];var h=parseInt(o.hour,10)%24;return {wd:wd,h:h,m:parseInt(o.minute,10),mod:h*60+parseInt(o.minute,10)};};
+  var tzOffset=function(tz,date){var o={};new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',hour12:false}).formatToParts(date).forEach(function(q){if(q.type!=='literal')o[q.type]=q.value;});var asUTC=Date.UTC(parseInt(o.year,10),parseInt(o.month,10)-1,parseInt(o.day,10),parseInt(o.hour,10)%24,parseInt(o.minute,10),parseInt(o.second,10));return Math.round((asUTC-date.getTime())/60000);};
+  var minsUntilOpen=function(pt,openMin,days){for(var dd=0;dd<8;dd++){var wd=(pt.wd+dd)%7;if(days.indexOf(wd)>=0){if(dd===0){if(pt.mod<openMin)return openMin-pt.mod;}else{return (1440-pt.mod)+(dd-1)*1440+openMin;}}}return null;};
+  var fmtClock=function(mod){mod=((mod%1440)+1440)%1440;var h=Math.floor(mod/60),m=Math.floor(mod%60);return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;};
+  var fmtDur=function(m){if(m==null)return '\u2014';if(m<0)m=0;var d=Math.floor(m/1440),h=Math.floor((m%1440)/60),mm=Math.floor(m%60);if(d>0)return d+'d '+h+'h';if(h>0)return h+'h '+mm+'m';return mm+'m';};
+  var fmtOff=function(min){var s=min<0?'-':'+';var a=Math.abs(min);var h=Math.floor(a/60),m=a%60;return 'UTC'+s+h+(m?':'+(m<10?'0':'')+m:'');};
+
+  var GRN=C.accent,BLU=C.blue,PRP=C.purple;
+  var EX=[
+    {sh:'NYSE',name:'New York (NYSE / Nasdaq)',city:'New York',tz:'America/New_York',open:570,close:960,days:[1,2,3,4,5],col:GRN},
+    {sh:'TSX',name:'Toronto Stock Exchange',city:'Toronto',tz:'America/Toronto',open:570,close:960,days:[1,2,3,4,5],col:GRN},
+    {sh:'BMV',name:'Bolsa Mexicana',city:'Mexico City',tz:'America/Mexico_City',open:510,close:900,days:[1,2,3,4,5],col:GRN},
+    {sh:'B3',name:'B3 \u2013 Brasil Bolsa',city:'S\u00E3o Paulo',tz:'America/Sao_Paulo',open:600,close:1020,days:[1,2,3,4,5],col:GRN},
+    {sh:'LSE',name:'London Stock Exchange',city:'London',tz:'Europe/London',open:480,close:990,days:[1,2,3,4,5],col:BLU},
+    {sh:'ENX',name:'Euronext',city:'Paris',tz:'Europe/Paris',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'XETR',name:'Deutsche B\u00F6rse (Xetra)',city:'Frankfurt',tz:'Europe/Berlin',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'SIX',name:'SIX Swiss Exchange',city:'Zurich',tz:'Europe/Zurich',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'MIL',name:'Borsa Italiana',city:'Milan',tz:'Europe/Rome',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'JSE',name:'Johannesburg Stock Exch.',city:'Johannesburg',tz:'Africa/Johannesburg',open:540,close:1020,days:[1,2,3,4,5],col:BLU},
+    {sh:'TAD',name:'Saudi Exchange (Tadawul)',city:'Riyadh',tz:'Asia/Riyadh',open:600,close:900,days:[0,1,2,3,4],col:BLU},
+    {sh:'NSE',name:'India (NSE / BSE)',city:'Mumbai',tz:'Asia/Kolkata',open:555,close:930,days:[1,2,3,4,5],col:PRP},
+    {sh:'SGX',name:'Singapore Exchange',city:'Singapore',tz:'Asia/Singapore',open:540,close:1020,days:[1,2,3,4,5],col:PRP},
+    {sh:'HKEX',name:'Hong Kong Exchange',city:'Hong Kong',tz:'Asia/Hong_Kong',open:570,close:960,lunch:[720,780],days:[1,2,3,4,5],col:PRP},
+    {sh:'SSE',name:'Shanghai Stock Exchange',city:'Shanghai',tz:'Asia/Shanghai',open:570,close:900,lunch:[690,780],days:[1,2,3,4,5],col:PRP},
+    {sh:'SZSE',name:'Shenzhen Stock Exchange',city:'Shenzhen',tz:'Asia/Shanghai',open:570,close:900,lunch:[690,780],days:[1,2,3,4,5],col:PRP},
+    {sh:'TWSE',name:'Taiwan Stock Exchange',city:'Taipei',tz:'Asia/Taipei',open:540,close:810,days:[1,2,3,4,5],col:PRP},
+    {sh:'KRX',name:'Korea Exchange',city:'Seoul',tz:'Asia/Seoul',open:540,close:930,days:[1,2,3,4,5],col:PRP},
+    {sh:'TSE',name:'Tokyo Stock Exchange',city:'Tokyo',tz:'Asia/Tokyo',open:540,close:930,lunch:[690,750],days:[1,2,3,4,5],col:PRP},
+    {sh:'ASX',name:'Australian Sec. Exchange',city:'Sydney',tz:'Australia/Sydney',open:600,close:960,days:[1,2,3,4,5],col:PRP},
+    {sh:'NZX',name:'New Zealand Exchange',city:'Wellington',tz:'Pacific/Auckland',open:600,close:1005,days:[1,2,3,4,5],col:PRP}
+  ];
+
+  var userOffset=-now.getTimezoneOffset();
+  var userTz=(function(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone;}catch(e){return 'Local';}})();
+  var userMod=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
+
+  var rows=EX.map(function(ex){
+    var pt=partsInTz(ex.tz,now);
+    var trading=ex.days.indexOf(pt.wd)>=0;
+    var inLunch=ex.lunch&&pt.mod>=ex.lunch[0]&&pt.mod<ex.lunch[1];
+    var state,mins;
+    if(trading&&pt.mod>=ex.open&&pt.mod<ex.close){if(inLunch){state='break';mins=ex.lunch[1]-pt.mod;}else{state='open';mins=ex.close-pt.mod;}}
+    else{state='closed';mins=minsUntilOpen(pt,ex.open,ex.days);}
+    var exOff=tzOffset(ex.tz,now);var shift=userOffset-exOff;
+    var uOpen=(((ex.open+shift)%1440)+1440)%1440;
+    var uClose=(((ex.close+shift)%1440)+1440)%1440;
+    var segs=ex.lunch?[[ex.open,ex.lunch[0]],[ex.lunch[1],ex.close]]:[[ex.open,ex.close]];
+    var ivals=[];
+    segs.forEach(function(s){var a=s[0]+shift,b=s[1]+shift;var k=Math.floor(a/1440);a-=k*1440;b-=k*1440;if(b<=1440)ivals.push([a,b]);else{ivals.push([a,1440]);ivals.push([0,b-1440]);}});
+    return {ex:ex,pt:pt,state:state,mins:mins,uOpen:uOpen,uClose:uClose,ivals:ivals};
+  });
+
+  var openCount=rows.filter(function(r){return r.state==='open';}).length;
+  var breakCount=rows.filter(function(r){return r.state==='break';}).length;
+  var tlRows=rows.slice().sort(function(a,b){return a.uOpen-b.uOpen;});
+  var rank={open:0,break:1,closed:2};
+  var tblRows=rows.slice().sort(function(a,b){if(rank[a.state]!==rank[b.state])return rank[a.state]-rank[b.state];return (a.mins||0)-(b.mins||0);});
+
+  var LBLW=58;
+  var hourTicks=[0,3,6,9,12,15,18,21,24];
+  var statCol=function(st){return st==='open'?C.accent:st==='break'?C.gold:C.txtDim;};
+  var clockStr=fmtClock(now.getHours()*60+now.getMinutes())+':'+(now.getSeconds()<10?'0':'')+now.getSeconds();
+  var dateStr=now.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric'});
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>World Trading Time Zones</div>
+    </div>
+
+    <Cd glow={true}>
+      <SectionHead title="World Trading Time Zones" sub="Live status of major global exchanges, in your local time" info="Each exchange's regular continuous-trading session is converted from its own IANA time zone to yours using live DST-aware offsets, so open/closed status and countdowns stay correct through daylight-saving changes. Asian markets show their midday break. Regular session only \u2014 excludes pre/post-market, exchange holidays, and half-day sessions."/>
+      <div style={{display:'flex',flexWrap:'wrap',alignItems:'baseline',gap:'2px 12px',marginTop:6}}>
+        <div style={{fontSize:30,fontWeight:800,fontFamily:F,color:C.txtBright,letterSpacing:1,fontVariantNumeric:'tabular-nums'}}>{clockStr}</div>
+        <div style={{fontSize:10,fontFamily:F,color:C.txtDim}}>{dateStr} &middot; {userTz} &middot; {fmtOff(userOffset)}</div>
+      </div>
+      <div style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:8,padding:'5px 12px',borderRadius:20,background:openCount>0?C.accentDim:C.bgInput,border:'1px solid '+(openCount>0?C.accent+'55':C.border)}}>
+        <span style={{width:8,height:8,borderRadius:8,background:openCount>0?C.accent:C.txtDim,display:'inline-block'}}></span>
+        <span style={{fontSize:10,fontFamily:F,fontWeight:700,color:openCount>0?C.accent:C.txtDim}}>{openCount} of {EX.length} markets open{breakCount>0?' \u00b7 '+breakCount+' on break':''}</span>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="24-Hour Overlap" sub="Each session mapped onto your local day; the bars stack as the trading day circles the globe"/>
+      <div style={{display:'flex',marginTop:4}}>
+        <div style={{width:LBLW,flexShrink:0}}></div>
+        <div style={{flex:1,position:'relative',height:14}}>
+          {hourTicks.map(function(hh){return <span key={hh} style={{position:'absolute',left:(hh/24*100)+'%',transform:'translateX(-50%)',fontSize:8,fontFamily:F,color:C.txtDim,whiteSpace:'nowrap'}}>{(hh<10?'0':'')+hh}</span>;})}
+          <span style={{position:'absolute',left:(userMod/1440*100)+'%',transform:'translateX(-50%)',fontSize:7.5,fontFamily:F,color:C.warn,fontWeight:800,top:-1,whiteSpace:'nowrap'}}>now</span>
+        </div>
+      </div>
+      <div style={{position:'relative'}}>
+        <div style={{position:'absolute',top:0,bottom:0,left:LBLW,right:0,pointerEvents:'none'}}>
+          {hourTicks.map(function(hh){return <div key={hh} style={{position:'absolute',left:(hh/24*100)+'%',top:0,bottom:0,width:1,background:C.grid}}></div>;})}
+          <div style={{position:'absolute',left:(userMod/1440*100)+'%',top:0,bottom:0,width:2,background:C.warn,boxShadow:'0 0 4px '+C.warn}}></div>
+        </div>
+        {tlRows.map(function(r,i){return <div key={i} style={{display:'flex',alignItems:'center',height:20}}>
+          <div style={{width:LBLW,flexShrink:0,display:'flex',alignItems:'center',gap:4,fontFamily:F}}>
+            <span style={{width:6,height:6,borderRadius:6,background:statCol(r.state),flexShrink:0}}></span>
+            <span style={{fontSize:8.5,fontWeight:700,color:r.state==='closed'?C.txtDim:C.txtBright}}>{r.ex.sh}</span>
+          </div>
+          <div style={{flex:1,position:'relative',height:12}}>
+            {r.ivals.map(function(iv,j){var active=(r.state==='open'||r.state==='break');return <div key={j} style={{position:'absolute',left:(iv[0]/1440*100)+'%',width:Math.max(0.4,(iv[1]-iv[0])/1440*100)+'%',top:0,bottom:0,background:r.ex.col,borderRadius:2,opacity:active?0.95:0.42}}></div>;})}
+          </div>
+        </div>;})}
+      </div>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:10,fontSize:8,fontFamily:F,color:C.txtDim}}>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:2,background:GRN,verticalAlign:'middle',marginRight:4}}></span>Americas</span>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:2,background:BLU,verticalAlign:'middle',marginRight:4}}></span>Europe / Africa / Middle East</span>
+        <span><span style={{display:'inline-block',width:9,height:9,borderRadius:2,background:PRP,verticalAlign:'middle',marginRight:4}}></span>Asia / Pacific</span>
+      </div>
+    </Cd>
+
+    <Cd>
+      <SectionHead title="Exchanges" sub="Open markets first"/>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:F}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+            <th style={{padding:'5px 4px',textAlign:'left',color:C.txtDim}}>Market</th>
+            <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>Local</th>
+            <th style={{padding:'5px 4px',textAlign:'center',color:C.txtDim}}>Status</th>
+            <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim,whiteSpace:'nowrap'}}>Hours (your time)</th>
+            <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>Next</th>
+          </tr></thead>
+          <tbody>{tblRows.map(function(r,idx){
+            var sc=statCol(r.state);
+            var stTxt=r.state==='open'?'OPEN':r.state==='break'?'BREAK':'CLOSED';
+            var nextTxt=r.state==='open'?'closes '+fmtDur(r.mins):r.state==='break'?'resumes '+fmtDur(r.mins):'opens '+fmtDur(r.mins);
+            return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,borderLeft:'2px solid '+r.ex.col}}>
+              <td style={{padding:'5px 4px 5px 8px'}}><div style={{color:C.txtBright,fontWeight:700}}>{r.ex.sh}</div><div style={{color:C.txtDim,fontSize:7.5}}>{r.ex.city}</div></td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.txt,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{fmtClock(r.pt.mod)}<div style={{color:C.txtDim,fontSize:7.5}}>{DOW[r.pt.wd]}</div></td>
+              <td style={{padding:'5px 4px',textAlign:'center'}}><span style={{color:sc,fontWeight:800,fontSize:8.5,padding:'2px 6px',borderRadius:4,background:sc+'22',whiteSpace:'nowrap'}}>{stTxt}</span></td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:C.txt,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{fmtClock(r.uOpen)}&ndash;{fmtClock(r.uClose)}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:sc,whiteSpace:'nowrap'}}>{nextTxt}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <div style={{marginTop:8,fontSize:7.5,fontFamily:F,color:C.txtDim,lineHeight:1.5}}>Regular cash-session hours, converted live with daylight saving. Does not account for exchange holidays or half-day sessions. Hours (your time) shows the session start&ndash;end on your local clock; Asian midday breaks appear as gaps in the timeline above.</div>
+    </Cd>
+  </div>;
+}
+
 // ─── CONFIG HEDGE CALCULATOR ──────────────────────────────────────────────────
 function HedgeCalcPage(p){
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
@@ -30268,7 +30418,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'ethdr',label:'Essential Tools',type:'header'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'violentchop',label:'Holy Grail Screener',icon:'\u2928'},{key:'mostactives',label:'Most Actives',icon:'\u2191'},{key:'dailylowswing',label:'Daily Low To Swing High Screener',icon:'\u2922'},{key:'swingscreener',label:'Hourly Low To Swing High Screener',icon:'\u2922'},{key:'minuteswingscreener',label:'Minute Low To Swing High Screener',icon:'\u22CF'},{key:'volumeprofile',label:'Volume Profile (Multi-TF)',icon:'\u2637'},{key:'alpaca24atr',label:'24 Hour Stock Trade Profile',icon:'\u2261'},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4'},{key:'optionschain',label:'Options Chain Viewer',icon:'\u25C7'},{key:'hedgecalc',label:'Config Calculator & Hedging',icon:'\u2637'},{key:'nextdayrange',label:'Next Day Range Tool',icon:'\u2194'},{key:'fullmarketscan',label:'Full Market Scan',icon:'\u2316'},{key:'overnighthourly',label:'Overnight Hourly Activity',icon:'\u263E'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'objectives',label:'Objectives',icon:'\u25C9',indent:true},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'ethdr',label:'Essential Tools',type:'header'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'violentchop',label:'Holy Grail Screener',icon:'\u2928'},{key:'mostactives',label:'Most Actives',icon:'\u2191'},{key:'dailylowswing',label:'Daily Low To Swing High Screener',icon:'\u2922'},{key:'swingscreener',label:'Hourly Low To Swing High Screener',icon:'\u2922'},{key:'minuteswingscreener',label:'Minute Low To Swing High Screener',icon:'\u22CF'},{key:'volumeprofile',label:'Volume Profile (Multi-TF)',icon:'\u2637'},{key:'alpaca24atr',label:'24 Hour Stock Trade Profile',icon:'\u2261'},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4'},{key:'optionschain',label:'Options Chain Viewer',icon:'\u25C7'},{key:'hedgecalc',label:'Config Calculator & Hedging',icon:'\u2637'},{key:'nextdayrange',label:'Next Day Range Tool',icon:'\u2194'},{key:'fullmarketscan',label:'Full Market Scan',icon:'\u2316'},{key:'overnighthourly',label:'Overnight Hourly Activity',icon:'\u263E'},{key:'tradingzones',label:'World Trading Time Zones',icon:'\u25D1'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'objectives',label:'Objectives',icon:'\u25C9',indent:true},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -30310,6 +30460,7 @@ function App(){
     {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='overnighthourly'&&<OvernightHourlyPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='tradingzones'&&<WorldTradingTimeZonesPage onBack={function(){setPage('home');}}/>}
     {page==='volumeprofile'&&<VolumeProfileMTFPage apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='dailylowswing'&&<DailyLowSwingPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='closehighscreener'&&<CloseHighScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
