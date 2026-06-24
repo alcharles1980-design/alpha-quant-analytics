@@ -13631,6 +13631,7 @@ function VolumeProfileMTFPage(p){
   var s11=useState(''),loadedTicker=s11[0],setLoadedTicker=s11[1];
   var s12=useState('uniform'),distMode=s12[0],setDistMode=s12[1];
   var s13=useState(null),cross=s13[0],setCross=s13[1];
+  var seqRef=React.useRef(0);
 
   var lookbackOpts=[
     {v:'1',l:'1 Day',mult:10,span:'second',days:1,binTarget:160,grp:'intraday'},
@@ -13726,41 +13727,50 @@ function VolumeProfileMTFPage(p){
       hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l};
   };
 
-  // Fetch ALL lookback timeframes up front so toggling is instant (no re-fetch)
+  // Fetch one timeframe's bars (handles Polygon pagination). Returns {bars,opt} or throws.
+  var fetchTF=async function(tk,opt){
+    var toD=new Date();var frD=new Date();frD.setDate(frD.getDate()-opt.days);
+    var fromStr=frD.toISOString().slice(0,10);var toStr=toD.toISOString().slice(0,10);
+    var bars=[];
+    var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(tk)+'/range/'+opt.mult+'/'+opt.span+'/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+    var pages=0;
+    while(url&&pages<10){
+      var r=await fetch(url);
+      if(!r.ok){var et=await r.text();throw new Error('Polygon '+r.status+' on '+opt.l+': '+et.slice(0,100));}
+      var d=await r.json();
+      if(d.results&&d.results.length)bars=bars.concat(d.results);
+      url=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;
+      pages++;
+    }
+    return {bars:bars,opt:opt};
+  };
+
+  // Load the visible timeframe first (fast first paint), then stream the rest in the background.
   var compute=async function(){
     var tk=ticker.trim().toUpperCase();
     if(!tk){setErr('Enter a ticker');return;}
     if(!p.apiKey){setErr('Polygon API key not set');return;}
-    setLoading(true);setErr(null);setRawData(null);
+    var mySeq=++seqRef.current; // cancels any in-flight background loop from a prior Analyze
+    setLoading(true);setErr(null);setRawData(null);setCross(null);
+    var prioOpt=lookbackOpts.filter(function(o){return o.v===lookback;})[0]||lookbackOpts[1]||lookbackOpts[0];
+    setProgMsg('Loading '+prioOpt.l+'...');
     try{
-      var collected={};
-      for(var oi=0;oi<lookbackOpts.length;oi++){
-        var opt=lookbackOpts[oi];
-        setProgMsg('Fetching '+opt.l+' ('+(oi+1)+'/'+lookbackOpts.length+')...');
-        var toD=new Date();var frD=new Date();frD.setDate(frD.getDate()-opt.days);
-        var fromStr=frD.toISOString().slice(0,10);var toStr=toD.toISOString().slice(0,10);
-        var bars=[];
-        var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(tk)+'/range/'+opt.mult+'/'+opt.span+'/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
-        var pages=0;
-        while(url&&pages<10){
-          var r=await fetch(url);
-          if(!r.ok){var et=await r.text();throw new Error('Polygon '+r.status+' on '+opt.l+': '+et.slice(0,100));}
-          var d=await r.json();
-          if(d.results&&d.results.length)bars=bars.concat(d.results);
-          url=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;
-          pages++;
-        }
-        collected[opt.v]={bars:bars,opt:opt};
-      }
-      // Verify at least one timeframe returned data
-      var anyData=false;
-      for(var ck in collected){if(collected[ck].bars.length){anyData=true;break;}}
-      if(!anyData){setErr(tk+': no bar data returned. Check the ticker symbol.');setLoading(false);setProgMsg('');return;}
-      setRawData(collected);
-      setLoadedTicker(tk);
-      setProgMsg('');
-    }catch(e){setErr(e.message);setProgMsg('');}
-    setLoading(false);
+      var first=await fetchTF(tk,prioOpt);
+      if(seqRef.current!==mySeq)return; // a newer Analyze superseded this one
+      var init={};init[prioOpt.v]=first;
+      setRawData(init);setLoadedTicker(tk);setLoading(false);
+    }catch(e){if(seqRef.current===mySeq){setErr(e.message);setLoading(false);setProgMsg('');}return;}
+    // Background: fetch the remaining timeframes (array order keeps the heavy 5Y last), merge as each arrives
+    var rest=lookbackOpts.filter(function(o){return o.v!==prioOpt.v;});
+    for(var bi=0;bi<rest.length;bi++){
+      if(seqRef.current!==mySeq)return;
+      setProgMsg('Loading other timeframes ('+(bi+1)+'/'+rest.length+')...');
+      var res;
+      try{res=await fetchTF(tk,rest[bi]);}catch(_e){res={bars:[],opt:rest[bi]};}
+      if(seqRef.current!==mySeq)return;
+      (function(r){setRawData(function(prev){var nx=Object.assign({},prev||{});nx[r.opt.v]=r;return nx;});})(res);
+    }
+    if(seqRef.current===mySeq)setProgMsg('');
   };
 
   // Derived profile — recomputes instantly when lookback / binMode / tickSize change
@@ -13975,7 +13985,7 @@ function VolumeProfileMTFPage(p){
           <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
           {lookbackOpts.filter(function(o){return o.grp===grp[0];}).map(function(o){var loaded=rawData&&rawData[o.v];var nb=loaded?rawData[o.v].bars.length:0;return <button key={o.v} onClick={function(){setLookback(o.v);}}
             style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
-              border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}{loaded?' ('+nb+')':''}</button>;})}
+              border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}{loaded?' ('+nb+')':(rawData?' \u2026':'')}</button>;})}
           </div>
         </div>;})}
         <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(function(){var o=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};var u=o.span==='second'?'-sec':o.span==='hour'?'-hr':o.span==='day'?'-day':o.span==='week'?'-wk':'-min';return o.mult+u+' bars, ~'+(o.binTarget||50)+' bins';})()}{rawData?' · bin/metric changes also instant':''}</div>
@@ -14005,7 +14015,8 @@ function VolumeProfileMTFPage(p){
 
       {progMsg&&<div style={{fontSize:8,fontFamily:F,color:C.purple,marginBottom:6}}>{progMsg}</div>}
       {err&&<div style={{padding:8,background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>{err}</div>}
-      {rawData&&!prof&&!progMsg&&<div style={{padding:8,background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>No volume data for {loadedTicker} on the {(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).l} timeframe. Try another lookback.</div>}
+      {rawData&&!rawData[lookback]&&<div style={{padding:8,background:C.purple+'18',border:'1px solid '+C.purple,borderRadius:6,color:C.purple,fontSize:9,fontFamily:F,marginBottom:8}}>Loading {(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).l} timeframe{'\u2026'}</div>}
+      {rawData&&rawData[lookback]&&!prof&&<div style={{padding:8,background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>No volume data for {loadedTicker} on the {(lookbackOpts.filter(function(o){return o.v===lookback;})[0]||{}).l} timeframe. Try another lookback.</div>}
     </Cd>
 
     {prof&&<Cd>
