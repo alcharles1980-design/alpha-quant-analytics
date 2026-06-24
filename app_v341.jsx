@@ -13818,10 +13818,24 @@ function VolumeProfileMTFPage(p){
     return out;
   },[rawData,binMode,tickSize,distMode,metric]);
 
+  // Real current price = close of the MOST RECENT bar across all loaded timeframes. A long-range hourly feed can end on an
+  // older/anomalous bar, so the longest timeframe's last close is NOT a reliable "now" — pick the freshest bar by timestamp.
+  var curPrice=React.useMemo(function(){
+    var best=null,maxT=-Infinity;
+    allProfs.forEach(function(pr){
+      if(pr.lastPrice==null)return;
+      var lb=(pr.bars&&pr.bars.length)?pr.bars[pr.bars.length-1]:null;
+      var t=(lb&&isFinite(lb.t))?lb.t:0;
+      if(t>maxT){maxT=t;best=pr.lastPrice;}
+    });
+    if(best==null&&prof&&prof.lastPrice!=null)best=prof.lastPrice;
+    return best;
+  },[allProfs,prof]);
+
   // Confluence: cluster each timeframe's POC + top HVNs; zones where >=2 timeframes agree (within ~0.6%) = high-conviction S/R
   var confluence=React.useMemo(function(){
     if(allProfs.length<2)return [];
-    var lp=allProfs[allProfs.length-1].lastPrice||allProfs[0].lastPrice;
+    var lp=curPrice||allProfs[0].lastPrice;
     var cands=[];
     allProfs.forEach(function(pr){
       cands.push({price:pr.poc,w:3,tf:pr.label});
@@ -13843,7 +13857,7 @@ function VolumeProfileMTFPage(p){
     }).filter(function(z){return z.strength>=2;});
     zones.sort(function(a,b){return b.strength-a.strength||Math.abs(a.price-lp)-Math.abs(b.price-lp);});
     return zones.slice(0,6);
-  },[allProfs]);
+  },[allProfs,curPrice]);
 
 
   // Reset the crosshair whenever the chart's data or scale changes (avoids stale readouts)
@@ -14118,8 +14132,9 @@ function VolumeProfileMTFPage(p){
       <SectionHead title="Multi-Timeframe" sub="Each loaded timeframe's profile, and where they agree" info="A compact volume profile per timeframe (POC, value area, and whether last price is above/in/below value), plus confluence zones: price levels where the POC or a high-volume node from two or more timeframes line up within ~0.6%. The more timeframes agreeing on a level, the stronger it tends to act as support or resistance."/>
       <div style={{marginTop:4}}>
         {allProfs.map(function(pr){
-          var posCol=pr.lastPrice>pr.vah?C.warn:pr.lastPrice<pr.val?C.blue:C.accent;
-          var posTxt=pr.lastPrice>pr.vah?'above':pr.lastPrice<pr.val?'below':'in value';
+          var cp=(curPrice!=null)?curPrice:pr.lastPrice;
+          var posCol=cp>pr.vah?C.warn:cp<pr.val?C.blue:C.accent;
+          var posTxt=cp>pr.vah?'above':cp<pr.val?'below':'in value';
           var fld=pr.metricFld||'vol';var mx=pr.maxSel||1;var rng=(pr.pHi-pr.pLo)||1;
           return <div key={pr.v} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid '+C.grid}}>
             <div style={{width:52,flexShrink:0}}><div style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F}}>{pr.label}</div><div style={{color:posCol,fontSize:7,fontFamily:F}}>{posTxt}</div></div>
@@ -14135,7 +14150,7 @@ function VolumeProfileMTFPage(p){
       </div>
       {confluence.length>0&&<div style={{marginTop:10}}>
         <div style={{color:C.purple,fontWeight:700,fontSize:8,letterSpacing:1,marginBottom:5}}>CONFLUENCE ZONES (timeframes in agreement)</div>
-        {confluence.map(function(z,i){var lp=allProfs[allProfs.length-1].lastPrice;var dist=(z.price-lp)/lp*100;return <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',marginBottom:4,borderRadius:6,border:'1px solid '+C.purple+(z.strength>=3?'77':'33'),background:z.strength>=3?C.purple+'14':'transparent'}}>
+        {confluence.map(function(z,i){var lp=curPrice;var dist=(z.price-lp)/lp*100;return <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',marginBottom:4,borderRadius:6,border:'1px solid '+C.purple+(z.strength>=3?'77':'33'),background:z.strength>=3?C.purple+'14':'transparent'}}>
           <div style={{color:C.txtBright,fontSize:13,fontWeight:800,fontFamily:F,minWidth:62}}>${z.price.toFixed(2)}</div>
           <div style={{background:C.purple,color:'#fff',fontSize:8,fontWeight:800,fontFamily:F,borderRadius:8,padding:'1px 7px',flexShrink:0}}>{z.strength}x</div>
           <div style={{flex:1,minWidth:0,fontSize:7,fontFamily:F,color:C.txtDim,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{z.tfs.join(', ')}</div>
