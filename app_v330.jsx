@@ -13629,17 +13629,17 @@ function VolumeProfileMTFPage(p){
   var s9=useState(false),showAllLevels=s9[0],setShowAllLevels=s9[1];
   var s10=useState(''),progMsg=s10[0],setProgMsg=s10[1];
   var s11=useState(''),loadedTicker=s11[0],setLoadedTicker=s11[1];
-  var s12=useState('body'),distMode=s12[0],setDistMode=s12[1];
+  var s12=useState('uniform'),distMode=s12[0],setDistMode=s12[1];
 
   var lookbackOpts=[
-    {v:'1',l:'1 Day',mult:10,span:'second',days:1,binTarget:140,grp:'intraday'},
-    {v:'5',l:'5 Days',mult:1,span:'minute',days:7,binTarget:120,grp:'intraday'},
-    {v:'20',l:'20 Days',mult:15,span:'minute',days:30,binTarget:100,grp:'intraday'},
-    {v:'60',l:'60 Days',mult:60,span:'minute',days:90,binTarget:90,grp:'intraday'},
-    {v:'126',l:'6 Months',mult:1,span:'day',days:200,binTarget:90,grp:'daily'},
-    {v:'252',l:'1 Year',mult:1,span:'day',days:380,binTarget:110,grp:'daily'},
-    {v:'504',l:'2 Years',mult:1,span:'day',days:760,binTarget:130,grp:'daily'},
-    {v:'1260',l:'5 Years',mult:1,span:'day',days:1880,binTarget:150,grp:'daily'}
+    {v:'1',l:'1 Day',mult:10,span:'second',days:1,binTarget:160,grp:'intraday'},
+    {v:'5',l:'5 Days',mult:1,span:'minute',days:7,binTarget:150,grp:'intraday'},
+    {v:'20',l:'20 Days',mult:15,span:'minute',days:30,binTarget:130,grp:'intraday'},
+    {v:'60',l:'60 Days',mult:30,span:'minute',days:90,binTarget:120,grp:'intraday'},
+    {v:'126',l:'6 Months',mult:1,span:'hour',days:200,binTarget:120,grp:'daily'},
+    {v:'252',l:'1 Year',mult:1,span:'hour',days:380,binTarget:140,grp:'daily'},
+    {v:'504',l:'2 Years',mult:1,span:'hour',days:760,binTarget:160,grp:'daily'},
+    {v:'1260',l:'5 Years',mult:1,span:'hour',days:1880,binTarget:180,grp:'daily'}
   ];
   var tickOpts=[{v:'0.01',l:'$0.01'},{v:'0.05',l:'$0.05'},{v:'0.10',l:'$0.10'},{v:'0.25',l:'$0.25'},{v:'0.50',l:'$0.50'},{v:'1.00',l:'$1.00'}];
 
@@ -13908,7 +13908,7 @@ function VolumeProfileMTFPage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume across the price bins it spans, by default body-weighted (most volume in the open-close body, less in the wicks); bin granularity adapts to the timeframe. The Multi-Timeframe panel finds price levels where intraday and daily profiles agree. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>
+      <SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume across the full high-low range of each bar by default, so the profile reflects the entire span price has traded (an optional body-weighting instead concentrates volume in the open-close body). Bin granularity adapts to the timeframe. The Multi-Timeframe panel finds price levels where intraday and daily profiles agree. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>
 
       {/* Ticker input */}
       <div style={{display:'flex',gap:6,alignItems:'flex-end',marginBottom:8}}>
@@ -13930,7 +13930,7 @@ function VolumeProfileMTFPage(p){
               border:'1px solid '+(lookback===o.v?C.accent+'88':C.border),background:lookback===o.v?C.accent+'14':'transparent',color:lookback===o.v?C.accent:C.txtDim}}>{o.l}{loaded?' ('+nb+')':''}</button>;})}
           </div>
         </div>;})}
-        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(function(){var o=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};var u=o.span==='second'?'-sec':o.span==='day'?'-day':o.span==='week'?'-wk':'-min';return o.mult+u+' bars, ~'+(o.binTarget||50)+' bins';})()}{rawData?' · bin/metric changes also instant':''}</div>
+        <div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:2}}>{(function(){var o=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};var u=o.span==='second'?'-sec':o.span==='hour'?'-hr':o.span==='day'?'-day':o.span==='week'?'-wk':'-min';return o.mult+u+' bars, ~'+(o.binTarget||50)+' bins';})()}{rawData?' · bin/metric changes also instant':''}</div>
       </div>
 
       {/* Bin mode */}
@@ -13948,7 +13948,7 @@ function VolumeProfileMTFPage(p){
       <div style={{marginBottom:8}}>
         <label style={lS}>Volume Spread</label>
         <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
-          {[['body','Body-weighted'],['uniform','Uniform (H-L)']].map(function(m){return <button key={m[0]} onClick={function(){setDistMode(m[0]);}}
+          {[['uniform','High-Low'],['body','Body-weighted']].map(function(m){return <button key={m[0]} onClick={function(){setDistMode(m[0]);}}
             style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
               border:'1px solid '+(distMode===m[0]?C.purple+'88':C.border),background:distMode===m[0]?C.purple+'14':'transparent',color:distMode===m[0]?C.purple:C.txtDim}}>{m[1]}</button>;})}
           <span style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{distMode==='body'?'70% of volume in the candle body':'evenly across each bar high-low'}</span>
