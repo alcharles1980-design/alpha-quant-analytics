@@ -13679,9 +13679,13 @@ function VolumeProfileMTFPage(p){
     var bins=[];
     for(var b=0;b<nBins;b++){var lo=binLo+b*binSize;bins.push({lo:lo,hi:lo+binSize,mid:lo+binSize/2,vol:0,trd:0});}
     var BODY_FRAC=0.70; // body-weighted: most volume trades within the open-close body; wicks get the remainder
+    var vwapNum=0,vwapDen=0; // window VWAP accumulators (volume-weighted price over the whole selected timeframe)
     for(var bi=0;bi<bars.length;bi++){
       var bar=bars[bi];var v=bar.v||0,n=bar.n||0;
       if(!isFinite(bar.l)||!isFinite(bar.h)||v<=0)continue; // skip bad/empty bars
+      // VWAP: prefer Polygon's per-bar vw (true intra-bar VWAP); fall back to typical price (HLC/3) or mid
+      var vwPx=(isFinite(bar.vw)&&bar.vw>0)?bar.vw:(isFinite(bar.c)?(bar.h+bar.l+bar.c)/3:(bar.h+bar.l)/2);
+      vwapNum+=vwPx*v;vwapDen+=v;
       var loIdx=Math.floor((bar.l-binLo)/binSize);
       var hiIdx=Math.floor((bar.h-binLo)/binSize);
       if(loIdx<0)loIdx=0;if(hiIdx>=nBins)hiIdx=nBins-1;if(hiIdx<loIdx)hiIdx=loIdx;
@@ -13726,9 +13730,10 @@ function VolumeProfileMTFPage(p){
     for(var lp=bars.length-1;lp>=0;lp--){if(isFinite(bars[lp].c)){lastPrice=bars[lp].c;break;}}
     // Sort LVN gaps by proximity to current price — the nearest gaps matter most to a trader
     lvn.sort(function(a,b){return Math.abs(a.price-lastPrice)-Math.abs(b.price-lastPrice);});
+    var vwap=vwapDen>0?vwapNum/vwapDen:null; // window VWAP (null when no usable volume)
     return {bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,binLo:binLo,bars:bars,
       totalVol:totalVol,totalTrd:totalTrd,totalSel:totalSel,metricFld:FLD,
-      poc:poc,pocIdx:pocIdx,maxVol:maxSel,maxSel:maxSel,vah:vah,val:val,
+      poc:poc,pocIdx:pocIdx,maxVol:maxSel,maxSel:maxSel,vah:vah,val:val,vwap:vwap,
       hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l,tickCapped:tickCapped};
   };
 
@@ -13899,6 +13904,7 @@ function VolumeProfileMTFPage(p){
     // POC / VAH / VAL lines
     var pocY=yFor(prof.poc),vahY=yFor(prof.vah),valY=yFor(prof.val);
     var lastY=yFor(prof.lastPrice);
+    var vwapY=(prof.vwap!=null)?yFor(prof.vwap):null;
 
     // ── Touch/mouse crosshair: map pointer position back to price + time ──
     var curOpt=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};
@@ -13959,6 +13965,9 @@ function VolumeProfileMTFPage(p){
       // Last price
       React.createElement('line',{key:'lpl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:0.6,opacity:0.8}),
       React.createElement('text',{key:'lpt',x:(W-padR-52).toFixed(1),y:(lastY-2).toFixed(1),fill:C.warn,fontSize:7,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2)),
+      // VWAP (window) — dashed purple line; label sits below the line on the right so it never collides with LAST
+      (vwapY!=null?React.createElement('line',{key:'vwl',x1:padL,y1:vwapY.toFixed(1),x2:W-padR,y2:vwapY.toFixed(1),stroke:C.purple,strokeWidth:0.8,strokeDasharray:'4 2',opacity:0.85}):null),
+      (vwapY!=null?React.createElement('text',{key:'vwt',x:(W-padR-52).toFixed(1),y:(vwapY+8).toFixed(1),fill:C.purple,fontSize:7,fontFamily:F,fontWeight:700},'VWAP '+prof.vwap.toFixed(2)):null),
       crossEls
     ]);
   };
@@ -14059,6 +14068,11 @@ function VolumeProfileMTFPage(p){
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>VALUE AREA</div>
           <div style={{fontSize:11,color:C.accent,fontFamily:F,fontWeight:800}}>${prof.val.toFixed(2)}–${prof.vah.toFixed(2)}</div>
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>70% of {metric==='volume'?'volume':'trades'}</div>
+        </div>
+        <div style={{padding:8,background:C.purple+'18',border:'1px solid '+C.purple+'55',borderRadius:6,textAlign:'center'}}>
+          <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>VWAP</div>
+          <div style={{fontSize:12,color:C.purple,fontFamily:F,fontWeight:800}}>{prof.vwap!=null?'$'+prof.vwap.toFixed(2):'\u2014'}</div>
+          <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>vol-weighted avg</div>
         </div>
         <div style={{padding:8,background:C.blueDim,border:'1px solid '+C.blue+'55',borderRadius:6,textAlign:'center'}}>
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>{metric==='volume'?'TOTAL VOL':'TOTAL TRADES'}</div>
