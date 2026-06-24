@@ -13962,6 +13962,15 @@ function VolumeProfileMTFPage(p){
       crossEls.push(React.createElement('rect',{key:'cvr',x:vX.toFixed(1),y:vY.toFixed(1),width:vW.toFixed(1),height:vH,rx:2,fill:C.purple,opacity:0.92}));
       crossEls.push(React.createElement('text',{key:'cvt',x:(vX+vW/2).toFixed(1),y:(vY+vH/2+2.8).toFixed(1),fill:'#fff',fontSize:7.5,fontFamily:F,fontWeight:700,textAnchor:'middle'},volTxt));
     }
+    // VWAP price tags: drawn on the LEFT, each on a small dark pill with a coloured border so the number stays readable over the chart
+    var vwTag=function(key,txt,yLine,color,below){
+      var ty=below?(yLine+9):(yLine-3);
+      var w=txt.length*5.1+7;
+      return React.createElement('g',{key:key},[
+        React.createElement('rect',{x:(padL+1).toFixed(1),y:(ty-8).toFixed(1),width:w.toFixed(1),height:10.5,rx:2,fill:C.bgDeep,opacity:0.82,stroke:color,strokeWidth:0.5,strokeOpacity:0.65}),
+        React.createElement('text',{x:(padL+4).toFixed(1),y:ty.toFixed(1),fill:color,fontSize:9,fontFamily:F,fontWeight:800},txt)
+      ]);
+    };
     return React.createElement('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:'auto',display:'block',background:C.bgDeep,borderRadius:8,touchAction:'none',cursor:'crosshair'},onTouchStart:handleCross,onTouchMove:handleCross,onMouseMove:handleCross},[
       axisEls,
       React.createElement('path',{key:'area',d:areaPath,fill:C.accent,opacity:0.06}),
@@ -13979,14 +13988,13 @@ function VolumeProfileMTFPage(p){
       // Last price
       React.createElement('line',{key:'lpl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:1.2,opacity:0.9}),
       React.createElement('text',{key:'lpt',x:(W-padR-64).toFixed(1),y:(lastY-3).toFixed(1),fill:C.warn,fontSize:9,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2)),
-      // VWAP (window) — dashed purple line; label sits below the line on the right so it never collides with LAST
-      // VWAP lines — window (W), session (S), rolling (R); color-coded, W/S/R tags tie to the card legend
+      // VWAP lines (full width) with price tags on the LEFT (dark pills) — window (W) / session (S) / rolling (R)
       (vwapY!=null?React.createElement('line',{key:'vwwl',x1:padL,y1:vwapY.toFixed(1),x2:W-padR,y2:vwapY.toFixed(1),stroke:VW_W,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
-      (vwapY!=null?React.createElement('text',{key:'vwwt',x:(W-padR-58).toFixed(1),y:(vwapY+10).toFixed(1),fill:VW_W,fontSize:9,fontFamily:F,fontWeight:800},'W '+prof.vwap.toFixed(2)):null),
+      (vwapY!=null?vwTag('vwwt','W '+prof.vwap.toFixed(2),vwapY,VW_W,true):null),
       (vwSessY!=null?React.createElement('line',{key:'vwsl',x1:padL,y1:vwSessY.toFixed(1),x2:W-padR,y2:vwSessY.toFixed(1),stroke:VW_S,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
-      (vwSessY!=null?React.createElement('text',{key:'vwst',x:(W-padR-58).toFixed(1),y:(vwSessY-3).toFixed(1),fill:VW_S,fontSize:9,fontFamily:F,fontWeight:800},'S '+prof.vwapSession.toFixed(2)):null),
+      (vwSessY!=null?vwTag('vwst','S '+prof.vwapSession.toFixed(2),vwSessY,VW_S,false):null),
       (vwRollY!=null?React.createElement('line',{key:'vwrl',x1:padL,y1:vwRollY.toFixed(1),x2:W-padR,y2:vwRollY.toFixed(1),stroke:VW_R,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
-      (vwRollY!=null?React.createElement('text',{key:'vwrt',x:(W-padR-58).toFixed(1),y:(vwRollY+10).toFixed(1),fill:VW_R,fontSize:9,fontFamily:F,fontWeight:800},'R '+prof.vwapRolling.toFixed(2)):null),
+      (vwRollY!=null?vwTag('vwrt','R '+prof.vwapRolling.toFixed(2),vwRollY,VW_R,true):null),
       crossEls
     ]);
   };
