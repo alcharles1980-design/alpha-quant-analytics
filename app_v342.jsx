@@ -13403,12 +13403,17 @@ function FullMarketScanPage(p){
         }
       }catch(e7){}
 
-      // Fetch market cap + ticker_type from Supabase screener cache (2,500 stocks)
+      // Fetch market cap + ticker_type from Supabase screener cache (latest scan only, ~2,500 rows).
+      // Paginate with the Range header ALONE - never also pass &limit, or a future PostgREST precedence
+      // change could ignore the Range offset and re-fetch page 0 forever (infinite loop).
       try{
+        var sdR2=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
+        var sdRows2=sdR2.ok?await sdR2.json():[];
+        var sdFilter2=(sdRows2&&sdRows2.length&&sdRows2[0].scan_date)?('&scan_date=eq.'+sdRows2[0].scan_date):'';
         var all2=[];var off2=0;
         while(true){
           var mh2=getSbHeaders();mh2['Range']=off2+'-'+(off2+999);
-          var mr2=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,market_cap,ticker_type,scan_date&order=scan_date.desc,ticker.asc&limit=10000',{headers:mh2});
+          var mr2=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=ticker,market_cap,ticker_type,scan_date'+sdFilter2+'&order=scan_date.desc,ticker.asc',{headers:mh2});
           var mc2=await mr2.json();
           if(!Array.isArray(mc2)||mc2.length===0)break;
           all2=all2.concat(mc2);
