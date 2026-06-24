@@ -13842,7 +13842,7 @@ function VolumeProfileMTFPage(p){
   // ── SVG chart: price axis + price line + volume profile overlaid on right edge ──
   var renderChart=function(){
     if(!prof)return null;
-    var W=360,H=380,padL=40,padR=4,padT=8,padB=8; // padL widened for price axis labels
+    var W=360,H=380,padL=48,padR=4,padT=8,padB=8; // padL widened for larger price axis labels
     var chartW=W-padL-padR,chartH=H-padT-padB;
     var pr=prof.pHi-prof.pLo;var pad=pr*0.02;
     var yMin=prof.pLo-pad,yMax=prof.pHi+pad;
@@ -13865,7 +13865,7 @@ function VolumeProfileMTFPage(p){
       // gridline across plot area
       axisEls.push(React.createElement('line',{key:'gl'+ti,x1:padL,y1:ty.toFixed(1),x2:W-padR,y2:ty.toFixed(1),stroke:C.grid,strokeWidth:0.5,opacity:0.6}));
       // tick label on left
-      axisEls.push(React.createElement('text',{key:'gt'+ti,x:padL-3,y:(ty+2.5).toFixed(1),fill:C.txtDim,fontSize:7,fontFamily:F,textAnchor:'end'},'$'+tp.toFixed(tickDec)));
+      axisEls.push(React.createElement('text',{key:'gt'+ti,x:padL-4,y:(ty+3).toFixed(1),fill:C.txtDim,fontSize:9,fontFamily:F,textAnchor:'end'},'$'+tp.toFixed(tickDec)));
     }
     // Axis spine
     axisEls.push(React.createElement('line',{key:'spine',x1:padL,y1:padT,x2:padL,y2:(padT+chartH).toFixed(1),stroke:C.border,strokeWidth:0.8}));
@@ -13933,41 +13933,41 @@ function VolumeProfileMTFPage(p){
       var binVol=prof.bins.length?(metric==='volume'?prof.bins[bIdx].vol:prof.bins[bIdx].trd):0;
       var cbar=prof.bars[cross.idx]||{};var dtLabel='';
       if(cbar.t){var dd=new Date(cbar.t);try{dtLabel=dd.toLocaleString('en-US',Object.assign({timeZone:'America/New_York',month:'short',day:'numeric'},intraTF?{hour:'numeric',minute:'2-digit'}:{}));}catch(_e){dtLabel=dd.toISOString().slice(0,intraTF?16:10).replace('T',' ');}}
-      crossEls.push(React.createElement('line',{key:'chx',x1:padL,y1:ccy.toFixed(1),x2:W-padR,y2:ccy.toFixed(1),stroke:C.txtBright,strokeWidth:0.6,strokeDasharray:'2 2',opacity:0.9}));
-      crossEls.push(React.createElement('line',{key:'chy',x1:ccx.toFixed(1),y1:padT,x2:ccx.toFixed(1),y2:(padT+chartH).toFixed(1),stroke:C.txtBright,strokeWidth:0.6,strokeDasharray:'2 2',opacity:0.9}));
+      crossEls.push(React.createElement('line',{key:'chx',x1:padL,y1:ccy.toFixed(1),x2:W-padR,y2:ccy.toFixed(1),stroke:C.txtBright,strokeWidth:0.8,strokeDasharray:'2 2',opacity:0.9}));
+      crossEls.push(React.createElement('line',{key:'chy',x1:ccx.toFixed(1),y1:padT,x2:ccx.toFixed(1),y2:(padT+chartH).toFixed(1),stroke:C.txtBright,strokeWidth:0.8,strokeDasharray:'2 2',opacity:0.9}));
       crossEls.push(React.createElement('circle',{key:'chc',cx:ccx.toFixed(1),cy:ccy.toFixed(1),r:1.6,fill:C.txtBright}));
-      var ptH=11,ptY=Math.min(Math.max(ccy-ptH/2,padT),padT+chartH-ptH);
+      var ptH=13,ptY=Math.min(Math.max(ccy-ptH/2,padT),padT+chartH-ptH);
       crossEls.push(React.createElement('rect',{key:'cpr',x:0.5,y:ptY.toFixed(1),width:padL-1,height:ptH,rx:2,fill:C.txtBright}));
-      crossEls.push(React.createElement('text',{key:'cpt',x:((padL-1)/2).toFixed(1),y:(ptY+ptH/2+2.6).toFixed(1),fill:C.bgDeep,fontSize:8,fontFamily:F,fontWeight:800,textAnchor:'middle'},'$'+cross.price.toFixed(2)));
-      if(dtLabel){var dW=Math.max(34,dtLabel.length*4.4+6),dH=10,dX=Math.min(Math.max(ccx-dW/2,padL),W-padR-dW),dY=padT+chartH-dH-0.5;
-        crossEls.push(React.createElement('rect',{key:'cdr',x:dX.toFixed(1),y:dY.toFixed(1),width:dW.toFixed(1),height:dH,rx:2,fill:C.bgDeep,stroke:C.txtBright,strokeWidth:0.4}));
-        crossEls.push(React.createElement('text',{key:'cdt',x:(dX+dW/2).toFixed(1),y:(dY+dH/2+2.3).toFixed(1),fill:C.txtBright,fontSize:6.5,fontFamily:F,textAnchor:'middle'},dtLabel));}
+      crossEls.push(React.createElement('text',{key:'cpt',x:((padL-1)/2).toFixed(1),y:(ptY+ptH/2+3).toFixed(1),fill:C.bgDeep,fontSize:9,fontFamily:F,fontWeight:800,textAnchor:'middle'},'$'+cross.price.toFixed(2)));
+      if(dtLabel){var dW=Math.max(38,dtLabel.length*4.8+8),dH=12,dX=Math.min(Math.max(ccx-dW/2,padL),W-padR-dW),dY=padT+chartH-dH-0.5;
+        crossEls.push(React.createElement('rect',{key:'cdr',x:dX.toFixed(1),y:dY.toFixed(1),width:dW.toFixed(1),height:dH,rx:2,fill:C.bgDeep,stroke:C.txtBright,strokeWidth:0.5}));
+        crossEls.push(React.createElement('text',{key:'cdt',x:(dX+dW/2).toFixed(1),y:(dY+dH/2+2.8).toFixed(1),fill:C.txtBright,fontSize:7.5,fontFamily:F,textAnchor:'middle'},dtLabel));}
       var volTxt=(metric==='volume'?'Vol ':'Trd ')+fmtV(binVol);
-      var vW=Math.max(38,volTxt.length*4.4+6),vH=10,vX=ccx+5;if(vX+vW>W-padR)vX=ccx-5-vW;if(vX<padL)vX=padL;
+      var vW=Math.max(42,volTxt.length*4.8+8),vH=12,vX=ccx+5;if(vX+vW>W-padR)vX=ccx-5-vW;if(vX<padL)vX=padL;
       var vY=Math.min(Math.max(ccy-vH-3,padT),padT+chartH-vH);
       crossEls.push(React.createElement('rect',{key:'cvr',x:vX.toFixed(1),y:vY.toFixed(1),width:vW.toFixed(1),height:vH,rx:2,fill:C.purple,opacity:0.92}));
-      crossEls.push(React.createElement('text',{key:'cvt',x:(vX+vW/2).toFixed(1),y:(vY+vH/2+2.3).toFixed(1),fill:'#fff',fontSize:6.5,fontFamily:F,fontWeight:700,textAnchor:'middle'},volTxt));
+      crossEls.push(React.createElement('text',{key:'cvt',x:(vX+vW/2).toFixed(1),y:(vY+vH/2+2.8).toFixed(1),fill:'#fff',fontSize:7.5,fontFamily:F,fontWeight:700,textAnchor:'middle'},volTxt));
     }
     return React.createElement('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:'auto',display:'block',background:C.bgDeep,borderRadius:8,touchAction:'none',cursor:'crosshair'},onTouchStart:handleCross,onTouchMove:handleCross,onMouseMove:handleCross},[
       axisEls,
       React.createElement('path',{key:'area',d:areaPath,fill:C.accent,opacity:0.06}),
-      React.createElement('polyline',{key:'line',points:pts,fill:'none',stroke:C.txtBright,strokeWidth:0.8,opacity:0.55}),
+      React.createElement('polyline',{key:'line',points:pts,fill:'none',stroke:C.txtBright,strokeWidth:1,opacity:0.65}),
       profBars,
       // VAH
-      React.createElement('line',{key:'vahl',x1:padL,y1:vahY.toFixed(1),x2:W-padR,y2:vahY.toFixed(1),stroke:C.accent,strokeWidth:0.6,strokeDasharray:'3 2',opacity:0.7}),
-      React.createElement('text',{key:'vaht',x:padL+2,y:(vahY-2).toFixed(1),fill:C.accent,fontSize:7,fontFamily:F},'VAH '+prof.vah.toFixed(2)),
+      React.createElement('line',{key:'vahl',x1:padL,y1:vahY.toFixed(1),x2:W-padR,y2:vahY.toFixed(1),stroke:C.accent,strokeWidth:1,strokeDasharray:'4 3',opacity:0.8}),
+      React.createElement('text',{key:'vaht',x:padL+3,y:(vahY-3).toFixed(1),fill:C.accent,fontSize:9,fontFamily:F,fontWeight:700},'VAH '+prof.vah.toFixed(2)),
       // POC
-      React.createElement('line',{key:'pocl',x1:padL,y1:pocY.toFixed(1),x2:W-padR,y2:pocY.toFixed(1),stroke:C.gold,strokeWidth:1,opacity:0.9}),
-      React.createElement('text',{key:'poct',x:padL+2,y:(pocY-2).toFixed(1),fill:C.gold,fontSize:7,fontFamily:F,fontWeight:700},'POC '+prof.poc.toFixed(2)),
+      React.createElement('line',{key:'pocl',x1:padL,y1:pocY.toFixed(1),x2:W-padR,y2:pocY.toFixed(1),stroke:C.gold,strokeWidth:1.6,opacity:0.95}),
+      React.createElement('text',{key:'poct',x:padL+3,y:(pocY-3).toFixed(1),fill:C.gold,fontSize:9.5,fontFamily:F,fontWeight:800},'POC '+prof.poc.toFixed(2)),
       // VAL
-      React.createElement('line',{key:'vall',x1:padL,y1:valY.toFixed(1),x2:W-padR,y2:valY.toFixed(1),stroke:C.accent,strokeWidth:0.6,strokeDasharray:'3 2',opacity:0.7}),
-      React.createElement('text',{key:'valt',x:padL+2,y:(valY+8).toFixed(1),fill:C.accent,fontSize:7,fontFamily:F},'VAL '+prof.val.toFixed(2)),
+      React.createElement('line',{key:'vall',x1:padL,y1:valY.toFixed(1),x2:W-padR,y2:valY.toFixed(1),stroke:C.accent,strokeWidth:1,strokeDasharray:'4 3',opacity:0.8}),
+      React.createElement('text',{key:'valt',x:padL+3,y:(valY+10).toFixed(1),fill:C.accent,fontSize:9,fontFamily:F,fontWeight:700},'VAL '+prof.val.toFixed(2)),
       // Last price
-      React.createElement('line',{key:'lpl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:0.6,opacity:0.8}),
-      React.createElement('text',{key:'lpt',x:(W-padR-52).toFixed(1),y:(lastY-2).toFixed(1),fill:C.warn,fontSize:7,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2)),
+      React.createElement('line',{key:'lpl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:1.2,opacity:0.9}),
+      React.createElement('text',{key:'lpt',x:(W-padR-64).toFixed(1),y:(lastY-3).toFixed(1),fill:C.warn,fontSize:9,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2)),
       // VWAP (window) — dashed purple line; label sits below the line on the right so it never collides with LAST
-      (vwapY!=null?React.createElement('line',{key:'vwl',x1:padL,y1:vwapY.toFixed(1),x2:W-padR,y2:vwapY.toFixed(1),stroke:C.purple,strokeWidth:0.8,strokeDasharray:'4 2',opacity:0.85}):null),
-      (vwapY!=null?React.createElement('text',{key:'vwt',x:(W-padR-52).toFixed(1),y:(vwapY+8).toFixed(1),fill:C.purple,fontSize:7,fontFamily:F,fontWeight:700},'VWAP '+prof.vwap.toFixed(2)):null),
+      (vwapY!=null?React.createElement('line',{key:'vwl',x1:padL,y1:vwapY.toFixed(1),x2:W-padR,y2:vwapY.toFixed(1),stroke:C.purple,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
+      (vwapY!=null?React.createElement('text',{key:'vwt',x:(W-padR-64).toFixed(1),y:(vwapY+10).toFixed(1),fill:C.purple,fontSize:9,fontFamily:F,fontWeight:700},'VWAP '+prof.vwap.toFixed(2)):null),
       crossEls
     ]);
   };
