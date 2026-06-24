@@ -13731,9 +13731,19 @@ function VolumeProfileMTFPage(p){
     // Sort LVN gaps by proximity to current price — the nearest gaps matter most to a trader
     lvn.sort(function(a,b){return Math.abs(a.price-lastPrice)-Math.abs(b.price-lastPrice);});
     var vwap=vwapDen>0?vwapNum/vwapDen:null; // window VWAP (null when no usable volume)
+    // Session-anchored VWAP: volume-weighted price over the most recent ET trading session only (resets each day)
+    var etDate=function(ms){try{return new Date(ms).toLocaleDateString('en-CA',{timeZone:'America/New_York'});}catch(_e){return null;}};
+    var sessNum=0,sessDen=0,lastDate=null;
+    for(var sd=bars.length-1;sd>=0;sd--){if(bars[sd]&&isFinite(bars[sd].t)){lastDate=etDate(bars[sd].t);break;}}
+    if(lastDate!=null){for(var se=bars.length-1;se>=0;se--){var sb=bars[se];if(!sb||!isFinite(sb.t))continue;if(etDate(sb.t)!==lastDate)break;var sv=sb.v||0;if(!isFinite(sb.h)||!isFinite(sb.l)||sv<=0)continue;var spx=(isFinite(sb.vw)&&sb.vw>0)?sb.vw:(isFinite(sb.c)?(sb.h+sb.l+sb.c)/3:(sb.h+sb.l)/2);sessNum+=spx*sv;sessDen+=sv;}}
+    var vwapSession=sessDen>0?sessNum/sessDen:null;
+    // Rolling VWAP: volume-weighted price over the trailing ROLL_N bars (short-term fair value)
+    var ROLL_N=20,rollNum=0,rollDen=0,rcnt=0;
+    for(var re=bars.length-1;re>=0&&rcnt<ROLL_N;re--){var rb=bars[re];if(!rb)continue;var rv=rb.v||0;if(!isFinite(rb.h)||!isFinite(rb.l)||rv<=0)continue;var rpx=(isFinite(rb.vw)&&rb.vw>0)?rb.vw:(isFinite(rb.c)?(rb.h+rb.l+rb.c)/3:(rb.h+rb.l)/2);rollNum+=rpx*rv;rollDen+=rv;rcnt++;}
+    var vwapRolling=rollDen>0?rollNum/rollDen:null;
     return {bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,binLo:binLo,bars:bars,
       totalVol:totalVol,totalTrd:totalTrd,totalSel:totalSel,metricFld:FLD,
-      poc:poc,pocIdx:pocIdx,maxVol:maxSel,maxSel:maxSel,vah:vah,val:val,vwap:vwap,
+      poc:poc,pocIdx:pocIdx,maxVol:maxSel,maxSel:maxSel,vah:vah,val:val,vwap:vwap,vwapSession:vwapSession,vwapRolling:vwapRolling,
       hvn:hvn,lvn:lvn,lastPrice:lastPrice,barCount:bars.length,lookbackLabel:opt.l,tickCapped:tickCapped};
   };
 
@@ -13840,6 +13850,8 @@ function VolumeProfileMTFPage(p){
   React.useEffect(function(){setCross(null);},[lookback,binMode,tickSize,distMode]);
 
   // ── SVG chart: price axis + price line + volume profile overlaid on right edge ──
+  // VWAP line colors, shared by the chart lines and the card legend (W=window, S=session, R=rolling)
+  var VW_W=C.purple,VW_S='#06b6d4',VW_R='#ec4899';
   var renderChart=function(){
     if(!prof)return null;
     var W=360,H=380,padL=48,padR=4,padT=8,padB=8; // padL widened for larger price axis labels
@@ -13905,6 +13917,8 @@ function VolumeProfileMTFPage(p){
     var pocY=yFor(prof.poc),vahY=yFor(prof.vah),valY=yFor(prof.val);
     var lastY=yFor(prof.lastPrice);
     var vwapY=(prof.vwap!=null)?yFor(prof.vwap):null;
+    var vwSessY=(prof.vwapSession!=null)?yFor(prof.vwapSession):null;
+    var vwRollY=(prof.vwapRolling!=null)?yFor(prof.vwapRolling):null;
 
     // ── Touch/mouse crosshair: map pointer position back to price + time ──
     var curOpt=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};
@@ -13966,8 +13980,13 @@ function VolumeProfileMTFPage(p){
       React.createElement('line',{key:'lpl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:1.2,opacity:0.9}),
       React.createElement('text',{key:'lpt',x:(W-padR-64).toFixed(1),y:(lastY-3).toFixed(1),fill:C.warn,fontSize:9,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2)),
       // VWAP (window) — dashed purple line; label sits below the line on the right so it never collides with LAST
-      (vwapY!=null?React.createElement('line',{key:'vwl',x1:padL,y1:vwapY.toFixed(1),x2:W-padR,y2:vwapY.toFixed(1),stroke:C.purple,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
-      (vwapY!=null?React.createElement('text',{key:'vwt',x:(W-padR-64).toFixed(1),y:(vwapY+10).toFixed(1),fill:C.purple,fontSize:9,fontFamily:F,fontWeight:700},'VWAP '+prof.vwap.toFixed(2)):null),
+      // VWAP lines — window (W), session (S), rolling (R); color-coded, W/S/R tags tie to the card legend
+      (vwapY!=null?React.createElement('line',{key:'vwwl',x1:padL,y1:vwapY.toFixed(1),x2:W-padR,y2:vwapY.toFixed(1),stroke:VW_W,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
+      (vwapY!=null?React.createElement('text',{key:'vwwt',x:(W-padR-58).toFixed(1),y:(vwapY+10).toFixed(1),fill:VW_W,fontSize:9,fontFamily:F,fontWeight:800},'W '+prof.vwap.toFixed(2)):null),
+      (vwSessY!=null?React.createElement('line',{key:'vwsl',x1:padL,y1:vwSessY.toFixed(1),x2:W-padR,y2:vwSessY.toFixed(1),stroke:VW_S,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
+      (vwSessY!=null?React.createElement('text',{key:'vwst',x:(W-padR-58).toFixed(1),y:(vwSessY-3).toFixed(1),fill:VW_S,fontSize:9,fontFamily:F,fontWeight:800},'S '+prof.vwapSession.toFixed(2)):null),
+      (vwRollY!=null?React.createElement('line',{key:'vwrl',x1:padL,y1:vwRollY.toFixed(1),x2:W-padR,y2:vwRollY.toFixed(1),stroke:VW_R,strokeWidth:1.3,strokeDasharray:'5 3',opacity:0.9}):null),
+      (vwRollY!=null?React.createElement('text',{key:'vwrt',x:(W-padR-58).toFixed(1),y:(vwRollY+10).toFixed(1),fill:VW_R,fontSize:9,fontFamily:F,fontWeight:800},'R '+prof.vwapRolling.toFixed(2)):null),
       crossEls
     ]);
   };
@@ -14069,10 +14088,14 @@ function VolumeProfileMTFPage(p){
           <div style={{fontSize:11,color:C.accent,fontFamily:F,fontWeight:800}}>${prof.val.toFixed(2)}–${prof.vah.toFixed(2)}</div>
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>70% of {metric==='volume'?'volume':'trades'}</div>
         </div>
-        <div style={{padding:8,background:C.purple+'18',border:'1px solid '+C.purple+'55',borderRadius:6,textAlign:'center'}}>
-          <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>VWAP</div>
-          <div style={{fontSize:12,color:C.purple,fontFamily:F,fontWeight:800}}>{prof.vwap!=null?'$'+prof.vwap.toFixed(2):'\u2014'}</div>
-          <div style={{fontSize:6,color:C.txtDim,fontFamily:F}}>vol-weighted avg</div>
+        <div style={{padding:7,background:C.purple+'14',border:'1px solid '+C.purple+'55',borderRadius:6}}>
+          <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1,textAlign:'center',marginBottom:3}}>VWAP</div>
+          {[['W','window',prof.vwap,VW_W],['S','session',prof.vwapSession,VW_S],['R','roll 20',prof.vwapRolling,VW_R]].map(function(row,ri){
+            return <div key={ri} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:6,marginBottom:ri<2?2:0}}>
+              <span style={{fontSize:8,fontFamily:F,fontWeight:800,color:row[3]}}>{row[0]} <span style={{fontSize:6,color:C.txtDim,fontWeight:600}}>{row[1]}</span></span>
+              <span style={{fontSize:9,fontFamily:F,fontWeight:800,color:C.txtBright}}>{row[2]!=null?'$'+row[2].toFixed(2):'\u2014'}</span>
+            </div>;
+          })}
         </div>
         <div style={{padding:8,background:C.blueDim,border:'1px solid '+C.blue+'55',borderRadius:6,textAlign:'center'}}>
           <div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>{metric==='volume'?'TOTAL VOL':'TOTAL TRADES'}</div>
