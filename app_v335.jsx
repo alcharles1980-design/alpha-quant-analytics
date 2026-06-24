@@ -13618,7 +13618,7 @@ function FullMarketScanPage(p){
 
 // ─── VOLUME PROFILE ───────────────────────────────────────────────────────────
 function VolumeProfileMTFPage(p){
-  var s1=useState(''),ticker=s1[0],setTicker=s1[1];
+  var s1=useState(p.initialTicker||''),ticker=s1[0],setTicker=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(null),rawData=s4[0],setRawData=s4[1]; // {1:{bars,label,mult}, 5:{...}, ...}
@@ -13777,6 +13777,9 @@ function VolumeProfileMTFPage(p){
     }
     if(seqRef.current===mySeq)setProgMsg('');
   };
+
+  // Auto-load on mount when opened as an embedded popup with a preset ticker (no effect on normal full-page nav, which passes no initialTicker)
+  React.useEffect(function(){if(p.initialTicker)compute();},[]);
 
   // Derived profile — recomputes instantly when lookback / binMode / tickSize change
   var prof=React.useMemo(function(){
@@ -13965,10 +13968,10 @@ function VolumeProfileMTFPage(p){
   var displayLevels=showAllLevels?sortedLevels:sortedLevels.slice(0,25);
 
   return <div>
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+    {!p.embedded&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190 Back'}</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>Volume Profile</div>
-    </div>
+    </div>}
 
     <Cd glow={true}>
       <SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume across the full high-low range of each bar by default, so the profile reflects the entire span price has traded (an optional body-weighting instead concentrates volume in the open-close body). Bin granularity adapts to the timeframe. The Multi-Timeframe panel finds price levels where intraday and daily profiles agree. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>
@@ -18276,110 +18279,6 @@ function NextDayRangePage(p){
   </div>;
 }
 
-// ─── VOLUME PROFILE POPUP (used by the Holy Grail screener rows) ──────────────
-// Compact, volume-only, high-low distribution profile builder (independent of the Multi-TF page).
-function vpBuildProfile(bars,binTarget){
-  if(!bars||!bars.length)return null;
-  var pLo=Infinity,pHi=-Infinity;
-  for(var i=0;i<bars.length;i++){var bl=bars[i].l,bh=bars[i].h;if(typeof bl!=='number'||!isFinite(bl)||!isFinite(bh))continue;if(bl<pLo)pLo=bl;if(bh>pHi)pHi=bh;}
-  if(!isFinite(pLo)||!isFinite(pHi)||pHi<pLo)return null;
-  if(pHi===pLo)pHi=pLo+0.01;
-  var raw=(pHi-pLo)/(binTarget||80);
-  var mag=Math.pow(10,Math.floor(Math.log10(raw)));var norm=raw/mag;
-  var binSize=(norm<1.5?1:norm<3.5?2:norm<7.5?5:10)*mag;if(binSize<0.01)binSize=0.01;
-  if(Math.ceil((pHi-pLo)/binSize)+1>2000)binSize=(pHi-pLo)/2000;
-  var binLo=Math.floor(pLo/binSize)*binSize;var nBins=Math.ceil((pHi-binLo)/binSize)+1;
-  var bins=[];for(var b=0;b<nBins;b++){var lo=binLo+b*binSize;bins.push({lo:lo,hi:lo+binSize,mid:lo+binSize/2,vol:0});}
-  for(var bi=0;bi<bars.length;bi++){var bar=bars[bi];var v=bar.v||0;if(!isFinite(bar.l)||!isFinite(bar.h)||v<=0)continue;var loIdx=Math.floor((bar.l-binLo)/binSize);var hiIdx=Math.floor((bar.h-binLo)/binSize);if(loIdx<0)loIdx=0;if(hiIdx>=nBins)hiIdx=nBins-1;if(hiIdx<loIdx)hiIdx=loIdx;var span=hiIdx-loIdx+1;var vPer=v/span;for(var k=loIdx;k<=hiIdx;k++){bins[k].vol+=vPer;}}
-  var totalVol=0,pocIdx=0,maxVol=0;for(var c=0;c<nBins;c++){totalVol+=bins[c].vol;if(bins[c].vol>maxVol){maxVol=bins[c].vol;pocIdx=c;}}
-  if(totalVol<=0)return null;
-  var target=totalVol*0.70;var acc=bins[pocIdx].vol;var lo2=pocIdx,hi2=pocIdx;
-  while(acc<target&&(lo2>0||hi2<nBins-1)){var vB=lo2>0?bins[lo2-1].vol:-1;var vA=hi2<nBins-1?bins[hi2+1].vol:-1;if(vA>=vB){hi2++;acc+=bins[hi2].vol;}else{lo2--;acc+=bins[lo2].vol;}}
-  var vah=bins[hi2].hi,val=bins[lo2].lo,poc=bins[pocIdx].mid;
-  var lastPrice=poc;for(var lp=bars.length-1;lp>=0;lp--){if(isFinite(bars[lp].c)){lastPrice=bars[lp].c;break;}}
-  return {bins:bins,nBins:nBins,binSize:binSize,pLo:pLo,pHi:pHi,poc:poc,pocIdx:pocIdx,vah:vah,val:val,maxVol:maxVol,totalVol:totalVol,lastPrice:lastPrice};
-}
-
-function VolProfilePopup(p){
-  var s1=useState(null),bars=s1[0],setBars=s1[1];
-  var s2=useState(true),loading=s2[0],setLoading=s2[1];
-  var s3=useState(''),err=s3[0],setErr=s3[1];
-  var s4=useState('3M'),tf=s4[0],setTf=s4[1];
-  var tfOpts={'5D':{mult:1,span:'minute',days:7,bt:70},'1M':{mult:15,span:'minute',days:30,bt:80},'3M':{mult:1,span:'hour',days:100,bt:90},'1Y':{mult:1,span:'hour',days:380,bt:100},'5Y':{mult:1,span:'day',days:1880,bt:110}};
-  React.useEffect(function(){
-    var alive=true;setLoading(true);setErr('');setBars(null);
-    var o=tfOpts[tf]||tfOpts['3M'];
-    var nowMs=Date.now();var fmtD=function(ms){return new Date(ms).toLocaleDateString('en-CA',{timeZone:'America/New_York'});};
-    var fromStr=fmtD(nowMs-o.days*86400000),toStr=fmtD(nowMs);
-    (async function(){
-      try{
-        if(!p.apiKey){throw new Error('Polygon API key not set');}
-        var all=[];var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(p.ticker)+'/range/'+o.mult+'/'+o.span+'/'+fromStr+'/'+toStr+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;var pg=0;
-        while(url&&pg<6){var r=await fetch(url);if(!r.ok){var et=await r.text();throw new Error('Polygon '+r.status+': '+et.slice(0,80));}var d=await r.json();if(d.results&&d.results.length)all=all.concat(d.results);url=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;pg++;}
-        if(!alive)return;
-        setBars(all);
-        if(!all.length)setErr('No bar data for '+p.ticker+' on '+tf+'.');
-      }catch(e){if(alive){setErr(e.message);setBars([]);}}
-      if(alive)setLoading(false);
-    })();
-    return function(){alive=false;};
-  },[p.ticker,tf]);
-  var prof=React.useMemo(function(){return bars&&bars.length?vpBuildProfile(bars,(tfOpts[tf]||{}).bt):null;},[bars,tf]);
-
-  var renderVP=function(){
-    if(!prof)return null;
-    var W=360,H=420,padL=44,padR=6,padT=10,padB=8;var cW=W-padL-padR,cH=H-padT-padB;
-    var rg=prof.pHi-prof.pLo;var pad=rg*0.02;var yMin=prof.pLo-pad,yMax=prof.pHi+pad;
-    var yFor=function(v){return padT+(yMax-v)/(yMax-yMin)*cH;};
-    var span=yMax-yMin;var rs=span/7;var mg=Math.pow(10,Math.floor(Math.log10(rs)));var nm=rs/mg;var ns=(nm<1.5?1:nm<3?2:nm<7?5:10)*mg;var ft=Math.ceil(yMin/ns)*ns;var dec=Math.max(0,-Math.floor(Math.log10(ns)));
-    var els=[];for(var tp=ft;tp<=yMax+1e-9;tp+=ns){var ty=yFor(tp);els.push(React.createElement('line',{key:'g'+ty.toFixed(0),x1:padL,y1:ty.toFixed(1),x2:W-padR,y2:ty.toFixed(1),stroke:C.grid,strokeWidth:0.5,opacity:0.5}));els.push(React.createElement('text',{key:'t'+ty.toFixed(0),x:padL-3,y:(ty+2.5).toFixed(1),fill:C.txtDim,fontSize:7,fontFamily:F,textAnchor:'end'},'$'+tp.toFixed(dec)));}
-    els.push(React.createElement('line',{key:'spine',x1:padL,y1:padT,x2:padL,y2:(padT+cH).toFixed(1),stroke:C.border,strokeWidth:0.8}));
-    var profMaxW=cW*0.92;
-    var pbars=prof.bins.map(function(bin,idx){if(bin.vol<=0)return null;var w=bin.vol/(prof.maxVol||1)*profMaxW;var y=yFor(bin.hi),h=yFor(bin.lo)-yFor(bin.hi);var inVA=bin.mid>=prof.val&&bin.mid<=prof.vah;var isP=idx===prof.pocIdx;return React.createElement('rect',{key:idx,x:(W-padR-w).toFixed(1),y:y.toFixed(1),width:Math.max(0.5,w).toFixed(1),height:Math.max(0.5,h).toFixed(1),fill:isP?C.gold:inVA?C.accent:C.blue,opacity:isP?0.85:inVA?0.5:0.3});});
-    var pocY=yFor(prof.poc),vahY=yFor(prof.vah),valY=yFor(prof.val),lastY=yFor(prof.lastPrice);
-    return React.createElement('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:'auto',display:'block',background:C.bgDeep,borderRadius:8}},[
-      els,pbars,
-      React.createElement('line',{key:'vahl',x1:padL,y1:vahY.toFixed(1),x2:W-padR,y2:vahY.toFixed(1),stroke:C.accent,strokeWidth:0.6,strokeDasharray:'3 2',opacity:0.7}),
-      React.createElement('text',{key:'vaht',x:padL+2,y:(vahY-2).toFixed(1),fill:C.accent,fontSize:7,fontFamily:F},'VAH '+prof.vah.toFixed(2)),
-      React.createElement('line',{key:'pocl',x1:padL,y1:pocY.toFixed(1),x2:W-padR,y2:pocY.toFixed(1),stroke:C.gold,strokeWidth:1,opacity:0.9}),
-      React.createElement('text',{key:'poct',x:padL+2,y:(pocY-2).toFixed(1),fill:C.gold,fontSize:7,fontFamily:F,fontWeight:700},'POC '+prof.poc.toFixed(2)),
-      React.createElement('line',{key:'vall',x1:padL,y1:valY.toFixed(1),x2:W-padR,y2:valY.toFixed(1),stroke:C.accent,strokeWidth:0.6,strokeDasharray:'3 2',opacity:0.7}),
-      React.createElement('text',{key:'valt',x:padL+2,y:(valY+8).toFixed(1),fill:C.accent,fontSize:7,fontFamily:F},'VAL '+prof.val.toFixed(2)),
-      React.createElement('line',{key:'lastl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:0.7,opacity:0.85}),
-      React.createElement('text',{key:'lastt',x:(W-padR-50).toFixed(1),y:(lastY-2).toFixed(1),fill:C.warn,fontSize:7,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2))
-    ]);
-  };
-
-  return <div onClick={p.onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
-    <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:560,maxHeight:'92vh',background:C.bgCard||C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{padding:'8px 12px',borderBottom:'1px solid '+C.border}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:7}}>
-          <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{p.ticker} <span style={{fontSize:7,color:C.purple,fontWeight:700,letterSpacing:1}}>VOLUME PROFILE</span></div>
-          <button onClick={p.onClose} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
-        </div>
-        <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
-          <span style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,minWidth:48}}>Timeframe:</span>
-          {['5D','1M','3M','1Y','5Y'].map(function(k){return <button key={k} onClick={function(){setTf(k);}} style={{padding:'3px 9px',border:'1px solid '+(tf===k?C.purple:C.border),borderRadius:4,background:tf===k?C.purple+'22':'transparent',color:tf===k?C.purple:C.txtDim,fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{k}</button>;})}
-        </div>
-      </div>
-      <div style={{flex:1,overflowY:'auto',padding:'10px 12px'}}>
-        {loading&&<div style={{textAlign:'center',color:C.purple,fontSize:9,fontFamily:F,padding:24}}>Loading {p.ticker} {tf} profile{'\u2026'}</div>}
-        {!loading&&err&&<div style={{textAlign:'center',color:C.warn,fontSize:9,fontFamily:F,padding:24}}>{err}</div>}
-        {!loading&&!err&&prof&&<div>
-          {renderVP()}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginTop:10}}>
-            <div style={{padding:8,background:C.goldDim,border:'1px solid '+C.gold+'55',borderRadius:6,textAlign:'center'}}><div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>POC</div><div style={{fontSize:12,color:C.gold,fontFamily:F,fontWeight:800}}>${prof.poc.toFixed(2)}</div></div>
-            <div style={{padding:8,background:C.accentDim,border:'1px solid '+C.accent+'55',borderRadius:6,textAlign:'center'}}><div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>VALUE AREA</div><div style={{fontSize:10,color:C.accent,fontFamily:F,fontWeight:800}}>${prof.val.toFixed(2)}-${prof.vah.toFixed(2)}</div></div>
-            <div style={{padding:8,background:C.warnDim,border:'1px solid '+C.warn+'55',borderRadius:6,textAlign:'center'}}><div style={{fontSize:6,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:1}}>LAST</div><div style={{fontSize:12,color:C.warn,fontFamily:F,fontWeight:800}}>${prof.lastPrice.toFixed(2)}</div></div>
-          </div>
-          <div style={{marginTop:8,fontSize:7,color:C.txtDim,fontFamily:F,textAlign:'center',lineHeight:1.5}}>High-low volume distribution {'\u00b7'} {prof.bins.length} bins {'\u00b7'} POC = highest-volume price, value area = 70% of volume. For multi-timeframe + crosshair, open the full Volume Profile page.</div>
-        </div>}
-        {!loading&&!err&&!prof&&<div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:24}}>No volume data for {p.ticker} on {tf}.</div>}
-      </div>
-    </div>
-  </div>;
-}
-
 function ViolentChopScreenerPage(p){
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
@@ -18912,7 +18811,17 @@ function ViolentChopScreenerPage(p){
       </div>
     </div>}
 
-    {vpTk&&<VolProfilePopup ticker={vpTk} apiKey={p.apiKey} onClose={function(){setVpTk(null);}}/>}
+    {vpTk&&<div onClick={function(){setVpTk(null);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
+      <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:760,maxHeight:'92vh',background:C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexShrink:0}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{vpTk} <span style={{fontSize:7,color:C.purple,fontWeight:700,letterSpacing:1}}>VOLUME PROFILE</span></div>
+          <button onClick={function(){setVpTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
+          <VolumeProfileMTFPage key={vpTk} apiKey={p.apiKey} initialTicker={vpTk} embedded={true} onBack={function(){setVpTk(null);}}/>
+        </div>
+      </div>
+    </div>}
 
     {showColInfo&&<div onClick={function(){setShowColInfo(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',zIndex:9999,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'24px 12px',overflowY:'auto'}}>
       <div onClick={function(e){e.stopPropagation();}} style={{maxWidth:560,width:'100%',background:C.card||C.bg,border:'1px solid '+C.border,borderRadius:10,padding:18,fontFamily:F}}>
