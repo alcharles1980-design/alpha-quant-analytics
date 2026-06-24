@@ -13630,6 +13630,7 @@ function VolumeProfileMTFPage(p){
   var s10=useState(''),progMsg=s10[0],setProgMsg=s10[1];
   var s11=useState(''),loadedTicker=s11[0],setLoadedTicker=s11[1];
   var s12=useState('uniform'),distMode=s12[0],setDistMode=s12[1];
+  var s13=useState(null),cross=s13[0],setCross=s13[1];
 
   var lookbackOpts=[
     {v:'1',l:'1 Day',mult:10,span:'second',days:1,binTarget:160,grp:'intraday'},
@@ -13812,6 +13813,9 @@ function VolumeProfileMTFPage(p){
   },[allProfs]);
 
 
+  // Reset the crosshair whenever the chart's data or scale changes (avoids stale readouts)
+  React.useEffect(function(){setCross(null);},[lookback,binMode,tickSize,distMode,metric,rawData]);
+
   // ── SVG chart: price axis + price line + volume profile overlaid on right edge ──
   var renderChart=function(){
     if(!prof)return null;
@@ -13877,7 +13881,50 @@ function VolumeProfileMTFPage(p){
     // POC / VAH / VAL lines
     var pocY=yFor(prof.poc),vahY=yFor(prof.vah),valY=yFor(prof.val);
     var lastY=yFor(prof.lastPrice);
-    return React.createElement('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:'auto',display:'block',background:C.bgDeep,borderRadius:8}},[
+
+    // ── Touch/mouse crosshair: map pointer position back to price + time ──
+    var curOpt=lookbackOpts.filter(function(x){return x.v===lookback;})[0]||{};
+    var intraTF=(curOpt.span!=='day'&&curOpt.span!=='week');
+    var fmtV=function(n){n=n||0;return n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':Math.round(n).toString();};
+    var handleCross=function(e){
+      var tt=(e.touches&&e.touches[0])?e.touches[0]:e;
+      if(tt.clientX==null)return;
+      var rect=e.currentTarget.getBoundingClientRect();
+      if(!rect.width||!rect.height)return;
+      var vbX=(tt.clientX-rect.left)/rect.width*W;
+      var vbY=(tt.clientY-rect.top)/rect.height*H;
+      if(vbX<padL)vbX=padL;if(vbX>W-padR)vbX=W-padR;
+      if(vbY<padT)vbY=padT;if(vbY>padT+chartH)vbY=padT+chartH;
+      var price=yMax-(vbY-padT)/chartH*(yMax-yMin);
+      var idx=prof.barCount<=1?0:Math.round((vbX-padL)/chartW*(prof.barCount-1));
+      if(idx<0)idx=0;if(idx>prof.barCount-1)idx=prof.barCount-1;
+      setCross({x:vbX,y:vbY,price:price,idx:idx});
+    };
+    var crossEls=[];
+    if(cross){
+      var ccx=Math.min(Math.max(cross.x,padL),W-padR),ccy=Math.min(Math.max(cross.y,padT),padT+chartH);
+      var gridLo=prof.bins.length?prof.bins[0].lo:yMin;
+      var bIdx=prof.binSize>0?Math.floor((cross.price-gridLo)/prof.binSize):0;
+      if(bIdx<0)bIdx=0;if(bIdx>prof.bins.length-1)bIdx=prof.bins.length-1;
+      var binVol=prof.bins.length?(metric==='volume'?prof.bins[bIdx].vol:prof.bins[bIdx].trd):0;
+      var cbar=prof.bars[cross.idx]||{};var dtLabel='';
+      if(cbar.t){var dd=new Date(cbar.t);try{dtLabel=dd.toLocaleString('en-US',Object.assign({timeZone:'America/New_York',month:'short',day:'numeric'},intraTF?{hour:'numeric',minute:'2-digit'}:{}));}catch(_e){dtLabel=dd.toISOString().slice(0,intraTF?16:10).replace('T',' ');}}
+      crossEls.push(React.createElement('line',{key:'chx',x1:padL,y1:ccy.toFixed(1),x2:W-padR,y2:ccy.toFixed(1),stroke:C.txtBright,strokeWidth:0.6,strokeDasharray:'2 2',opacity:0.9}));
+      crossEls.push(React.createElement('line',{key:'chy',x1:ccx.toFixed(1),y1:padT,x2:ccx.toFixed(1),y2:(padT+chartH).toFixed(1),stroke:C.txtBright,strokeWidth:0.6,strokeDasharray:'2 2',opacity:0.9}));
+      crossEls.push(React.createElement('circle',{key:'chc',cx:ccx.toFixed(1),cy:ccy.toFixed(1),r:1.6,fill:C.txtBright}));
+      var ptH=11,ptY=Math.min(Math.max(ccy-ptH/2,padT),padT+chartH-ptH);
+      crossEls.push(React.createElement('rect',{key:'cpr',x:0.5,y:ptY.toFixed(1),width:padL-1,height:ptH,rx:2,fill:C.txtBright}));
+      crossEls.push(React.createElement('text',{key:'cpt',x:((padL-1)/2).toFixed(1),y:(ptY+ptH/2+2.6).toFixed(1),fill:C.bgDeep,fontSize:8,fontFamily:F,fontWeight:800,textAnchor:'middle'},'$'+cross.price.toFixed(2)));
+      if(dtLabel){var dW=Math.max(34,dtLabel.length*4.4+6),dH=10,dX=Math.min(Math.max(ccx-dW/2,padL),W-padR-dW),dY=padT+chartH-dH-0.5;
+        crossEls.push(React.createElement('rect',{key:'cdr',x:dX.toFixed(1),y:dY.toFixed(1),width:dW.toFixed(1),height:dH,rx:2,fill:C.bgDeep,stroke:C.txtBright,strokeWidth:0.4}));
+        crossEls.push(React.createElement('text',{key:'cdt',x:(dX+dW/2).toFixed(1),y:(dY+dH/2+2.3).toFixed(1),fill:C.txtBright,fontSize:6.5,fontFamily:F,textAnchor:'middle'},dtLabel));}
+      var volTxt=(metric==='volume'?'Vol ':'Trd ')+fmtV(binVol);
+      var vW=Math.max(38,volTxt.length*4.4+6),vH=10,vX=ccx+5;if(vX+vW>W-padR)vX=ccx-5-vW;if(vX<padL)vX=padL;
+      var vY=Math.min(Math.max(ccy-vH-3,padT),padT+chartH-vH);
+      crossEls.push(React.createElement('rect',{key:'cvr',x:vX.toFixed(1),y:vY.toFixed(1),width:vW.toFixed(1),height:vH,rx:2,fill:C.purple,opacity:0.92}));
+      crossEls.push(React.createElement('text',{key:'cvt',x:(vX+vW/2).toFixed(1),y:(vY+vH/2+2.3).toFixed(1),fill:'#fff',fontSize:6.5,fontFamily:F,fontWeight:700,textAnchor:'middle'},volTxt));
+    }
+    return React.createElement('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:'auto',display:'block',background:C.bgDeep,borderRadius:8,touchAction:'none',cursor:'crosshair'},onTouchStart:handleCross,onTouchMove:handleCross,onMouseMove:handleCross},[
       axisEls,
       React.createElement('path',{key:'area',d:areaPath,fill:C.accent,opacity:0.06}),
       React.createElement('polyline',{key:'line',points:pts,fill:'none',stroke:C.txtBright,strokeWidth:0.8,opacity:0.55}),
@@ -13893,7 +13940,8 @@ function VolumeProfileMTFPage(p){
       React.createElement('text',{key:'valt',x:padL+2,y:(valY+8).toFixed(1),fill:C.accent,fontSize:7,fontFamily:F},'VAL '+prof.val.toFixed(2)),
       // Last price
       React.createElement('line',{key:'lpl',x1:padL,y1:lastY.toFixed(1),x2:W-padR,y2:lastY.toFixed(1),stroke:C.warn,strokeWidth:0.6,opacity:0.8}),
-      React.createElement('text',{key:'lpt',x:(W-padR-52).toFixed(1),y:(lastY-2).toFixed(1),fill:C.warn,fontSize:7,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2))
+      React.createElement('text',{key:'lpt',x:(W-padR-52).toFixed(1),y:(lastY-2).toFixed(1),fill:C.warn,fontSize:7,fontFamily:F,fontWeight:700},'LAST '+prof.lastPrice.toFixed(2)),
+      crossEls
     ]);
   };
 
