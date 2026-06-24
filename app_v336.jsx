@@ -18704,6 +18704,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -18746,7 +18747,10 @@ function ViolentChopScreenerPage(p){
                   ];
                 })()}
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
-                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+chartInt+'m / '+chartRange+')'}>{'\u25F0'}</button><button onClick={function(tk){return function(){setVpTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.purple+'60',borderRadius:3,background:'transparent',color:C.purple,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1,marginLeft:4}} title={'Volume profile for '+r.ticker}>{'\u2637'}</button>
+                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+chartInt+'m / '+chartRange+')'}>{'\u25F0'}</button>
+                </td>
+                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                  <button onClick={function(tk){return function(){setVpTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.purple+'60',borderRadius:3,background:'transparent',color:C.purple,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Volume profile for '+r.ticker}>{'\u2637'}</button>
                 </td>
               </tr>;
             })}
