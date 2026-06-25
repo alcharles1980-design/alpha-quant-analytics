@@ -14504,6 +14504,10 @@ function OvernightHourlyPage(p){
 function WorldTradingTimeZonesPage(p){
   var s1=useState(new Date()),now=s1[0],setNow=s1[1];
   React.useEffect(function(){var id=setInterval(function(){setNow(new Date());},1000);return function(){clearInterval(id);};},[]);
+  var tzS=useState(null),tzPick=tzS[0],setTzPick=tzS[1];
+  var tzoS=useState(false),tzOpen=tzoS[0],setTzOpen=tzoS[1];
+  var tzqS=useState(''),tzQuery=tzqS[0],setTzQuery=tzqS[1];
+  var allZones=React.useMemo(function(){try{if(typeof Intl.supportedValuesOf==='function'){var z=Intl.supportedValuesOf('timeZone');if(z&&z.length)return z;}}catch(e){}return ['UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','America/Toronto','America/Mexico_City','Europe/London','Europe/Paris','Europe/Berlin','Europe/Madrid','Europe/Zurich','Europe/Moscow','Africa/Johannesburg','Asia/Dubai','Asia/Riyadh','Asia/Kolkata','Asia/Singapore','Asia/Hong_Kong','Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Asia/Taipei','Australia/Sydney','Pacific/Auckland'];},[]);
 
   // DST-correct time helpers - everything derived from each exchange's IANA time zone via Intl, never hardcoded UTC offsets
   var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -14539,9 +14543,11 @@ function WorldTradingTimeZonesPage(p){
     {sh:'NZX',country:'New Zealand',mcap:0.14,est:true,name:'New Zealand Exchange',city:'Wellington',tz:'Pacific/Auckland',open:600,close:1005,days:[1,2,3,4,5],col:PRP}
   ];
 
-  var userOffset=-now.getTimezoneOffset();
-  var userTz=(function(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone;}catch(e){return 'Local';}})();
-  var userMod=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
+  var browserTz=(function(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone;}catch(e){return 'UTC';}})();
+  var userTz=tzPick||browserTz;
+  var userOffset=tzOffset(userTz,now);
+  var uNow=partsInTz(userTz,now);
+  var userMod=uNow.mod+now.getSeconds()/60;
   // Some venues shift their LOCAL session to track US DST (e.g. B3 follows the NY close). Brazil itself
   // has no DST, so the IANA tz cannot express this - detect US Eastern DST and apply per-exchange overrides.
   var usEdt=(tzOffset('America/New_York',now)===-240);
@@ -14575,8 +14581,11 @@ function WorldTradingTimeZonesPage(p){
   var labelHours=[0,3,6,9,12,15,18,21,24];
   var gridHours=[];for(var gh=0;gh<=24;gh++)gridHours.push(gh);
   var statCol=function(st){return st==='open'?C.accent:st==='break'?C.gold:C.txtDim;};
-  var clockStr=fmtClock(now.getHours()*60+now.getMinutes())+':'+(now.getSeconds()<10?'0':'')+now.getSeconds();
-  var dateStr=now.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric'});
+  var clockStr=fmtClock(uNow.mod)+':'+(now.getSeconds()<10?'0':'')+now.getSeconds();
+  var dateStr=now.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric',timeZone:userTz});
+  var POP=['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','America/Toronto','Europe/London','Europe/Paris','Europe/Berlin','Europe/Zurich','Asia/Dubai','Asia/Kolkata','Asia/Singapore','Asia/Hong_Kong','Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Australia/Sydney','Pacific/Auckland','UTC'];
+  var tzQ=tzQuery.trim().toLowerCase();
+  var tzMatches=(tzQ==='')?POP.filter(function(z){return allZones.indexOf(z)>=0;}):allZones.filter(function(z){return z.toLowerCase().replace(/[_/]/g,' ').indexOf(tzQ)>=0;}).slice(0,60);
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -14588,11 +14597,32 @@ function WorldTradingTimeZonesPage(p){
       <SectionHead title="World Trading Time Zones" sub="Live status of major global exchanges, in your local time" info="Each exchange's regular continuous-trading session is converted from its own IANA time zone to yours using live DST-aware offsets, so open/closed status and countdowns stay correct through daylight-saving changes. Asian markets show their midday break. Regular session only \u2014 excludes pre/post-market, exchange holidays, and half-day sessions."/>
       <div style={{display:'flex',flexWrap:'wrap',alignItems:'baseline',gap:'2px 12px',marginTop:6}}>
         <div style={{fontSize:30,fontWeight:800,fontFamily:F,color:C.txtBright,letterSpacing:1,fontVariantNumeric:'tabular-nums'}}>{clockStr}</div>
-        <div style={{fontSize:10,fontFamily:F,color:C.txtDim}}>{dateStr} &middot; {userTz} &middot; {fmtOff(userOffset)}</div>
+        <div style={{fontSize:10,fontFamily:F,color:C.txtDim}}>{dateStr}</div>
       </div>
       <div style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:8,padding:'5px 12px',borderRadius:20,background:openCount>0?C.accentDim:C.bgInput,border:'1px solid '+(openCount>0?C.accent+'55':C.border)}}>
         <span style={{width:8,height:8,borderRadius:8,background:openCount>0?C.accent:C.txtDim,display:'inline-block'}}></span>
         <span style={{fontSize:10,fontFamily:F,fontWeight:700,color:openCount>0?C.accent:C.txtDim}}>{openCount} of {EX.length} markets open{breakCount>0?' \u00b7 '+breakCount+' on break':''}</span>
+      </div>
+      <div style={{marginTop:10,maxWidth:380}}>
+        <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:4,letterSpacing:0.5}}>VIEWING IN TIME ZONE</div>
+        <button onClick={function(){setTzOpen(!tzOpen);setTzQuery('');}} style={{display:'flex',alignItems:'center',gap:6,width:'100%',boxSizing:'border-box',background:C.bgInput,border:'1px solid '+(tzOpen?C.accent:C.border),borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'8px 10px',cursor:'pointer',textAlign:'left'}}>
+          <span style={{color:C.accent}}>{'\u25D1'}</span>
+          <span style={{fontWeight:700,color:C.txtBright,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{userTz.replace(/_/g,' ')}</span>
+          <span style={{color:C.txtDim,flexShrink:0}}>{fmtOff(userOffset)}</span>
+          <span style={{marginLeft:'auto',flexShrink:0,fontSize:8,color:C.txtDim,fontWeight:700,letterSpacing:0.5}}>{tzPick?'CUSTOM':'DEVICE'} {tzOpen?'\u25B4':'\u25BE'}</span>
+        </button>
+        {tzOpen&&<div style={{marginTop:4,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,overflow:'hidden'}}>
+          <input value={tzQuery} onChange={function(e){setTzQuery(e.target.value);}} autoFocus placeholder="Type a city or zone (e.g. Tokyo, London)" style={{width:'100%',boxSizing:'border-box',background:C.bgDeep,border:'none',borderBottom:'1px solid '+C.border,color:C.txtBright,fontFamily:F,fontSize:11,padding:'9px 10px',outline:'none'}}/>
+          <div style={{maxHeight:212,overflowY:'auto'}}>
+            <div onClick={function(){setTzPick(null);setTzOpen(false);setTzQuery('');}} style={{padding:'8px 10px',cursor:'pointer',fontFamily:F,fontSize:10,color:tzPick?C.txt:C.accent,borderBottom:'1px solid '+C.grid,display:'flex',justifyContent:'space-between',gap:8}}>
+              <span style={{fontWeight:700}}>{'\u2316'} Auto &middot; device zone</span><span style={{color:C.txtDim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{browserTz.replace(/_/g,' ')}</span>
+            </div>
+            {tzMatches.map(function(z){var sel=(userTz===z);return <div key={z} onClick={function(){setTzPick(z);setTzOpen(false);setTzQuery('');}} style={{padding:'7px 10px',cursor:'pointer',fontFamily:F,fontSize:10,color:sel?C.accent:C.txt,background:sel?C.accentDim:'transparent',borderBottom:'1px solid '+C.grid,display:'flex',justifyContent:'space-between',gap:8}}>
+              <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{z.replace(/_/g,' ')}</span><span style={{color:C.txtDim,flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{fmtOff(tzOffset(z,now))}</span>
+            </div>;})}
+            {tzMatches.length===0&&<div style={{padding:'10px',fontFamily:F,fontSize:10,color:C.txtDim}}>No matching time zone</div>}
+          </div>
+        </div>}
       </div>
     </Cd>
 
