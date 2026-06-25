@@ -14604,7 +14604,7 @@ function WorldTradingTimeZonesPage(p){
         <span style={{fontSize:10,fontFamily:F,fontWeight:700,color:openCount>0?C.accent:C.txtDim}}>{openCount} of {EX.length} markets open{breakCount>0?' \u00b7 '+breakCount+' on break':''}</span>
       </div>
       <div style={{marginTop:10,maxWidth:380}}>
-        <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:4,letterSpacing:0.5}}>VIEWING IN TIME ZONE</div>
+        <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:4,letterSpacing:0.5}}>VIEWING IN TIME ZONE <span style={{letterSpacing:0,opacity:0.85}}>(Click to select or change)</span></div>
         <button onClick={function(){setTzOpen(!tzOpen);setTzQuery('');}} style={{display:'flex',alignItems:'center',gap:6,width:'100%',boxSizing:'border-box',background:C.bgInput,border:'1px solid '+(tzOpen?C.accent:C.border),borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'8px 10px',cursor:'pointer',textAlign:'left'}}>
           <span style={{color:C.accent}}>{'\u25D1'}</span>
           <span style={{fontWeight:700,color:C.txtBright,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{userTz.replace(/_/g,' ')}</span>
