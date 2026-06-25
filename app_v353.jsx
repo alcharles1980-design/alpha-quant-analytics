@@ -15564,15 +15564,26 @@ function GexOptionsProfilePage(p){
       try{var trade=await alpFetch('/v2/stocks/'+encodeURIComponent(sym)+'/trades/latest',true);if(trade&&trade.trade&&trade.trade.p)sp=trade.trade.p;}catch(e1){}
       if(sp==null){try{var t2=await alpFetch('/v2/stocks/'+encodeURIComponent(sym)+'/trades/latest?feed=iex',true);if(t2&&t2.trade&&t2.trade.p)sp=t2.trade.p;}catch(e2){}}
       var today=new Date().toISOString().split('T')[0];
-      var lte=new Date(Date.now()+windowDays*86400000).toISOString().split('T')[0];
-      var cs=await fetchAllContracts(sym,today,lte);
-      if(!cs.length)throw new Error(windowDays===0?('No 0DTE contracts for '+sym+' (nothing expiring today).'):('No active option contracts returned for '+sym+' in the next '+windowDays+' days.'));
+      // Fetch contracts; auto-expand the window so we always catch THIS symbol's nearest expiry.
+      // Some names have a 0DTE/weekly today, others only monthlies. 0DTE stays strict (today only).
+      var tryW=windowDays===0?[0]:[windowDays];
+      if(windowDays>0){[45,90].forEach(function(ww){if(tryW.indexOf(ww)<0&&ww>windowDays)tryW.push(ww);});}
+      var cs=[],lte=null;
+      for(var wi=0;wi<tryW.length;wi++){
+        lte=new Date(Date.now()+tryW[wi]*86400000).toISOString().split('T')[0];
+        cs=await fetchAllContracts(sym,today,lte);
+        if(cs.length)break;
+      }
+      if(!cs.length)throw new Error(windowDays===0?('No 0DTE contracts for '+sym+' (nothing expiring today).'):('No active option contracts found for '+sym+' in the next 90 days.'));
       if(sp==null)throw new Error('Could not fetch a spot price for '+sym+' (needed to scale GEX). Try again or check the symbol.');
       var snaps=await fetchAllSnaps(sym,lte);
       var dateCount={};
       for(var i=0;i<cs.length;i++){var od=cs[i].open_interest_date;if(od)dateCount[od]=(dateCount[od]||0)+1;}
       var asOf=null,best=0;Object.keys(dateCount).forEach(function(d){if(dateCount[d]>best){best=dateCount[d];asOf=d;}});
-      setSpot(sp);setRawContracts(cs);setRawSnaps(snaps);setOiAsOf(asOf);setLoadedSym(sym);setProg('');
+      // Default the view to this symbol's NEAREST expiry (0DTE if it has one expiring today).
+      var expSet={};for(var ei=0;ei<cs.length;ei++)expSet[cs[ei].expiration_date]=true;
+      var nearestExp=Object.keys(expSet).sort()[0];
+      setSpot(sp);setRawContracts(cs);setRawSnaps(snaps);setOiAsOf(asOf);setLoadedSym(sym);setExpFilter(nearestExp||'ALL');setProg('');
     }catch(e){setErr(e.message);setProg('');}
     setLoading(false);
   };
@@ -15698,7 +15709,7 @@ function GexOptionsProfilePage(p){
         {[[0,'0DTE'],[7,'1W'],[14,'2W'],[30,'1M'],[60,'2M'],[90,'3M']].map(function(wd){var w=wd[0];return <button key={w} onClick={function(){setWindowDays(w);}}
           style={{padding:'4px 9px',borderRadius:4,border:'1px solid '+(windowDays===w?C.accent+'66':C.border),background:windowDays===w?C.accent+'12':'transparent',
             color:windowDays===w?C.accent:C.txtDim,fontSize:8.5,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{wd[1]}</button>;})}
-        <span style={{color:C.txtDim,fontSize:7.5,fontFamily:F}}>expiries to include (re-load to apply)</span>
+        <span style={{color:C.txtDim,fontSize:7.5,fontFamily:F}}>fetch breadth {'\u00b7'} view defaults to nearest expiry (re-load to apply)</span>
       </div>
       {prog&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
       {err&&<div style={{marginTop:8,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
@@ -15708,7 +15719,7 @@ function GexOptionsProfilePage(p){
     {profile&&<div>
       {/* Key levels */}
       <div style={card}>
-        <div style={{color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:3}}>{loadedSym} {'\u00b7'} Key Levels</div>
+        <div style={{color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:3}}>{loadedSym} {'\u00b7'} Key Levels {'\u00b7'} {expFilter==='ALL'?'all expiries':expFilter}</div>
         <div style={{color:regime.col,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:1}}>{regime.label} {'\u00b7'} Net GEX {fmtUSD(profile.totGEX)}</div>
         <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginBottom:10}}>{regime.sub}</div>
         <div style={{display:'flex',flexWrap:'wrap',gap:7}}>
@@ -15738,10 +15749,10 @@ function GexOptionsProfilePage(p){
           <button onClick={function(){setExpFilter('ALL');}}
             style={{padding:'4px 8px',borderRadius:4,border:'1px solid '+(expFilter==='ALL'?C.gold+'66':C.border),background:expFilter==='ALL'?C.gold+'10':'transparent',
               color:expFilter==='ALL'?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>ALL ({expiries.length})</button>
-          {expiries.map(function(exp){var d=new Date(exp+'T12:00:00');var dte=Math.ceil((d-Date.now())/86400000);
+          {expiries.map(function(exp){var dte=Math.round((new Date(exp+'T00:00:00Z')-new Date(new Date().toISOString().split('T')[0]+'T00:00:00Z'))/86400000);
             return <button key={exp} onClick={function(){setExpFilter(exp);}}
               style={{padding:'4px 8px',borderRadius:4,border:'1px solid '+(expFilter===exp?C.gold+'66':C.border),background:expFilter===exp?C.gold+'10':'transparent',
-                color:expFilter===exp?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>{exp} ({dte}d)</button>;})}
+                color:expFilter===exp?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>{exp} ({dte<=0?'0DTE':dte+'d'})</button>;})}
         </div>
         {/* profile chart */}
         <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
@@ -15768,7 +15779,7 @@ function GexOptionsProfilePage(p){
           {'\u2022'} <b>OI lags ~1 day</b> (prior-day OCC settle, as of {oiAsOf||'\u2014'}). Not live.<br/>
           {'\u2022'} <b>Greeks are Alpaca-computed</b> off the indicative feed (15-min delayed on Basic). Null gamma on illiquid/deep-ITM contracts is excluded from the gamma sum but OI is still counted.<br/>
           {'\u2022'} <b>Zero-gamma flip is approximate</b> (cumulative net-GEX zero-crossing across strikes), not a repriced gamma surface.<br/>
-          {'\u2022'} Near-term only: {windowDays===0?'expiries today (0DTE)':'expiries within '+windowDays+' days'}.
+          {'\u2022'} Defaults to the nearest expiry per symbol{expiries.length?' (loaded '+expiries.length+', nearest '+expiries[0]+')':''}. Pick ALL or another expiry above for a wider view.
         </div>
       </div>
     </div>}
