@@ -15486,10 +15486,12 @@ function gexImpliedVol(price,S,K,T,r,isCall){
 }
 function buildGexProfile(contracts, snapshots, spot, nowMs){
   var MULT=100, PCT=0.01, R=0.04, YEAR=365*24*3600*1000, MIN_T=0.5/(365*24), now=nowMs||Date.now();
-  // Pass 1: resolve IV per contract by SOLVING from the market price. Alpaca's indicative
-  // greeks/IV are null or unreliable (often bogus-low) for OTM strikes, which would zero out
-  // high-OI strikes; the market price is the trustworthy signal, so snapshot IV is NOT used.
-  var ivBySym={}, nearIv=[], allIv=[], nSnapIv=0, nSolved=0, nFallback=0;
+  // Pass 1: resolve IV per contract by SOLVING from the market price, then collapse to ONE IV per
+  // (strike, expiry). Alpaca's indicative greeks/IV are null/unreliable for many OTM strikes, so the
+  // market price is the trustworthy signal (snapshot IV is NOT used). Put-call parity means the call
+  // and put at a strike share a single IV/gamma; we average the solved sides and let a quoted side
+  // cover an unquoted one, which also cuts ATM fallbacks.
+  var keSum={}, keCnt={}, nearIv=[], allIv=[], nSnapIv=0, nSolved=0, nFallback=0;
   for(var a=0;a<contracts.length;a++){
     var c=contracts[a], Ka=+c.strike_price; if(!isFinite(Ka))continue;
     var Ta=Math.max((Date.parse(c.expiration_date+'T20:00:00Z')-now)/YEAR, MIN_T);
@@ -15497,20 +15499,20 @@ function buildGexProfile(contracts, snapshots, spot, nowMs){
     if(snap&&snap.latestQuote){var bp=+snap.latestQuote.bp||0, ap=+snap.latestQuote.ap||0; if(bp>0&&ap>0)mid=(bp+ap)/2; else if(ap>0)mid=ap; else if(bp>0)mid=bp;}
     if(mid==null&&snap&&snap.latestTrade&&+snap.latestTrade.p>0)mid=+snap.latestTrade.p;
     if(mid==null&&c.close_price&&+c.close_price>0)mid=+c.close_price;
-    if(mid!=null){var solved=gexImpliedVol(mid,spot,Ka,Ta,R,c.type==='call'); if(solved!=null){iv=solved;nSolved++;}}
-    ivBySym[c.symbol]=iv;
-    if(iv!=null){allIv.push(iv); if(Math.abs(Ka-spot)<=spot*0.07)nearIv.push(iv);}
+    if(mid!=null){var solved=gexImpliedVol(mid,spot,Ka,Ta,R,c.type==='call'); if(solved!=null)iv=solved;}
+    if(iv!=null){var ke=Ka+'|'+c.expiration_date; keSum[ke]=(keSum[ke]||0)+iv; keCnt[ke]=(keCnt[ke]||0)+1; allIv.push(iv); if(Math.abs(Ka-spot)<=spot*0.07)nearIv.push(iv);}
   }
+  var ivByKE={}; for(var ke2 in keSum){ivByKE[ke2]=keSum[ke2]/keCnt[ke2];}
   // ATM IV = median of near-spot solved IVs (robust to a single noisy strike); feeds the fallback.
   var ivPool=nearIv.length?nearIv:allIv; ivPool.sort(function(x,y){return x-y;});
   var atmIv=ivPool.length?ivPool[Math.floor(ivPool.length/2)]:0.6;
-  // Pass 2: aggregate per strike using BS gamma (every contract gets a gamma)
+  // Pass 2: one shared BS gamma per (strike, expiry), applied to both call and put OI.
   var byK={};
   for(var i=0;i<contracts.length;i++){
     var c2=contracts[i], k=+c2.strike_price; if(!isFinite(k))continue;
     var oi=+c2.open_interest; if(!isFinite(oi))oi=0;
     var T2=Math.max((Date.parse(c2.expiration_date+'T20:00:00Z')-now)/YEAR, MIN_T);
-    var iv2=ivBySym[c2.symbol]; if(iv2==null){iv2=atmIv;nFallback++;}
+    var iv2=ivByKE[k+'|'+c2.expiration_date]; if(iv2==null){iv2=atmIv;nFallback++;}else{nSolved++;}
     var g=gexBsGamma(spot,k,T2,R,iv2);
     if(!byK[k])byK[k]={k:k,callOI:0,putOI:0,cGoi:0,pGoi:0};
     var s=byK[k];
