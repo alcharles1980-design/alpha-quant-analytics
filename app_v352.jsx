@@ -15506,7 +15506,7 @@ function GexOptionsProfilePage(p){
   var s7=useState({}),rawSnaps=s7[0],setRawSnaps=s7[1];
   var s8=useState(null),oiAsOf=s8[0],setOiAsOf=s8[1];
   var s9=useState('ALL'),expFilter=s9[0],setExpFilter=s9[1];
-  var s10=useState(45),windowDays=s10[0],setWindowDays=s10[1];
+  var s10=useState(7),windowDays=s10[0],setWindowDays=s10[1];
   var s11=useState('gex'),view=s11[0],setView=s11[1];
   var s12=useState(null),loadedSym=s12[0],setLoadedSym=s12[1];
 
@@ -15566,7 +15566,7 @@ function GexOptionsProfilePage(p){
       var today=new Date().toISOString().split('T')[0];
       var lte=new Date(Date.now()+windowDays*86400000).toISOString().split('T')[0];
       var cs=await fetchAllContracts(sym,today,lte);
-      if(!cs.length)throw new Error('No active option contracts returned for '+sym+' in the next '+windowDays+' days.');
+      if(!cs.length)throw new Error(windowDays===0?('No 0DTE contracts for '+sym+' (nothing expiring today).'):('No active option contracts returned for '+sym+' in the next '+windowDays+' days.'));
       if(sp==null)throw new Error('Could not fetch a spot price for '+sym+' (needed to scale GEX). Try again or check the symbol.');
       var snaps=await fetchAllSnaps(sym,lte);
       var dateCount={};
@@ -15695,9 +15695,9 @@ function GexOptionsProfilePage(p){
       </div>
       <div style={{display:'flex',gap:6,marginTop:10,alignItems:'center',flexWrap:'wrap'}}>
         <span style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase'}}>Window</span>
-        {[30,45,60,90].map(function(w){return <button key={w} onClick={function(){setWindowDays(w);}}
+        {[[0,'0DTE'],[7,'1W'],[14,'2W'],[30,'1M'],[60,'2M'],[90,'3M']].map(function(wd){var w=wd[0];return <button key={w} onClick={function(){setWindowDays(w);}}
           style={{padding:'4px 9px',borderRadius:4,border:'1px solid '+(windowDays===w?C.accent+'66':C.border),background:windowDays===w?C.accent+'12':'transparent',
-            color:windowDays===w?C.accent:C.txtDim,fontSize:8.5,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{w}d</button>;})}
+            color:windowDays===w?C.accent:C.txtDim,fontSize:8.5,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{wd[1]}</button>;})}
         <span style={{color:C.txtDim,fontSize:7.5,fontFamily:F}}>expiries to include (re-load to apply)</span>
       </div>
       {prog&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
@@ -15768,7 +15768,7 @@ function GexOptionsProfilePage(p){
           {'\u2022'} <b>OI lags ~1 day</b> (prior-day OCC settle, as of {oiAsOf||'\u2014'}). Not live.<br/>
           {'\u2022'} <b>Greeks are Alpaca-computed</b> off the indicative feed (15-min delayed on Basic). Null gamma on illiquid/deep-ITM contracts is excluded from the gamma sum but OI is still counted.<br/>
           {'\u2022'} <b>Zero-gamma flip is approximate</b> (cumulative net-GEX zero-crossing across strikes), not a repriced gamma surface.<br/>
-          {'\u2022'} Near-term only: expiries within {windowDays} days.
+          {'\u2022'} Near-term only: {windowDays===0?'expiries today (0DTE)':'expiries within '+windowDays+' days'}.
         </div>
       </div>
     </div>}
