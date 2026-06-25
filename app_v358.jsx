@@ -15507,12 +15507,16 @@ function buildGexProfile(contracts, snapshots, spot, nowMs){
   var ivPool=nearIv.length?nearIv:allIv; ivPool.sort(function(x,y){return x-y;});
   var atmIv=ivPool.length?ivPool[Math.floor(ivPool.length/2)]:0.6;
   // Pass 2: one shared BS gamma per (strike, expiry), applied to both call and put OI.
-  var byK={};
+  // Also collect per-contract "legs" (strike, expiry-T, IV, OI, dealer sign) so total GEX can be
+  // REPRICED at any trial spot for the gamma flip + regime (kept consistent with each other).
+  var byK={}, legs=[];
   for(var i=0;i<contracts.length;i++){
     var c2=contracts[i], k=+c2.strike_price; if(!isFinite(k))continue;
     var oi=+c2.open_interest; if(!isFinite(oi))oi=0;
     var T2=Math.max((Date.parse(c2.expiration_date+'T20:00:00Z')-now)/YEAR, MIN_T);
     var iv2=ivByKE[k+'|'+c2.expiration_date]; if(iv2==null){iv2=atmIv;nFallback++;}else{nSolved++;}
+    var sgn=c2.type==='call'?1:(c2.type==='put'?-1:0);
+    if(sgn!==0&&oi>0)legs.push({k:k,T:T2,sig:iv2,oi:oi,sign:sgn});
     var g=gexBsGamma(spot,k,T2,R,iv2);
     if(!byK[k])byK[k]={k:k,callOI:0,putOI:0,cGoi:0,pGoi:0};
     var s=byK[k];
@@ -15530,19 +15534,26 @@ function buildGexProfile(contracts, snapshots, spot, nowMs){
   }
   var callWall=null,putWall=null,maxCallOI=null,maxPutOI=null;
   for(var m=0;m<strikes.length;m++){var s3=strikes[m];
-    if(s3.netGEX>0&&(!callWall||s3.netGEX>callWall.netGEX))callWall=s3;
-    if(s3.netGEX<0&&(!putWall||s3.netGEX<putWall.netGEX))putWall=s3;
+    if(s3.callGEX>0&&(!callWall||s3.callGEX>callWall.callGEX))callWall=s3;   // most CALL-side gamma
+    if(s3.putGEX>0&&(!putWall||s3.putGEX>putWall.putGEX))putWall=s3;         // most PUT-side gamma
     if(!maxCallOI||s3.callOI>maxCallOI.callOI)maxCallOI=s3;
     if(!maxPutOI||s3.putOI>maxPutOI.putOI)maxPutOI=s3;
   }
-  // zero-gamma flip (approx): cumulative netGEX by strike crossing zero
-  var cum=0,flip=null,prevCum=0,prevK=null;
-  for(var n=0;n<strikes.length;n++){var s4=strikes[n];prevCum=cum;cum+=s4.netGEX;
-    if(prevK!=null&&((prevCum<0&&cum>=0)||(prevCum>0&&cum<=0))){
-      var frac=prevCum===cum?0:(-prevCum)/(cum-prevCum);
-      flip=prevK+frac*(s4.k-prevK);
+  // Gamma flip: REPRICE total dealer GEX across a spot grid (sticky-strike: each leg keeps its own
+  // IV as spot moves) and find where it crosses zero. The regime is the sign of this same curve at
+  // spot (gexCurve(spot) === totGEX), so the regime and the flip can never contradict.
+  var gexCurve=function(S){var t=0;for(var q=0;q<legs.length;q++){var L=legs[q];
+    t+=L.sign*gexBsGamma(S,L.k,L.T,R,L.sig)*L.oi*MULT*S*S*PCT;}return t;};
+  var flip=null;
+  if(legs.length&&spot>0){
+    var glo=spot*0.70,ghi=spot*1.30,GN=120,pS=null,pG=null,best=Infinity;
+    for(var n=0;n<=GN;n++){var Sx=glo+(ghi-glo)*n/GN,gx=gexCurve(Sx);
+      if(pS!=null&&pG!==gx&&((pG<0&&gx>=0)||(pG>0&&gx<=0))){
+        var zc=pS+(Sx-pS)*(-pG)/(gx-pG);
+        if(Math.abs(zc-spot)<best){best=Math.abs(zc-spot);flip=zc;}
+      }
+      pS=Sx;pG=gx;
     }
-    prevK=s4.k;
   }
   return {strikes:strikes,totGEX:totGEX,totCallOI:totCallOI,totPutOI:totPutOI,
     callWall:callWall,putWall:putWall,maxCallOI:maxCallOI,maxPutOI:maxPutOI,flip:flip,
@@ -15778,9 +15789,9 @@ function GexOptionsProfilePage(p){
         <div style={{display:'flex',flexWrap:'wrap',gap:7}}>
           {stat('Spot','$'+fmtK(spot),null,C.blue)}
           {stat('Net GEX (per 1%)',fmtUSD(profile.totGEX),null,profile.totGEX>=0?C.accent:C.warn)}
-          {stat('Zero-Gamma Flip',profile.flip!=null?'$'+fmtK(profile.flip):'none in range','approx',C.purple)}
-          {stat('Call Wall',profile.callWall?'$'+fmtK(profile.callWall.k):'\u2014','max +GEX',C.gold)}
-          {stat('Put Wall',profile.putWall?'$'+fmtK(profile.putWall.k):'\u2014','max \u2212GEX',C.warn)}
+          {stat('Zero-Gamma Flip',profile.flip!=null?'$'+fmtK(profile.flip):'none in range','repriced',C.purple)}
+          {stat('Call Wall',profile.callWall?'$'+fmtK(profile.callWall.k):'\u2014','max call \u03b3',C.gold)}
+          {stat('Put Wall',profile.putWall?'$'+fmtK(profile.putWall.k):'\u2014','max put \u03b3',C.warn)}
           {stat('Max Call OI',profile.maxCallOI?'$'+fmtK(profile.maxCallOI.k):'\u2014',profile.maxCallOI?fmtNum(profile.maxCallOI.callOI):'',C.accent)}
           {stat('Max Put OI',profile.maxPutOI?'$'+fmtK(profile.maxPutOI.k):'\u2014',profile.maxPutOI?fmtNum(profile.maxPutOI.putOI):'',C.blue)}
           {stat('Put/Call OI',profile.pcr!=null?profile.pcr.toFixed(2):'\u2014',null,C.txtBright)}
@@ -15832,7 +15843,8 @@ function GexOptionsProfilePage(p){
           {'\u2022'} <b>Net GEX &gt; 0</b> = dealers hedge against the move (sell rallies / buy dips) {'\u2192'} vol-suppressing, mean-reverting, grid-friendly. <b>Net GEX &lt; 0</b> = dealers hedge with the move {'\u2192'} vol-amplifying, trending, grid risk.<br/>
           {'\u2022'} <b>OI lags ~1 day</b> (prior-day OCC settle, as of {oiAsOf||'\u2014'}). Not live.<br/>
           {'\u2022'} <b>Gamma is computed in-house via Black-Scholes</b> (market IV + exact time-to-expiry). Alpaca's indicative greeks/IV are null or unreliable for many OTM strikes, which would zero-out high-OI strikes; so IV is solved from each option's market price (bid/ask mid, last trade, or prior close), falling back to the near-spot ATM IV when no price is available.<br/>
-          {'\u2022'} <b>Zero-gamma flip is approximate</b> (cumulative net-GEX zero-crossing across strikes), not a repriced gamma surface.<br/>
+          {'\u2022'} <b>Gamma flip &amp; regime are repriced.</b> Total dealer GEX is re-evaluated across a spot grid (sticky-strike IV); the flip is the zero-crossing nearest spot and the regime is the sign of that same curve at spot, so the two are always consistent.<br/>
+          {'\u2022'} <b>Walls are per-side gamma.</b> Call wall = strike with the most call-side gamma, put wall = the most put-side {'\u2014'} so a strike heavy in both sides isn't cancelled out the way a net-GEX wall would be.<br/>
           {'\u2022'} Defaults to the nearest expiry per symbol{expiries.length?' (loaded '+expiries.length+', nearest '+expiries[0]+')':''}. Pick ALL or another expiry above for a wider view.
         </div>
       </div>
