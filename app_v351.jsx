@@ -15449,6 +15449,332 @@ function HedgeCalcPage(p){
 }
 
 // ─── OPTIONS CHAIN VIEWER ─────────────────────────────────────────────────────
+// ============ GEX & Options Profile ============
+// Strike-axis options positioning profile (OI + dealer gamma exposure) from Alpaca data only.
+// OI: /v2/options/contracts (prior-day settled). Greeks: /v1beta1/options/snapshots (Alpaca-computed).
+// Dealer-sign convention: long calls (+gamma), short puts (-gamma) -- the standard retail GEX approximation.
+function buildGexProfile(contracts, snapshots, spot){
+  var MULT=100, PCT=0.01;
+  var byK={};
+  for(var i=0;i<contracts.length;i++){
+    var c=contracts[i]; var k=+c.strike_price; if(!isFinite(k))continue;
+    var oi=+c.open_interest; if(!isFinite(oi))oi=0;
+    var snap=snapshots[c.symbol];
+    var g=(snap&&snap.greeks&&snap.greeks.gamma!=null&&isFinite(+snap.greeks.gamma))?+snap.greeks.gamma:null;
+    if(!byK[k])byK[k]={k:k,callOI:0,putOI:0,cGoi:0,pGoi:0,gN:0};
+    var s=byK[k];
+    if(c.type==='call'){s.callOI+=oi; if(g!=null){s.cGoi+=g*oi; s.gN++;}}
+    else if(c.type==='put'){s.putOI+=oi; if(g!=null){s.pGoi+=g*oi; s.gN++;}}
+  }
+  var strikes=Object.keys(byK).map(function(x){return byK[x];}).sort(function(a,b){return a.k-b.k;});
+  var totGEX=0,totCallOI=0,totPutOI=0;
+  for(var j=0;j<strikes.length;j++){var s=strikes[j];
+    s.callGEX=s.cGoi*MULT*spot*spot*PCT;
+    s.putGEX =s.pGoi*MULT*spot*spot*PCT;
+    s.netGEX =s.callGEX - s.putGEX;
+    s.netOI  =s.callOI - s.putOI;
+    totGEX+=s.netGEX; totCallOI+=s.callOI; totPutOI+=s.putOI;
+  }
+  var callWall=null,putWall=null,maxCallOI=null,maxPutOI=null;
+  for(var m=0;m<strikes.length;m++){var s2=strikes[m];
+    if(s2.netGEX>0&&(!callWall||s2.netGEX>callWall.netGEX))callWall=s2;
+    if(s2.netGEX<0&&(!putWall||s2.netGEX<putWall.netGEX))putWall=s2;
+    if(!maxCallOI||s2.callOI>maxCallOI.callOI)maxCallOI=s2;
+    if(!maxPutOI||s2.putOI>maxPutOI.putOI)maxPutOI=s2;
+  }
+  // zero-gamma flip (approx): cumulative netGEX by strike crossing zero
+  var cum=0,flip=null,prevCum=0,prevK=null;
+  for(var n=0;n<strikes.length;n++){var s3=strikes[n];prevCum=cum;cum+=s3.netGEX;
+    if(prevK!=null&&((prevCum<0&&cum>=0)||(prevCum>0&&cum<=0))){
+      var frac=prevCum===cum?0:(-prevCum)/(cum-prevCum);
+      flip=prevK+frac*(s3.k-prevK);
+    }
+    prevK=s3.k;
+  }
+  return {strikes:strikes,totGEX:totGEX,totCallOI:totCallOI,totPutOI:totPutOI,
+    callWall:callWall,putWall:putWall,maxCallOI:maxCallOI,maxPutOI:maxPutOI,flip:flip,
+    pcr:totCallOI>0?totPutOI/totCallOI:null};
+}
+
+function GexOptionsProfilePage(p){
+  var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
+  var s2=useState(false),loading=s2[0],setLoading=s2[1];
+  var s3=useState(null),err=s3[0],setErr=s3[1];
+  var s4=useState(''),prog=s4[0],setProg=s4[1];
+  var s5=useState(null),spot=s5[0],setSpot=s5[1];
+  var s6=useState([]),rawContracts=s6[0],setRawContracts=s6[1];
+  var s7=useState({}),rawSnaps=s7[0],setRawSnaps=s7[1];
+  var s8=useState(null),oiAsOf=s8[0],setOiAsOf=s8[1];
+  var s9=useState('ALL'),expFilter=s9[0],setExpFilter=s9[1];
+  var s10=useState(45),windowDays=s10[0],setWindowDays=s10[1];
+  var s11=useState('gex'),view=s11[0],setView=s11[1];
+  var s12=useState(null),loadedSym=s12[0],setLoadedSym=s12[1];
+
+  var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+  var alpFetch=async function(path,isData){
+    var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+      'X-Alpaca-Path':path,'X-Alpaca-Base':isData?'data':''}});
+    if(!r.ok){var t=await r.text();throw new Error('Alpaca '+r.status+': '+t.substring(0,160));}
+    return r.json();
+  };
+
+  var fetchAllContracts=async function(sym,gte,lte){
+    var all=[],pt=null,pages=0;
+    while(pages<60){
+      var path='/v2/options/contracts?underlying_symbols='+sym+'&status=active&expiration_date_gte='+gte+'&expiration_date_lte='+lte+'&limit=1000';
+      if(pt)path+='&page_token='+encodeURIComponent(pt);
+      var d=await alpFetch(path,false);
+      var arr=Array.isArray(d)?d:(d&&d.option_contracts?d.option_contracts:[]);
+      for(var i=0;i<arr.length;i++)all.push(arr[i]);
+      pages++;
+      setProg('Loading contracts & open interest ('+all.length.toLocaleString()+')...');
+      var nt=d&&(d.next_page_token||d.page_token);
+      if(nt&&nt!==pt&&arr.length>0){pt=nt;await new Promise(function(rr){setTimeout(rr,60);});}
+      else break;
+    }
+    return all;
+  };
+
+  var fetchAllSnaps=async function(sym,lte){
+    var merged={},pt=null,pages=0;
+    while(pages<60){
+      var path='/v1beta1/options/snapshots/'+sym+'?feed=indicative&expiration_date_lte='+lte+'&limit=1000';
+      if(pt)path+='&page_token='+encodeURIComponent(pt);
+      var d=await alpFetch(path,true);
+      var snaps=d&&d.snapshots?d.snapshots:{};
+      var ks=Object.keys(snaps);
+      for(var i=0;i<ks.length;i++)merged[ks[i]]=snaps[ks[i]];
+      pages++;
+      setProg('Loading model greeks ('+Object.keys(merged).length.toLocaleString()+')...');
+      var nt=d&&d.next_page_token;
+      if(nt&&nt!==pt&&ks.length>0){pt=nt;await new Promise(function(rr){setTimeout(rr,60);});}
+      else break;
+    }
+    return merged;
+  };
+
+  var load=async function(){
+    if(!p.alpKey||!p.alpSecret){setErr('Set Alpaca API keys in Settings first.');return;}
+    var sym=symbol.trim().toUpperCase();
+    if(!sym){setErr('Enter a symbol');return;}
+    setLoading(true);setErr(null);setProg('');setSpot(null);setRawContracts([]);setRawSnaps({});setOiAsOf(null);setExpFilter('ALL');setLoadedSym(null);
+    try{
+      setProg('Fetching spot price...');
+      var sp=null;
+      try{var trade=await alpFetch('/v2/stocks/'+encodeURIComponent(sym)+'/trades/latest',true);if(trade&&trade.trade&&trade.trade.p)sp=trade.trade.p;}catch(e1){}
+      if(sp==null){try{var t2=await alpFetch('/v2/stocks/'+encodeURIComponent(sym)+'/trades/latest?feed=iex',true);if(t2&&t2.trade&&t2.trade.p)sp=t2.trade.p;}catch(e2){}}
+      var today=new Date().toISOString().split('T')[0];
+      var lte=new Date(Date.now()+windowDays*86400000).toISOString().split('T')[0];
+      var cs=await fetchAllContracts(sym,today,lte);
+      if(!cs.length)throw new Error('No active option contracts returned for '+sym+' in the next '+windowDays+' days.');
+      if(sp==null)throw new Error('Could not fetch a spot price for '+sym+' (needed to scale GEX). Try again or check the symbol.');
+      var snaps=await fetchAllSnaps(sym,lte);
+      var dateCount={};
+      for(var i=0;i<cs.length;i++){var od=cs[i].open_interest_date;if(od)dateCount[od]=(dateCount[od]||0)+1;}
+      var asOf=null,best=0;Object.keys(dateCount).forEach(function(d){if(dateCount[d]>best){best=dateCount[d];asOf=d;}});
+      setSpot(sp);setRawContracts(cs);setRawSnaps(snaps);setOiAsOf(asOf);setLoadedSym(sym);setProg('');
+    }catch(e){setErr(e.message);setProg('');}
+    setLoading(false);
+  };
+
+  var expiries=React.useMemo(function(){
+    var set={};for(var i=0;i<rawContracts.length;i++)set[rawContracts[i].expiration_date]=true;
+    return Object.keys(set).sort();
+  },[rawContracts]);
+
+  var profile=React.useMemo(function(){
+    if(!rawContracts.length||spot==null)return null;
+    var cs=expFilter==='ALL'?rawContracts:rawContracts.filter(function(c){return c.expiration_date===expFilter;});
+    return buildGexProfile(cs,rawSnaps,spot);
+  },[rawContracts,rawSnaps,spot,expFilter]);
+
+  var dispStrikes=React.useMemo(function(){
+    if(!profile||spot==null)return [];
+    var lo=spot*0.75,hi=spot*1.25;
+    var inBand=profile.strikes.filter(function(s){return s.k>=lo&&s.k<=hi&&(s.callOI+s.putOI)>0;});
+    if(inBand.length>46){
+      inBand=inBand.slice().sort(function(a,b){return (b.callOI+b.putOI)-(a.callOI+a.putOI);}).slice(0,46);
+    }
+    return inBand.slice().sort(function(a,b){return b.k-a.k;});
+  },[profile,spot]);
+
+  var fmtUSD=function(v){if(v==null||!isFinite(v))return '\u2014';var a=Math.abs(v);var sg=v<0?'-':'';
+    if(a>=1e9)return sg+'$'+(a/1e9).toFixed(2)+'B';
+    if(a>=1e6)return sg+'$'+(a/1e6).toFixed(1)+'M';
+    if(a>=1e3)return sg+'$'+(a/1e3).toFixed(0)+'K';
+    return sg+'$'+a.toFixed(0);};
+  var fmtNum=function(v){return v!=null&&isFinite(v)?(+v).toLocaleString():'\u2014';};
+  var fmtK=function(v){return v!=null&&isFinite(v)?(+v).toFixed((+v)>=100?0:2):'\u2014';};
+
+  var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
+  var lS={color:C.txtDim,fontSize:8,fontWeight:600,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:4,display:'block'};
+  var iS={width:'100%',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,color:C.txtBright,fontFamily:F,fontSize:13,fontWeight:700,padding:'10px 12px',outline:'none',textTransform:'uppercase'};
+
+  var regime=profile?(profile.totGEX>=0
+    ?{label:'Long-gamma regime',sub:'Dealers suppress volatility \u00b7 mean-reverting \u00b7 grid-friendly',col:C.accent}
+    :{label:'Short-gamma regime',sub:'Dealers amplify moves \u00b7 trending \u00b7 grid risk',col:C.warn}):null;
+
+  // stat card helper
+  var stat=function(label,val,sub,col){
+    return <div style={{background:C.bgInput,border:'1px solid '+C.border,borderRadius:8,padding:'9px 11px',minWidth:96,flex:'1 1 96px'}}>
+      <div style={{color:C.txtDim,fontSize:7.5,fontWeight:700,letterSpacing:1,textTransform:'uppercase',fontFamily:F,marginBottom:3}}>{label}</div>
+      <div style={{color:col||C.txtBright,fontSize:13,fontWeight:700,fontFamily:F}}>{val}</div>
+      {sub?<div style={{color:C.txtDim,fontSize:7.5,fontFamily:F,marginTop:2}}>{sub}</div>:null}
+    </div>;
+  };
+
+  // build profile rows (with spot marker spliced in)
+  var maxAbsGex=0,maxOI=0;
+  for(var di=0;di<dispStrikes.length;di++){var ds=dispStrikes[di];
+    if(Math.abs(ds.netGEX)>maxAbsGex)maxAbsGex=Math.abs(ds.netGEX);
+    if(ds.callOI>maxOI)maxOI=ds.callOI; if(ds.putOI>maxOI)maxOI=ds.putOI;}
+  if(maxAbsGex<=0)maxAbsGex=1; if(maxOI<=0)maxOI=1;
+  var cw=profile&&profile.callWall?profile.callWall.k:null;
+  var pw=profile&&profile.putWall?profile.putWall.k:null;
+
+  var rowEls=[];
+  for(var ri=0;ri<dispStrikes.length;ri++){
+    var s=dispStrikes[ri];
+    // spot marker before this row if spot is between previous strike and this one (desc order)
+    if(ri>0&&dispStrikes[ri-1].k>spot&&s.k<=spot){
+      rowEls.push(<div key={'spot'} style={{display:'flex',alignItems:'center',height:0,position:'relative'}}>
+        <div style={{position:'absolute',left:50,right:0,borderTop:'1px dashed '+C.blue,zIndex:2}}/>
+        <div style={{position:'absolute',right:2,top:-7,background:C.blue,color:'#000',fontSize:7.5,fontWeight:700,fontFamily:F,padding:'1px 5px',borderRadius:3,zIndex:3}}>SPOT ${fmtK(spot)}</div>
+      </div>);
+    }
+    var isCW=cw!=null&&s.k===cw, isPW=pw!=null&&s.k===pw;
+    var rowBg=isCW?C.gold+'12':(isPW?C.warn+'10':'transparent');
+    var gexW=Math.min(50,Math.abs(s.netGEX)/maxAbsGex*50);
+    var callW=Math.min(50,s.callOI/maxOI*50);
+    var putW=Math.min(50,s.putOI/maxOI*50);
+    var kColor=isCW?C.gold:(isPW?C.warn:(Math.abs(s.k-spot)/spot<0.012?C.blue:C.txtDim));
+    rowEls.push(<div key={'k'+s.k} style={{display:'flex',alignItems:'center',height:17,background:rowBg}}>
+      <div style={{width:48,textAlign:'right',paddingRight:4,color:kColor,fontSize:8.5,fontWeight:isCW||isPW?700:600,fontFamily:F}}>{fmtK(s.k)}</div>
+      <div style={{flex:1,position:'relative',height:13,display:'flex'}}>
+        <div style={{position:'absolute',left:'50%',top:0,bottom:0,borderLeft:'1px solid '+C.border,zIndex:1}}/>
+        {/* left half */}
+        <div style={{width:'50%',position:'relative',display:'flex',justifyContent:'flex-end'}}>
+          {view==='gex'
+            ?(s.netGEX<0?<div style={{width:gexW*2+'%',background:C.warn,opacity:0.8,height:11,alignSelf:'center',borderRadius:'2px 0 0 2px'}}/>:null)
+            :<div style={{width:putW*2+'%',background:C.blue,opacity:0.75,height:11,alignSelf:'center',borderRadius:'2px 0 0 2px'}}/>}
+        </div>
+        {/* right half */}
+        <div style={{width:'50%',position:'relative',display:'flex',justifyContent:'flex-start'}}>
+          {view==='gex'
+            ?(s.netGEX>=0?<div style={{width:gexW*2+'%',background:C.accent,opacity:0.8,height:11,alignSelf:'center',borderRadius:'0 2px 2px 0'}}/>:null)
+            :<div style={{width:callW*2+'%',background:C.accent,opacity:0.75,height:11,alignSelf:'center',borderRadius:'0 2px 2px 0'}}/>}
+        </div>
+      </div>
+      <div style={{width:70,textAlign:'right',paddingLeft:4,fontSize:7.5,fontFamily:F,color:view==='gex'?(s.netGEX>=0?C.accent:C.warn):C.txtDim}}>
+        {view==='gex'?fmtUSD(s.netGEX):(fmtNum(s.putOI)+' / '+fmtNum(s.callOI))}
+      </div>
+    </div>);
+  }
+
+  return <div>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
+      <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>GEX & Options Profile</div>
+    </div>
+
+    {/* Controls */}
+    <div style={card}>
+      <div style={{display:'flex',gap:8}}>
+        <div style={{flex:1}}>
+          <label style={lS}>Symbol</label>
+          <input value={symbol} onChange={function(e){setSymbol(e.target.value.toUpperCase());}}
+            onKeyDown={function(e){if(e.key==='Enter')load();}} style={iS} placeholder="e.g. NVDA"/>
+        </div>
+        <div style={{display:'flex',alignItems:'flex-end'}}>
+          <button onClick={load} disabled={loading||!symbol.trim()}
+            style={{padding:'10px 20px',border:'none',borderRadius:8,background:loading?C.border:'linear-gradient(135deg,'+C.purple+','+C.accent+')',
+              color:loading?C.txtDim:'#000',fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1,cursor:loading?'default':'pointer',opacity:!symbol.trim()?0.4:1}}>
+            {loading?'Loading...':'Load'}
+          </button>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:6,marginTop:10,alignItems:'center',flexWrap:'wrap'}}>
+        <span style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase'}}>Window</span>
+        {[30,45,60,90].map(function(w){return <button key={w} onClick={function(){setWindowDays(w);}}
+          style={{padding:'4px 9px',borderRadius:4,border:'1px solid '+(windowDays===w?C.accent+'66':C.border),background:windowDays===w?C.accent+'12':'transparent',
+            color:windowDays===w?C.accent:C.txtDim,fontSize:8.5,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{w}d</button>;})}
+        <span style={{color:C.txtDim,fontSize:7.5,fontFamily:F}}>expiries to include (re-load to apply)</span>
+      </div>
+      {prog&&<div style={{marginTop:8,color:C.gold,fontSize:9,fontFamily:F}}>{prog}</div>}
+      {err&&<div style={{marginTop:8,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
+      {!p.alpKey&&<div style={{marginTop:6,color:C.warn,fontSize:9,fontFamily:F}}>Set Alpaca API keys in Settings first.</div>}
+    </div>
+
+    {profile&&<div>
+      {/* Key levels */}
+      <div style={card}>
+        <div style={{color:C.txtBright,fontSize:11,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:3}}>{loadedSym} {'\u00b7'} Key Levels</div>
+        <div style={{color:regime.col,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:1}}>{regime.label} {'\u00b7'} Net GEX {fmtUSD(profile.totGEX)}</div>
+        <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginBottom:10}}>{regime.sub}</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:7}}>
+          {stat('Spot','$'+fmtK(spot),null,C.blue)}
+          {stat('Net GEX (per 1%)',fmtUSD(profile.totGEX),null,profile.totGEX>=0?C.accent:C.warn)}
+          {stat('Zero-Gamma Flip',profile.flip!=null?'$'+fmtK(profile.flip):'none in range','approx',C.purple)}
+          {stat('Call Wall',profile.callWall?'$'+fmtK(profile.callWall.k):'\u2014','max +GEX',C.gold)}
+          {stat('Put Wall',profile.putWall?'$'+fmtK(profile.putWall.k):'\u2014','max \u2212GEX',C.warn)}
+          {stat('Max Call OI',profile.maxCallOI?'$'+fmtK(profile.maxCallOI.k):'\u2014',profile.maxCallOI?fmtNum(profile.maxCallOI.callOI):'',C.accent)}
+          {stat('Max Put OI',profile.maxPutOI?'$'+fmtK(profile.maxPutOI.k):'\u2014',profile.maxPutOI?fmtNum(profile.maxPutOI.putOI):'',C.blue)}
+          {stat('Put/Call OI',profile.pcr!=null?profile.pcr.toFixed(2):'\u2014',null,C.txtBright)}
+        </div>
+        <div style={{color:C.txtDim,fontSize:7.5,fontFamily:F,marginTop:9}}>
+          OI as of {oiAsOf||'\u2014'} (prior-day settled) {'\u00b7'} {fmtNum(profile.totCallOI)} call OI {'\u00b7'} {fmtNum(profile.totPutOI)} put OI {'\u00b7'} {expiries.length} expiries loaded
+        </div>
+      </div>
+
+      {/* View + expiry filter */}
+      <div style={card}>
+        <div style={{display:'flex',gap:6,marginBottom:10,alignItems:'center'}}>
+          <span style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase'}}>View</span>
+          {[['gex','Net GEX'],['oi','Open Interest']].map(function(v){return <button key={v[0]} onClick={function(){setView(v[0]);}}
+            style={{padding:'5px 12px',borderRadius:5,border:'1px solid '+(view===v[0]?C.accent+'66':C.border),background:view===v[0]?C.accent+'12':'transparent',
+              color:view===v[0]?C.accent:C.txtDim,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer'}}>{v[1]}</button>;})}
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:12}}>
+          <button onClick={function(){setExpFilter('ALL');}}
+            style={{padding:'4px 8px',borderRadius:4,border:'1px solid '+(expFilter==='ALL'?C.gold+'66':C.border),background:expFilter==='ALL'?C.gold+'10':'transparent',
+              color:expFilter==='ALL'?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>ALL ({expiries.length})</button>
+          {expiries.map(function(exp){var d=new Date(exp+'T12:00:00');var dte=Math.ceil((d-Date.now())/86400000);
+            return <button key={exp} onClick={function(){setExpFilter(exp);}}
+              style={{padding:'4px 8px',borderRadius:4,border:'1px solid '+(expFilter===exp?C.gold+'66':C.border),background:expFilter===exp?C.gold+'10':'transparent',
+                color:expFilter===exp?C.gold:C.txtDim,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>{exp} ({dte}d)</button>;})}
+        </div>
+        {/* profile chart */}
+        <div style={{display:'flex',alignItems:'center',marginBottom:6}}>
+          <div style={{width:48,textAlign:'right',paddingRight:4,color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700}}>STRIKE</div>
+          <div style={{flex:1,display:'flex'}}>
+            <div style={{width:'50%',textAlign:'left',color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,paddingLeft:2}}>{view==='gex'?'\u2212 GEX (puts)':'PUT OI'}</div>
+            <div style={{width:'50%',textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700,paddingRight:2}}>{view==='gex'?'+ GEX (calls)':'CALL OI'}</div>
+          </div>
+          <div style={{width:70,textAlign:'right',color:C.txtDim,fontSize:7,fontFamily:F,fontWeight:700}}>{view==='gex'?'NET GEX':'PUT / CALL'}</div>
+        </div>
+        <div>{rowEls}</div>
+        {dispStrikes.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:'10px 0'}}>No strikes with open interest near spot for this filter.</div>}
+        <div style={{color:C.txtDim,fontSize:7.5,fontFamily:F,marginTop:8}}>
+          Showing strikes within {'\u00b1'}25% of spot{dispStrikes.length>=46?' (top 46 by OI)':''}. Gold row = call wall, red row = put wall, blue = at/near the money.
+        </div>
+      </div>
+
+      {/* Caveats */}
+      <div style={{background:C.bgCard,border:'1px solid '+C.warn+'33',borderRadius:10,padding:'12px 14px',marginBottom:14}}>
+        <div style={{color:C.warn,fontSize:8.5,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>How to read this {'\u00b7'} data caveats</div>
+        <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,lineHeight:1.55}}>
+          {'\u2022'} <b>Dealer-sign is an assumption.</b> GEX assumes dealers are long calls / short puts (the standard retail approximation). Alpaca gives raw OI {'\u00d7'} gamma per strike, not measured dealer-vs-customer positioning.<br/>
+          {'\u2022'} <b>Net GEX &gt; 0</b> = dealers hedge against the move (sell rallies / buy dips) {'\u2192'} vol-suppressing, mean-reverting, grid-friendly. <b>Net GEX &lt; 0</b> = dealers hedge with the move {'\u2192'} vol-amplifying, trending, grid risk.<br/>
+          {'\u2022'} <b>OI lags ~1 day</b> (prior-day OCC settle, as of {oiAsOf||'\u2014'}). Not live.<br/>
+          {'\u2022'} <b>Greeks are Alpaca-computed</b> off the indicative feed (15-min delayed on Basic). Null gamma on illiquid/deep-ITM contracts is excluded from the gamma sum but OI is still counted.<br/>
+          {'\u2022'} <b>Zero-gamma flip is approximate</b> (cumulative net-GEX zero-crossing across strikes), not a repriced gamma surface.<br/>
+          {'\u2022'} Near-term only: expiries within {windowDays} days.
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function OptionsChainPage(p){
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
   var s2=useState([]),contracts=s2[0],setContracts=s2[1];
@@ -30467,7 +30793,7 @@ function App(){
       setProg('');
     }catch(e){setErr(e.message);setProg('');}finally{setLd(false);}
   };
-  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'ethdr',label:'Essential Tools',type:'header'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'violentchop',label:'Holy Grail Screener',icon:'\u2928'},{key:'mostactives',label:'Most Actives',icon:'\u2191'},{key:'dailylowswing',label:'Daily Low To Swing High Screener',icon:'\u2922'},{key:'swingscreener',label:'Hourly Low To Swing High Screener',icon:'\u2922'},{key:'minuteswingscreener',label:'Minute Low To Swing High Screener',icon:'\u22CF'},{key:'volumeprofile',label:'Volume Profile (Multi-TF)',icon:'\u2637'},{key:'alpaca24atr',label:'24 Hour Stock Trade Profile',icon:'\u2261'},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4'},{key:'optionschain',label:'Options Chain Viewer',icon:'\u25C7'},{key:'hedgecalc',label:'Config Calculator & Hedging',icon:'\u2637'},{key:'nextdayrange',label:'Next Day Range Tool',icon:'\u2194'},{key:'fullmarketscan',label:'Full Market Scan',icon:'\u2316'},{key:'overnighthourly',label:'Overnight Hourly Activity',icon:'\u263E'},{key:'tradingzones',label:'World Trading Time Zones',icon:'\u25D1'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'objectives',label:'Objectives',icon:'\u25C9',indent:true},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
+  var menuItems=[{key:'home',label:'Home',icon:'\u2302'},{key:'ethdr',label:'Essential Tools',type:'header'},{key:'stocksatglance',label:'Stocks At Glance',icon:'\u25A6'},{key:'violentchop',label:'Holy Grail Screener',icon:'\u2928'},{key:'mostactives',label:'Most Actives',icon:'\u2191'},{key:'dailylowswing',label:'Daily Low To Swing High Screener',icon:'\u2922'},{key:'swingscreener',label:'Hourly Low To Swing High Screener',icon:'\u2922'},{key:'minuteswingscreener',label:'Minute Low To Swing High Screener',icon:'\u22CF'},{key:'volumeprofile',label:'Volume Profile (Multi-TF)',icon:'\u2637'},{key:'alpaca24atr',label:'24 Hour Stock Trade Profile',icon:'\u2261'},{key:'atrscreener',label:'ATR Stock Screener',icon:'\u25A4'},{key:'optionschain',label:'Options Chain Viewer',icon:'\u25C7'},{key:'gexprofile',label:'GEX & Options Profile',icon:'\u0393'},{key:'hedgecalc',label:'Config Calculator & Hedging',icon:'\u2637'},{key:'nextdayrange',label:'Next Day Range Tool',icon:'\u2194'},{key:'fullmarketscan',label:'Full Market Scan',icon:'\u2316'},{key:'overnighthourly',label:'Overnight Hourly Activity',icon:'\u263E'},{key:'tradingzones',label:'World Trading Time Zones',icon:'\u25D1'},{key:'s1h',label:'Stage 1: Measurement',type:'header'},{key:'objectives',label:'Objectives',icon:'\u25C9',indent:true},{key:'theproblem',label:'The Problem',icon:'\u26A0',indent:true},{key:'logic',label:'Core Logic',icon:'\u2261',indent:true},{key:'tradefinder',label:'Polygon Trade Finder',icon:'\u2315',indent:true},{key:'alpacafinder',label:'Alpaca Trade Finder',icon:'\u2726',indent:true},{key:'upload',label:'Verify Logic Data Upload',icon:'\u21E7',indent:true},{key:'main',label:'Cycles Analysis',icon:'\u2941',indent:true},{key:'optimal',label:'Daily Optimal TP% Finder',icon:'\u2605',indent:true},{key:'s1div',type:'divider'},{key:'s2h',label:'Stage 2: Optimization',type:'header'},{key:'adaptive',label:'Adaptive Optimization Logic',icon:'\u2699',indent:true},{key:'hourlyopt',label:'Hourly Optimal TP% Finder',icon:'\u2606',indent:true},{key:'s2div',type:'divider'},{key:'s3h',label:'Stage 3: Correlation',type:'header'},{key:'corrlogic',label:'Correlation Analysis Logic',icon:'\u2263',indent:true},{key:'features',label:'Features List',icon:'\u2630',indent:true},{key:'builddata',label:'Build Data Set',icon:'\u25B7',indent:true},{key:'corrfinder',label:'Correlation Finder',icon:'\u2726',indent:true},{key:'s3div',type:'divider'},{key:'s4h',label:'Stage 4: Prediction',type:'header'},{key:'predictlogic',label:'Prediction Logic',icon:'\u2263',indent:true},{key:'modelfinder',label:'ML Model Finder',icon:'\u2726',indent:true},{key:'predict',label:'Hourly TP% Predictor',icon:'\u2605',indent:true},{key:'s4div',type:'divider'},{key:'s5h',label:'Stage 5: Reinforcement Learning & AI Agents',type:'header'},{key:'aiagents',label:'Overview',icon:'\u2726',indent:true},{key:'s5div',type:'divider'},{key:'s6h',label:'Stage 6: Screening',type:'header'},{key:'oscscreener',label:'Stock Oscillation Screener',icon:'\u25CE',indent:true},{key:'closehighscreener',label:'Close To Swing High Screener',icon:'\u2934',indent:true},{key:'dailyswingscreener',label:'Daily Close To High Screener',icon:'\u2935',indent:true},{key:'dirbias',label:'Directional Bias & Streaks',icon:'\u2195',indent:true},{key:'recovery',label:'Recovery After Drop',icon:'\u21A9',indent:true},{key:'pullback',label:'Pullback After Rally',icon:'\u21AA',indent:true},{key:'zscore',label:'Mean Reversion Z-Score',icon:'\u2124',indent:true},{key:'squeeze',label:'Volatility Squeeze Detector',icon:'\u2B25',indent:true},{key:'rangepos',label:'52-Week Range Position',icon:'\u2195',indent:true},{key:'confluence',label:'Multi-Signal Confluence',icon:'\u2726',indent:true},{key:'volregime',label:'Volatility Regime Classification',icon:'\u25A3',indent:true},{key:'hourlyregime',label:'Hourly Volatility Regimes',icon:'\u2591',indent:true},{key:'cyclesim',label:'Cycle Simulator',icon:'\u21BB',indent:true},{key:'mfetracker',label:'MFE Tracker',icon:'\u2197',indent:true},{key:'overlapscreener',label:'Overlap Ratio Screener',icon:'\u2588',indent:true},{key:'extvol',label:'Extended Hours Activity',icon:'\u23F0',indent:true},{key:'unimembership',label:'Universe Membership',icon:'\u25CE',indent:true},{key:'hourlydata',label:'Hourly Data',icon:'\u23F2',indent:true},{key:'tradeanalysis',label:'Trade Analysis',icon:'\u25A3',indent:true},{key:'atranalysis',label:'Highest ATR %',icon:'\u25B2',indent:true},{key:'s6div',type:'divider'},{key:'s7h',label:'Stage 7: Live Analytics',type:'header'},{key:'mfedash',label:'MFE Dashboard',icon:'\u2605',indent:true},{key:'trueswing',label:'True Swing Analyzer',icon:'\u223F',indent:true},{key:'gridscanner',label:'Oscillation Candidate Scanner',icon:'\u25A6',indent:true},{key:'s7div',type:'divider'},{key:'s8h',label:'Stage 8: Forecasting',type:'header'},{key:'rangepredictor',label:'Range Predictor',icon:'\u2194',indent:true},{key:'volconcentration',label:'Volume Concentration',icon:'\u2585',indent:true},{key:'cycledensity',label:'Cycle Density Scanner',icon:'\u21BB',indent:true},{key:'cyclespeed',label:'Cycle Speed Analyzer',icon:'\u23F1',indent:true},{key:'gridplanner',label:'Oscillation Deployment Planner',icon:'\u25A8',indent:true},{key:'hourlyreturns',label:'Hourly Returns Heatmap',icon:'\u2600',indent:true},{key:'volstability',label:'Vol Stability Ranking',icon:'\u2261',indent:true},{key:'s8div',type:'divider'},{key:'s9h',label:'Stage 9: Dollar Volume Time',type:'header'},{key:'dvtlogic',label:'Dollar Volume Time Logic',icon:'\u2263',indent:true},{key:'dvtcalibrate',label:'Calibrate Thresholds',icon:'\u2699',indent:true},{key:'dvtbuilder',label:'Dollar Bar Builder',icon:'\u25A6',indent:true},{key:'dvtcompare',label:'Dollar vs Clock Comparison',icon:'\u2A4D',indent:true},{key:'dvtfeatures',label:'Dollar Features List',icon:'\u2630',indent:true},{key:'dvtbuild',label:'Build Dollar Data Set',icon:'\u25B7',indent:true},{key:'dvtcorr',label:'Dollar Correlation Finder',icon:'\u2726',indent:true},{key:'s9div',type:'divider'},{key:'s10h',label:'Stage 10: Chart Patterns',type:'header'},{key:'chartpatterns',label:'Chart Pattern Detection',icon:'\u25E2',indent:true},{key:'s10div',type:'divider'},{key:'sAh',label:'Stage A: Stock Classification',type:'header'},{key:'stockclass',label:'Vol \u00D7 Trend Regime Grid',icon:'\u25A6',indent:true},{key:'sAdiv',type:'divider'},{key:'sBh',label:'Stage B: Live Oscillation',type:'header'},{key:'opttpmin',label:'Optimal TP% · Minute Bars',icon:'\u25C9',indent:true},{key:'sBdiv',type:'divider'},{key:'batch',label:'Import Stock Data',icon:'\u25B6'},{key:'dbmanage',label:'Database Management',icon:'\u2630',indent:true},{key:'rawdata',label:'Download Raw Data',icon:'\u21E9',indent:true},{key:'source',label:'Source Code',icon:'\u2039\u203A'},{key:'settings',label:'Settings',icon:'\u2699'},{key:'logout',label:'Logout',icon:'\u2192'}];
   if(showSplash)return <Splash onDone={function(){setShowSplash(false);try{sessionStorage.setItem('aq_auth','1');}catch(e){}window.scrollTo(0,0);}}/>;
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:680,margin:'0 auto',transition:'background 0.3s'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -30557,6 +30883,7 @@ function App(){
     {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
