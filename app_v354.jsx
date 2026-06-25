@@ -15453,47 +15453,98 @@ function HedgeCalcPage(p){
 // Strike-axis options positioning profile (OI + dealer gamma exposure) from Alpaca data only.
 // OI: /v2/options/contracts (prior-day settled). Greeks: /v1beta1/options/snapshots (Alpaca-computed).
 // Dealer-sign convention: long calls (+gamma), short puts (-gamma) -- the standard retail GEX approximation.
-function buildGexProfile(contracts, snapshots, spot){
-  var MULT=100, PCT=0.01;
+// ---- Black-Scholes helpers: compute gamma in-house (Alpaca's indicative greeks are null for
+// most OTM strikes, which zeroed-out high-OI strikes). Gives every strike a real, expiry-accurate gamma.
+function gexNormCdf(x){
+  var t=1/(1+0.2316419*Math.abs(x));
+  var d=0.3989422804014327*Math.exp(-x*x/2);
+  var p=d*t*(0.31938153+t*(-0.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))));
+  return x>=0?1-p:p;
+}
+function gexBsPrice(S,K,T,r,sig,isCall){
+  if(!(S>0&&K>0&&T>0&&sig>0))return Math.max(0,isCall?S-K:K-S);
+  var sq=sig*Math.sqrt(T);
+  var d1=(Math.log(S/K)+(r+sig*sig/2)*T)/sq, d2=d1-sq;
+  if(isCall)return S*gexNormCdf(d1)-K*Math.exp(-r*T)*gexNormCdf(d2);
+  return K*Math.exp(-r*T)*gexNormCdf(-d2)-S*gexNormCdf(-d1);
+}
+function gexBsGamma(S,K,T,r,sig){
+  if(!(S>0&&K>0&&T>0&&sig>0))return 0;
+  var sq=sig*Math.sqrt(T);
+  var d1=(Math.log(S/K)+(r+sig*sig/2)*T)/sq;
+  var pdf=0.3989422804014327*Math.exp(-d1*d1/2);
+  return pdf/(S*sig*sq);
+}
+function gexImpliedVol(price,S,K,T,r,isCall){
+  if(!(price>0&&S>0&&K>0&&T>0))return null;
+  var intr=Math.max(0,isCall?S-K:K-S);
+  if(price<=intr+1e-6)return null;
+  if(price>=S)return null;
+  var lo=0.01,hi=5.0;
+  for(var i=0;i<64;i++){var mid=(lo+hi)/2; if(gexBsPrice(S,K,T,r,mid,isCall)>price)hi=mid; else lo=mid;}
+  var iv=(lo+hi)/2; return (iv>0.012&&iv<4.98)?iv:null;
+}
+function buildGexProfile(contracts, snapshots, spot, nowMs){
+  var MULT=100, PCT=0.01, R=0.04, YEAR=365*24*3600*1000, MIN_T=0.5/(365*24), now=nowMs||Date.now();
+  // Pass 1: resolve IV per contract (snapshot IV -> solve from price -> ATM fallback). Track ATM IV.
+  var ivBySym={}, atmIv=null, atmDist=Infinity, nSnapIv=0, nSolved=0, nFallback=0;
+  for(var a=0;a<contracts.length;a++){
+    var c=contracts[a], Ka=+c.strike_price; if(!isFinite(Ka))continue;
+    var Ta=Math.max((Date.parse(c.expiration_date+'T20:00:00Z')-now)/YEAR, MIN_T);
+    var snap=snapshots[c.symbol], iv=null;
+    if(snap&&snap.impliedVolatility!=null&&isFinite(+snap.impliedVolatility)&&+snap.impliedVolatility>0.01&&+snap.impliedVolatility<5){iv=+snap.impliedVolatility;nSnapIv++;}
+    if(iv==null&&snap){
+      var mid=null;
+      if(snap.latestQuote){var bp=+snap.latestQuote.bp||0, ap=+snap.latestQuote.ap||0; if(bp>0&&ap>0)mid=(bp+ap)/2; else if(ap>0)mid=ap; else if(bp>0)mid=bp;}
+      if(mid==null&&snap.latestTrade&&+snap.latestTrade.p>0)mid=+snap.latestTrade.p;
+      if(mid==null&&c.close_price&&+c.close_price>0)mid=+c.close_price;
+      if(mid!=null){var solved=gexImpliedVol(mid,spot,Ka,Ta,R,c.type==='call'); if(solved!=null){iv=solved;nSolved++;}}
+    }
+    ivBySym[c.symbol]=iv;
+    if(iv!=null){var dd=Math.abs(Ka-spot); if(dd<atmDist){atmDist=dd;atmIv=iv;}}
+  }
+  if(atmIv==null)atmIv=0.6;
+  // Pass 2: aggregate per strike using BS gamma (every contract gets a gamma)
   var byK={};
   for(var i=0;i<contracts.length;i++){
-    var c=contracts[i]; var k=+c.strike_price; if(!isFinite(k))continue;
-    var oi=+c.open_interest; if(!isFinite(oi))oi=0;
-    var snap=snapshots[c.symbol];
-    var g=(snap&&snap.greeks&&snap.greeks.gamma!=null&&isFinite(+snap.greeks.gamma))?+snap.greeks.gamma:null;
-    if(!byK[k])byK[k]={k:k,callOI:0,putOI:0,cGoi:0,pGoi:0,gN:0};
+    var c2=contracts[i], k=+c2.strike_price; if(!isFinite(k))continue;
+    var oi=+c2.open_interest; if(!isFinite(oi))oi=0;
+    var T2=Math.max((Date.parse(c2.expiration_date+'T20:00:00Z')-now)/YEAR, MIN_T);
+    var iv2=ivBySym[c2.symbol]; if(iv2==null){iv2=atmIv;nFallback++;}
+    var g=gexBsGamma(spot,k,T2,R,iv2);
+    if(!byK[k])byK[k]={k:k,callOI:0,putOI:0,cGoi:0,pGoi:0};
     var s=byK[k];
-    if(c.type==='call'){s.callOI+=oi; if(g!=null){s.cGoi+=g*oi; s.gN++;}}
-    else if(c.type==='put'){s.putOI+=oi; if(g!=null){s.pGoi+=g*oi; s.gN++;}}
+    if(c2.type==='call'){s.callOI+=oi; s.cGoi+=g*oi;}
+    else if(c2.type==='put'){s.putOI+=oi; s.pGoi+=g*oi;}
   }
   var strikes=Object.keys(byK).map(function(x){return byK[x];}).sort(function(a,b){return a.k-b.k;});
   var totGEX=0,totCallOI=0,totPutOI=0;
-  for(var j=0;j<strikes.length;j++){var s=strikes[j];
-    s.callGEX=s.cGoi*MULT*spot*spot*PCT;
-    s.putGEX =s.pGoi*MULT*spot*spot*PCT;
-    s.netGEX =s.callGEX - s.putGEX;
-    s.netOI  =s.callOI - s.putOI;
-    totGEX+=s.netGEX; totCallOI+=s.callOI; totPutOI+=s.putOI;
+  for(var j=0;j<strikes.length;j++){var s2=strikes[j];
+    s2.callGEX=s2.cGoi*MULT*spot*spot*PCT;
+    s2.putGEX =s2.pGoi*MULT*spot*spot*PCT;
+    s2.netGEX =s2.callGEX - s2.putGEX;
+    s2.netOI  =s2.callOI - s2.putOI;
+    totGEX+=s2.netGEX; totCallOI+=s2.callOI; totPutOI+=s2.putOI;
   }
   var callWall=null,putWall=null,maxCallOI=null,maxPutOI=null;
-  for(var m=0;m<strikes.length;m++){var s2=strikes[m];
-    if(s2.netGEX>0&&(!callWall||s2.netGEX>callWall.netGEX))callWall=s2;
-    if(s2.netGEX<0&&(!putWall||s2.netGEX<putWall.netGEX))putWall=s2;
-    if(!maxCallOI||s2.callOI>maxCallOI.callOI)maxCallOI=s2;
-    if(!maxPutOI||s2.putOI>maxPutOI.putOI)maxPutOI=s2;
+  for(var m=0;m<strikes.length;m++){var s3=strikes[m];
+    if(s3.netGEX>0&&(!callWall||s3.netGEX>callWall.netGEX))callWall=s3;
+    if(s3.netGEX<0&&(!putWall||s3.netGEX<putWall.netGEX))putWall=s3;
+    if(!maxCallOI||s3.callOI>maxCallOI.callOI)maxCallOI=s3;
+    if(!maxPutOI||s3.putOI>maxPutOI.putOI)maxPutOI=s3;
   }
   // zero-gamma flip (approx): cumulative netGEX by strike crossing zero
   var cum=0,flip=null,prevCum=0,prevK=null;
-  for(var n=0;n<strikes.length;n++){var s3=strikes[n];prevCum=cum;cum+=s3.netGEX;
+  for(var n=0;n<strikes.length;n++){var s4=strikes[n];prevCum=cum;cum+=s4.netGEX;
     if(prevK!=null&&((prevCum<0&&cum>=0)||(prevCum>0&&cum<=0))){
       var frac=prevCum===cum?0:(-prevCum)/(cum-prevCum);
-      flip=prevK+frac*(s3.k-prevK);
+      flip=prevK+frac*(s4.k-prevK);
     }
-    prevK=s3.k;
+    prevK=s4.k;
   }
   return {strikes:strikes,totGEX:totGEX,totCallOI:totCallOI,totPutOI:totPutOI,
     callWall:callWall,putWall:putWall,maxCallOI:maxCallOI,maxPutOI:maxPutOI,flip:flip,
-    pcr:totCallOI>0?totPutOI/totCallOI:null};
+    pcr:totCallOI>0?totPutOI/totCallOI:null,atmIv:atmIv,nSnapIv:nSnapIv,nSolved:nSolved,nFallback:nFallback};
 }
 
 function GexOptionsProfilePage(p){
@@ -15731,9 +15782,10 @@ function GexOptionsProfilePage(p){
           {stat('Max Call OI',profile.maxCallOI?'$'+fmtK(profile.maxCallOI.k):'\u2014',profile.maxCallOI?fmtNum(profile.maxCallOI.callOI):'',C.accent)}
           {stat('Max Put OI',profile.maxPutOI?'$'+fmtK(profile.maxPutOI.k):'\u2014',profile.maxPutOI?fmtNum(profile.maxPutOI.putOI):'',C.blue)}
           {stat('Put/Call OI',profile.pcr!=null?profile.pcr.toFixed(2):'\u2014',null,C.txtBright)}
+          {stat('ATM IV (model)',profile.atmIv!=null?(profile.atmIv*100).toFixed(0)+'%':'n/a','BS gamma input',C.purple)}
         </div>
         <div style={{color:C.txtDim,fontSize:7.5,fontFamily:F,marginTop:9}}>
-          OI as of {oiAsOf||'\u2014'} (prior-day settled) {'\u00b7'} {fmtNum(profile.totCallOI)} call OI {'\u00b7'} {fmtNum(profile.totPutOI)} put OI {'\u00b7'} {expiries.length} expiries loaded
+          OI as of {oiAsOf||'\u2014'} (prior-day settled) {'\u00b7'} {fmtNum(profile.totCallOI)} call OI {'\u00b7'} {fmtNum(profile.totPutOI)} put OI {'\u00b7'} {expiries.length} expiries loaded | gamma: {profile.nSnapIv} snapshot IV / {profile.nSolved} solved / {profile.nFallback} ATM-fallback
         </div>
       </div>
 
@@ -15774,10 +15826,10 @@ function GexOptionsProfilePage(p){
       <div style={{background:C.bgCard,border:'1px solid '+C.warn+'33',borderRadius:10,padding:'12px 14px',marginBottom:14}}>
         <div style={{color:C.warn,fontSize:8.5,fontWeight:700,letterSpacing:1,fontFamily:F,textTransform:'uppercase',marginBottom:6}}>How to read this {'\u00b7'} data caveats</div>
         <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,lineHeight:1.55}}>
-          {'\u2022'} <b>Dealer-sign is an assumption.</b> GEX assumes dealers are long calls / short puts (the standard retail approximation). Alpaca gives raw OI {'\u00d7'} gamma per strike, not measured dealer-vs-customer positioning.<br/>
+          {'\u2022'} <b>Dealer-sign is an assumption.</b> GEX assumes dealers are long calls / short puts (the standard retail approximation). We multiply OI {'\u00d7'} gamma per strike, not measured dealer-vs-customer positioning.<br/>
           {'\u2022'} <b>Net GEX &gt; 0</b> = dealers hedge against the move (sell rallies / buy dips) {'\u2192'} vol-suppressing, mean-reverting, grid-friendly. <b>Net GEX &lt; 0</b> = dealers hedge with the move {'\u2192'} vol-amplifying, trending, grid risk.<br/>
           {'\u2022'} <b>OI lags ~1 day</b> (prior-day OCC settle, as of {oiAsOf||'\u2014'}). Not live.<br/>
-          {'\u2022'} <b>Greeks are Alpaca-computed</b> off the indicative feed (15-min delayed on Basic). Null gamma on illiquid/deep-ITM contracts is excluded from the gamma sum but OI is still counted.<br/>
+          {'\u2022'} <b>Gamma is computed in-house via Black-Scholes</b> (market IV + exact time-to-expiry). Alpaca's indicative greeks return null gamma on most OTM strikes, which would zero-out high-OI strikes; so IV is taken from the snapshot where present, else solved from the option's market price, else the ATM IV.<br/>
           {'\u2022'} <b>Zero-gamma flip is approximate</b> (cumulative net-GEX zero-crossing across strikes), not a repriced gamma surface.<br/>
           {'\u2022'} Defaults to the nearest expiry per symbol{expiries.length?' (loaded '+expiries.length+', nearest '+expiries[0]+')':''}. Pick ALL or another expiry above for a wider view.
         </div>
