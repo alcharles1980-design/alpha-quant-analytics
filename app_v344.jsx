@@ -14516,27 +14516,27 @@ function WorldTradingTimeZonesPage(p){
 
   var GRN=C.accent,BLU=C.blue,PRP=C.purple;
   var EX=[
-    {sh:'NYSE',name:'New York (NYSE / Nasdaq)',city:'New York',tz:'America/New_York',open:570,close:960,days:[1,2,3,4,5],col:GRN},
-    {sh:'TSX',name:'Toronto Stock Exchange',city:'Toronto',tz:'America/Toronto',open:570,close:960,days:[1,2,3,4,5],col:GRN},
-    {sh:'BMV',name:'Bolsa Mexicana',city:'Mexico City',tz:'America/Mexico_City',open:510,close:900,days:[1,2,3,4,5],col:GRN},
-    {sh:'B3',name:'B3 \u2013 Brasil Bolsa',city:'S\u00E3o Paulo',tz:'America/Sao_Paulo',open:600,close:1020,days:[1,2,3,4,5],col:GRN},
-    {sh:'LSE',name:'London Stock Exchange',city:'London',tz:'Europe/London',open:480,close:990,days:[1,2,3,4,5],col:BLU},
-    {sh:'ENX',name:'Euronext',city:'Paris',tz:'Europe/Paris',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
-    {sh:'XETR',name:'Deutsche B\u00F6rse (Xetra)',city:'Frankfurt',tz:'Europe/Berlin',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
-    {sh:'SIX',name:'SIX Swiss Exchange',city:'Zurich',tz:'Europe/Zurich',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
-    {sh:'MIL',name:'Borsa Italiana',city:'Milan',tz:'Europe/Rome',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
-    {sh:'JSE',name:'Johannesburg Stock Exch.',city:'Johannesburg',tz:'Africa/Johannesburg',open:540,close:1020,days:[1,2,3,4,5],col:BLU},
-    {sh:'TAD',name:'Saudi Exchange (Tadawul)',city:'Riyadh',tz:'Asia/Riyadh',open:600,close:900,days:[0,1,2,3,4],col:BLU},
-    {sh:'NSE',name:'India (NSE / BSE)',city:'Mumbai',tz:'Asia/Kolkata',open:555,close:930,days:[1,2,3,4,5],col:PRP},
-    {sh:'SGX',name:'Singapore Exchange',city:'Singapore',tz:'Asia/Singapore',open:540,close:1020,days:[1,2,3,4,5],col:PRP},
-    {sh:'HKEX',name:'Hong Kong Exchange',city:'Hong Kong',tz:'Asia/Hong_Kong',open:570,close:960,lunch:[720,780],days:[1,2,3,4,5],col:PRP},
-    {sh:'SSE',name:'Shanghai Stock Exchange',city:'Shanghai',tz:'Asia/Shanghai',open:570,close:900,lunch:[690,780],days:[1,2,3,4,5],col:PRP},
-    {sh:'SZSE',name:'Shenzhen Stock Exchange',city:'Shenzhen',tz:'Asia/Shanghai',open:570,close:900,lunch:[690,780],days:[1,2,3,4,5],col:PRP},
-    {sh:'TWSE',name:'Taiwan Stock Exchange',city:'Taipei',tz:'Asia/Taipei',open:540,close:810,days:[1,2,3,4,5],col:PRP},
-    {sh:'KRX',name:'Korea Exchange',city:'Seoul',tz:'Asia/Seoul',open:540,close:930,days:[1,2,3,4,5],col:PRP},
-    {sh:'TSE',name:'Tokyo Stock Exchange',city:'Tokyo',tz:'Asia/Tokyo',open:540,close:930,lunch:[690,750],days:[1,2,3,4,5],col:PRP},
-    {sh:'ASX',name:'Australian Sec. Exchange',city:'Sydney',tz:'Australia/Sydney',open:600,close:960,days:[1,2,3,4,5],col:PRP},
-    {sh:'NZX',name:'New Zealand Exchange',city:'Wellington',tz:'Pacific/Auckland',open:600,close:1005,days:[1,2,3,4,5],col:PRP}
+    {sh:'NYSE',country:'United States',mcap:67,name:'New York (NYSE / Nasdaq)',city:'New York',tz:'America/New_York',open:570,close:960,days:[1,2,3,4,5],col:GRN},
+    {sh:'TSX',country:'Canada',mcap:4.5,name:'Toronto Stock Exchange',city:'Toronto',tz:'America/Toronto',open:570,close:960,days:[1,2,3,4,5],col:GRN},
+    {sh:'BMV',country:'Mexico',mcap:0.45,est:true,name:'Bolsa Mexicana',city:'Mexico City',tz:'America/Mexico_City',open:510,close:900,days:[1,2,3,4,5],col:GRN},
+    {sh:'B3',country:'Brazil',mcap:1.1,name:'B3 \u2013 Brasil Bolsa',city:'S\u00E3o Paulo',tz:'America/Sao_Paulo',open:600,close:1020,days:[1,2,3,4,5],col:GRN},
+    {sh:'LSE',country:'United Kingdom',mcap:3.99,name:'London Stock Exchange',city:'London',tz:'Europe/London',open:480,close:990,days:[1,2,3,4,5],col:BLU},
+    {sh:'ENX',country:'Europe (Euronext)',mcap:7.45,name:'Euronext',city:'Paris',tz:'Europe/Paris',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'XETR',country:'Germany',mcap:3.06,name:'Deutsche B\u00F6rse (Xetra)',city:'Frankfurt',tz:'Europe/Berlin',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'SIX',country:'Switzerland',mcap:1.79,name:'SIX Swiss Exchange',city:'Zurich',tz:'Europe/Zurich',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'MIL',country:'Italy',mcap:0.78,est:true,name:'Borsa Italiana',city:'Milan',tz:'Europe/Rome',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
+    {sh:'JSE',country:'South Africa',mcap:1.53,name:'Johannesburg Stock Exch.',city:'Johannesburg',tz:'Africa/Johannesburg',open:540,close:1020,days:[1,2,3,4,5],col:BLU},
+    {sh:'TAD',country:'Saudi Arabia',mcap:2.63,name:'Saudi Exchange (Tadawul)',city:'Riyadh',tz:'Asia/Riyadh',open:600,close:900,days:[0,1,2,3,4],col:BLU},
+    {sh:'NSE',country:'India',mcap:4.83,name:'India (NSE / BSE)',city:'Mumbai',tz:'Asia/Kolkata',open:555,close:930,days:[1,2,3,4,5],col:PRP},
+    {sh:'SGX',country:'Singapore',mcap:0.63,est:true,name:'Singapore Exchange',city:'Singapore',tz:'Asia/Singapore',open:540,close:1020,days:[1,2,3,4,5],col:PRP},
+    {sh:'HKEX',country:'Hong Kong',mcap:6.2,name:'Hong Kong Exchange',city:'Hong Kong',tz:'Asia/Hong_Kong',open:570,close:960,lunch:[720,780],days:[1,2,3,4,5],col:PRP},
+    {sh:'SSE',country:'China',mcap:10.21,name:'Shanghai Stock Exchange',city:'Shanghai',tz:'Asia/Shanghai',open:570,close:900,lunch:[690,780],days:[1,2,3,4,5],col:PRP},
+    {sh:'SZSE',country:'China',mcap:7.3,name:'Shenzhen Stock Exchange',city:'Shenzhen',tz:'Asia/Shanghai',open:570,close:900,lunch:[690,780],days:[1,2,3,4,5],col:PRP},
+    {sh:'TWSE',country:'Taiwan',mcap:4.95,name:'Taiwan Stock Exchange',city:'Taipei',tz:'Asia/Taipei',open:540,close:810,days:[1,2,3,4,5],col:PRP},
+    {sh:'KRX',country:'South Korea',mcap:4.89,name:'Korea Exchange',city:'Seoul',tz:'Asia/Seoul',open:540,close:930,days:[1,2,3,4,5],col:PRP},
+    {sh:'TSE',country:'Japan',mcap:7.95,name:'Tokyo Stock Exchange',city:'Tokyo',tz:'Asia/Tokyo',open:540,close:930,lunch:[690,750],days:[1,2,3,4,5],col:PRP},
+    {sh:'ASX',country:'Australia',mcap:1.97,name:'Australian Sec. Exchange',city:'Sydney',tz:'Australia/Sydney',open:600,close:960,days:[1,2,3,4,5],col:PRP},
+    {sh:'NZX',country:'New Zealand',mcap:0.14,est:true,name:'New Zealand Exchange',city:'Wellington',tz:'Pacific/Auckland',open:600,close:1005,days:[1,2,3,4,5],col:PRP}
   ];
 
   var userOffset=-now.getTimezoneOffset();
@@ -14565,7 +14565,8 @@ function WorldTradingTimeZonesPage(p){
   var rank={open:0,break:1,closed:2};
   var tblRows=rows.slice().sort(function(a,b){if(rank[a.state]!==rank[b.state])return rank[a.state]-rank[b.state];return (a.mins||0)-(b.mins||0);});
 
-  var LBLW=58;
+  var fmtCap=function(tn){if(tn>=1){var s=(Math.round(tn*10)/10).toFixed(1);if(s.slice(-2)==='.0')s=s.slice(0,-2);return '$'+s+'T';}return '$'+Math.round(tn*1000)+'B';};
+  var LBLW=112;
   var hourTicks=[0,3,6,9,12,15,18,21,24];
   var statCol=function(st){return st==='open'?C.accent:st==='break'?C.gold:C.txtDim;};
   var clockStr=fmtClock(now.getHours()*60+now.getMinutes())+':'+(now.getSeconds()<10?'0':'')+now.getSeconds();
@@ -14603,10 +14604,14 @@ function WorldTradingTimeZonesPage(p){
           {hourTicks.map(function(hh){return <div key={hh} style={{position:'absolute',left:(hh/24*100)+'%',top:0,bottom:0,width:1,background:C.grid}}></div>;})}
           <div style={{position:'absolute',left:(userMod/1440*100)+'%',top:0,bottom:0,width:2,background:C.warn,boxShadow:'0 0 4px '+C.warn}}></div>
         </div>
-        {tlRows.map(function(r,i){return <div key={i} style={{display:'flex',alignItems:'center',height:20}}>
-          <div style={{width:LBLW,flexShrink:0,display:'flex',alignItems:'center',gap:4,fontFamily:F}}>
-            <span style={{width:6,height:6,borderRadius:6,background:statCol(r.state),flexShrink:0}}></span>
-            <span style={{fontSize:8.5,fontWeight:700,color:r.state==='closed'?C.txtDim:C.txtBright}}>{r.ex.sh}</span>
+        {tlRows.map(function(r,i){var dim=r.state==='closed';return <div key={i} style={{display:'flex',alignItems:'center',height:26}}>
+          <div style={{width:LBLW,flexShrink:0,fontFamily:F,paddingRight:6,boxSizing:'border-box'}}>
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              <span style={{width:6,height:6,borderRadius:6,background:statCol(r.state),flexShrink:0}}></span>
+              <span style={{fontSize:8.5,fontWeight:700,color:dim?C.txtDim:C.txtBright}}>{r.ex.sh}</span>
+              <span style={{marginLeft:'auto',fontSize:7.5,fontWeight:700,color:dim?C.txtDim:r.ex.col,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{(r.ex.est?'~':'')+fmtCap(r.ex.mcap)}</span>
+            </div>
+            <div style={{fontSize:7,color:C.txtDim,paddingLeft:10,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.ex.country}</div>
           </div>
           <div style={{flex:1,position:'relative',height:12}}>
             {r.ivals.map(function(iv,j){var active=(r.state==='open'||r.state==='break');return <div key={j} style={{position:'absolute',left:(iv[0]/1440*100)+'%',width:Math.max(0.4,(iv[1]-iv[0])/1440*100)+'%',top:0,bottom:0,background:r.ex.col,borderRadius:2,opacity:active?0.95:0.42}}></div>;})}
@@ -14618,6 +14623,7 @@ function WorldTradingTimeZonesPage(p){
         <span><span style={{display:'inline-block',width:9,height:9,borderRadius:2,background:BLU,verticalAlign:'middle',marginRight:4}}></span>Europe / Africa / Middle East</span>
         <span><span style={{display:'inline-block',width:9,height:9,borderRadius:2,background:PRP,verticalAlign:'middle',marginRight:4}}></span>Asia / Pacific</span>
       </div>
+      <div style={{marginTop:8,fontSize:7,fontFamily:F,color:C.txtDim,lineHeight:1.5}}>Figure by each market is its total listed market cap (WFE data, Apr/May 2026); a leading ~ marks an approximate value for venues below the $1T tier. Euronext is the pan-European group (Milan shown separately); India counted once due to NSE/BSE overlap. Per-exchange totals include dual and foreign listings, so they are not additive.</div>
     </Cd>
 
     <Cd>
