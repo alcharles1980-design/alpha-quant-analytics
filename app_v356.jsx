@@ -15473,13 +15473,13 @@ function gexBsGamma(S,K,T,r,sig){
   var sq=sig*Math.sqrt(T);
   var d1=(Math.log(S/K)+(r+sig*sig/2)*T)/sq;
   var pdf=0.3989422804014327*Math.exp(-d1*d1/2);
-  return pdf/(S*sig*sq);
+  return pdf/(S*sq);
 }
 function gexImpliedVol(price,S,K,T,r,isCall){
   if(!(price>0&&S>0&&K>0&&T>0))return null;
   var intr=Math.max(0,isCall?S-K:K-S);
   if(price<=intr+1e-6)return null;
-  if(price>=S)return null;
+  if(price>=(isCall?S:K))return null;
   var lo=0.01,hi=5.0;
   for(var i=0;i<64;i++){var mid=(lo+hi)/2; if(gexBsPrice(S,K,T,r,mid,isCall)>price)hi=mid; else lo=mid;}
   var iv=(lo+hi)/2; return (iv>0.012&&iv<4.98)?iv:null;
