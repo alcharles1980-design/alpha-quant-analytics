@@ -15486,24 +15486,24 @@ function gexImpliedVol(price,S,K,T,r,isCall){
 }
 function buildGexProfile(contracts, snapshots, spot, nowMs){
   var MULT=100, PCT=0.01, R=0.04, YEAR=365*24*3600*1000, MIN_T=0.5/(365*24), now=nowMs||Date.now();
-  // Pass 1: resolve IV per contract (snapshot IV -> solve from price -> ATM fallback). Track ATM IV.
-  var ivBySym={}, atmIv=null, atmDist=Infinity, nSnapIv=0, nSolved=0, nFallback=0;
+  // Pass 1: resolve IV per contract by SOLVING from the market price. Alpaca's indicative
+  // greeks/IV are null or unreliable (often bogus-low) for OTM strikes, which would zero out
+  // high-OI strikes; the market price is the trustworthy signal, so snapshot IV is NOT used.
+  var ivBySym={}, nearIv=[], allIv=[], nSnapIv=0, nSolved=0, nFallback=0;
   for(var a=0;a<contracts.length;a++){
     var c=contracts[a], Ka=+c.strike_price; if(!isFinite(Ka))continue;
     var Ta=Math.max((Date.parse(c.expiration_date+'T20:00:00Z')-now)/YEAR, MIN_T);
-    var snap=snapshots[c.symbol], iv=null;
-    if(snap&&snap.impliedVolatility!=null&&isFinite(+snap.impliedVolatility)&&+snap.impliedVolatility>0.01&&+snap.impliedVolatility<5){iv=+snap.impliedVolatility;nSnapIv++;}
-    if(iv==null&&snap){
-      var mid=null;
-      if(snap.latestQuote){var bp=+snap.latestQuote.bp||0, ap=+snap.latestQuote.ap||0; if(bp>0&&ap>0)mid=(bp+ap)/2; else if(ap>0)mid=ap; else if(bp>0)mid=bp;}
-      if(mid==null&&snap.latestTrade&&+snap.latestTrade.p>0)mid=+snap.latestTrade.p;
-      if(mid==null&&c.close_price&&+c.close_price>0)mid=+c.close_price;
-      if(mid!=null){var solved=gexImpliedVol(mid,spot,Ka,Ta,R,c.type==='call'); if(solved!=null){iv=solved;nSolved++;}}
-    }
+    var snap=snapshots[c.symbol], iv=null, mid=null;
+    if(snap&&snap.latestQuote){var bp=+snap.latestQuote.bp||0, ap=+snap.latestQuote.ap||0; if(bp>0&&ap>0)mid=(bp+ap)/2; else if(ap>0)mid=ap; else if(bp>0)mid=bp;}
+    if(mid==null&&snap&&snap.latestTrade&&+snap.latestTrade.p>0)mid=+snap.latestTrade.p;
+    if(mid==null&&c.close_price&&+c.close_price>0)mid=+c.close_price;
+    if(mid!=null){var solved=gexImpliedVol(mid,spot,Ka,Ta,R,c.type==='call'); if(solved!=null){iv=solved;nSolved++;}}
     ivBySym[c.symbol]=iv;
-    if(iv!=null){var dd=Math.abs(Ka-spot); if(dd<atmDist){atmDist=dd;atmIv=iv;}}
+    if(iv!=null){allIv.push(iv); if(Math.abs(Ka-spot)<=spot*0.07)nearIv.push(iv);}
   }
-  if(atmIv==null)atmIv=0.6;
+  // ATM IV = median of near-spot solved IVs (robust to a single noisy strike); feeds the fallback.
+  var ivPool=nearIv.length?nearIv:allIv; ivPool.sort(function(x,y){return x-y;});
+  var atmIv=ivPool.length?ivPool[Math.floor(ivPool.length/2)]:0.6;
   // Pass 2: aggregate per strike using BS gamma (every contract gets a gamma)
   var byK={};
   for(var i=0;i<contracts.length;i++){
@@ -15782,10 +15782,10 @@ function GexOptionsProfilePage(p){
           {stat('Max Call OI',profile.maxCallOI?'$'+fmtK(profile.maxCallOI.k):'\u2014',profile.maxCallOI?fmtNum(profile.maxCallOI.callOI):'',C.accent)}
           {stat('Max Put OI',profile.maxPutOI?'$'+fmtK(profile.maxPutOI.k):'\u2014',profile.maxPutOI?fmtNum(profile.maxPutOI.putOI):'',C.blue)}
           {stat('Put/Call OI',profile.pcr!=null?profile.pcr.toFixed(2):'\u2014',null,C.txtBright)}
-          {stat('ATM IV (model)',profile.atmIv!=null?(profile.atmIv*100).toFixed(0)+'%':'n/a','BS gamma input',C.purple)}
+          {stat('ATM IV (model)',profile.atmIv!=null?(profile.atmIv*100).toFixed(0)+'%':'n/a','near-spot, solved',C.purple)}
         </div>
         <div style={{color:C.txtDim,fontSize:7.5,fontFamily:F,marginTop:9}}>
-          OI as of {oiAsOf||'\u2014'} (prior-day settled) {'\u00b7'} {fmtNum(profile.totCallOI)} call OI {'\u00b7'} {fmtNum(profile.totPutOI)} put OI {'\u00b7'} {expiries.length} expiries loaded | gamma: {profile.nSnapIv} snapshot IV / {profile.nSolved} solved / {profile.nFallback} ATM-fallback
+          OI as of {oiAsOf||'\u2014'} (prior-day settled) {'\u00b7'} {fmtNum(profile.totCallOI)} call OI {'\u00b7'} {fmtNum(profile.totPutOI)} put OI {'\u00b7'} {expiries.length} expiries loaded | IV: {profile.nSolved} solved from price / {profile.nFallback} ATM-fallback
         </div>
       </div>
 
@@ -15829,7 +15829,7 @@ function GexOptionsProfilePage(p){
           {'\u2022'} <b>Dealer-sign is an assumption.</b> GEX assumes dealers are long calls / short puts (the standard retail approximation). We multiply OI {'\u00d7'} gamma per strike, not measured dealer-vs-customer positioning.<br/>
           {'\u2022'} <b>Net GEX &gt; 0</b> = dealers hedge against the move (sell rallies / buy dips) {'\u2192'} vol-suppressing, mean-reverting, grid-friendly. <b>Net GEX &lt; 0</b> = dealers hedge with the move {'\u2192'} vol-amplifying, trending, grid risk.<br/>
           {'\u2022'} <b>OI lags ~1 day</b> (prior-day OCC settle, as of {oiAsOf||'\u2014'}). Not live.<br/>
-          {'\u2022'} <b>Gamma is computed in-house via Black-Scholes</b> (market IV + exact time-to-expiry). Alpaca's indicative greeks return null gamma on most OTM strikes, which would zero-out high-OI strikes; so IV is taken from the snapshot where present, else solved from the option's market price, else the ATM IV.<br/>
+          {'\u2022'} <b>Gamma is computed in-house via Black-Scholes</b> (market IV + exact time-to-expiry). Alpaca's indicative greeks/IV are null or unreliable for many OTM strikes, which would zero-out high-OI strikes; so IV is solved from each option's market price (bid/ask mid, last trade, or prior close), falling back to the near-spot ATM IV when no price is available.<br/>
           {'\u2022'} <b>Zero-gamma flip is approximate</b> (cumulative net-GEX zero-crossing across strikes), not a repriced gamma surface.<br/>
           {'\u2022'} Defaults to the nearest expiry per symbol{expiries.length?' (loaded '+expiries.length+', nearest '+expiries[0]+')':''}. Pick ALL or another expiry above for a wider view.
         </div>
