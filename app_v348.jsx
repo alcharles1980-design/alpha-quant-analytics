@@ -14600,8 +14600,8 @@ function WorldTradingTimeZonesPage(p){
       <SectionHead title="24-Hour Overlap" sub="Each session on your local day with its open and close times; the bars stack as the trading day circles the globe"/>
       <div style={{display:'flex',marginTop:6}}>
         <div style={{width:LBLW,flexShrink:0}}></div>
-        <div style={{flex:1,position:'relative',height:20}}>
-          {(function(){var x=userMod/1440*100;var st=(x<8)?{left:'0%'}:(x>92)?{right:'0%'}:{left:x+'%',transform:'translateX(-50%)'};return <span style={Object.assign({position:'absolute',top:0,fontSize:7,fontFamily:F,color:C.warn,fontWeight:800,whiteSpace:'nowrap',letterSpacing:0.3},st)}>{fmtClock(userMod)+' now'}</span>;})()}
+        <div style={{flex:1,position:'relative',height:26}}>
+          {(function(){var x=userMod/1440*100;var st=(x<7)?{left:'0%'}:(x>93)?{right:'0%'}:{left:x+'%',transform:'translateX(-50%)'};return <span style={Object.assign({position:'absolute',top:0,fontSize:6.5,fontFamily:F,color:C.bg,fontWeight:800,whiteSpace:'nowrap',letterSpacing:0.2,background:C.warn,padding:'1px 4px',borderRadius:3},st)}>{fmtClock(userMod)}</span>;})()}
           {labelHours.map(function(hh){return <span key={hh} style={{position:'absolute',bottom:0,left:(hh/24*100)+'%',transform:'translateX(-50%)',fontSize:8,fontFamily:F,color:C.txtDim,whiteSpace:'nowrap'}}>{(hh<10?'0':'')+hh}</span>;})}
         </div>
       </div>
