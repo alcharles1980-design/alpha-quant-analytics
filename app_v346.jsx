@@ -14597,7 +14597,7 @@ function WorldTradingTimeZonesPage(p){
     </Cd>
 
     <Cd>
-      <SectionHead title="24-Hour Overlap" sub="Each session mapped onto your local day; the bars stack as the trading day circles the globe"/>
+      <SectionHead title="24-Hour Overlap" sub="Each session on your local day with its open and close times; the bars stack as the trading day circles the globe"/>
       <div style={{display:'flex',marginTop:4}}>
         <div style={{width:LBLW,flexShrink:0}}></div>
         <div style={{flex:1,position:'relative',height:14}}>
@@ -14610,7 +14610,12 @@ function WorldTradingTimeZonesPage(p){
           {gridHours.map(function(hh){var major=(hh%6===0);return <div key={hh} style={{position:'absolute',left:(hh/24*100)+'%',top:0,bottom:0,width:1,background:major?C.border:C.grid,opacity:major?0.9:0.45}}></div>;})}
           <div style={{position:'absolute',left:(userMod/1440*100)+'%',top:0,bottom:0,width:2,background:C.warn,boxShadow:'0 0 4px '+C.warn}}></div>
         </div>
-        {tlRows.map(function(r,i){var dim=r.state==='closed';return <div key={i} style={{display:'flex',alignItems:'center',height:26}}>
+        {tlRows.map(function(r,i){var dim=r.state==='closed';
+          var op=r.uOpen/1440*100,cl=r.uClose/1440*100,tcol=dim?C.txtDim:C.txtBright;
+          var tBase={position:'absolute',top:6,height:12,lineHeight:'12px',fontSize:7,fontWeight:700,fontFamily:F,color:tcol,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'};
+          var oS=(op>=15)?{right:(100-op)+'%',paddingRight:3}:{left:op+'%',paddingLeft:3};
+          var cS=(cl<=85)?{left:cl+'%',paddingLeft:3}:{right:(100-cl)+'%',paddingRight:3};
+          return <div key={i} style={{display:'flex',alignItems:'center',height:24}}>
           <div style={{width:LBLW,flexShrink:0,fontFamily:F,paddingRight:6,boxSizing:'border-box'}}>
             <div style={{display:'flex',alignItems:'center',gap:4}}>
               <span style={{width:6,height:6,borderRadius:6,background:statCol(r.state),flexShrink:0}}></span>
@@ -14619,8 +14624,10 @@ function WorldTradingTimeZonesPage(p){
             </div>
             <div style={{fontSize:7,color:C.txtDim,paddingLeft:10,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.ex.country}</div>
           </div>
-          <div style={{flex:1,position:'relative',height:12}}>
-            {r.ivals.map(function(iv,j){var active=(r.state==='open'||r.state==='break');return <div key={j} style={{position:'absolute',left:(iv[0]/1440*100)+'%',width:Math.max(0.4,(iv[1]-iv[0])/1440*100)+'%',top:0,bottom:0,background:r.ex.col,borderRadius:2,opacity:active?0.95:0.42}}></div>;})}
+          <div style={{flex:1,position:'relative',height:24}}>
+            {r.ivals.map(function(iv,j){var active=(r.state==='open'||r.state==='break');return <div key={j} style={{position:'absolute',left:(iv[0]/1440*100)+'%',width:Math.max(0.4,(iv[1]-iv[0])/1440*100)+'%',top:7,height:10,background:r.ex.col,borderRadius:2,opacity:active?0.95:0.42}}></div>;})}
+            <span style={Object.assign({},tBase,oS)}>{fmtClock(r.uOpen)}</span>
+            <span style={Object.assign({},tBase,cS)}>{fmtClock(r.uClose)}</span>
           </div>
         </div>;})}
       </div>
