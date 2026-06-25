@@ -14519,7 +14519,7 @@ function WorldTradingTimeZonesPage(p){
     {sh:'NYSE',country:'United States',mcap:67,name:'New York (NYSE / Nasdaq)',city:'New York',tz:'America/New_York',open:570,close:960,days:[1,2,3,4,5],col:GRN},
     {sh:'TSX',country:'Canada',mcap:4.5,name:'Toronto Stock Exchange',city:'Toronto',tz:'America/Toronto',open:570,close:960,days:[1,2,3,4,5],col:GRN},
     {sh:'BMV',country:'Mexico',mcap:0.45,est:true,name:'Bolsa Mexicana',city:'Mexico City',tz:'America/Mexico_City',open:510,close:900,days:[1,2,3,4,5],col:GRN},
-    {sh:'B3',country:'Brazil',mcap:1.1,name:'B3 \u2013 Brasil Bolsa',city:'S\u00E3o Paulo',tz:'America/Sao_Paulo',open:600,close:1020,days:[1,2,3,4,5],col:GRN},
+    {sh:'B3',country:'Brazil',mcap:1.1,name:'B3 \u2013 Brasil Bolsa',city:'S\u00E3o Paulo',tz:'America/Sao_Paulo',open:600,close:1020,usStd:{close:1075},days:[1,2,3,4,5],col:GRN},
     {sh:'LSE',country:'United Kingdom',mcap:3.99,name:'London Stock Exchange',city:'London',tz:'Europe/London',open:480,close:990,days:[1,2,3,4,5],col:BLU},
     {sh:'ENX',country:'Europe (Euronext)',mcap:7.45,name:'Euronext',city:'Paris',tz:'Europe/Paris',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
     {sh:'XETR',country:'Germany',mcap:3.06,name:'Deutsche B\u00F6rse (Xetra)',city:'Frankfurt',tz:'Europe/Berlin',open:540,close:1050,days:[1,2,3,4,5],col:BLU},
@@ -14542,18 +14542,23 @@ function WorldTradingTimeZonesPage(p){
   var userOffset=-now.getTimezoneOffset();
   var userTz=(function(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone;}catch(e){return 'Local';}})();
   var userMod=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
+  // Some venues shift their LOCAL session to track US DST (e.g. B3 follows the NY close). Brazil itself
+  // has no DST, so the IANA tz cannot express this - detect US Eastern DST and apply per-exchange overrides.
+  var usEdt=(tzOffset('America/New_York',now)===-240);
 
   var rows=EX.map(function(ex){
+    var eOpen=ex.open,eClose=ex.close;
+    if(!usEdt&&ex.usStd){if(ex.usStd.open!=null)eOpen=ex.usStd.open;if(ex.usStd.close!=null)eClose=ex.usStd.close;}
     var pt=partsInTz(ex.tz,now);
     var trading=ex.days.indexOf(pt.wd)>=0;
     var inLunch=ex.lunch&&pt.mod>=ex.lunch[0]&&pt.mod<ex.lunch[1];
     var state,mins;
-    if(trading&&pt.mod>=ex.open&&pt.mod<ex.close){if(inLunch){state='break';mins=ex.lunch[1]-pt.mod;}else{state='open';mins=ex.close-pt.mod;}}
-    else{state='closed';mins=minsUntilOpen(pt,ex.open,ex.days);}
+    if(trading&&pt.mod>=eOpen&&pt.mod<eClose){if(inLunch){state='break';mins=ex.lunch[1]-pt.mod;}else{state='open';mins=eClose-pt.mod;}}
+    else{state='closed';mins=minsUntilOpen(pt,eOpen,ex.days);}
     var exOff=tzOffset(ex.tz,now);var shift=userOffset-exOff;
-    var uOpen=(((ex.open+shift)%1440)+1440)%1440;
-    var uClose=(((ex.close+shift)%1440)+1440)%1440;
-    var segs=ex.lunch?[[ex.open,ex.lunch[0]],[ex.lunch[1],ex.close]]:[[ex.open,ex.close]];
+    var uOpen=(((eOpen+shift)%1440)+1440)%1440;
+    var uClose=(((eClose+shift)%1440)+1440)%1440;
+    var segs=ex.lunch?[[eOpen,ex.lunch[0]],[ex.lunch[1],eClose]]:[[eOpen,eClose]];
     var ivals=[];
     segs.forEach(function(s){var a=s[0]+shift,b=s[1]+shift;var k=Math.floor(a/1440);a-=k*1440;b-=k*1440;if(b<=1440)ivals.push([a,b]);else{ivals.push([a,1440]);ivals.push([0,b-1440]);}});
     return {ex:ex,pt:pt,state:state,mins:mins,uOpen:uOpen,uClose:uClose,ivals:ivals};
@@ -14567,7 +14572,8 @@ function WorldTradingTimeZonesPage(p){
 
   var fmtCap=function(tn){if(tn>=1){var s=(Math.round(tn*10)/10).toFixed(1);if(s.slice(-2)==='.0')s=s.slice(0,-2);return '$'+s+'T';}return '$'+Math.round(tn*1000)+'B';};
   var LBLW=112;
-  var hourTicks=[0,3,6,9,12,15,18,21,24];
+  var labelHours=[0,3,6,9,12,15,18,21,24];
+  var gridHours=[];for(var gh=0;gh<=24;gh++)gridHours.push(gh);
   var statCol=function(st){return st==='open'?C.accent:st==='break'?C.gold:C.txtDim;};
   var clockStr=fmtClock(now.getHours()*60+now.getMinutes())+':'+(now.getSeconds()<10?'0':'')+now.getSeconds();
   var dateStr=now.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric'});
@@ -14595,13 +14601,13 @@ function WorldTradingTimeZonesPage(p){
       <div style={{display:'flex',marginTop:4}}>
         <div style={{width:LBLW,flexShrink:0}}></div>
         <div style={{flex:1,position:'relative',height:14}}>
-          {hourTicks.map(function(hh){return <span key={hh} style={{position:'absolute',left:(hh/24*100)+'%',transform:'translateX(-50%)',fontSize:8,fontFamily:F,color:C.txtDim,whiteSpace:'nowrap'}}>{(hh<10?'0':'')+hh}</span>;})}
+          {labelHours.map(function(hh){return <span key={hh} style={{position:'absolute',left:(hh/24*100)+'%',transform:'translateX(-50%)',fontSize:8,fontFamily:F,color:C.txtDim,whiteSpace:'nowrap'}}>{(hh<10?'0':'')+hh}</span>;})}
           <span style={{position:'absolute',left:(userMod/1440*100)+'%',transform:'translateX(-50%)',fontSize:7.5,fontFamily:F,color:C.warn,fontWeight:800,top:-1,whiteSpace:'nowrap'}}>now</span>
         </div>
       </div>
       <div style={{position:'relative'}}>
         <div style={{position:'absolute',top:0,bottom:0,left:LBLW,right:0,pointerEvents:'none'}}>
-          {hourTicks.map(function(hh){return <div key={hh} style={{position:'absolute',left:(hh/24*100)+'%',top:0,bottom:0,width:1,background:C.grid}}></div>;})}
+          {gridHours.map(function(hh){var major=(hh%6===0);return <div key={hh} style={{position:'absolute',left:(hh/24*100)+'%',top:0,bottom:0,width:1,background:major?C.border:C.grid,opacity:major?0.9:0.45}}></div>;})}
           <div style={{position:'absolute',left:(userMod/1440*100)+'%',top:0,bottom:0,width:2,background:C.warn,boxShadow:'0 0 4px '+C.warn}}></div>
         </div>
         {tlRows.map(function(r,i){var dim=r.state==='closed';return <div key={i} style={{display:'flex',alignItems:'center',height:26}}>
