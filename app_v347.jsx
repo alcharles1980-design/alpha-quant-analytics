@@ -14598,17 +14598,17 @@ function WorldTradingTimeZonesPage(p){
 
     <Cd>
       <SectionHead title="24-Hour Overlap" sub="Each session on your local day with its open and close times; the bars stack as the trading day circles the globe"/>
-      <div style={{display:'flex',marginTop:4}}>
+      <div style={{display:'flex',marginTop:6}}>
         <div style={{width:LBLW,flexShrink:0}}></div>
-        <div style={{flex:1,position:'relative',height:14}}>
-          {labelHours.map(function(hh){return <span key={hh} style={{position:'absolute',left:(hh/24*100)+'%',transform:'translateX(-50%)',fontSize:8,fontFamily:F,color:C.txtDim,whiteSpace:'nowrap'}}>{(hh<10?'0':'')+hh}</span>;})}
-          <span style={{position:'absolute',left:(userMod/1440*100)+'%',transform:'translateX(-50%)',fontSize:7.5,fontFamily:F,color:C.warn,fontWeight:800,top:-1,whiteSpace:'nowrap'}}>now</span>
+        <div style={{flex:1,position:'relative',height:20}}>
+          {(function(){var x=userMod/1440*100;var st=(x<8)?{left:'0%'}:(x>92)?{right:'0%'}:{left:x+'%',transform:'translateX(-50%)'};return <span style={Object.assign({position:'absolute',top:0,fontSize:7,fontFamily:F,color:C.warn,fontWeight:800,whiteSpace:'nowrap',letterSpacing:0.3},st)}>{fmtClock(userMod)+' now'}</span>;})()}
+          {labelHours.map(function(hh){return <span key={hh} style={{position:'absolute',bottom:0,left:(hh/24*100)+'%',transform:'translateX(-50%)',fontSize:8,fontFamily:F,color:C.txtDim,whiteSpace:'nowrap'}}>{(hh<10?'0':'')+hh}</span>;})}
         </div>
       </div>
       <div style={{position:'relative'}}>
         <div style={{position:'absolute',top:0,bottom:0,left:LBLW,right:0,pointerEvents:'none'}}>
           {gridHours.map(function(hh){var major=(hh%6===0);return <div key={hh} style={{position:'absolute',left:(hh/24*100)+'%',top:0,bottom:0,width:1,background:major?C.border:C.grid,opacity:major?0.9:0.45}}></div>;})}
-          <div style={{position:'absolute',left:(userMod/1440*100)+'%',top:0,bottom:0,width:2,background:C.warn,boxShadow:'0 0 4px '+C.warn}}></div>
+          <div style={{position:'absolute',left:(userMod/1440*100)+'%',top:0,bottom:0,width:2,background:C.warn,opacity:0.8}}></div>
         </div>
         {tlRows.map(function(r,i){var dim=r.state==='closed';
           var op=r.uOpen/1440*100,cl=r.uClose/1440*100,tcol=dim?C.txtDim:C.txtBright;
