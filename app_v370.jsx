@@ -20294,6 +20294,11 @@ function SwingScreenerPage(p){
 
 // ─── DAILY LOW TO SWING HIGH SCREENER ─────────────────────────────────────────
 function DailyLowSwingPage(p){
+  // Frozen left columns (#, Ticker, Links, Price) on tablet/laptop only — phone unchanged.
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var FZ_W=[22,50,78,46]; var FZ_L=[0,22,72,150]; // widths / cumulative lefts (px)
+  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
@@ -20522,12 +20527,12 @@ function DailyLowSwingPage(p){
         </div>}
       </div>
       <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+        <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'},freeze?{minWidth:760}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-            <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>#</th>
-            <th onClick={function(){doSort('ticker');}} style={thS('ticker','left')}>Ticker</th>
-            <th style={{padding:'3px 2px',textAlign:'center',color:C.txtDim,fontSize:6}}></th>
-            <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+            <th style={Object.assign({padding:'3px 2px',textAlign:'left',color:C.txtDim},fzTh(0))}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker','left'),fzTh(1))}>Ticker</th>
+            <th style={Object.assign({padding:'3px 2px',textAlign:'center',color:C.txtDim,fontSize:6},fzTh(2))}></th>
+            <th onClick={function(){doSort('price');}} style={Object.assign({},thS('price'),fzTh(3))}>Price</th>
             <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
             <th onClick={function(){doSort('_avg');}} style={thS('_avg')}>Avg</th>
             {dows.map(function(d){var hasF=dowFilters[d]!=null;
@@ -20542,10 +20547,11 @@ function DailyLowSwingPage(p){
             {display.map(function(r,idx){
               var dlh=r._dlh||{};
               r._std=dlh.std||0;r._min=dlh.min||0;r._max=dlh.max||0;
+              var rowBg=C.bgCard; // opaque bg for sticky frozen cells (no zebra on this table)
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.border+'20'}}>
-                <td style={{padding:'3px 2px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
-                <td style={{padding:'3px 2px',color:C.gold,fontWeight:700}}>{r.ticker}</td>
-                <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
+                <td style={Object.assign({padding:'3px 2px',color:C.txtDim,fontSize:6},fzTd(0,rowBg))}>{idx+1}</td>
+                <td style={Object.assign({padding:'3px 2px',color:C.gold,fontWeight:700},fzTd(1,rowBg))}>{r.ticker}</td>
+                <td style={Object.assign({padding:'1px 3px',whiteSpace:'nowrap'},fzTd(2,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
                     style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
                       color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}}
@@ -20555,7 +20561,7 @@ function DailyLowSwingPage(p){
                       color:C.blue,fontSize:14,fontFamily:F,cursor:'pointer',background:'transparent',lineHeight:1}}
                     title="Stock Profile Cheat Sheet">{'\u2197'}</button>}
                 </td>
-                <td style={{padding:'3px 2px',textAlign:'right',color:C.txtBright}}>${(r.price||0).toFixed(2)}</td>
+                <td style={Object.assign({padding:'3px 2px',textAlign:'right',color:C.txtBright},fzTd(3,rowBg))}>${(r.price||0).toFixed(2)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim,fontSize:6}}>{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'3px 2px',textAlign:'right',color:swColor(r._avg),fontWeight:700}}>{r._avg.toFixed(2)}%</td>
                 {dows.map(function(d){var v=dlh[d]||0;var hasF=dowFilters[d]!=null;var passes=!hasF||v>=dowFilters[d];
@@ -31004,7 +31010,7 @@ function App(){
     {page==='overnighthourly'&&<OvernightHourlyPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='tradingzones'&&<WorldTradingTimeZonesPage onBack={function(){setPage('home');}}/>}
     {page==='volumeprofile'&&<VolumeProfileMTFPage apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
-    {page==='dailylowswing'&&<DailyLowSwingPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='dailylowswing'&&<DailyLowSwingPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='closehighscreener'&&<CloseHighScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dailyswingscreener'&&<DailySwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dirbias'&&<DirBiasPage ghToken={ghToken} onBack={function(){setPage('home');}}/>}
