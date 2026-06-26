@@ -19043,7 +19043,7 @@ function ViolentChopScreenerPage(p){
         var off=0;
         while(true){
           var h2=getSbHeaders();h2['Range']=off+'-'+(off+999);
-          var r2=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,composite_score,lookback_days,chop_profile&order=composite_score.desc.nullslast,ticker.asc',{headers:h2});
+          var r2=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+sd+'&select=ticker,price,market_cap,ticker_type,adv_dollars,composite_score,lookback_days,chop_profile,live_price,live_price_at&order=composite_score.desc.nullslast,ticker.asc',{headers:h2});
           if(!r2.ok)break;
           var b2=await r2.json();
           if(!Array.isArray(b2)||b2.length===0)break;
@@ -19233,9 +19233,9 @@ function ViolentChopScreenerPage(p){
   };
 
   var rows=(data||[]).map(function(row){
-    var g=getAvg(row);var a=g?g.avg:null;
+    var g=getAvg(row);var a=g?g.avg:null;var sc=num(row.price);var lp=num(row.live_price);var px=lp>0?lp:sc;
     return {
-      ticker:row.ticker,price:num(row.price),market_cap:row.market_cap,ticker_type:row.ticker_type,adv:num(row.adv_dollars),
+      ticker:row.ticker,price:px,scanClose:sc,livePrice:lp,liveAt:row.live_price_at,market_cap:row.market_cap,ticker_type:row.ticker_type,adv:num(row.adv_dollars),
       composite:g?num(g.composite):0,lookback:a&&a.nDays?a.nDays:row.lookback_days,
       cnt:a?num(a.cnt):0,
       avgPct:a?num(a.avgPct):0,avgUsd:a?num(a.avgUsd):0,
@@ -19244,7 +19244,7 @@ function ViolentChopScreenerPage(p){
       pathPct:a?num(a.pathPct):0,pathUsd:a?num(a.pathUsd):0,
       coefVar:a?num(a.coefVar):0,
       dailyPot:a?num(a.pathUsd):0,
-      capEff:(a&&num(row.price)>0)?num(a.pathUsd)/num(row.price)*100:0,
+      capEff:(a&&px>0)?num(a.pathUsd)/px*100:0,
       hasRes:!!a
     };
   }).filter(function(r){
@@ -19398,7 +19398,7 @@ function ViolentChopScreenerPage(p){
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
                 </td>
                 <td style={{padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
-                <td style={{padding:'4px 5px',color:C.txt,textAlign:'center'}}>{'$'+r.price.toFixed(2)}</td>
+                <td style={{padding:'4px 5px',color:C.txt,textAlign:'center'}} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
                 <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
                 <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'4px 5px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
