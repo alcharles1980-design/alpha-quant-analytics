@@ -18975,6 +18975,11 @@ function NextDayRangePage(p){
 }
 
 function ViolentChopScreenerPage(p){
+  // Frozen left columns (#, Ticker, Links, Type, Price) on tablet/laptop only — phone unchanged.
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var FZ_W=[28,56,92,44,52]; var FZ_L=[0,28,84,176,220]; // widths / cumulative lefts (px)
+  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
   var s3=useState(''),err=s3[0],setErr=s3[1];
@@ -19285,7 +19290,7 @@ function ViolentChopScreenerPage(p){
 
   var doSort=function(k){if(sortKey===k)setSortDesc(!sortDesc);else{setSortKey(k);setSortDesc(true);}};
   var thS=function(k){return{padding:'4px 5px',textAlign:'center',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,lineHeight:1.15,verticalAlign:'bottom'};};
-  var th=function(k,label){return <th onClick={function(){doSort(k);}} style={thS(k)}>{label}{sortKey===k?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
+  var th=function(k,label,fzIdx){return <th onClick={function(){doSort(k);}} style={Object.assign({},thS(k),fzIdx!=null?fzTh(fzIdx):{})}>{label}{sortKey===k?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
 
   // color scale for composite (chop intensity)
   var chopColor=function(v){if(v>=500)return C.accent;if(v>=300)return C.gold;if(v>=150)return C.blue;if(v>0)return C.txt;return C.txtDim;};
@@ -19379,13 +19384,13 @@ function ViolentChopScreenerPage(p){
         </button>
       </div>
       <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
+        <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8},freeze?{minWidth:1100}:{})}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'}}>#</th>
-            <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'})}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'}}>Links</th>
-            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'})}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
-            {th('price','Price')}
+            <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(0))}>#</th>
+            <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'},fzTh(1))}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
+            <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(2))}>Links</th>
+            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'},fzTh(3))}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
+            {th('price','Price',4)}
             {th('adv',['$ Vol',<br key="b"/>,'/day'])}
             {th('market_cap','MCap')}
             {th('composite',['Chop',<br key="b"/>,'Score'])}
@@ -19405,16 +19410,17 @@ function ViolentChopScreenerPage(p){
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
+              var rowBg=idx<10?C.bgDeep:C.bgCard; // opaque per-row bg for sticky frozen cells (top-10 band preserved)
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
-                <td style={{padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400}}>{idx+1}</td>
-                <td style={{padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'}}>{r.ticker}</td>
-                <td style={{padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'}}>
+                <td style={Object.assign({padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
+                <td style={Object.assign({padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
+                <td style={Object.assign({padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'},fzTd(2,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
                 </td>
-                <td style={{padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600}}>{typeLabel(r.ticker_type)}</td>
-                <td style={{padding:'4px 5px',color:C.txt,textAlign:'center'}} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
+                <td style={Object.assign({padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600},fzTd(3,rowBg))}>{typeLabel(r.ticker_type)}</td>
+                <td style={Object.assign({padding:'4px 5px',color:C.txt,textAlign:'center'},fzTd(4,rowBg))} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
                 <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
                 <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'4px 5px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
@@ -30971,7 +30977,7 @@ function App(){
     {page==='alpacafinder'&&<AlpacaTradeFinderPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='alpaca24atr'&&<Alpaca24AtrPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
-    {page==='violentchop'&&<ViolentChopScreenerPage ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='violentchop'&&<ViolentChopScreenerPage devView={devView} ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
