@@ -14671,13 +14671,20 @@ function WorldTradingTimeZonesPage(p){
 
     <Cd>
       <SectionHead title="Exchanges" sub="Open markets first"/>
-      <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:F}}>
+      <div>
+        <table style={{width:'100%',tableLayout:'fixed',borderCollapse:'collapse',fontSize:9,fontFamily:F}}>
+          <colgroup>
+            <col style={{width:'26%'}}/>
+            <col style={{width:'13%'}}/>
+            <col style={{width:'15%'}}/>
+            <col style={{width:'26%'}}/>
+            <col style={{width:'20%'}}/>
+          </colgroup>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={{padding:'5px 4px',textAlign:'left',color:C.txtDim}}>Market</th>
             <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>Local</th>
             <th style={{padding:'5px 4px',textAlign:'center',color:C.txtDim}}>Status</th>
-            <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim,whiteSpace:'nowrap'}}>Hours (your time)</th>
+            <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>Hours</th>
             <th style={{padding:'5px 4px',textAlign:'right',color:C.txtDim}}>Next</th>
           </tr></thead>
           <tbody>{tblRows.map(function(r,idx){
@@ -14685,11 +14692,11 @@ function WorldTradingTimeZonesPage(p){
             var stTxt=r.state==='open'?'OPEN':r.state==='break'?'BREAK':'CLOSED';
             var nextTxt=r.state==='open'?'closes '+fmtDur(r.mins):r.state==='break'?'resumes '+fmtDur(r.mins):'opens '+fmtDur(r.mins);
             return <tr key={idx} style={{borderBottom:'1px solid '+C.grid,borderLeft:'2px solid '+r.ex.col}}>
-              <td style={{padding:'5px 4px 5px 8px'}}><div style={{color:C.txtBright,fontWeight:700}}>{r.ex.sh}</div><div style={{color:C.txtDim,fontSize:7.5}}>{r.ex.city}</div></td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:C.txt,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{fmtClock(r.pt.mod)}<div style={{color:C.txtDim,fontSize:7.5}}>{DOW[r.pt.wd]}</div></td>
-              <td style={{padding:'5px 4px',textAlign:'center'}}><span style={{color:sc,fontWeight:800,fontSize:8.5,padding:'2px 6px',borderRadius:4,background:sc+'22',whiteSpace:'nowrap'}}>{stTxt}</span></td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:C.txt,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{fmtClock(r.uOpen)}&ndash;{fmtClock(r.uClose)}</td>
-              <td style={{padding:'5px 4px',textAlign:'right',color:sc,whiteSpace:'nowrap'}}>{nextTxt}</td>
+              <td style={{padding:'5px 4px 5px 6px'}}><div style={{color:C.txtBright,fontWeight:700}}>{r.ex.sh}</div><div style={{color:C.txtDim,fontSize:7.5}}>{r.ex.city}</div></td>
+              <td style={{padding:'5px 3px',textAlign:'right',color:C.txt,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{fmtClock(r.pt.mod)}<div style={{color:C.txtDim,fontSize:7.5}}>{DOW[r.pt.wd]}</div></td>
+              <td style={{padding:'5px 2px',textAlign:'center'}}><span style={{color:sc,fontWeight:800,fontSize:8.5,padding:'2px 5px',borderRadius:4,background:sc+'22',whiteSpace:'nowrap'}}>{stTxt}</span></td>
+              <td style={{padding:'5px 3px',textAlign:'right',color:C.txt,fontVariantNumeric:'tabular-nums'}}>{fmtClock(r.uOpen)}&ndash;{fmtClock(r.uClose)}</td>
+              <td style={{padding:'5px 4px',textAlign:'right',color:sc}}>{nextTxt}</td>
             </tr>;
           })}</tbody>
         </table>
