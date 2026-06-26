@@ -15665,10 +15665,19 @@ function GexOptionsProfilePage(p){
 
   var dispStrikes=React.useMemo(function(){
     if(!profile||spot==null)return [];
+    var must={};
+    if(profile.callWall)must[profile.callWall.k]=1;
+    if(profile.putWall)must[profile.putWall.k]=1;
     var lo=spot*0.75,hi=spot*1.25;
+    // widen the band so the active call/put walls are never stranded off-screen
+    Object.keys(must).forEach(function(kk){var k=+kk;if(k<lo)lo=k;if(k>hi)hi=k;});
     var inBand=profile.strikes.filter(function(s){return s.k>=lo&&s.k<=hi&&(s.callOI+s.putOI)>0;});
     if(inBand.length>46){
-      inBand=inBand.slice().sort(function(a,b){return (b.callOI+b.putOI)-(a.callOI+a.putOI);}).slice(0,46);
+      var top=inBand.slice().sort(function(a,b){return (b.callOI+b.putOI)-(a.callOI+a.putOI);}).slice(0,46);
+      var have={};top.forEach(function(s){have[s.k]=1;});
+      // re-add any wall strike the top-46-by-OI cap dropped
+      inBand.forEach(function(s){if(must[s.k]&&!have[s.k]){top.push(s);have[s.k]=1;}});
+      inBand=top;
     }
     return inBand.slice().sort(function(a,b){return b.k-a.k;});
   },[profile,spot]);
@@ -15831,7 +15840,7 @@ function GexOptionsProfilePage(p){
         <div>{rowEls}</div>
         {dispStrikes.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,padding:'10px 0'}}>No strikes with open interest near spot for this filter.</div>}
         <div style={{color:C.txtDim,fontSize:7.5,fontFamily:F,marginTop:8}}>
-          Showing strikes within {'\u00b1'}25% of spot{dispStrikes.length>=46?' (top 46 by OI)':''}. Gold row = call wall, red row = put wall, blue = at/near the money.
+          Showing strikes within {'\u00b1'}25% of spot, widened when needed to include the walls{dispStrikes.length>46?', top by OI':''}. Gold row = call wall, red row = put wall, blue = at/near the money.
         </div>
       </div>
 
