@@ -30924,14 +30924,14 @@ function App(){
   return <div style={{background:C.bg,minHeight:'100vh',fontFamily:F,color:C.txt,padding:'12px 14px 80px',position:'relative',maxWidth:devMaxW,margin:'0 auto',transition:'background 0.3s, max-width 0.25s ease'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
       <div><div style={{color:C.txtBright,fontSize:14,fontWeight:800,letterSpacing:1.5}}>ALPHA QUANT</div><div style={{color:C.accent,fontSize:8,letterSpacing:1.5}}>BETA GROWTH HOLDINGS</div></div>
-      <div style={{display:'flex',alignItems:'center',gap:6}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',flexWrap:'wrap',rowGap:4,gap:6}}>
         <LiveClock/>
-        {devView!=='phone'&&<div style={{display:'flex',alignItems:'center',gap:0,marginLeft:4,border:'1px solid '+C.border,borderRadius:6,overflow:'hidden'}} title="Device view">
+        <div style={{display:'flex',alignItems:'center',gap:0,marginLeft:4,border:'1px solid '+C.border,borderRadius:6,overflow:'hidden',flexShrink:0}} title="Device view">
           {[['phone','\uD83D\uDCF1','Phone'],['tablet','\u25AF','Tablet'],['laptop','\u25AD','Laptop']].map(function(d){
             var on=devView===d[0];
-            return <div key={d[0]} onClick={function(){setDevView(d[0]);}} title={d[2]} style={{cursor:'pointer',padding:'3px 7px',fontSize:11,lineHeight:1,color:on?C.bg:C.txtDim,background:on?C.accent:'transparent',fontFamily:F,userSelect:'none',fontWeight:700}}>{d[1]}</div>;
+            return <div key={d[0]} onClick={function(){setDevView(d[0]);}} title={d[2]} style={{cursor:'pointer',padding:'3px 6px',fontSize:11,lineHeight:1,color:on?C.bg:C.txtDim,background:on?C.accent:'transparent',fontFamily:F,userSelect:'none',fontWeight:700}}>{d[1]}</div>;
           })}
-        </div>}
+        </div>
         <div style={{display:'flex',alignItems:'center',gap:2,marginLeft:4}}>
           <div onClick={zoomOut} style={{cursor:'pointer',padding:'4px 6px',fontSize:13,fontWeight:700,color:C.txtDim,fontFamily:F,lineHeight:1,userSelect:'none'}}>-</div>
           <div onClick={zoomReset} style={{cursor:'pointer',padding:'2px 4px',fontSize:8,color:zoom===100?C.txtDim:C.accent,fontFamily:F,fontWeight:700,minWidth:28,textAlign:'center',userSelect:'none'}}>{zoom}%</div>
