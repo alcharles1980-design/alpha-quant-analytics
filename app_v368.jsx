@@ -12823,6 +12823,11 @@ function StockClassificationPage(p){
 // 2026 price targets + rating breakdown from Benzinga.
 // ─── MOST ACTIVES ─────────────────────────────────────────────────────────────
 function MostActivesPage(p){
+  // Frozen left columns (#, Symbol, Links, Type, Price) on tablet/laptop only — phone unchanged.
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var FZ_W=[26,56,56,40,50]; var FZ_L=[0,26,82,138,178]; // widths / cumulative lefts (px)
+  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),actives=s1[0],setActives=s1[1];
   var s2=useState(null),movers=s2[0],setMovers=s2[1];
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
@@ -13100,7 +13105,7 @@ function MostActivesPage(p){
     return tblDesc?(+bv||0)-(+av||0):(+av||0)-(+bv||0);
   }):[];
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
-  var tblTh=function(col,label,align){return <th onClick={function(){doTblSort(col);}} style={{padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400}}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
+  var tblTh=function(col,label,align,fzIdx){return <th onClick={function(){doTblSort(col);}} style={Object.assign({padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400},fzIdx!=null?fzTh(fzIdx):{})}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
 
   var barCol=tblSort==='trade_count'?'trade_count':'volume';
   var maxBar=1;if(filtered.length>0){for(var mbi=0;mbi<filtered.length;mbi++){if((filtered[mbi][barCol]||0)>maxBar)maxBar=filtered[mbi][barCol];}}
@@ -13224,13 +13229,13 @@ function MostActivesPage(p){
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
         {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
       <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
+        <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:900}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-            <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30}}>#</th>
-            {tblTh("symbol","SYMBOL","left")}
-            <th style={{padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6}}></th>
-            <th style={{padding:"4px 3px",textAlign:"left",color:C.txtDim}}>TYPE</th>
-            {tblTh("price","PRICE")}
+            <th style={Object.assign({padding:'4px 3px',textAlign:'left',color:C.txtDim,width:30},fzTh(0))}>#</th>
+            {tblTh("symbol","SYMBOL","left",1)}
+            <th style={Object.assign({padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6},fzTh(2))}></th>
+            <th style={Object.assign({padding:"4px 3px",textAlign:"left",color:C.txtDim},fzTh(3))}>TYPE</th>
+            {tblTh("price","PRICE",null,4)}
             {tblTh("changePct","CHG %")}
             {tblTh("marketCap","MCAP")}
             {tblTh("volume","VOLUME")}
@@ -13242,10 +13247,11 @@ function MostActivesPage(p){
           <tbody>
             {filtered.map(function(a,i){
               var pct=maxBar>0?(a[barCol]||0)/maxBar*100:0;
+              var rowBg=C.bgCard; // opaque bg for sticky frozen cells (no zebra on this table)
               return <tr key={a.symbol} style={{borderBottom:'1px solid '+C.border+'20'}}>
-                <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
-                <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{a.symbol}</td>
-                <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                <td style={Object.assign({padding:'4px 3px',color:C.txtDim,fontSize:7},fzTd(0,rowBg))}>{i+1}</td>
+                <td style={Object.assign({padding:'4px 3px',color:C.gold,fontWeight:700},fzTd(1,rowBg))}>{a.symbol}</td>
+                <td style={Object.assign({padding:'1px 2px',whiteSpace:'nowrap'},fzTd(2,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+a.symbol} target="_blank" rel="noopener noreferrer"
                     style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
                       color:C.purple||'#a855f7',fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
@@ -13253,8 +13259,8 @@ function MostActivesPage(p){
                     style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,
                       color:C.blue,fontSize:10,fontFamily:F,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
                 </td>
-                <td style={{padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7}}>{a.tickerType||'STK'}</td>
-                <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
+                <td style={Object.assign({padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7},fzTd(3,rowBg))}>{a.tickerType||'STK'}</td>
+                <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
@@ -31033,7 +31039,7 @@ function App(){
     {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
-    {page==='mostactives'&&<MostActivesPage alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='mostactives'&&<MostActivesPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='fullmarketscan'&&<FullMarketScanPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} initialTicker={csTarget} onBack={function(){setCsTarget('');setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
