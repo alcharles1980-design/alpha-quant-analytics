@@ -14029,7 +14029,7 @@ function VolumeProfileMTFPage(p){
     </div>}
 
     <Cd glow={true}>
-      <SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume across the full high-low range of each bar by default, so the profile reflects the entire span price has traded (an optional body-weighting instead concentrates volume in the open-close body). Bin granularity adapts to the timeframe. The Multi-Timeframe panel finds price levels where intraday and daily profiles agree. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>
+      {!p.embedded&&<SectionHead title="Volume Profile" sub="Volume & trades distributed across price levels — POC, value area, and trading ranges" info="Distributes each bar's volume across the full high-low range of each bar by default, so the profile reflects the entire span price has traded (an optional body-weighting instead concentrates volume in the open-close body). Bin granularity adapts to the timeframe. The Multi-Timeframe panel finds price levels where intraday and daily profiles agree. POC (Point of Control) is the price with the most volume. The Value Area contains 70% of all volume (VAH=top, VAL=bottom). High Volume Nodes (HVN) act as support/resistance shelves; Low Volume Nodes (LVN) are gaps price moves through quickly. Computed live from Polygon bars — no scan needed."/>}
 
       {/* Ticker input */}
       <div style={{display:'flex',gap:6,alignItems:'flex-end',marginBottom:8}}>
@@ -19423,7 +19423,7 @@ function ViolentChopScreenerPage(p){
                   ];
                 })()}
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
-                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+chartInt+'m / '+chartRange+')'}>{'\u25F0'}</button>
+                  <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+(chartInt==='D'?'1D':chartInt==='60'?'1h':chartInt+'m')+' / '+({'1D':'1D','5D':'5D','1M':'1M','3M':'3M','12M':'1Y','60M':'5Y'}[chartRange]||chartRange)+')'}>{'\u25F0'}</button>
                 </td>
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setVpTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.purple+'60',borderRadius:3,background:'transparent',color:C.purple,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Volume profile for '+r.ticker}>{'\u2637'}</button>
@@ -19504,7 +19504,7 @@ function ViolentChopScreenerPage(p){
     </div>}
 
     {showColInfo&&<div onClick={function(){setShowColInfo(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',zIndex:9999,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'24px 12px',overflowY:'auto'}}>
-      <div onClick={function(e){e.stopPropagation();}} style={{maxWidth:560,width:'100%',background:C.card||C.bg,border:'1px solid '+C.border,borderRadius:10,padding:18,fontFamily:F}}>
+      <div onClick={function(e){e.stopPropagation();}} style={{maxWidth:560,width:'100%',background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:18,fontFamily:F}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txtBright}}>Column Guide</div>
           <button onClick={function(){setShowColInfo(false);}} style={{border:'1px solid '+C.border,background:'transparent',color:C.txtDim,borderRadius:5,fontSize:12,padding:'2px 9px',cursor:'pointer',fontFamily:F}}>{'\u2715'}</button>
