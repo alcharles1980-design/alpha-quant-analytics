@@ -15561,7 +15561,7 @@ function buildGexProfile(contracts, snapshots, spot, nowMs){
 }
 
 function GexOptionsProfilePage(p){
-  var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
+  var s1=useState(p.initialSymbol||'NVDA'),symbol=s1[0],setSymbol=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState(''),prog=s4[0],setProg=s4[1];
@@ -15651,6 +15651,9 @@ function GexOptionsProfilePage(p){
     }catch(e){setErr(e.message);setProg('');}
     setLoading(false);
   };
+
+  // Auto-load on mount when opened as an embedded popup with a preset symbol
+  React.useEffect(function(){if(p.initialSymbol)load();},[]);
 
   var expiries=React.useMemo(function(){
     var set={};for(var i=0;i<rawContracts.length;i++)set[rawContracts[i].expiration_date]=true;
@@ -15756,10 +15759,10 @@ function GexOptionsProfilePage(p){
   }
 
   return <div>
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+    {!p.embedded&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>GEX & Options Profile</div>
-    </div>
+    </div>}
 
     {/* Controls */}
     <div style={card}>
@@ -18983,6 +18986,7 @@ function ViolentChopScreenerPage(p){
   var sChI=useState('5'),chartInt=sChI[0],setChartInt=sChI[1];      // chart modal interval (default 5m)
   var sChR=useState('5D'),chartRange=sChR[0],setChartRange=sChR[1]; // chart modal range (default 5D)
   var sVp=useState(null),vpTk=sVp[0],setVpTk=sVp[1];                // null = closed; else ticker for volume-profile popup
+  var sGx=useState(null),gexTk=sGx[0],setGexTk=sGx[1];              // null = closed; else ticker for GEX & options popup
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
@@ -19381,6 +19385,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -19427,6 +19432,9 @@ function ViolentChopScreenerPage(p){
                 </td>
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setVpTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.purple+'60',borderRadius:3,background:'transparent',color:C.purple,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Volume profile for '+r.ticker}>{'\u2637'}</button>
+                </td>
+                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                  <button onClick={function(tk){return function(){setGexTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.gold+'60',borderRadius:3,background:'transparent',color:C.gold,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'GEX & options profile for '+r.ticker}>{'\u0393'}</button>
                 </td>
               </tr>;
             })}
@@ -19499,6 +19507,18 @@ function ViolentChopScreenerPage(p){
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
           <VolumeProfileMTFPage key={vpTk} apiKey={p.apiKey} initialTicker={vpTk} embedded={true} onBack={function(){setVpTk(null);}}/>
+        </div>
+      </div>
+    </div>}
+
+    {gexTk&&<div onClick={function(){setGexTk(null);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
+      <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:920,maxHeight:'92vh',background:C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexShrink:0}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{gexTk} <span style={{fontSize:7,color:C.gold,fontWeight:700,letterSpacing:1}}>GEX & OPTIONS PROFILE</span></div>
+          <button onClick={function(){setGexTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
+          <GexOptionsProfilePage key={gexTk} alpKey={p.alpKey} alpSecret={p.alpSecret} initialSymbol={gexTk} embedded={true} onBack={function(){setGexTk(null);}}/>
         </div>
       </div>
     </div>}
@@ -30916,7 +30936,7 @@ function App(){
     {page==='alpacafinder'&&<AlpacaTradeFinderPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='alpaca24atr'&&<Alpaca24AtrPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
-    {page==='violentchop'&&<ViolentChopScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='violentchop'&&<ViolentChopScreenerPage ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
