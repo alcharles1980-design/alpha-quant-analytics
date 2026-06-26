@@ -30713,10 +30713,24 @@ function App(){
   var GH_TOKEN_DEFAULT='';
   var sGh=useState(GH_TOKEN_DEFAULT),ghToken=sGh[0],setGhToken=sGh[1];
   useEffect(function(){
-    if(!SB_URL||!SB_KEY)return;
-    fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setGhToken(d[0].value);}).catch(function(){});
-    fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_key&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setAlpKey(d[0].value);}).catch(function(){});
-    fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_secret&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value)setAlpSecret(d[0].value);}).catch(function(){});
+    // Load saved keys from app_config. Retries until populated, because on a cold
+    // first load SB_URL/SB_KEY may not be ready yet, or a fetch may transiently fail —
+    // without this, landing directly on an Alpaca page shows "Waiting for API keys".
+    var got={gh:false,ak:false,as:false};
+    var tries=0;
+    var load=function(){
+      tries++;
+      if(!SB_URL||!SB_KEY)return; // not ready yet — let the interval retry
+      if(!got.gh)fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value){setGhToken(d[0].value);got.gh=true;}}).catch(function(){});
+      if(!got.ak)fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_key&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value){setAlpKey(d[0].value);got.ak=true;}}).catch(function(){});
+      if(!got.as)fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_secret&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value){setAlpSecret(d[0].value);got.as=true;}}).catch(function(){});
+    };
+    load();
+    var id=setInterval(function(){
+      if((got.gh&&got.ak&&got.as)||tries>=10){clearInterval(id);return;}
+      load();
+    },1500);
+    return function(){clearInterval(id);};
   },[]);
   var s8=useState(false),ld=s8[0],setLd=s8[1];
   var s9=useState(''),prog=s9[0],setProg=s9[1];
