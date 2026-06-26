@@ -16742,6 +16742,14 @@ function GlanceApiDocsPage(p){
 
 function StocksAtGlancePage(p){
   var SB=p.sb; var pgKey=p.apiKey; var supaUrl=p.supaUrl;
+  // Frozen left columns (#, Ticker, Score, Price) on tablet/laptop only — phone unchanged.
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  // Fixed widths for the frozen columns so sticky left-offsets are deterministic.
+  var FZ_W=[40,76,66,72]; var FZ_L=[0,40,116,182]; // widths and cumulative lefts (px)
+  // Header sticky override: idx 0..3 = #,Ticker,Score,Price. zIndex 3 so header stays above body sticky cells.
+  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden',textOverflow:'ellipsis'}:{};};
+  // Body sticky override: needs an OPAQUE background (sticky cells must not be see-through). Zebra rows handled by caller passing rowBg.
+  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
 
   // ── state ─────────────────────────────────────────────────────────────────
   var s1=useState([]),lists=s1[0],setLists=s1[1];
@@ -17313,13 +17321,13 @@ function StocksAtGlancePage(p){
     return n>=1000?('$'+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})):('$'+n.toFixed(2));
   };
 
-  var colH=function(label,field){
+  var colH=function(label,field,fzIdx){
     var active=sortBy===field;
     return <th onClick={function(){if(sortBy===field)setSortAsc(!sortAsc);else{setSortBy(field);setSortAsc(false);}}}
-      style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,
+      style={Object.assign({padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,
         textTransform:'uppercase',color:active?C.accent:C.txtDim,textAlign:'right',
         cursor:'pointer',userSelect:'none',borderBottom:'2px solid '+C.border,
-        background:C.bgDeep,whiteSpace:'nowrap'}}>
+        background:C.bgDeep,whiteSpace:'nowrap'},fzIdx!=null?fzTh(fzIdx):{})}>
       {label}{active?(' '+(sortAsc?'▲':'▼')):''}
     </th>;
   };
@@ -17490,13 +17498,13 @@ function StocksAtGlancePage(p){
         <table style={{width:'100%',borderCollapse:'collapse',minWidth:1500}}>
           <thead>
             <tr>
-              {colH('#','_idx')}
+              {colH('#','_idx',0)}
               <th onClick={function(){if(sortBy==='ticker')setSortAsc(!sortAsc);else{setSortBy('ticker');setSortAsc(true);}}}
-                style={{padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:sortBy==='ticker'?C.accent:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep,cursor:'pointer',userSelect:'none'}}>
+                style={Object.assign({padding:'7px 9px',fontSize:8.5,fontFamily:F,letterSpacing:1,fontWeight:700,textTransform:'uppercase',color:sortBy==='ticker'?C.accent:C.txtDim,textAlign:'left',borderBottom:'2px solid '+C.border,background:C.bgDeep,cursor:'pointer',userSelect:'none'},fzTh(1))}>
                 Ticker{sortBy==='ticker'?(' '+(sortAsc?'\u25B2':'\u25BC')):''}
               </th>
-              {colH('Score','smartScore')}
-              {colH('Price','price')}
+              {colH('Score','smartScore',2)}
+              {colH('Price','price',3)}
               {colH('Mkt Cap','mc')}
               {colH('52W Hi','w52h')}
               {colH('52W Lo','w52l')}
@@ -17523,12 +17531,13 @@ function StocksAtGlancePage(p){
             {sortedTickers.map(function(t,i){
               var r=rowData[t]||{};
               var isLoad=!!loadingTkr[t];
+              var rowBg=(i%2===0)?C.bgCard:C.bgDeep; // opaque per-row bg for sticky frozen cells
               var tdStyle={padding:'8px 9px',textAlign:'right',fontFamily:F,fontSize:12,
                 fontWeight:500,borderBottom:'1px solid '+C.border,
                 background:i%2===0?'transparent':C.bgDeep+'44',
                 whiteSpace:'nowrap'};
-              var cell=function(v,col){
-                return <td style={Object.assign({},tdStyle,{color:col||C.txtBright})}>
+              var cell=function(v,col,fzIdx){
+                return <td style={Object.assign({},tdStyle,{color:col||C.txtBright},fzIdx!=null?fzTd(fzIdx,rowBg):{})}>
                   {isLoad?<span style={{color:C.txtDim,fontSize:10}}>…</span>:
                     (v!=null?v:<span style={{color:C.border}}>—</span>)}
                 </td>;
@@ -17551,14 +17560,14 @@ function StocksAtGlancePage(p){
                 </div>;
               };
               return <tr key={t}>
-                <td style={Object.assign({},tdStyle,{color:C.txtDim,fontSize:10,textAlign:'right'})}>{i+1}</td>
-                <td style={Object.assign({},tdStyle,{textAlign:'left'})}>
+                <td style={Object.assign({},tdStyle,{color:C.txtDim,fontSize:10,textAlign:'right'},fzTd(0,rowBg))}>{i+1}</td>
+                <td style={Object.assign({},tdStyle,{textAlign:'left'},fzTd(1,rowBg))}>
                   <span style={{fontFamily:F,fontWeight:700,fontSize:12,color:C.txtBright,
                     background:C.bgInput,border:'1px solid '+C.border,padding:'2px 8px',borderRadius:4}}>
                     {t}
                   </span>
                 </td>
-                <td style={Object.assign({},tdStyle,{textAlign:'center'})}>
+                <td style={Object.assign({},tdStyle,{textAlign:'center'},fzTd(2,rowBg))}>
                   {isLoad?<span style={{color:C.txtDim,fontSize:10}}>...</span>:
                     r.smartScore!=null?<span style={{display:'inline-block',width:26,height:26,borderRadius:'50%',
                       border:'2px solid '+(r.smartScore>=8?C.accent:r.smartScore>=5?C.gold:C.warn),
@@ -17566,7 +17575,7 @@ function StocksAtGlancePage(p){
                       color:r.smartScore>=8?C.accent:r.smartScore>=5?C.gold:C.warn}}>{r.smartScore}</span>
                     :<span style={{color:C.border}}>—</span>}
                 </td>
-                {cell(fv(r.price), C.txtBright)}
+                {cell(fv(r.price), C.txtBright, 3)}
                 {cell(fv(r.mc,true), C.txt)}
                 {cell(fv(r.w52h), C.accent)}
                 {cell(fv(r.w52l), C.warn)}
@@ -31012,7 +31021,7 @@ function App(){
     {page==='home'&&<StockProfileCheatSheetPage apiKey={pgKey}/>}
     {page==='theproblem'&&<HomePage onNav={function(k){setPage(k);}} onBack={function(){setPage('home');}}/>}
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
-    {page==='stocksatglance'&&<StocksAtGlancePage onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='stocksatglance'&&<StocksAtGlancePage devView={devView} onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
