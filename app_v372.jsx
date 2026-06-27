@@ -19837,6 +19837,11 @@ function ATRScreenerPage(p){
 
 // ─── MINUTE LOW TO SWING HIGH SCREENER ────────────────────────────────────────
 function MinuteSwingScreenerPage(p){
+  // Frozen left columns (#, Ticker, Links, Price) on tablet/laptop only — phone unchanged.
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var FZ_W=[22,50,78,46]; var FZ_L=[0,22,72,150]; // widths / cumulative lefts (px)
+  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgCard,overflow:'hidden'}:{};};
+  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
@@ -19947,26 +19952,27 @@ function MinuteSwingScreenerPage(p){
           {showCount<filtered.length&&!filter&&<div style={{display:'flex',gap:4}}><button onClick={function(){setShowCount(showCount+200);}} style={{padding:'3px 8px',border:'1px solid '+C.accent,borderRadius:4,background:'transparent',color:C.accent,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>+200</button><button onClick={function(){setShowCount(filtered.length);}} style={{padding:'3px 8px',border:'1px solid '+C.gold,borderRadius:4,background:'transparent',color:C.gold,fontFamily:F,fontSize:7,fontWeight:700,cursor:'pointer'}}>All</button></div>}
         </div>
         <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'}}>
+          <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontSize:7,fontFamily:F,whiteSpace:'nowrap'},freeze?{minWidth:800}:{})}>
             <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,background:C.bgCard}}>
-              <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'left'}}>#</th>
-              <th onClick={function(){doSort('ticker');}} style={thS('ticker')}>Ticker</th>
-              <th style={{padding:'3px 2px',textAlign:'center',color:C.txtDim,fontSize:6}}></th>
-              <th onClick={function(){doSort('price');}} style={thS('price')}>Price</th>
+              <th style={Object.assign({padding:'4px 3px',color:C.txtDim,textAlign:'left'},fzTh(0))}>#</th>
+              <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),fzTh(1))}>Ticker</th>
+              <th style={Object.assign({padding:'3px 2px',textAlign:'center',color:C.txtDim,fontSize:6},fzTh(2))}></th>
+              <th onClick={function(){doSort('price');}} style={Object.assign({},thS('price'),fzTh(3))}>Price</th>
               <th onClick={function(){doSort('market_cap');}} style={thS('market_cap')}>MCap</th>
               <th onClick={function(){doSort('_score');}} style={thS('_score')}>Avg%</th>
               {Array.from({length:15},function(_,i){var h=i+4;var hasFilter=hourFilters[h]!==undefined;return <th key={h} onClick={function(hr){return function(){setSortBy('h'+hr);setSortAsc(false);};}(h)} style={{padding:'4px 2px',color:hasFilter?C.accent:sortBy===('h'+h)?C.accent:C.txtDim,textAlign:'right',cursor:'pointer',fontSize:6,fontWeight:hasFilter||sortBy===('h'+h)?700:400}}>{(h<10?'0':'')+h}</th>;})}
             </tr></thead>
             <tbody>{filtered.slice(0,filter?filtered.length:showCount).map(function(r,idx){
               var mp=r._mp||{};
+              var rowBg=C.bgCard; // opaque bg for sticky frozen cells (no zebra on this table)
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid}}>
-                <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{idx+1}</td>
-                <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
-                <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                <td style={Object.assign({padding:'3px',color:C.txtDim,fontSize:6},fzTd(0,rowBg))}>{idx+1}</td>
+                <td style={Object.assign({padding:'3px',color:C.txtBright,fontWeight:700},fzTd(1,rowBg))}>{r.ticker}</td>
+                <td style={Object.assign({padding:'1px 2px',whiteSpace:'nowrap'},fzTd(2,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:8,lineHeight:1}} title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1}} title="Cheat Sheet">{'\u2197'}</a>}
                 </td>
-                <td style={{padding:'3px',color:C.txt,textAlign:'right'}}>{'$'+(r.price||0).toFixed(2)}</td>
+                <td style={Object.assign({padding:'3px',color:C.txt,textAlign:'right'},fzTd(3,rowBg))}>{'$'+(r.price||0).toFixed(2)}</td>
                 <td style={{padding:'3px',color:C.txtDim,textAlign:'right',fontSize:6}}>{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'3px',color:swColor(r._score),textAlign:'right',fontWeight:700}}>{r._score.toFixed(3)+'%'}</td>
                 {Array.from({length:15},function(_,i){var h=i+4;var v=mp[h]||0;var hasFilter=hourFilters[h]!==undefined;var passes=!hasFilter||v>=hourFilters[h];return <td key={h} style={{padding:'3px 2px',color:passes?swColor(v):C.warn,textAlign:'right',fontSize:6,background:hasFilter?(passes?C.accent+'0d':C.warn+'0d'):'transparent'}}>{v.toFixed(3)}</td>;})}
@@ -31012,7 +31018,7 @@ function App(){
     {page==='violentchop'&&<ViolentChopScreenerPage devView={devView} ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
-    {page==='minuteswingscreener'&&<MinuteSwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='minuteswingscreener'&&<MinuteSwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='overnighthourly'&&<OvernightHourlyPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='tradingzones'&&<WorldTradingTimeZonesPage onBack={function(){setPage('home');}}/>}
     {page==='volumeprofile'&&<VolumeProfileMTFPage apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
