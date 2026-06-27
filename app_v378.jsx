@@ -19041,6 +19041,7 @@ function ViolentChopScreenerPage(p){
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
   var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
+  var s52=useState({}),wk52=s52[0],setWk52=s52[1];             // {ticker:{high,low}} 52-week range from cached_oscillation_screener.range_position
   var pollRef=useRef(null);
   var loadGen=useRef(0);
 
@@ -19116,7 +19117,15 @@ function ViolentChopScreenerPage(p){
     if(gen===loadGen.current)setLoading(false);
   };
 
-  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();(async function(){try{var map={};var off=0;while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/yahoo_ratings?select=ticker,reco_mean,reco_key,target_mean,target_high,target_low,current_price,num_analysts,fetched_at',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(x){map[x.ticker]=x;});if(batch.length<1000)break;off+=1000;}setRatings(map);}catch(e){}})();},[]);
+  useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();(async function(){try{var map={};var off=0;while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/yahoo_ratings?select=ticker,reco_mean,reco_key,target_mean,target_high,target_low,current_price,num_analysts,fetched_at',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(x){map[x.ticker]=x;});if(batch.length<1000)break;off+=1000;}setRatings(map);}catch(e){}})();(async function(){try{
+    // 52-week high/low from cached_oscillation_screener.range_position (latest scan).
+    // range_position is a DOUBLE-ENCODED JSON string, so JSON.parse twice.
+    var sd=null;try{var sr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});var srows=sr.ok?await sr.json():[];if(srows.length)sd=srows[0].scan_date;}catch(e){}
+    if(!sd)return;
+    var map={};var off=0;
+    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp==null)return;try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){return;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low};});if(batch.length<1000)break;off+=1000;}
+    setWk52(map);
+  }catch(e){}})();},[]);
 
   // Lazy-load per-day arrays only when a 2/3/4-day lookback is first selected.
   // Keeps the initial load light (avg-only); this heavier fetch is on demand.
@@ -19433,6 +19442,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>52W<br/>H/L</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -19477,6 +19487,17 @@ function ViolentChopScreenerPage(p){
                         : <button onClick={function(){fetchRatingFor(r.ticker);}} style={{padding:'2px 8px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:7,fontFamily:F,fontWeight:600,cursor:'pointer'}}>Fetch ratings</button>}
                     </td>
                   ];
+                })()}
+                {(function(){
+                  var w=wk52[r.ticker];
+                  if(!w||w.high==null||w.low==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  var rng=w.high-w.low;
+                  var pos=(rng>0&&r.price)?((r.price-w.low)/rng*100):null;
+                  var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
+                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.2}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')}>
+                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.high)}</div>
+                    <div style={{color:C.txtDim,fontSize:7}}>{fmtP(w.low)}</div>
+                  </td>;
                 })()}
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+(chartInt==='D'?'1D':chartInt==='60'?'1h':chartInt+'m')+' / '+({'1D':'1D','5D':'5D','1M':'1M','3M':'3M','12M':'1Y','60M':'5Y'}[chartRange]||chartRange)+')'}>{'\u25F0'}</button>
