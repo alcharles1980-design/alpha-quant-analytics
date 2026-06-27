@@ -30819,6 +30819,8 @@ function App(){
   var ps=useState(function(){
     var h=window.location.hash.slice(1);
     if(h&&h.indexOf('cheatsheet:')===0)return 'cheatsheet';
+    var m=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
+    if(m)return m[1];
     return h||'home';
   }),page=ps[0],setPageRaw=ps[1];
   var opi=useState(null),optPageInit=opi[0],setOptPageInit=opi[1];
