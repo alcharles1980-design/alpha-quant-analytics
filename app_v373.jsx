@@ -28977,6 +28977,12 @@ function AlpacaTradeFinderPage(p){
 
 // ─── ALPACA 24 ATR SCREENER ───────────────────────────────────────────────────
 function Alpaca24AtrPage(p){
+  // Frozen left columns (Hour, Session) on tablet/laptop only — phone unchanged.
+  // This is a per-hour breakdown (not a ticker list), so Hour is the row identity to anchor.
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var FZ_W=[44,52]; var FZ_L=[0,44]; // widths / cumulative lefts (px)
+  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState('NVDA'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(5),days=s2[0],setDays=s2[1];
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
@@ -29276,10 +29282,10 @@ function Alpaca24AtrPage(p){
 
         {/* Hourly ATR table */}
         <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
+          <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8},freeze?{minWidth:1000}:{})}>
             <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'left',fontWeight:700,letterSpacing:0.5}}>HOUR</th>
-              <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'left'}}>SESSION</th>
+              <th style={Object.assign({padding:'5px 4px',color:C.txtDim,textAlign:'left',fontWeight:700,letterSpacing:0.5},fzTh(0))}>HOUR</th>
+              <th style={Object.assign({padding:'5px 4px',color:C.txtDim,textAlign:'left'},fzTh(1))}>SESSION</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>ATR $</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>ATR %</th>
               <th style={{padding:'5px 4px',color:C.txtDim,textAlign:'right'}}>1M</th>
@@ -29293,16 +29299,17 @@ function Alpaca24AtrPage(p){
             </tr></thead>
             <tbody>
               {results.hourData.map(function(h){
-                if(h.count===0)return <tr key={h.hour} style={{borderBottom:'1px solid '+C.border+'40'}}>
-                  <td style={{padding:'4px',color:C.txtDim}}>{h.hour.toString().padStart(2,'0')+':00'}</td>
-                  <td style={{padding:'4px',color:sessionColor(h.hour),fontSize:7}}>{sessionLabel(h.hour)}</td>
+                if(h.count===0){var rowBgE=C.bgCard; return <tr key={h.hour} style={{borderBottom:'1px solid '+C.border+'40'}}>
+                  <td style={Object.assign({padding:'4px',color:C.txtDim},fzTd(0,rowBgE))}>{h.hour.toString().padStart(2,'0')+':00'}</td>
+                  <td style={Object.assign({padding:'4px',color:sessionColor(h.hour),fontSize:7},fzTd(1,rowBgE))}>{sessionLabel(h.hour)}</td>
                   <td colSpan="10" style={{padding:'4px',color:C.border,textAlign:'center',fontStyle:'italic'}}>No data</td>
-                </tr>;
+                </tr>;}
                 var barW=results.maxAtrPct>0?(h.atrPct/results.maxAtrPct*100):0;
                 var sColor=sessionColor(h.hour);
+                var rowBg=C.bgCard; // opaque bg for sticky frozen cells (no zebra on this table)
                 return <tr key={h.hour} style={{borderBottom:'1px solid '+C.border+'40'}}>
-                  <td style={{padding:'4px',color:C.txtBright,fontWeight:700}}>{h.hour.toString().padStart(2,'0')+':00'}</td>
-                  <td style={{padding:'4px',color:sColor,fontSize:7,fontWeight:600}}>{sessionLabel(h.hour)}</td>
+                  <td style={Object.assign({padding:'4px',color:C.txtBright,fontWeight:700},fzTd(0,rowBg))}>{h.hour.toString().padStart(2,'0')+':00'}</td>
+                  <td style={Object.assign({padding:'4px',color:sColor,fontSize:7,fontWeight:600},fzTd(1,rowBg))}>{sessionLabel(h.hour)}</td>
                   <td style={{padding:'4px',color:C.accent,textAlign:'right',fontWeight:600}}>{'$'+h.atrDollar.toFixed(2)}</td>
                   <td style={{padding:'4px',color:C.gold,textAlign:'right',fontWeight:700}}>{h.atrPct.toFixed(2)+'%'}</td>
                   <td style={{padding:'4px',color:C.blue,textAlign:'right',fontWeight:600}}>{'$'+h.avg1m.toFixed(3)}</td>
@@ -31013,7 +31020,7 @@ function App(){
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='alpacafinder'&&<AlpacaTradeFinderPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='alpaca24atr'&&<Alpaca24AtrPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='alpaca24atr'&&<Alpaca24AtrPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='violentchop'&&<ViolentChopScreenerPage devView={devView} ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
