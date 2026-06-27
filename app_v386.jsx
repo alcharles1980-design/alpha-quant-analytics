@@ -19584,7 +19584,10 @@ function ViolentChopScreenerPage(p){
       <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:760,maxHeight:'92vh',background:C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexShrink:0}}>
           <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{vpTk} <span style={{fontSize:7,color:C.purple,fontWeight:700,letterSpacing:1}}>VOLUME PROFILE</span></div>
-          <button onClick={function(){setVpTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <a href={window.location.origin+window.location.pathname+'#volumeprofile:'+vpTk} target="_blank" rel="noopener noreferrer" style={{padding:'3px 10px',border:'1px solid '+C.accent+'80',borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}} title="Open this page in a new tab">Open page {'\u2197'}</a>
+            <button onClick={function(){setVpTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          </div>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
           <VolumeProfileMTFPage key={vpTk} apiKey={p.apiKey} initialTicker={vpTk} embedded={true} onBack={function(){setVpTk(null);}}/>
@@ -19596,7 +19599,10 @@ function ViolentChopScreenerPage(p){
       <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:920,maxHeight:'92vh',background:C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexShrink:0}}>
           <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{gexTk} <span style={{fontSize:7,color:C.gold,fontWeight:700,letterSpacing:1}}>GEX & OPTIONS PROFILE</span></div>
-          <button onClick={function(){setGexTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <a href={window.location.origin+window.location.pathname+'#gexprofile:'+gexTk} target="_blank" rel="noopener noreferrer" style={{padding:'3px 10px',border:'1px solid '+C.accent+'80',borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}} title="Open this page in a new tab">Open page {'\u2197'}</a>
+            <button onClick={function(){setGexTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          </div>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
           <GexOptionsProfilePage key={gexTk} alpKey={p.alpKey} alpSecret={p.alpSecret} initialSymbol={gexTk} embedded={true} onBack={function(){setGexTk(null);}}/>
@@ -19608,7 +19614,10 @@ function ViolentChopScreenerPage(p){
       <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:920,maxHeight:'92vh',background:C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexShrink:0}}>
           <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{atrTk} <span style={{fontSize:7,color:C.blue,fontWeight:700,letterSpacing:1}}>24 HOUR TRADE PROFILE</span></div>
-          <button onClick={function(){setAtrTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <a href={window.location.origin+window.location.pathname+'#alpaca24atr:'+atrTk} target="_blank" rel="noopener noreferrer" style={{padding:'3px 10px',border:'1px solid '+C.accent+'80',borderRadius:4,color:C.accent,fontSize:8,fontFamily:F,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}} title="Open this page in a new tab">Open page {'\u2197'}</a>
+            <button onClick={function(){setAtrTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+          </div>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
           <Alpaca24AtrPage key={atrTk} alpKey={p.alpKey} alpSecret={p.alpSecret} initialTicker={atrTk} embedded={true} onBack={function(){setAtrTk(null);}}/>
@@ -30760,6 +30769,8 @@ function App(){
     var parseHash=function(){
       var h=window.location.hash.slice(1);
       if(h&&h.indexOf('cheatsheet:')===0){var tk=h.split(':')[1];setCsTarget(tk||'');return 'cheatsheet';}
+      var dm=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
+      if(dm){setDeepTk(dm[2]);return dm[1];}
       return h||'home';
     };
     var onPop=function(){setPageRaw(parseHash());};
@@ -30801,6 +30812,13 @@ function App(){
     if(h&&h.indexOf('cheatsheet:')===0)return h.split(':')[1]||'';
     return '';
   }),csTarget=cst[0],setCsTarget=cst[1];
+  // Deep-link ticker for the embedded-popup pages (Volume Profile / GEX / 24H) when opened
+  // in a new tab via '#<page>:<ticker>'. Parsed on first load so the page preselects the ticker.
+  var dlt=useState(function(){
+    var h=window.location.hash.slice(1);
+    var m=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
+    return m?m[2]:'';
+  }),deepTk=dlt[0],setDeepTk=dlt[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
   var s3=useState(new Date().toISOString().split('T')[0]),date=s3[0],setDate=s3[1];
   var s4=useState('1'),tpStr=s4[0],setTpStr=s4[1];
@@ -31095,7 +31113,7 @@ function App(){
     {page==='upload'&&<UploadPage tpPct={parseFloat(tpStr)||1} onBack={function(){setPage('main');}}/>}
     {page==='tradefinder'&&<TradeFinderPage apiKey={pgKey} onBack={function(){setPage('main');}}/>}
     {page==='alpacafinder'&&<AlpacaTradeFinderPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='alpaca24atr'&&<Alpaca24AtrPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='alpaca24atr'&&<Alpaca24AtrPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} initialTicker={deepTk} onBack={function(){setPage('home');}}/>}
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='violentchop'&&<ViolentChopScreenerPage devView={devView} ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage devView={devView} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
@@ -31103,7 +31121,7 @@ function App(){
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='overnighthourly'&&<OvernightHourlyPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='tradingzones'&&<WorldTradingTimeZonesPage onBack={function(){setPage('home');}}/>}
-    {page==='volumeprofile'&&<VolumeProfileMTFPage apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
+    {page==='volumeprofile'&&<VolumeProfileMTFPage apiKey={pgKey} initialTicker={deepTk} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='dailylowswing'&&<DailyLowSwingPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='closehighscreener'&&<CloseHighScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
     {page==='dailyswingscreener'&&<DailySwingScreenerPage pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}}/>}
@@ -31150,7 +31168,7 @@ function App(){
     {page==='stocksatglance'&&<StocksAtGlancePage devView={devView} onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='optionschain'&&<OptionsChainPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} initialSymbol={deepTk} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
