@@ -19011,7 +19011,7 @@ function ViolentChopScreenerPage(p){
   var freeze=(p.devView==='tablet'||p.devView==='laptop'||isPhone);
   var frozenCount=isPhone?2:5; // how many leftmost columns stick on this device
   var FZ_W=[28,56,92,44,52]; var FZ_L=[0,28,84,176,220]; // widths / cumulative lefts (px)
-  var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgCard,overflow:'hidden'}:{};};
   var fzTd=function(idx,rowBg){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
@@ -19454,7 +19454,7 @@ function ViolentChopScreenerPage(p){
           <tbody>
             {visible.map(function(r,idx){
               var rowBg=C.bgCard; // opaque bg for sticky frozen cells — uniform card color so top-10 frozen cells do not show as a dark bgDeep block (the subtle accent+08 row tint stays on the scrolling cells)
-              return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
+              return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:'transparent'}}>
                 <td style={Object.assign({padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
                 <td style={Object.assign({padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
                 <td style={Object.assign({padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'},fzTd(2,rowBg))}>
