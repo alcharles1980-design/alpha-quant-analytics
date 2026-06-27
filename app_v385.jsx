@@ -19515,7 +19515,7 @@ function ViolentChopScreenerPage(p){
                   <button onClick={function(tk){return function(){setGexTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.gold+'60',borderRadius:3,background:'transparent',color:C.gold,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'GEX & options profile for '+r.ticker}>{'\u0393'}</button>
                 </td>
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
-                  <button onClick={function(tk){return function(){setAtrTk(tk);};}(r.ticker)} style={{padding:'3px 7px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'24-hour trade profile for '+r.ticker}>24H</button>
+                  <button onClick={function(tk){return function(){setAtrTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'24-hour trade profile for '+r.ticker}>{'\u23F1'}</button>
                 </td>
               </tr>;
             })}
