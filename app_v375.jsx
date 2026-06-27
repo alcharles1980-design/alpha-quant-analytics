@@ -15878,6 +15878,12 @@ function GexOptionsProfilePage(p){
 }
 
 function OptionsChainPage(p){
+  // Frozen STRIKE column on the options-chain table, tablet/laptop only — phone unchanged.
+  // Single column (left:0); colSpan price-marker / empty rows scroll normally (they have no STRIKE cell).
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var FZ_SW=56; // STRIKE column width (px)
+  var fzThS=freeze?{position:'sticky',left:0,width:FZ_SW,minWidth:FZ_SW,maxWidth:FZ_SW,zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};
+  var fzTdS=function(rowBg){return freeze?{position:'sticky',left:0,width:FZ_SW,minWidth:FZ_SW,maxWidth:FZ_SW,zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
   var s2=useState([]),contracts=s2[0],setContracts=s2[1];
   var s3=useState({}),snapshots=s3[0],setSnapshots=s3[1];
@@ -16339,9 +16345,9 @@ function OptionsChainPage(p){
           {optType.toUpperCase()+'S \u2014 '+selectedExp+' ('+filtered.length+' strikes)'}
         </div>
         <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:500}}>
+          <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:500},freeze?{minWidth:720}:{})}>
             <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-              <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>STRIKE</th>
+              <th style={Object.assign({padding:'4px 3px',textAlign:'left',color:C.txtDim},fzThS)}>STRIKE</th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>BID</th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>ASK</th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>LAST</th>
@@ -16379,9 +16385,11 @@ function OptionsChainPage(p){
                   var greeks=snap2.greeks||{};
                   var strike=+cc.strike_price;
                   var itm=lastPrice&&((optType==='call'&&lastPrice>strike)||(optType==='put'&&lastPrice<strike));
+                  var selSym=selectedContract&&selectedContract.symbol===cc.symbol;
+                  var rowBgS=selSym?C.bgDeep:C.bgCard; // opaque bg for sticky STRIKE cell (selected stays distinct)
                   return <tr key={idx} onClick={function(){fetchContractTrades(cc);}} style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
-                    background:selectedContract&&selectedContract.symbol===cc.symbol?C.gold+'15':itm?(optType==='call'?C.accent+'0d':C.warn+'0d'):'transparent'}}>
-                    <td style={{padding:'4px 3px',color:itm?C.gold:C.txtBright,fontWeight:700}}>{'$'+fmt(strike)}</td>
+                    background:selSym?C.gold+'15':itm?(optType==='call'?C.accent+'0d':C.warn+'0d'):'transparent'}}>
+                    <td style={Object.assign({padding:'4px 3px',color:itm?C.gold:C.txtBright,fontWeight:700},fzTdS(rowBgS))}>{'$'+fmt(strike)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.accent}}>{fmt(quote.bp)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.warn}}>{fmt(quote.ap)}</td>
                     <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmt(trade2.p)}</td>
@@ -31080,7 +31088,7 @@ function App(){
     {page==='objectives'&&<ObjectivesPage onBack={function(){setPage('home');}}/> }
     {page==='stocksatglance'&&<StocksAtGlancePage devView={devView} onBack={function(){setPage('home');}} apiKey={pgKey} sb={getSbHeaders} supaUrl={SB_URL} onApiDocs={function(){setPage('glanceapi');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
-    {page==='optionschain'&&<OptionsChainPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='optionschain'&&<OptionsChainPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
