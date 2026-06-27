@@ -19496,7 +19496,7 @@ function ViolentChopScreenerPage(p){
                   var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
                   return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.2}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')}>
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.high)}</div>
-                    <div style={{color:C.txtDim,fontSize:7}}>{fmtP(w.low)}</div>
+                    <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{fmtP(w.low)}</div>
                   </td>;
                 })()}
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
