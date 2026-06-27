@@ -19004,11 +19004,15 @@ function NextDayRangePage(p){
 }
 
 function ViolentChopScreenerPage(p){
-  // Frozen left columns (#, Ticker, Links, Type, Price) on tablet/laptop only — phone unchanged.
-  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  // Frozen left columns. Tablet/laptop: #, Ticker, Links, Type, Price (5 cols).
+  // Phone: only #, Ticker (2 cols) — keeps the row identity pinned while scrolling
+  // L/R without eating the narrow phone width with 5 frozen columns.
+  var isPhone=(p.devView==='phone');
+  var freeze=(p.devView==='tablet'||p.devView==='laptop'||isPhone);
+  var frozenCount=isPhone?2:5; // how many leftmost columns stick on this device
   var FZ_W=[28,56,92,44,52]; var FZ_L=[0,28,84,176,220]; // widths / cumulative lefts (px)
-  var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
-  var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
+  var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTd=function(idx,rowBg){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
   var s3=useState(''),err=s3[0],setErr=s3[1];
