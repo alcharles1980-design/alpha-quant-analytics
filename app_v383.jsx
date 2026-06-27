@@ -18465,7 +18465,7 @@ function OscillationScreenerPage(p){
           </tr></thead>
           <tbody>{(function(){var displayRows=sorted.slice(0,filter?sorted.length:showCount);var fullRanks={};if(filter){var allSorted=data?data.slice().map(function(r2){return Object.assign({},r2,{_score:getScore(r2)});}).sort(function(a,b){return(b._score||0)-(a._score||0);}):[];for(var ri=0;ri<allSorted.length;ri++)fullRanks[allSorted[ri].ticker]=ri+1;}return displayRows.map(function(r,idx){
             var rank=filter?fullRanks[r.ticker]||'--':(idx+1);
-            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
+            return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:'transparent'}}>
               <td style={{padding:'3px',color:C.txtDim,fontSize:6}}>{rank}</td>
               <td style={{padding:'3px',color:C.txtBright,fontWeight:700}}>{r.ticker}</td>
               <td style={{padding:'1px 3px',whiteSpace:'nowrap'}}>
