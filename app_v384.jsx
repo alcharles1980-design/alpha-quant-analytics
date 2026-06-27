@@ -19041,6 +19041,7 @@ function ViolentChopScreenerPage(p){
   var sChR=useState('5D'),chartRange=sChR[0],setChartRange=sChR[1]; // chart modal range (default 5D)
   var sVp=useState(null),vpTk=sVp[0],setVpTk=sVp[1];                // null = closed; else ticker for volume-profile popup
   var sGx=useState(null),gexTk=sGx[0],setGexTk=sGx[1];              // null = closed; else ticker for GEX & options popup
+  var sAtr=useState(null),atrTk=sAtr[0],setAtrTk=sAtr[1];           // null = closed; else ticker for 24H trade-profile popup
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
@@ -19450,6 +19451,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>24H<br/>Prof</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -19511,6 +19513,9 @@ function ViolentChopScreenerPage(p){
                 </td>
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setGexTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.gold+'60',borderRadius:3,background:'transparent',color:C.gold,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'GEX & options profile for '+r.ticker}>{'\u0393'}</button>
+                </td>
+                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                  <button onClick={function(tk){return function(){setAtrTk(tk);};}(r.ticker)} style={{padding:'3px 7px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'24-hour trade profile for '+r.ticker}>24H</button>
                 </td>
               </tr>;
             })}
@@ -19595,6 +19600,18 @@ function ViolentChopScreenerPage(p){
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
           <GexOptionsProfilePage key={gexTk} alpKey={p.alpKey} alpSecret={p.alpSecret} initialSymbol={gexTk} embedded={true} onBack={function(){setGexTk(null);}}/>
+        </div>
+      </div>
+    </div>}
+
+    {atrTk&&<div onClick={function(){setAtrTk(null);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
+      <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:920,maxHeight:'92vh',background:C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid '+C.border,flexShrink:0}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.txtBright,fontFamily:F}}>{atrTk} <span style={{fontSize:7,color:C.blue,fontWeight:700,letterSpacing:1}}>24 HOUR TRADE PROFILE</span></div>
+          <button onClick={function(){setAtrTk(null);}} style={{padding:'3px 11px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:12,fontFamily:F,cursor:'pointer'}}>{'\u2715'}</button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
+          <Alpaca24AtrPage key={atrTk} alpKey={p.alpKey} alpSecret={p.alpSecret} initialTicker={atrTk} embedded={true} onBack={function(){setAtrTk(null);}}/>
         </div>
       </div>
     </div>}
@@ -29037,7 +29054,7 @@ function Alpaca24AtrPage(p){
   var FZ_W=[44,52]; var FZ_L=[0,44]; // widths / cumulative lefts (px)
   var fzTh=function(idx){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
   var fzTd=function(idx,rowBg){return freeze?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
-  var s1=useState('NVDA'),ticker=s1[0],setTicker=s1[1];
+  var s1=useState(p.initialTicker||'NVDA'),ticker=s1[0],setTicker=s1[1];
   var s2=useState(5),days=s2[0],setDays=s2[1];
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
   var s4=useState(null),err=s4[0],setErr=s4[1];
@@ -29262,11 +29279,15 @@ function Alpaca24AtrPage(p){
     return C.blue;
   };
 
+  // Auto-load on mount when opened as an embedded popup with a preset ticker
+  // (no effect on normal full-page nav, which passes no initialTicker).
+  React.useEffect(function(){if(p.initialTicker&&p.alpKey&&p.alpSecret){run();}},[]);
+
   return <div>
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+    {!p.embedded&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:10,padding:'6px 12px',cursor:'pointer'}}>{'\u2190'} Back</button>
       <div style={{color:C.txtBright,fontSize:13,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',fontFamily:F}}>24 Hour Stock Trade Profile</div>
-    </div>
+    </div>}
 
     <div style={card}>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
