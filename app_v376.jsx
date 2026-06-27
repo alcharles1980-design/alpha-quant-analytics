@@ -14714,6 +14714,11 @@ function WorldTradingTimeZonesPage(p){
 
 // ─── CONFIG HEDGE CALCULATOR ──────────────────────────────────────────────────
 function HedgeCalcPage(p){
+  // Frozen first column (the PRICE/STRIKE identity) on all three tables, tablet/laptop only.
+  // Phone unchanged. Width-parameterized single-column freeze (w defaults to 58px).
+  var freeze=(p.devView==='tablet'||p.devView==='laptop');
+  var fzTh1=function(w){return freeze?{position:'sticky',left:0,width:(w||58),minWidth:(w||58),maxWidth:(w||58),zIndex:3,background:C.bgDeep,overflow:'hidden'}:{};};
+  var fzTd1=function(rowBg,w){return freeze?{position:'sticky',left:0,width:(w||58),minWidth:(w||58),maxWidth:(w||58),zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState('NVDA'),symbol=s1[0],setSymbol=s1[1];
   var s2=useState('200'),gridTop=s2[0],setGridTop=s2[1];
   var s3=useState('50'),gridBottom=s3[0],setGridBottom=s3[1];
@@ -15124,9 +15129,9 @@ function HedgeCalcPage(p){
     {rp>0&&(parseFloat(bottomRef)||0)>0&&(parseFloat(bottomRef)||0)<rp&&top>bot&&lvls>1&&<div style={card}>
       <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:8,textTransform:'uppercase'}}>Drawdown Ladder: ${fmt2(rp)} {'\u2192'} ${fmt2(parseFloat(bottomRef))}</div>
       <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:320}}>
+        <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:320},freeze?{minWidth:640}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-            <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>PRICE</th>
+            <th style={Object.assign({padding:'3px 2px',textAlign:'left',color:C.txtDim},fzTh1(54))}>PRICE</th>
             <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>LVLS</th>
             <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>SHRS</th>
             <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>CAPITAL</th>
@@ -15152,9 +15157,10 @@ function HedgeCalcPage(p){
                 var plPct=cd2>0?(pl2/cd2*100):0;
                 var isRef=pr===Math.floor(rp);
                 var isCritical=plPct<=-50;
+                var rowBg1=isRef?C.bgDeep:C.bgCard; // opaque bg for sticky PRICE cell
                 rows2.push(<tr key={pr} style={{borderBottom:'1px solid '+C.border+'20',
                   background:isRef?C.gold+'10':isCritical?C.warn+'08':'transparent'}}>
-                  <td style={{padding:'3px 2px',color:isRef?C.gold:C.txtBright,fontWeight:isRef?700:400}}>${pr}</td>
+                  <td style={Object.assign({padding:'3px 2px',color:isRef?C.gold:C.txtBright,fontWeight:isRef?700:400},fzTd1(rowBg1,54))}>${pr}</td>
                   <td style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>{fl2.toLocaleString()}</td>
                   <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>{ts2.toLocaleString()}</td>
                   <td style={{padding:'3px 2px',textAlign:'right',color:C.gold}}>${fmtK(cd2)}</td>
@@ -15208,9 +15214,9 @@ function HedgeCalcPage(p){
             </div>
             {isExpOpen&&<div style={{border:'1px solid '+C.border+'44',borderTop:'none',borderRadius:'0 0 6px 6px',overflow:'hidden'}}>
             <div style={{overflowX:'auto'}}>
-              <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
+              <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:760}:{})}>
                 <thead><tr style={{borderBottom:'2px solid '+C.border,background:C.bgCard}}>
-                  <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>STRIKE</th>
+                  <th style={Object.assign({padding:'3px 2px',textAlign:'left',color:C.txtDim},fzTh1(54))}>STRIKE</th>
                   <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>BID</th>
                   <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>ASK</th>
                   <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>MID</th>
@@ -15226,11 +15232,12 @@ function HedgeCalcPage(p){
                     var isNearMoney=lastPrice&&Math.abs(put.strike-lastPrice)/lastPrice<0.05;
                     var goodValue=put.costRatio>0&&put.costRatio<0.15;
                     var isSelected=selectedPut&&selectedPut.symbol===put.symbol;
+                    var rowBg2=isSelected?C.bgDeep:C.bgCard; // opaque bg for sticky STRIKE cell
                     return <tr key={pi2} onClick={function(){setSelectedPut(put);setHedgeContracts(String(put.contractsNeeded));}}
                       style={{borderBottom:'1px solid '+C.border+'20',cursor:'pointer',
                       borderLeft:isSelected?'3px solid '+(C.purple||'#a855f7'):'3px solid transparent',
                       background:isSelected?(C.purple||'#a855f7')+'35':isNearMoney?C.gold+'08':goodValue?C.accent+'06':'transparent'}}>
-                      <td style={{padding:'3px 2px',color:isSelected?(C.purple||'#a855f7'):C.txtBright,fontWeight:700}}>{isSelected?'\u25B6 ':''}{'\$'+fmt2(put.strike)}</td>
+                      <td style={Object.assign({padding:'3px 2px',color:isSelected?(C.purple||'#a855f7'):C.txtBright,fontWeight:700},fzTd1(rowBg2,54))}>{isSelected?'\u25B6 ':''}{'\$'+fmt2(put.strike)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:C.accent}}>{fmt2(put.bid)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:C.warn}}>{fmt2(put.ask)}</td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:C.txt}}>{fmt2(put.mid)}</td>
@@ -15395,9 +15402,9 @@ function HedgeCalcPage(p){
 
           <div style={{color:C.txtDim,fontSize:8,fontWeight:700,letterSpacing:1,fontFamily:F,marginBottom:6,textTransform:'uppercase'}}>Hedged P/L Ladder (${Math.floor(rp)} {'\u2192'} ${Math.ceil(parseFloat(bottomRef)||bot)})</div>
           <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:340}}>
+            <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap',minWidth:340},freeze?{minWidth:640}:{})}>
               <thead><tr style={{borderBottom:'2px solid '+C.border}}>
-                <th style={{padding:'3px 2px',textAlign:'left',color:C.txtDim}}>PRICE</th>
+                <th style={Object.assign({padding:'3px 2px',textAlign:'left',color:C.txtDim},fzTh1(54))}>PRICE</th>
                 <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>STK P/L</th>
                 <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>PUT</th>
                 <th style={{padding:'3px 2px',textAlign:'right',color:C.txtDim}}>COST</th>
@@ -15427,9 +15434,10 @@ function HedgeCalcPage(p){
                     var saved=putTotalValue-hedgeCost;
                     var isRef2=pr2===Math.floor(rp);
                     var isStrike=pr2===Math.floor(putStrike);
+                    var rowBg3=(isRef2||isStrike)?C.bgDeep:C.bgCard; // opaque bg for sticky PRICE cell
                     rows3.push(<tr key={pr2} style={{borderBottom:'1px solid '+C.border+'20',
                       background:isRef2?C.gold+'10':isStrike?(C.purple||'#a855f7')+'12':'transparent'}}>
-                      <td style={{padding:'3px 2px',color:isRef2?C.gold:isStrike?(C.purple||'#a855f7'):C.txtBright,fontWeight:isRef2||isStrike?700:400}}>
+                      <td style={Object.assign({padding:'3px 2px',color:isRef2?C.gold:isStrike?(C.purple||'#a855f7'):C.txtBright,fontWeight:isRef2||isStrike?700:400},fzTd1(rowBg3,54))}>
                         ${pr2}{isStrike?' \u25C0':''}
                       </td>
                       <td style={{padding:'3px 2px',textAlign:'right',color:stockPL>=0?C.accent:C.warn}}>{stockPL>=0?'+':''}{fmtK2(stockPL)}</td>
@@ -31090,7 +31098,7 @@ function App(){
     {page==='glanceapi'&&<GlanceApiDocsPage onBack={function(){setPage('stocksatglance');}}/>}
     {page==='optionschain'&&<OptionsChainPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
-    {page==='hedgecalc'&&<HedgeCalcPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
+    {page==='hedgecalc'&&<HedgeCalcPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='fullmarketscan'&&<FullMarketScanPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
