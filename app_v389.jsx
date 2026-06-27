@@ -19051,6 +19051,7 @@ function ViolentChopScreenerPage(p){
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
   var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
   var s52=useState({}),wk52=s52[0],setWk52=s52[1];             // {ticker:{high,low}} 52-week range from cached_oscillation_screener.range_position
+  var sAtr14=useState({}),atr14=sAtr14[0],setAtr14=sAtr14[1];     // {ticker:{pct,dollar}} 14-day ATR from cached_oscillation_screener (atr_14d_pct / atr_14d_dollar)
   var pollRef=useRef(null);
   var loadGen=useRef(0);
 
@@ -19131,9 +19132,9 @@ function ViolentChopScreenerPage(p){
     // range_position is a DOUBLE-ENCODED JSON string, so JSON.parse twice.
     var sd=null;try{var sr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});var srows=sr.ok?await sr.json():[];if(srows.length)sd=srows[0].scan_date;}catch(e){}
     if(!sd)return;
-    var map={};var off=0;
-    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp==null)return;try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){return;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low};});if(batch.length<1000)break;off+=1000;}
-    setWk52(map);
+    var map={};var atrMap={};var off=0;
+    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position,atr_14d_pct,atr_14d_dollar',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp!=null){try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){rp=null;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low};}if(row.atr_14d_pct!=null||row.atr_14d_dollar!=null)atrMap[row.ticker]={pct:row.atr_14d_pct!=null?+row.atr_14d_pct:null,dollar:row.atr_14d_dollar!=null?+row.atr_14d_dollar:null};});if(batch.length<1000)break;off+=1000;}
+    setWk52(map);setAtr14(atrMap);
   }catch(e){}})();},[]);
 
   // Lazy-load per-day arrays only when a 2/3/4-day lookback is first selected.
@@ -19452,6 +19453,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>52W<br/>H/L</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>14d<br/>ATR</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -19507,6 +19509,14 @@ function ViolentChopScreenerPage(p){
                   return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.2}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')}>
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.high)}</div>
                     <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{fmtP(w.low)}</div>
+                  </td>;
+                })()}
+                {(function(){
+                  var a=atr14[r.ticker];
+                  if(!a||(a.pct==null&&a.dollar==null))return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.2}} title="Rolling 14-day Average True Range (volatility) — percent of price over dollar value">
+                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{a.pct!=null?(+a.pct).toFixed(1)+'%':'\u2014'}</div>
+                    <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{a.dollar!=null?'$'+(+a.dollar).toFixed(2):'\u2014'}</div>
                   </td>;
                 })()}
                 <td style={{padding:'4px 5px',textAlign:'center'}}>
