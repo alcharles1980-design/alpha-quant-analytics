@@ -19453,7 +19453,7 @@ function ViolentChopScreenerPage(p){
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
-              var rowBg=idx<10?C.bgDeep:C.bgCard; // opaque per-row bg for sticky frozen cells (top-10 band preserved)
+              var rowBg=C.bgCard; // opaque bg for sticky frozen cells — uniform card color so top-10 frozen cells do not show as a dark bgDeep block (the subtle accent+08 row tint stays on the scrolling cells)
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:idx<10?C.accent+'08':'transparent'}}>
                 <td style={Object.assign({padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
                 <td style={Object.assign({padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
