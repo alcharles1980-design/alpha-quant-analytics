@@ -15681,7 +15681,11 @@ function GexOptionsProfilePage(p){
   };
 
   // Auto-load on mount when opened as an embedded popup with a preset symbol
-  React.useEffect(function(){if(p.initialSymbol)load();},[]);
+  var autoRanG=React.useRef(false);
+  React.useEffect(function(){
+    if(autoRanG.current)return;
+    if(p.initialSymbol&&p.alpKey&&p.alpSecret){autoRanG.current=true;load();}
+  },[p.initialSymbol,p.alpKey,p.alpSecret]);
 
   var expiries=React.useMemo(function(){
     var set={};for(var i=0;i<rawContracts.length;i++)set[rawContracts[i].expiration_date]=true;
@@ -29290,7 +29294,15 @@ function Alpaca24AtrPage(p){
 
   // Auto-load on mount when opened as an embedded popup with a preset ticker
   // (no effect on normal full-page nav, which passes no initialTicker).
-  React.useEffect(function(){if(p.initialTicker&&p.alpKey&&p.alpSecret){run();}},[]);
+  // Auto-load on mount when opened as an embedded popup OR a deep-linked new tab with a preset
+  // ticker. Keys (alpKey/alpSecret) load asynchronously on a cold load, so we depend on them and
+  // fire exactly once (ref guard) when they first become available — otherwise a fresh-tab deep
+  // link would mount with empty keys and never load.
+  var autoRan=React.useRef(false);
+  React.useEffect(function(){
+    if(autoRan.current)return;
+    if(p.initialTicker&&p.alpKey&&p.alpSecret){autoRan.current=true;run();}
+  },[p.initialTicker,p.alpKey,p.alpSecret]);
 
   return <div>
     {!p.embedded&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -30771,6 +30783,9 @@ function App(){
       if(h&&h.indexOf('cheatsheet:')===0){var tk=h.split(':')[1];setCsTarget(tk||'');return 'cheatsheet';}
       var dm=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
       if(dm){setDeepTk(dm[2]);return dm[1];}
+      // Bare page nav (e.g. from the menu) to a deep-link page: clear any stale deep-link
+      // ticker so it doesn't wrongly pre-load the previously deep-linked symbol.
+      if(h==='volumeprofile'||h==='gexprofile'||h==='alpaca24atr')setDeepTk('');
       return h||'home';
     };
     var onPop=function(){setPageRaw(parseHash());};
