@@ -19013,8 +19013,8 @@ function ViolentChopScreenerPage(p){
   // L/R without eating the narrow phone width with 5 frozen columns.
   var isPhone=(p.devView==='phone');
   var freeze=(p.devView==='tablet'||p.devView==='laptop'||isPhone);
-  var frozenCount=isPhone?2:5; // how many leftmost columns stick on this device
-  var FZ_W=[28,56,92,44,52]; var FZ_L=[0,28,84,176,220]; // widths / cumulative lefts (px)
+  var frozenCount=isPhone?3:5; // how many leftmost columns stick — phone: #/Ticker/Price; tablet+laptop: also Links/Type
+  var FZ_W=[28,56,52,92,44]; var FZ_L=[0,28,84,136,228]; // widths / cumulative lefts (px) — order: # Ticker Price Links Type
   var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgCard,overflow:'hidden'}:{};};
   var fzTd=function(idx,rowBg){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
@@ -19436,9 +19436,9 @@ function ViolentChopScreenerPage(p){
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
             <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(0))}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'},fzTh(1))}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
-            <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(2))}>Links</th>
-            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'},fzTh(3))}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
-            {th('price','Price',4)}
+            {th('price','Price',2)}
+            <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(3))}>Links</th>
+            <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'},fzTh(4))}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             {th('adv',['$ Vol',<br key="b"/>,'/day'])}
             {th('market_cap','MCap')}
             {th('composite',['Chop',<br key="b"/>,'Score'])}
@@ -19469,13 +19469,13 @@ function ViolentChopScreenerPage(p){
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:'transparent'}}>
                 <td style={Object.assign({padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
                 <td style={Object.assign({padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
-                <td style={Object.assign({padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'},fzTd(2,rowBg))}>
+                <td style={Object.assign({padding:'4px 5px',color:C.txt,textAlign:'center'},fzTd(2,rowBg))} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
+                <td style={Object.assign({padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'},fzTd(3,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
                 </td>
-                <td style={Object.assign({padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600},fzTd(3,rowBg))}>{typeLabel(r.ticker_type)}</td>
-                <td style={Object.assign({padding:'4px 5px',color:C.txt,textAlign:'center'},fzTd(4,rowBg))} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
+                <td style={Object.assign({padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600},fzTd(4,rowBg))}>{typeLabel(r.ticker_type)}</td>
                 <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
                 <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'4px 5px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
