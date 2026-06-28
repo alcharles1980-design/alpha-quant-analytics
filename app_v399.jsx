@@ -19374,22 +19374,22 @@ function ViolentChopScreenerPage(p){
       </div>
 
       {/* Resolution toggle */}
-      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:12,flexWrap:'wrap'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Resolution:</span>
         {['10s','30s','60s','120s','180s','1h','4h','1d'].map(function(rk){
-          return <button key={rk} onClick={function(){setRes(rk);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',
+          return <button key={rk} onClick={function(){setRes(rk);}} style={{padding:'3px 9px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',
             border:'1px solid '+(res===rk?C.accent:C.border),background:res===rk?C.accent+'14':'transparent',color:res===rk?C.accent:C.txtDim}}>{resLabel[rk]}</button>;
         })}
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Bar size used to detect swings. 10-second is the default ranking. 4-hour & 1-day use a multi-day "across-window" metric (see note below).</span>
       </div>
 
       {/* Lookback toggle — applies to within-day resolutions only; recomputed client-side */}
-      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:10,flexWrap:'wrap'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600,opacity:resAcross[res]?0.5:1}}>Lookback:</span>
         {[['2','2 days'],['3','3 days'],['4','4 days'],['all','Full (5d)']].map(function(lb){
           var off=!!resAcross[res];
           var on=!off&&lookback===lb[0];
-          return <button key={lb[0]} disabled={off} title={off?'Lookback applies to the intraday resolutions only':''} onClick={function(){if(!off)setLookback(lb[0]);}} style={{padding:'4px 12px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:off?'not-allowed':'pointer',opacity:off?0.35:1,
+          return <button key={lb[0]} disabled={off} title={off?'Lookback applies to the intraday resolutions only':''} onClick={function(){if(!off)setLookback(lb[0]);}} style={{padding:'3px 9px',borderRadius:4,fontSize:9,fontFamily:F,fontWeight:700,cursor:off?'not-allowed':'pointer',opacity:off?0.35:1,
             border:'1px solid '+(on?C.gold:C.border),background:on?C.gold+'14':'transparent',color:on?C.gold:C.txtDim}}>{lb[1]}</button>;
         })}
         {!resAcross[res]&&<span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Averages within-day chop over the most recent N trading days (Full = all 5). Recomputes instantly — no re-scan.</span>}
