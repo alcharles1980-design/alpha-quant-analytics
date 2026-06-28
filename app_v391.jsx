@@ -19453,6 +19453,8 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>52W<br/>H/L</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>%<br/>52WH</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Tgt<br/>Up%</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>14d<br/>ATR</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
@@ -19510,6 +19512,20 @@ function ViolentChopScreenerPage(p){
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.high)}</div>
                     <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{fmtP(w.low)}</div>
                   </td>;
+                })()}
+                {(function(){
+                  var w=wk52[r.ticker];
+                  if(!w||w.high==null||!r.price){return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;}
+                  var pct=(r.price/w.high-1)*100; // <=0 below high, >0 if fresh high above stored 52W high
+                  var col=pct>=-1?C.txt:(pct>=-15?C.txtDim:(C.red||'#ef4444'));
+                  return <td style={{padding:'4px 5px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Distance from 52-week high ($'+(+w.high).toFixed(2)+'). 0% = at the high; negative = below it.'}>{(pct>0?'+':'')+pct.toFixed(1)+'%'}</td>;
+                })()}
+                {(function(){
+                  var rt=ratings[r.ticker];
+                  if(!rt||rt.target_mean==null||!r.price){return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;}
+                  var up=(rt.target_mean/r.price-1)*100; // >0 = analysts see upside
+                  var col=up>=0?(C.green||C.accent):(C.red||'#ef4444');
+                  return <td style={{padding:'4px 5px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Implied upside to Yahoo mean target $'+(+rt.target_mean).toFixed(2)+(rt.num_analysts!=null?' ('+rt.num_analysts+' analysts)':'')+'. Positive = price below target.'}>{(up>=0?'+':'')+up.toFixed(0)+'%'}</td>;
                 })()}
                 {(function(){
                   var a=atr14[r.ticker];
