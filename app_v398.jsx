@@ -19040,7 +19040,7 @@ function ViolentChopScreenerPage(p){
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s15b=useState(false),showColInfo=s15b[0],setShowColInfo=s15b[1];
-  var s15c=useState(false),showInstr=s15c[0],setShowInstr=s15c[1];
+  var s15c=useState(true),showInstr=s15c[0],setShowInstr=s15c[1];
   var sCh=useState(null),chartTk=sCh[0],setChartTk=sCh[1];          // null = closed; else ticker
   var sChI=useState('5'),chartInt=sChI[0],setChartInt=sChI[1];      // chart modal interval (default 5m)
   var sChR=useState('5D'),chartRange=sChR[0],setChartRange=sChR[1]; // chart modal range (default 5D)
@@ -19359,7 +19359,11 @@ function ViolentChopScreenerPage(p){
               <span style={{fontSize:7,transform:showInstr?'rotate(90deg)':'none',transition:'transform 0.15s'}}>{'\u25B8'}</span>
             </button>
             {showInstr&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,maxWidth:560,lineHeight:1.6,paddingLeft:2}}>
-              Ranks tickers by within-day chop intensity over a 5-day lookback. A swing = each bar's low to the next bar's high, counted unconditionally (downtrends still have up-swings between bars). The composite weights total path by how uneven the swings are ("swings of the swings") — so erratic, RVI-style violence ranks above steady metronomic chop.
+              <span style={{color:C.accent,fontWeight:700}}>What this is.</span> A volatility ranking tool. It ranks the top ~2,400 US stocks purely by how much they oscillate, measured at the bar resolution you pick below — 10-second, 1-minute, 10-minute, hourly, or daily.
+              <br/><br/>
+              <span style={{color:C.accent,fontWeight:700}}>What it does not do.</span> It does not rank by fundamentals, price targets, or anything else — only technical volatility, to surface the names with the most oscillation for grid trading.
+              <br/><br/>
+              <span style={{color:C.accent,fontWeight:700}}>How to use it.</span> Treat it as a volatility screen, then combine it with the other technical and fundamental data at your fingertips (analyst targets, 52W/30d/7d ranges, ATR, and more) to make the call.
             </div>}
           </div>
         </div>
