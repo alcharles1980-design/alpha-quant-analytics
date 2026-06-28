@@ -19014,7 +19014,7 @@ function ViolentChopScreenerPage(p){
   var isPhone=(p.devView==='phone');
   var freeze=(p.devView==='tablet'||p.devView==='laptop'||isPhone);
   var frozenCount=isPhone?3:5; // how many leftmost columns stick — phone: #/Ticker/Price; tablet+laptop: also Links/Type
-  var FZ_W=[26,46,52,92,44]; var FZ_L=[0,26,72,124,216]; // widths / cumulative lefts (px) — order: # Ticker Price Links Type (Ticker tightened 56->46 to close Ticker-Price gap)
+  var FZ_W=[24,42,48,88,40]; var FZ_L=[0,24,66,114,202]; // widths / cumulative lefts (px) — order: # Ticker Price Links Type (tightened for mobile width)
   var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgCard,overflow:'hidden'}:{};};
   var fzTd=function(idx,rowBg){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
@@ -19337,7 +19337,7 @@ function ViolentChopScreenerPage(p){
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
 
   var doSort=function(k){if(sortKey===k)setSortDesc(!sortDesc);else{setSortKey(k);setSortDesc(true);}};
-  var thS=function(k){return{padding:'4px 5px',textAlign:'center',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,lineHeight:1.15,verticalAlign:'bottom'};};
+  var thS=function(k){return{padding:'4px 3px',textAlign:'center',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,lineHeight:1.15,verticalAlign:'bottom'};};
   var th=function(k,label,fzIdx){return <th onClick={function(){doSort(k);}} style={Object.assign({},thS(k),fzIdx!=null?fzTh(fzIdx):{})}>{label}{sortKey===k?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
 
   // color scale for composite (chop intensity)
@@ -19424,7 +19424,7 @@ function ViolentChopScreenerPage(p){
 
     {loading&&(!data||data.length===0)&&<Cd><div style={{textAlign:'center',color:C.gold,fontSize:10,fontFamily:F,padding:20}}>Loading chop data...</div></Cd>}
 
-    {data&&data.length>0&&<Cd>
+    {data&&data.length>0&&<Cd style={{padding:'14px 6px'}}>
       <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',marginBottom:6}}>
         <button onClick={function(){setShowColInfo(true);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 10px',border:'1px solid '+C.accent+'55',borderRadius:5,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:600,cursor:'pointer'}} title="What does each column mean?">
           <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:13,height:13,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:8,fontWeight:700,fontStyle:'italic'}}>i</span>
@@ -19434,10 +19434,10 @@ function ViolentChopScreenerPage(p){
       <div style={{overflowX:'auto'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8},freeze?{minWidth:1100}:{})}>
           <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-            <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(0))}>#</th>
+            <th style={Object.assign({padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(0))}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'},fzTh(1))}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             <th onClick={function(){doSort('price');}} style={Object.assign({},thS('price'),{textAlign:'left'},fzTh(2))}>Price{sortKey==='price'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
-            <th style={Object.assign({padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(3))}>Links</th>
+            <th style={Object.assign({padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(3))}>Links</th>
             <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'},fzTh(4))}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             {th('adv',['$ Vol',<br key="b"/>,'/day'])}
             {th('market_cap','MCap')}
@@ -19447,57 +19447,57 @@ function ViolentChopScreenerPage(p){
             {th('avgUsd',['Avg',<br key="b"/>,'Swing $'])}
             {th('dailyPot',['Daily $',<br key="b"/>,'Pot.'])}
             {th('capEff',['Cap',<br key="b"/>,'Eff.'])}
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Consen{'\u00AD'}sus</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Low</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>52W<br/>H/L</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>30d<br/>H/L</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>7d<br/>H/L</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>%<br/>52WH</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Tgt<br/>Up%</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>14d<br/>ATR</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
-            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>24H<br/>Prof</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Consen{'\u00AD'}sus</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Low</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>Mean</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>52W<br/>H/L</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>30d<br/>H/L</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>7d<br/>H/L</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>%<br/>52WH</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Tgt<br/>Up%</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>14d<br/>ATR</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>24H<br/>Prof</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
               var rowBg=C.bgCard; // opaque bg for sticky frozen cells — uniform card color so top-10 frozen cells do not show as a dark bgDeep block (the subtle accent+08 row tint stays on the scrolling cells)
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:'transparent'}}>
-                <td style={Object.assign({padding:'4px 5px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
-                <td style={Object.assign({padding:'4px 5px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
-                <td style={Object.assign({padding:'4px 5px',color:C.txt,textAlign:'left'},fzTd(2,rowBg))} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
+                <td style={Object.assign({padding:'4px 3px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
+                <td style={Object.assign({padding:'4px 3px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
+                <td style={Object.assign({padding:'4px 3px',color:C.txt,textAlign:'left'},fzTd(2,rowBg))} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
                 <td style={Object.assign({padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'},fzTd(3,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
                 </td>
-                <td style={Object.assign({padding:'4px 5px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600},fzTd(4,rowBg))}>{typeLabel(r.ticker_type)}</td>
-                <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
-                <td style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
-                <td style={{padding:'4px 5px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
-                <td style={{padding:'4px 5px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
-                <td style={{padding:'4px 5px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
-                <td style={{padding:'4px 5px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
-                <td style={{padding:'4px 5px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for a grid.">{'$'+r.dailyPot.toFixed(0)}</td>
-                <td style={{padding:'4px 5px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily dollar path as % of current share price. Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
+                <td style={Object.assign({padding:'4px 3px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600},fzTd(4,rowBg))}>{typeLabel(r.ticker_type)}</td>
+                <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
+                <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
+                <td style={{padding:'4px 3px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>
+                <td style={{padding:'4px 3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
+                <td style={{padding:'4px 3px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
+                <td style={{padding:'4px 3px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
+                <td style={{padding:'4px 3px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for a grid.">{'$'+r.dailyPot.toFixed(0)}</td>
+                <td style={{padding:'4px 3px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily dollar path as % of current share price. Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
                   if(rt){
                     var up=rt.target_mean&&r.price?((rt.target_mean/r.price-1)*100):null;
                     return [
-                      <td key="c" style={{padding:'4px 5px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
-                      <td key="l" style={{padding:'4px 5px',textAlign:'center',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
-                      <td key="m" style={{padding:'4px 5px',textAlign:'center',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
-                      <td key="h" style={{padding:'4px 5px',textAlign:'center',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
-                      <td key="n" style={{padding:'4px 5px',textAlign:'center',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
+                      <td key="c" style={{padding:'4px 3px',textAlign:'center',color:recoColor(rt.reco_key),fontWeight:700,fontSize:7}} title={rt.reco_mean?('Mean rating '+(+rt.reco_mean).toFixed(2)+' (1=Strong Buy..5=Strong Sell) · fetched '+(rt.fetched_at||'').slice(0,10)):''}>{recoLabel(rt.reco_key)||'\u2014'}</td>,
+                      <td key="l" style={{padding:'4px 3px',textAlign:'center',color:C.txtDim}}>{rt.target_low!=null?'$'+(+rt.target_low).toFixed(0):'\u2014'}</td>,
+                      <td key="m" style={{padding:'4px 3px',textAlign:'center',color:C.txt,fontWeight:600}} title={up!=null?(up>=0?'+':'')+up.toFixed(0)+'% vs price':''}>{rt.target_mean!=null?'$'+(+rt.target_mean).toFixed(0):'\u2014'}</td>,
+                      <td key="h" style={{padding:'4px 3px',textAlign:'center',color:C.txtDim}}>{rt.target_high!=null?'$'+(+rt.target_high).toFixed(0):'\u2014'}</td>,
+                      <td key="n" style={{padding:'4px 3px',textAlign:'center',color:C.txtDim}}>{rt.num_analysts!=null?rt.num_analysts:'\u2014'}</td>
                     ];
                   }
                   return [
-                    <td key="c" colSpan={5} style={{padding:'4px 5px',textAlign:'center'}}>
+                    <td key="c" colSpan={5} style={{padding:'4px 3px',textAlign:'center'}}>
                       {fetchingRating[r.ticker]
                         ? <span style={{fontSize:7,color:C.gold,fontFamily:F}}>{'\u25CF fetching...'}</span>
                         : <button onClick={function(){fetchRatingFor(r.ticker);}} style={{padding:'2px 8px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:7,fontFamily:F,fontWeight:600,cursor:'pointer'}}>Fetch ratings</button>}
@@ -19506,12 +19506,12 @@ function ViolentChopScreenerPage(p){
                 })()}
                 {(function(){
                   var w=wk52[r.ticker];
-                  if(!w||w.high==null||w.low==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  if(!w||w.high==null||w.low==null)return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
                   var rng=w.high-w.low;
                   var pos=(rng>0&&r.price)?((r.price-w.low)/rng*100):null;
                   var spr=(w.low>0)?(rng/w.low*100):null; // range width as % of low
                   var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
-                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.15}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
+                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.15}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.high)}</div>
                     <div style={{color:C.txtDim,fontSize:7,marginTop:1}}>{fmtP(w.low)}</div>
                     <div style={{color:C.accent,fontSize:7,marginTop:1}}>{spr!=null?spr.toFixed(0)+'%':'\u2014'}</div>
@@ -19519,11 +19519,11 @@ function ViolentChopScreenerPage(p){
                 })()}
                 {(function(){
                   var w=wk52[r.ticker];
-                  if(!w||w.h30==null||w.l30==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  if(!w||w.h30==null||w.l30==null)return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
                   var rng=w.h30-w.l30;
                   var spr=(w.l30>0)?(rng/w.l30*100):null;
                   var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
-                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.15}} title={'30-day range'+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
+                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.15}} title={'30-day range'+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.h30)}</div>
                     <div style={{color:C.txtDim,fontSize:7,marginTop:1}}>{fmtP(w.l30)}</div>
                     <div style={{color:C.accent,fontSize:7,marginTop:1}}>{spr!=null?spr.toFixed(0)+'%':'\u2014'}</div>
@@ -19531,11 +19531,11 @@ function ViolentChopScreenerPage(p){
                 })()}
                 {(function(){
                   var w=wk52[r.ticker];
-                  if(!w||w.h7==null||w.l7==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  if(!w||w.h7==null||w.l7==null)return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
                   var rng=w.h7-w.l7;
                   var spr=(w.l7>0)?(rng/w.l7*100):null;
                   var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
-                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.15}} title={'7-day range'+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
+                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.15}} title={'7-day range'+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.h7)}</div>
                     <div style={{color:C.txtDim,fontSize:7,marginTop:1}}>{fmtP(w.l7)}</div>
                     <div style={{color:C.accent,fontSize:7,marginTop:1}}>{spr!=null?spr.toFixed(0)+'%':'\u2014'}</div>
@@ -19543,36 +19543,36 @@ function ViolentChopScreenerPage(p){
                 })()}
                 {(function(){
                   var w=wk52[r.ticker];
-                  if(!w||w.high==null||!r.price){return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;}
+                  if(!w||w.high==null||!r.price){return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;}
                   var pct=(r.price/w.high-1)*100; // <=0 below high, >0 if fresh high above stored 52W high
                   var col=pct>=-1?C.txt:(pct>=-15?C.txtDim:(C.red||'#ef4444'));
-                  return <td style={{padding:'4px 5px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Distance from 52-week high ($'+(+w.high).toFixed(2)+'). 0% = at the high; negative = below it.'}>{(pct>0?'+':'')+pct.toFixed(1)+'%'}</td>;
+                  return <td style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Distance from 52-week high ($'+(+w.high).toFixed(2)+'). 0% = at the high; negative = below it.'}>{(pct>0?'+':'')+pct.toFixed(1)+'%'}</td>;
                 })()}
                 {(function(){
                   var rt=ratings[r.ticker];
-                  if(!rt||rt.target_mean==null||!r.price){return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;}
+                  if(!rt||rt.target_mean==null||!r.price){return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;}
                   var up=(rt.target_mean/r.price-1)*100; // >0 = analysts see upside
                   var col=up>=0?(C.green||C.accent):(C.red||'#ef4444');
-                  return <td style={{padding:'4px 5px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Implied upside to Yahoo mean target $'+(+rt.target_mean).toFixed(2)+(rt.num_analysts!=null?' ('+rt.num_analysts+' analysts)':'')+'. Positive = price below target.'}>{(up>=0?'+':'')+up.toFixed(0)+'%'}</td>;
+                  return <td style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Implied upside to Yahoo mean target $'+(+rt.target_mean).toFixed(2)+(rt.num_analysts!=null?' ('+rt.num_analysts+' analysts)':'')+'. Positive = price below target.'}>{(up>=0?'+':'')+up.toFixed(0)+'%'}</td>;
                 })()}
                 {(function(){
                   var a=atr14[r.ticker];
-                  if(!a||(a.pct==null&&a.dollar==null))return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
-                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.2}} title="Rolling 14-day Average True Range (volatility) — percent of price over dollar value">
+                  if(!a||(a.pct==null&&a.dollar==null))return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}} title="Rolling 14-day Average True Range (volatility) — percent of price over dollar value">
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{a.pct!=null?(+a.pct).toFixed(1)+'%':'\u2014'}</div>
                     <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{a.dollar!=null?'$'+(+a.dollar).toFixed(2):'\u2014'}</div>
                   </td>;
                 })()}
-                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+(chartInt==='D'?'1D':chartInt==='60'?'1h':chartInt+'m')+' / '+({'1D':'1D','5D':'5D','1M':'1M','3M':'3M','12M':'1Y','60M':'5Y'}[chartRange]||chartRange)+')'}>{'\u25F0'}</button>
                 </td>
-                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setVpTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.purple+'60',borderRadius:3,background:'transparent',color:C.purple,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Volume profile for '+r.ticker}>{'\u2637'}</button>
                 </td>
-                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setGexTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.gold+'60',borderRadius:3,background:'transparent',color:C.gold,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'GEX & options profile for '+r.ticker}>{'\u0393'}</button>
                 </td>
-                <td style={{padding:'4px 5px',textAlign:'center'}}>
+                <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setAtrTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'24-hour trade profile for '+r.ticker}>{'\u23F1'}</button>
                 </td>
               </tr>;
