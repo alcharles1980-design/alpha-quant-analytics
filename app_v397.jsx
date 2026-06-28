@@ -19040,6 +19040,7 @@ function ViolentChopScreenerPage(p){
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s15b=useState(false),showColInfo=s15b[0],setShowColInfo=s15b[1];
+  var s15c=useState(false),showInstr=s15c[0],setShowInstr=s15c[1];
   var sCh=useState(null),chartTk=sCh[0],setChartTk=sCh[1];          // null = closed; else ticker
   var sChI=useState('5'),chartInt=sChI[0],setChartInt=sChI[1];      // chart modal interval (default 5m)
   var sChR=useState('5D'),chartRange=sChR[0],setChartRange=sChR[1]; // chart modal range (default 5D)
@@ -19351,8 +19352,15 @@ function ViolentChopScreenerPage(p){
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8}}>
         <div>
           <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F,letterSpacing:1}}>HOLY GRAIL SCREENER</div>
-          <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:4,maxWidth:560,lineHeight:1.6}}>
-            Ranks tickers by within-day chop intensity over a 5-day lookback. A swing = each bar's low to the next bar's high, counted unconditionally (downtrends still have up-swings between bars). The composite weights total path by how uneven the swings are ("swings of the swings") — so erratic, RVI-style violence ranks above steady metronomic chop.
+          <div style={{marginTop:6}}>
+            <button onClick={function(){setShowInstr(!showInstr);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 9px',border:'1px solid '+C.accent+'55',borderRadius:5,background:showInstr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>
+              <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:12,height:12,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:8,fontStyle:'italic',fontWeight:700}}>i</span>
+              Instructions
+              <span style={{fontSize:7,transform:showInstr?'rotate(90deg)':'none',transition:'transform 0.15s'}}>{'\u25B8'}</span>
+            </button>
+            {showInstr&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,maxWidth:560,lineHeight:1.6,paddingLeft:2}}>
+              Ranks tickers by within-day chop intensity over a 5-day lookback. A swing = each bar's low to the next bar's high, counted unconditionally (downtrends still have up-swings between bars). The composite weights total path by how uneven the swings are ("swings of the swings") — so erratic, RVI-style violence ranks above steady metronomic chop.
+            </div>}
           </div>
         </div>
         {scanDate&&<div style={{textAlign:'right'}}>
