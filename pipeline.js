@@ -2596,6 +2596,13 @@ async function runScreener() {
       if (ab[wi].l < wkLow) wkLow = ab[wi].l;
     }
     var wkRange = wkHigh - wkLow;
+    // 30-day and 7-day high/low from the same daily bars (last N daily candles).
+    var h30 = -Infinity, l30 = Infinity, h7 = -Infinity, l7 = Infinity;
+    var n30 = Math.min(30, abn), n7 = Math.min(7, abn);
+    for (var wi30 = abn - n30; wi30 < abn; wi30++) { if (ab[wi30].h > h30) h30 = ab[wi30].h; if (ab[wi30].l < l30) l30 = ab[wi30].l; }
+    for (var wi7 = abn - n7; wi7 < abn; wi7++) { if (ab[wi7].h > h7) h7 = ab[wi7].h; if (ab[wi7].l < l7) l7 = ab[wi7].l; }
+    var hl30 = (abn > 0 && isFinite(h30) && isFinite(l30)) ? { high: Math.round(h30 * 100) / 100, low: Math.round(l30 * 100) / 100 } : null;
+    var hl7 = (abn > 0 && isFinite(h7) && isFinite(l7)) ? { high: Math.round(h7 * 100) / 100, low: Math.round(l7 * 100) / 100 } : null;
     var wkPctile = wkRange > 0 ? Math.round((cand.price - wkLow) / wkRange * 1000) / 10 : 50;
     var distToHigh = cand.price > 0 ? Math.round((wkHigh - cand.price) / cand.price * 1000) / 10 : 0;
     var distToLow = cand.price > 0 ? Math.round((cand.price - wkLow) / cand.price * 1000) / 10 : 0;
@@ -2638,6 +2645,7 @@ async function runScreener() {
 
     var rangePos = {
       high: Math.round(wkHigh * 100) / 100, low: Math.round(wkLow * 100) / 100,
+      hl30: hl30, hl7: hl7,
       pctile: wkPctile, dist_high: distToHigh, dist_low: distToLow,
       cur_decile: curDecile, cur_r5: curDS.r5 || 0, cur_r10: curDS.r10 || 0,
       cur_r20: curDS.r20 || 0, cur_w5: curDS.w5 || 0, cur_n: curDS.n || 0,
