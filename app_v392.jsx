@@ -19133,7 +19133,7 @@ function ViolentChopScreenerPage(p){
     var sd=null;try{var sr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});var srows=sr.ok?await sr.json():[];if(srows.length)sd=srows[0].scan_date;}catch(e){}
     if(!sd)return;
     var map={};var atrMap={};var off=0;
-    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position,atr_14d_pct,atr_14d_dollar&order=ticker.asc',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp!=null){try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){rp=null;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low};}if(row.atr_14d_pct!=null||row.atr_14d_dollar!=null)atrMap[row.ticker]={pct:row.atr_14d_pct!=null?+row.atr_14d_pct:null,dollar:row.atr_14d_dollar!=null?+row.atr_14d_dollar:null};});if(batch.length<1000)break;off+=1000;}
+    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position,atr_14d_pct,atr_14d_dollar&order=ticker.asc',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp!=null){try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){rp=null;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low,h30:(rp.hl30&&rp.hl30.high!=null?+rp.hl30.high:null),l30:(rp.hl30&&rp.hl30.low!=null?+rp.hl30.low:null),h7:(rp.hl7&&rp.hl7.high!=null?+rp.hl7.high:null),l7:(rp.hl7&&rp.hl7.low!=null?+rp.hl7.low:null)};}if(row.atr_14d_pct!=null||row.atr_14d_dollar!=null)atrMap[row.ticker]={pct:row.atr_14d_pct!=null?+row.atr_14d_pct:null,dollar:row.atr_14d_dollar!=null?+row.atr_14d_dollar:null};});if(batch.length<1000)break;off+=1000;}
     setWk52(map);setAtr14(atrMap);
   }catch(e){}})();},[]);
 
@@ -19453,6 +19453,8 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>PT<br/>High</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Ana{'\u00AD'}lysts</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>52W<br/>H/L</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>30d<br/>H/L</th>
+            <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>7d<br/>H/L</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>%<br/>52WH</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Tgt<br/>Up%</th>
             <th style={{padding:'4px 5px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>14d<br/>ATR</th>
@@ -19507,10 +19509,36 @@ function ViolentChopScreenerPage(p){
                   if(!w||w.high==null||w.low==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
                   var rng=w.high-w.low;
                   var pos=(rng>0&&r.price)?((r.price-w.low)/rng*100):null;
+                  var spr=(w.low>0)?(rng/w.low*100):null; // range width as % of low
                   var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
-                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.2}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')}>
+                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.15}} title={'52-week range'+(pos!=null?' \u00b7 '+pos.toFixed(0)+'% of range (0=low, 100=high)':'')+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
                     <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.high)}</div>
-                    <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{fmtP(w.low)}</div>
+                    <div style={{color:C.txtDim,fontSize:7,marginTop:1}}>{fmtP(w.low)}</div>
+                    <div style={{color:C.accent,fontSize:7,marginTop:1}}>{spr!=null?spr.toFixed(0)+'%':'\u2014'}</div>
+                  </td>;
+                })()}
+                {(function(){
+                  var w=wk52[r.ticker];
+                  if(!w||w.h30==null||w.l30==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  var rng=w.h30-w.l30;
+                  var spr=(w.l30>0)?(rng/w.l30*100):null;
+                  var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
+                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.15}} title={'30-day range'+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
+                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.h30)}</div>
+                    <div style={{color:C.txtDim,fontSize:7,marginTop:1}}>{fmtP(w.l30)}</div>
+                    <div style={{color:C.accent,fontSize:7,marginTop:1}}>{spr!=null?spr.toFixed(0)+'%':'\u2014'}</div>
+                  </td>;
+                })()}
+                {(function(){
+                  var w=wk52[r.ticker];
+                  if(!w||w.h7==null||w.l7==null)return <td style={{padding:'4px 5px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  var rng=w.h7-w.l7;
+                  var spr=(w.l7>0)?(rng/w.l7*100):null;
+                  var fmtP=function(v){return '$'+(v>=100?(+v).toFixed(0):(+v).toFixed(1));};
+                  return <td style={{padding:'4px 5px',textAlign:'center',lineHeight:1.15}} title={'7-day range'+(spr!=null?' \u00b7 spread '+spr.toFixed(0)+'%':'')}>
+                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{fmtP(w.h7)}</div>
+                    <div style={{color:C.txtDim,fontSize:7,marginTop:1}}>{fmtP(w.l7)}</div>
+                    <div style={{color:C.accent,fontSize:7,marginTop:1}}>{spr!=null?spr.toFixed(0)+'%':'\u2014'}</div>
                   </td>;
                 })()}
                 {(function(){
