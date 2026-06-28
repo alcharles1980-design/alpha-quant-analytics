@@ -19014,7 +19014,7 @@ function ViolentChopScreenerPage(p){
   var isPhone=(p.devView==='phone');
   var freeze=(p.devView==='tablet'||p.devView==='laptop'||isPhone);
   var frozenCount=isPhone?3:5; // how many leftmost columns stick — phone: #/Ticker/Price; tablet+laptop: also Links/Type
-  var FZ_W=[28,56,52,92,44]; var FZ_L=[0,28,84,136,228]; // widths / cumulative lefts (px) — order: # Ticker Price Links Type
+  var FZ_W=[26,46,52,92,44]; var FZ_L=[0,26,72,124,216]; // widths / cumulative lefts (px) — order: # Ticker Price Links Type (Ticker tightened 56->46 to close Ticker-Price gap)
   var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgCard,overflow:'hidden'}:{};};
   var fzTd=function(idx,rowBg){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
