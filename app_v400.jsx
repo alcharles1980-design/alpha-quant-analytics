@@ -19032,6 +19032,7 @@ function ViolentChopScreenerPage(p){
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
   var s10b=useState('0.03'),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
   var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
+  var s10d=useState(''),targetFilter=s10d[0],setTargetFilter=s10d[1]; // '' = not selected, 'yes' = price below avg target, 'no' = price at/above target
   var s10d=useState('1'),mktCapMin=s10d[0],setMktCapMin=s10d[1];   // market cap filter (B), separate from $Vol
   var s10e=useState(''),mktCapMax=s10e[0],setMktCapMax=s10e[1];
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
@@ -19326,6 +19327,15 @@ function ViolentChopScreenerPage(p){
     if(mcapMax&&(r.adv||0)>parseFloat(mcapMax)*1e6)return false;
     if(swingUsdMin&&r.avgUsd<parseFloat(swingUsdMin))return false;
     if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
+    // Price vs Yahoo mean price target. '' = off. Rows with no target are excluded
+    // when this filter is active (can't judge a name with no analyst target).
+    if(targetFilter){
+      var rtF=ratings[r.ticker];
+      var tgt=(rtF&&rtF.target_mean!=null&&rtF.target_mean>0)?rtF.target_mean:null;
+      if(tgt==null||!r.price)return false;
+      if(targetFilter==='yes'&&!(r.price<tgt))return false;   // keep only price below target
+      if(targetFilter==='no'&&!(r.price>=tgt))return false;   // keep only price at/above target
+    }
     // Market cap filter (B). ETFs have null mcap — treat null as pass so the
     // mcap filter never silently excludes funds (use $ Vol/day to gate those).
     if(mktCapMin&&r.market_cap!=null&&r.market_cap<parseFloat(mktCapMin)*1e9)return false;
@@ -19416,6 +19426,15 @@ function ViolentChopScreenerPage(p){
           </div>
         </div>;
       })}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Price below avg target:</span>
+        {[['','Any'],['yes','Yes'],['no','No']].map(function(tf){
+          var on=targetFilter===tf[0];
+          return <button key={tf[0]||'any'} onClick={function(){setTargetFilter(tf[0]);}} style={{padding:'3px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
+            border:'1px solid '+(on?C.accent+'66':C.border),background:on?C.accent+'12':'transparent',color:on?C.accent:C.txtDim}}>{tf[1]}</button>;
+        })}
+        <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Filters by current price vs Yahoo mean analyst target. Names without a target are hidden when Yes/No is active.</span>
+      </div>
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
         {[['all','All'],['stocks','Stocks'],['etfs','ETFs']].map(function(t){
