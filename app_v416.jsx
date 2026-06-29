@@ -19399,11 +19399,34 @@ function ViolentChopScreenerPage(p){
     var gen=++loadGen.current;
     setLoading(true);setErr('');
     try{
-      // latest scan_date
-      var dR=await fetch(SB_URL+'/rest/v1/cached_chop_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
-      var dRows=await dR.json();
-      if(!Array.isArray(dRows)||dRows.length===0){if(gen===loadGen.current){setData([]);setLoading(false);}return;}
-      var sd=dRows[0].scan_date;setScanDate(sd);
+      // Determine which scan_date to load. A user-triggered "Run New Scan" wipes and
+      // rebuilds the table for the NEWEST date, so loading scan_date.desc would show
+      // everyone a half-built scan. Instead, prefer the most recent scan that
+      // pipeline_status reports as COMPLETE, and only fall back to the latest date if
+      // that signal is unavailable.
+      var sd=null;
+      try{
+        var cR=await fetch(SB_URL+"/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=message,updated_at&order=updated_at.desc&limit=1",{headers:getSbHeaders()});
+        if(cR.ok){
+          var cRows=await cR.json();
+          if(Array.isArray(cRows)&&cRows.length>0&&cRows[0].message){
+            var mm=String(cRows[0].message).match(/(\d{4}-\d{2}-\d{2})/);
+            if(mm){
+              // verify that completed date actually still has rows (guard against a since-wiped date)
+              var vR=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+mm[1]+'&select=scan_date&limit=1',{headers:getSbHeaders()});
+              if(vR.ok){var vRows=await vR.json();if(Array.isArray(vRows)&&vRows.length>0)sd=mm[1];}
+            }
+          }
+        }
+      }catch(e){}
+      // Fallback: latest scan_date (original behaviour)
+      if(!sd){
+        var dR=await fetch(SB_URL+'/rest/v1/cached_chop_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});
+        var dRows=await dR.json();
+        if(!Array.isArray(dRows)||dRows.length===0){if(gen===loadGen.current){setData([]);setLoading(false);}return;}
+        sd=dRows[0].scan_date;
+      }
+      setScanDate(sd);
       // Lightweight load via RPC: returns only the per-resolution avg blocks
       // (drops the heavy per-day arrays), ~80% smaller payload (12MB->2.3MB).
       // PostgREST caps RPC results at 1000, so paginate via p_offset/p_limit.
