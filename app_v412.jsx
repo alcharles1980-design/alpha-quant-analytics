@@ -19862,7 +19862,7 @@ function ViolentChopScreenerPage(p){
           Column guide
         </button>
       </div>
-      <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'72vh',position:'relative'}}>
+      <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'6000px',position:'relative'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8},freeze?{minWidth:1100}:{})}>
           <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,zIndex:4,background:C.bgCard}}>
             <th style={Object.assign({padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(0))}>#</th>
