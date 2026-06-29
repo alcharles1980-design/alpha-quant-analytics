@@ -19057,6 +19057,111 @@ function ViolentChopScreenerPage(p){
   var pollRef=useRef(null);
   var loadGen=useRef(0);
 
+  // ── List management (reuses stock_lists + stocks_watchlist, shared with Stocks at a Glance) ──
+  var sLst=useState([]),lists=sLst[0],setLists=sLst[1];                 // [{id,name}]
+  var sLstA=useState(null),viewListId=sLstA[0],setViewListId=sLstA[1];  // active list for VIEW filter; null = show all
+  var sLstT=useState(null),viewListTk=sLstT[0],setViewListTk=sLstT[1];  // Set of tickers in the viewed list (null = not filtering)
+  var sSel=useState({}),selected=sSel[0],setSelected=sSel[1];           // {ticker:true} checkbox selections
+  var sLstMgr=useState(false),showLstMgr=sLstMgr[0],setShowLstMgr=sLstMgr[1]; // management card open?
+  var sLstNew=useState(''),newListName=sLstNew[0],setNewListName=sLstNew[1];
+  var sLstRn=useState(null),renamingId=sLstRn[0],setRenamingId=sLstRn[1];
+  var sLstRnV=useState(''),renameVal=sLstRnV[0],setRenameVal=sLstRnV[1];
+  var sLstDel=useState(null),confirmDelId=sLstDel[0],setConfirmDelId=sLstDel[1];
+  var sLstErr=useState(null),listErr=sLstErr[0],setListErr=sLstErr[1];
+  var sLstBusy=useState(false),listBusy=sLstBusy[0],setListBusy=sLstBusy[1];
+  var sLstCounts=useState({}),listCounts=sLstCounts[0],setListCounts=sLstCounts[1]; // {listId:count}
+
+  var lsbGet=function(path){return fetch(SB_URL+path,{headers:getSbHeaders()}).then(function(r){return r.json();});};
+  var lsbPost=function(path,body){return fetch(SB_URL+path,{method:'POST',headers:getSbHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json();});};
+  var lsbPatch=function(path,body){return fetch(SB_URL+path,{method:'PATCH',headers:getSbHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json();});};
+  var lsbDel=function(path){return fetch(SB_URL+path,{method:'DELETE',headers:getSbHeaders()});};
+
+  var loadLists=async function(){
+    try{
+      var d=await lsbGet('/rest/v1/stock_lists?select=id,name&order=created_at.asc&limit=1000');
+      if(Array.isArray(d)){setLists(d);loadListCounts();}
+    }catch(e){setListErr('Could not load lists');}
+  };
+  var loadListCounts=async function(){
+    try{
+      var d=await lsbGet('/rest/v1/stocks_watchlist?select=list_id&limit=100000');
+      if(Array.isArray(d)){var c={};d.forEach(function(r){c[r.list_id]=(c[r.list_id]||0)+1;});setListCounts(c);}
+    }catch(e){}
+  };
+  useEffect(function(){loadLists();},[]);
+
+  var viewList=async function(id){
+    if(id==null||String(id)===''){setViewListId(null);setViewListTk(null);return;}
+    id=Number(id);
+    setViewListId(id);setListErr(null);
+    try{
+      var rows=[];var off=0;
+      while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);
+        var r=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+id+'&select=ticker&order=ticker.asc',{headers:h});
+        if(!r.ok)break;var b=await r.json();if(!Array.isArray(b)||b.length===0)break;
+        rows=rows.concat(b);if(b.length<1000)break;off+=1000;}
+      var set={};rows.forEach(function(x){set[x.ticker]=true;});
+      setViewListTk(set);
+    }catch(e){setListErr('Could not load list tickers');setViewListTk({});}
+  };
+
+  var createList=async function(){
+    var name=(newListName||'').trim();if(!name)return;
+    setListBusy(true);setListErr(null);
+    try{
+      var d=await lsbPost('/rest/v1/stock_lists',{name:name});
+      var nl=Array.isArray(d)?d[0]:d;
+      if(nl&&nl.id){setLists(function(p){return p.concat([{id:nl.id,name:name}]);});setNewListName('');}
+    }catch(e){setListErr('Could not create list');}finally{setListBusy(false);}
+  };
+  var renameList=async function(id){
+    var name=(renameVal||'').trim();if(!name)return;
+    try{
+      await lsbPatch('/rest/v1/stock_lists?id=eq.'+id,{name:name});
+      setLists(function(p){return p.map(function(l){return l.id===id?{id:l.id,name:name}:l;});});
+      setRenamingId(null);setRenameVal('');
+    }catch(e){setListErr('Could not rename list');}
+  };
+  var deleteList=async function(id){
+    try{
+      await lsbDel('/rest/v1/stocks_watchlist?list_id=eq.'+id); // remove members first
+      await lsbDel('/rest/v1/stock_lists?id=eq.'+id);
+      setLists(function(p){return p.filter(function(l){return l.id!==id;});});
+      setConfirmDelId(null);
+      if(viewListId===id){setViewListId(null);setViewListTk(null);}
+      loadListCounts();
+    }catch(e){setListErr('Could not delete list');}
+  };
+
+  // Add the currently checkbox-selected tickers to a list (existing id, or create from newListName)
+  var addSelectedToList=async function(listId){
+    var tks=Object.keys(selected).filter(function(t){return selected[t];});
+    if(tks.length===0){setListErr('No stocks selected');return;}
+    setListBusy(true);setListErr(null);
+    try{
+      var targetId=listId;
+      if(targetId==='__new__'){
+        var name=(newListName||'').trim();if(!name){setListErr('Enter a name for the new list');setListBusy(false);return;}
+        var d=await lsbPost('/rest/v1/stock_lists',{name:name});var nl=Array.isArray(d)?d[0]:d;
+        if(!nl||!nl.id){setListErr('Could not create list');setListBusy(false);return;}
+        targetId=nl.id;setLists(function(p){return p.concat([{id:nl.id,name:name}]);});setNewListName('');
+      } else { targetId=Number(targetId); }
+      // existing members of the target list (avoid duplicates)
+      var ex=await lsbGet('/rest/v1/stocks_watchlist?list_id=eq.'+targetId+'&select=ticker&limit=100000');
+      var have={};if(Array.isArray(ex))ex.forEach(function(r){have[r.ticker]=true;});
+      var rows=tks.filter(function(t){return !have[t];}).map(function(t){return {ticker:t,list_id:targetId};});
+      if(rows.length>0)await lsbPost('/rest/v1/stocks_watchlist',rows);
+      setSelected({});
+      loadListCounts();
+      if(viewListId===targetId)viewList(targetId); // refresh view if currently viewing it
+      setListErr(rows.length+' added'+(tks.length-rows.length>0?', '+(tks.length-rows.length)+' already in list':''));
+    }catch(e){setListErr('Could not add to list');}finally{setListBusy(false);}
+  };
+
+  var selectedCount=Object.keys(selected).filter(function(t){return selected[t];}).length;
+  var toggleSel=function(tk){setSelected(function(p){var n=Object.assign({},p);if(n[tk])delete n[tk];else n[tk]=true;return n;});};
+
+
   var fmtMcap=function(v){if(!v)return '--';if(v>=1e12)return '$'+(v/1e12).toFixed(1)+'T';if(v>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+Math.round(v).toLocaleString();};
 
   // Format the last successful scan completion into a "x ago" + local time string.
@@ -19320,6 +19425,7 @@ function ViolentChopScreenerPage(p){
     };
   }).filter(function(r){
     if(!r.hasRes)return false; // resolution missing for this ticker
+    if(viewListTk&&!viewListTk[r.ticker])return false; // active list view filter (stacks)
     if(filter){
       var toks=filter.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});
       if(toks.length){
@@ -19418,6 +19524,53 @@ function ViolentChopScreenerPage(p){
         <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Search</label>
         <input value={filter} onChange={function(e){setFilter(e.target.value);}} placeholder="Ticker(s), e.g. NVDA, SOXL, TQQQ" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
       </div>
+      {/* ── Lists: view filter + add-selected + management ── */}
+      <div style={{marginTop:10,padding:'8px 10px',background:C.bg,border:'1px solid '+C.border,borderRadius:6}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>View list:</span>
+          <select value={viewListId==null?'':String(viewListId)} onChange={function(e){viewList(e.target.value);}} style={{padding:'5px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
+            <option value="">All stocks (no list)</option>
+            {lists.map(function(l){return <option key={l.id} value={String(l.id)}>{l.name+(listCounts[l.id]?' ('+listCounts[l.id]+')':'')}</option>;})}
+          </select>
+          {viewListId!=null&&<button onClick={function(){viewList('');}} style={{padding:'4px 9px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear</button>}
+          <button onClick={function(){setShowLstMgr(!showLstMgr);}} style={{marginLeft:'auto',padding:'4px 9px',border:'1px solid '+C.accent+'55',borderRadius:4,background:showLstMgr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>{showLstMgr?'Close manager':'Manage lists'}</button>
+        </div>
+
+        {/* Add selected to a list */}
+        <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:8,fontFamily:F,color:selectedCount>0?C.accent:C.txtDim,fontWeight:600}}>{selectedCount} selected</span>
+          <select id="vc_addsel" disabled={selectedCount===0} defaultValue="" style={{padding:'5px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:selectedCount===0?C.border:C.txt,fontFamily:F,fontSize:9,cursor:selectedCount===0?'not-allowed':'pointer'}}>
+            <option value="">Add selected to…</option>
+            {lists.map(function(l){return <option key={l.id} value={String(l.id)}>{l.name}</option>;})}
+            <option value="__new__">＋ New list (named below)</option>
+          </select>
+          <button disabled={selectedCount===0||listBusy} onClick={function(){var sel=document.getElementById('vc_addsel');if(sel&&sel.value)addSelectedToList(sel.value);else setListErr('Pick a list first');}} style={{padding:'5px 11px',border:'none',borderRadius:5,background:(selectedCount===0||listBusy)?C.border:C.accent,color:(selectedCount===0||listBusy)?C.txtDim:'#04221c',fontSize:8,fontFamily:F,fontWeight:700,cursor:(selectedCount===0||listBusy)?'default':'pointer'}}>Add</button>
+          {selectedCount>0&&<button onClick={function(){setSelected({});}} style={{padding:'4px 9px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear selection</button>}
+        </div>
+
+        {/* Management card */}
+        {showLstMgr&&<div style={{marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:6}}>
+            <input value={newListName} onChange={function(e){setNewListName(e.target.value);}} placeholder="New list name" style={{flex:'1 1 120px',padding:'5px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+            <button disabled={listBusy||!newListName.trim()} onClick={createList} style={{padding:'5px 11px',border:'none',borderRadius:5,background:(!newListName.trim()||listBusy)?C.border:C.accent,color:(!newListName.trim()||listBusy)?C.txtDim:'#04221c',fontSize:8,fontFamily:F,fontWeight:700,cursor:(!newListName.trim()||listBusy)?'default':'pointer'}}>Create list</button>
+          </div>
+          {lists.length===0&&<div style={{fontSize:8,color:C.txtDim,fontFamily:F}}>No lists yet. Create one above, or check stocks and use “Add selected → ＋ New list”.</div>}
+          {lists.map(function(l){
+            return <div key={l.id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 0',borderBottom:'1px solid '+C.border+'40'}}>
+              {renamingId===l.id
+                ? <input value={renameVal} onChange={function(e){setRenameVal(e.target.value);}} autoFocus style={{flex:'1 1 100px',padding:'4px 7px',background:C.bgCard,border:'1px solid '+C.accent,borderRadius:4,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
+                : <span style={{flex:'1 1 100px',fontSize:9,fontFamily:F,color:C.txt,fontWeight:600}}>{l.name} <span style={{color:C.txtDim,fontWeight:400}}>{listCounts[l.id]?'· '+listCounts[l.id]:'· 0'}</span></span>}
+              {renamingId===l.id
+                ? <button onClick={function(){renameList(l.id);}} style={{padding:'3px 8px',border:'none',borderRadius:4,background:C.accent,color:'#04221c',fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Save</button>
+                : <button onClick={function(){setRenamingId(l.id);setRenameVal(l.name);}} style={{padding:'3px 8px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Rename</button>}
+              {confirmDelId===l.id
+                ? <span style={{display:'inline-flex',gap:4}}><button onClick={function(){deleteList(l.id);}} style={{padding:'3px 8px',border:'none',borderRadius:4,background:C.red||'#ef4444',color:'#fff',fontSize:8,fontFamily:F,fontWeight:700,cursor:'pointer'}}>Delete?</button><button onClick={function(){setConfirmDelId(null);}} style={{padding:'3px 8px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>No</button></span>
+                : <button onClick={function(){setConfirmDelId(l.id);}} style={{padding:'3px 8px',border:'1px solid '+(C.red||'#ef4444')+'66',borderRadius:4,background:'transparent',color:C.red||'#ef4444',fontSize:8,fontFamily:F,cursor:'pointer'}}>Delete</button>}
+            </div>;
+          })}
+        </div>}
+        {listErr&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:listErr.indexOf('added')>=0?C.accent:(C.warn||'#f59e0b')}}>{listErr}</div>}
+      </div>
       {[
         ['Price',minPrice,setMinPrice,maxPrice,setMaxPrice,null],
         ['$ Vol / day (M)',mcapMin,setMcapMin,mcapMax,setMcapMax,null],
@@ -19500,6 +19653,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>24H<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Fin<br/>viz</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>＋<br/>List</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -19615,6 +19769,9 @@ function ViolentChopScreenerPage(p){
                 </td>
                 <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <a href={'https://finviz.com/quote.ashx?t='+encodeURIComponent(r.ticker)} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 9px',border:'1px solid '+C.txtDim+'60',borderRadius:3,background:'transparent',color:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1,textDecoration:'none'}} title={'Finviz page for '+r.ticker+' (opens in new tab)'}>{'FV'}</a>
+                </td>
+                <td style={{padding:'4px 3px',textAlign:'center'}}>
+                  <input type="checkbox" checked={!!selected[r.ticker]} onChange={function(tk){return function(){toggleSel(tk);};}(r.ticker)} style={{cursor:'pointer',width:14,height:14,accentColor:C.accent}} title={'Select '+r.ticker+' to add to a list'}/>
                 </td>
               </tr>;
             })}
