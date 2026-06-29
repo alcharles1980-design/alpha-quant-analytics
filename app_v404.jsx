@@ -19323,7 +19323,7 @@ function ViolentChopScreenerPage(p){
     if(filter){
       var toks=filter.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});
       if(toks.length){
-        var hit=toks.some(function(t){return r.ticker===t||r.ticker.indexOf(t)===0;});
+        var hit=toks.some(function(t){return r.ticker===t;});
         if(!hit)return false;
       }
     }
