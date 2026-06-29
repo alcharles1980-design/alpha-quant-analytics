@@ -20030,26 +20030,6 @@ function ViolentChopScreenerPage(p){
 
     {data&&data.length===0&&!loading&&<Cd><div style={{textAlign:'center',color:C.txtDim,fontSize:9,fontFamily:F,padding:20}}>No chop data yet. Tap "Run New Scan" to populate the screener (takes a few minutes).</div></Cd>}
 
-    <CollapseStage title="What Is Violent Chop?" sub="How this screener finds RVI-style intraday thrash">
-      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>The idea</p>
-          <p style={{marginBottom:4,fontSize:9}}>This screener ignores where a stock opens or closes — daily drift is irrelevant when the position is re-anchored each day. It measures only how violently price thrashed <em>within</em> each day, then averages that over a 5-day lookback.</p>
-          <p style={{marginBottom:4,fontSize:9}}>A "swing" is the move from one bar's low to the next bar's high. Even a stock grinding down all day has up-swings between consecutive bars — those are the moves a volatility trader harvests, so they're counted regardless of the trend.</p>
-        </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
-          <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>The columns</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Swings/Day</span> — how often it oscillates (frequency). <span style={{color:C.accent,fontWeight:700}}>Avg Swing %/$</span> — typical swing size (violence), shown both ways: % is fair across price levels, $ tells you if a swing clears your cent-based take-profit.</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Swings-of-Swings</span> — how uneven the swings are (coefficient of variation). This is the key differentiator: a value near 1 is metronomic chop; 2+ means erratic bursts, like RVI. <span style={{color:C.accent,fontWeight:700}}>Path %/$</span> — total distance the price travelled.</p>
-          <p style={{marginBottom:4,fontSize:9}}><span style={{color:C.accent,fontWeight:700}}>Chop Score</span> — the composite: path {'\u00D7'} (1 + swing\u03C3/avg). Rewards big <em>and</em> uneven movement, ranking RVI-style violence above steady choppers.</p>
-        </div>
-        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
-          <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Resolution toggle</p>
-          <p style={{marginBottom:4,fontSize:9}}>10-second bars catch the tightest wiggle (closest to fast trade fills); 30-second and 1-minute show coarser chop. A name that stays violent across all three is robustly choppy; one that only looks choppy at 1-minute is smoother than it appears up close.</p>
-        </div>
-      </div>
-    </CollapseStage>
-
     {chartTk&&<div onClick={function(){setChartTk(null);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}}>
       <div onClick={function(e){e.stopPropagation();}} style={{width:'100%',maxWidth:1000,height:'88vh',background:C.bgCard||C.bg,border:'1px solid '+C.border,borderRadius:10,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{padding:'8px 12px',borderBottom:'1px solid '+C.border}}>
