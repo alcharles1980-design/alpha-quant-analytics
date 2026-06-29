@@ -19525,27 +19525,27 @@ function ViolentChopScreenerPage(p){
         <input value={filter} onChange={function(e){setFilter(e.target.value);}} placeholder="Ticker(s), e.g. NVDA, SOXL, TQQQ" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
       </div>
       {/* ── Lists: view filter + add-selected + management ── */}
-      <div style={{marginTop:10,padding:'8px 10px',background:C.bg,border:'1px solid '+C.border,borderRadius:6}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>View list:</span>
-          <select value={viewListId==null?'':String(viewListId)} onChange={function(e){viewList(e.target.value);}} style={{padding:'5px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
+      <div style={{marginTop:8,padding:'7px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:6}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600,flex:'0 0 auto'}}>View:</span>
+          <select value={viewListId==null?'':String(viewListId)} onChange={function(e){viewList(e.target.value);}} style={{flex:'1 1 120px',minWidth:0,padding:'5px 7px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,cursor:'pointer'}}>
             <option value="">All stocks (no list)</option>
             {lists.map(function(l){return <option key={l.id} value={String(l.id)}>{l.name+(listCounts[l.id]?' ('+listCounts[l.id]+')':'')}</option>;})}
           </select>
-          {viewListId!=null&&<button onClick={function(){viewList('');}} style={{padding:'4px 9px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear</button>}
-          <button onClick={function(){setShowLstMgr(!showLstMgr);}} style={{marginLeft:'auto',padding:'4px 9px',border:'1px solid '+C.accent+'55',borderRadius:4,background:showLstMgr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>{showLstMgr?'Close manager':'Manage lists'}</button>
+          {viewListId!=null&&<button onClick={function(){viewList('');}} style={{flex:'0 0 auto',padding:'5px 8px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear</button>}
+          <button onClick={function(){setShowLstMgr(!showLstMgr);}} style={{flex:'0 0 auto',padding:'5px 8px',border:'1px solid '+C.accent+'55',borderRadius:4,background:showLstMgr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>{showLstMgr?'Close':'Manage'}</button>
         </div>
 
         {/* Add selected to a list */}
-        <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
-          <span style={{fontSize:8,fontFamily:F,color:selectedCount>0?C.accent:C.txtDim,fontWeight:600}}>{selectedCount} selected</span>
-          <select id="vc_addsel" disabled={selectedCount===0} defaultValue="" style={{padding:'5px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:selectedCount===0?C.border:C.txt,fontFamily:F,fontSize:9,cursor:selectedCount===0?'not-allowed':'pointer'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+          <span style={{fontSize:8,fontFamily:F,color:selectedCount>0?C.accent:C.txtDim,fontWeight:600,flex:'0 0 auto'}}>{selectedCount} sel</span>
+          <select id="vc_addsel" disabled={selectedCount===0} defaultValue="" style={{flex:'1 1 120px',minWidth:0,padding:'5px 7px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:selectedCount===0?C.border:C.txt,fontFamily:F,fontSize:9,cursor:selectedCount===0?'not-allowed':'pointer'}}>
             <option value="">Add selected to…</option>
             {lists.map(function(l){return <option key={l.id} value={String(l.id)}>{l.name}</option>;})}
             <option value="__new__">＋ New list (named below)</option>
           </select>
-          <button disabled={selectedCount===0||listBusy} onClick={function(){var sel=document.getElementById('vc_addsel');if(sel&&sel.value)addSelectedToList(sel.value);else setListErr('Pick a list first');}} style={{padding:'5px 11px',border:'none',borderRadius:5,background:(selectedCount===0||listBusy)?C.border:C.accent,color:(selectedCount===0||listBusy)?C.txtDim:'#04221c',fontSize:8,fontFamily:F,fontWeight:700,cursor:(selectedCount===0||listBusy)?'default':'pointer'}}>Add</button>
-          {selectedCount>0&&<button onClick={function(){setSelected({});}} style={{padding:'4px 9px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear selection</button>}
+          <button disabled={selectedCount===0||listBusy} onClick={function(){var sel=document.getElementById('vc_addsel');if(sel&&sel.value)addSelectedToList(sel.value);else setListErr('Pick a list first');}} style={{flex:'0 0 auto',padding:'5px 11px',border:'none',borderRadius:5,background:(selectedCount===0||listBusy)?C.border:C.accent,color:(selectedCount===0||listBusy)?C.txtDim:'#04221c',fontSize:8,fontFamily:F,fontWeight:700,cursor:(selectedCount===0||listBusy)?'default':'pointer'}}>Add</button>
+          {selectedCount>0&&<button onClick={function(){setSelected({});}} style={{flex:'0 0 auto',padding:'5px 8px',border:'1px solid '+C.border,borderRadius:4,background:'transparent',color:C.txtDim,fontSize:8,fontFamily:F,cursor:'pointer'}}>Clear</button>}
         </div>
 
         {/* Management card */}
