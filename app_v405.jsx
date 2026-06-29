@@ -19499,6 +19499,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>24H<br/>Prof</th>
+            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Fin<br/>viz</th>
           </tr></thead>
           <tbody>
             {visible.map(function(r,idx){
@@ -19611,6 +19612,9 @@ function ViolentChopScreenerPage(p){
                 </td>
                 <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setAtrTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.accent+'60',borderRadius:3,background:'transparent',color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'24-hour trade profile for '+r.ticker}>{'\u23F1'}</button>
+                </td>
+                <td style={{padding:'4px 3px',textAlign:'center'}}>
+                  <a href={'https://finviz.com/quote.ashx?t='+encodeURIComponent(r.ticker)} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 9px',border:'1px solid '+C.txtDim+'60',borderRadius:3,background:'transparent',color:C.txtDim,fontSize:11,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1,textDecoration:'none'}} title={'Finviz page for '+r.ticker+' (opens in new tab)'}>{'FV'}</a>
                 </td>
               </tr>;
             })}
