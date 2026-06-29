@@ -19713,7 +19713,7 @@ function ViolentChopScreenerPage(p){
             {showInstr&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,maxWidth:560,lineHeight:1.6,paddingLeft:2}}>
               <span style={{color:C.accent,fontWeight:700}}>What this is.</span> A volatility ranking tool. It ranks the top ~2,400 US stocks purely by how much they oscillate, measured at the bar resolution you pick below — 10-second, 1-minute, 10-minute, hourly, or daily.
               <br/><br/>
-              <span style={{color:C.accent,fontWeight:700}}>What it does not do.</span> It does not rank by fundamentals, price targets, or anything else — only technical volatility, to surface the names with the most oscillation for grid trading.
+              <span style={{color:C.accent,fontWeight:700}}>What it does not do.</span> It does not rank by fundamentals, price targets, or anything else — only technical volatility, to surface the names with the most oscillation for volatility trading.
               <br/><br/>
               <span style={{color:C.accent,fontWeight:700}}>How to use it.</span> Treat it as a volatility screen, then combine it with the other technical and fundamental data at your fingertips (analyst targets, 52W/30d/7d ranges, ATR, and more) to make the call.
             </div>}
@@ -19915,7 +19915,7 @@ function ViolentChopScreenerPage(p){
                 <td style={{padding:'4px 3px',color:(res==='120s'||res==='180s')?C.txtDim:C.txt,textAlign:'center'}} title={(res==='120s'||res==='180s')?'At coarse bars every liquid name fills nearly every bar, so swing count saturates (~bars/day) and stops discriminating. Rank by Path or Avg Swing here.':undefined}>{Math.round(r.cnt).toLocaleString()}</td>
                 <td style={{padding:'4px 3px',color:C.txt,textAlign:'center'}}>{r.avgPct.toFixed(3)+'%'}</td>
                 <td style={{padding:'4px 3px',color:C.gold,textAlign:'center'}}>{'$'+r.avgUsd.toFixed(3)}</td>
-                <td style={{padding:'4px 3px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for a grid.">{'$'+r.dailyPot.toFixed(0)}</td>
+                <td style={{padding:'4px 3px',color:C.accent,textAlign:'center',fontWeight:700}} title="Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. Harvestable profit potential for volatility trading.">{'$'+r.dailyPot.toFixed(0)}</td>
                 <td style={{padding:'4px 3px',color:C.gold,textAlign:'center',fontWeight:700}} title="Capital Efficiency = Daily $ Pot ÷ Price = total daily dollar path as % of current share price. Capital-fair ranking: harvestable movement per dollar of capital required. A cheap stock and an expensive one rank equally if they offer the same % of movement. Relative score, not a literal return.">{r.capEff.toFixed(0)}</td>
                 {(function(){
                   var rt=ratings[r.ticker];
@@ -20034,8 +20034,8 @@ function ViolentChopScreenerPage(p){
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.accent,fontWeight:700,fontSize:10}}>The idea</p>
-          <p style={{marginBottom:4,fontSize:9}}>This screener ignores where a stock opens or closes — daily drift is irrelevant when the grid is re-anchored each day. It measures only how violently price thrashed <em>within</em> each day, then averages that over a 5-day lookback.</p>
-          <p style={{marginBottom:4,fontSize:9}}>A "swing" is the move from one bar's low to the next bar's high. Even a stock grinding down all day has up-swings between consecutive bars — those are the moves a grid harvests, so they're counted regardless of the trend.</p>
+          <p style={{marginBottom:4,fontSize:9}}>This screener ignores where a stock opens or closes — daily drift is irrelevant when the position is re-anchored each day. It measures only how violently price thrashed <em>within</em> each day, then averages that over a 5-day lookback.</p>
+          <p style={{marginBottom:4,fontSize:9}}>A "swing" is the move from one bar's low to the next bar's high. Even a stock grinding down all day has up-swings between consecutive bars — those are the moves a volatility trader harvests, so they're counted regardless of the trend.</p>
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
           <p style={{marginBottom:6,color:C.gold,fontWeight:700,fontSize:10}}>The columns</p>
@@ -20045,7 +20045,7 @@ function ViolentChopScreenerPage(p){
         </div>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
           <p style={{marginBottom:6,color:C.blue,fontWeight:700,fontSize:10}}>Resolution toggle</p>
-          <p style={{marginBottom:4,fontSize:9}}>10-second bars catch the tightest wiggle (closest to fast grid fills); 30-second and 1-minute show coarser chop. A name that stays violent across all three is robustly choppy; one that only looks choppy at 1-minute is smoother than it appears up close.</p>
+          <p style={{marginBottom:4,fontSize:9}}>10-second bars catch the tightest wiggle (closest to fast trade fills); 30-second and 1-minute show coarser chop. A name that stays violent across all three is robustly choppy; one that only looks choppy at 1-minute is smoother than it appears up close.</p>
         </div>
       </div>
     </CollapseStage>
@@ -20128,18 +20128,18 @@ function ViolentChopScreenerPage(p){
           <div style={{fontSize:13,fontWeight:700,color:C.txtBright}}>Column Guide</div>
           <button onClick={function(){setShowColInfo(false);}} style={{border:'1px solid '+C.border,background:'transparent',color:C.txtDim,borderRadius:5,fontSize:12,padding:'2px 9px',cursor:'pointer',fontFamily:F}}>{'\u2715'}</button>
         </div>
-        <div style={{fontSize:9,color:C.txtDim,marginBottom:12,lineHeight:1.5}}>Every column ranks within-day chop intensity for grid trading. Swing = each bar's low to the next bar's high (floored at 0). Tap outside to close.</div>
+        <div style={{fontSize:9,color:C.txtDim,marginBottom:12,lineHeight:1.5}}>Every column ranks within-day chop intensity for volatility trading. Swing = each bar's low to the next bar's high (floored at 0). Tap outside to close.</div>
         {[
           ['#','Rank','Position in the current sort. Re-sorting any column renumbers it. Top 10 are gold.'],
           ['Type','Asset class','Stock / ETF / ADR / ETN / Fund etc. ETFs (e.g. leveraged SOXL) chop differently than single stocks and have no analyst ratings.'],
           ['Price','Last price','Current share price. Sets the scale — a $0.10 swing means more on a $20 stock than a $200 one.'],
-          ['$ Vol/day','Liquidity','Average daily dollar volume. The size/liquidity gate that works for stocks AND ETFs (unlike market cap). Higher = easier to fill a grid without moving price.'],
+          ['$ Vol/day','Liquidity','Average daily dollar volume. The size/liquidity gate that works for stocks AND ETFs (unlike market cap). Higher = easier to fill positions without moving price.'],
           ['MCap','Market cap','Company size (stocks only; ETFs/funds show -- since their size concept is AUM, not market cap).'],
           ['Chop Score','Composite rank','The headline metric: path% \u00D7 (1 + spread/avg). Rewards names that move a lot AND move erratically — ranking RVI-style violence above steady metronomic chop. Caveat: each swing % is measured against its own bar price, so a stock that ran up hard during the lookback (cheap early, expensive now) shows inflated scores that overstate today\u2019s opportunity — Cap Eff (which divides by current price) is the fairer read for those.'],
-          ['Swings/Day','Frequency','Number of up-swings per day at the selected resolution. More swings = more grid fills. Saturates at coarse bars (2m/3m) where every name fills every bar.'],
+          ['Swings/Day','Frequency','Number of up-swings per day at the selected resolution. More swings = more trade fills. Saturates at coarse bars (2m/3m) where every name fills every bar.'],
           ['Avg Swing %','Typical size (%)','Average swing magnitude in percent. Scale-independent, so comparable across price levels.'],
-          ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your grid — is each swing big enough to clear your take-profit?'],
-          ['Daily $ Pot.','Profit potential','Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. The raw harvestable opportunity: how many dollars of movement a grid can capture.'],
+          ['Avg Swing $','Typical size ($)','Average swing magnitude in dollars. Directly tied to your strategy — is each swing big enough to clear your take-profit?'],
+          ['Daily $ Pot.','Profit potential','Total dollar distance the price travels per day — the sum of all swing $, averaged over the lookback. The raw harvestable opportunity: how many dollars of movement a volatility trader can capture.'],
           ['Cap Eff.','Capital efficiency','Daily $ Pot \u00F7 current Price = total daily dollar path as a % of share price. Capital-FAIR ranking: harvestable movement per dollar of capital required. Raw Daily $ Pot favors expensive stocks (bigger $ swings need more capital); this normalizes it so a $20 and a $400 stock rank equally if they offer the same % of movement. A relative score, not a literal daily return.'],
           ['Consensus','Analyst rating','Yahoo analyst consensus (Strong Buy..Strong Sell), color-coded; hover for the mean 1-5 score. Pulled nightly for stocks; tap "Fetch ratings" for others.'],
           ['PT Low / Mean / High','Price targets','Analyst price targets — lowest, average, highest. Hover the mean for implied upside vs current price.'],
