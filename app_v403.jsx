@@ -19320,7 +19320,13 @@ function ViolentChopScreenerPage(p){
     };
   }).filter(function(r){
     if(!r.hasRes)return false; // resolution missing for this ticker
-    if(filter&&r.ticker.indexOf(filter.toUpperCase())<0)return false;
+    if(filter){
+      var toks=filter.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});
+      if(toks.length){
+        var hit=toks.some(function(t){return r.ticker===t||r.ticker.indexOf(t)===0;});
+        if(!hit)return false;
+      }
+    }
     if(minPrice&&r.price<parseFloat(minPrice))return false;
     if(maxPrice&&r.price>parseFloat(maxPrice))return false;
     if(mcapMin&&(r.adv||0)<parseFloat(mcapMin)*1e6)return false;
@@ -19410,7 +19416,7 @@ function ViolentChopScreenerPage(p){
       {/* Filters — Search full-width, then each Min/Max pair side by side */}
       <div style={{marginTop:12}}>
         <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Search</label>
-        <input value={filter} onChange={function(e){setFilter(e.target.value);}} placeholder="Ticker..." style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+        <input value={filter} onChange={function(e){setFilter(e.target.value);}} placeholder="Ticker(s), e.g. NVDA, SOXL, TQQQ" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
       </div>
       {[
         ['Price',minPrice,setMinPrice,maxPrice,setMaxPrice,null],
