@@ -19675,44 +19675,48 @@ function ViolentChopScreenerPage(p){
         if(!hit)return false;
       }
     }
-    if(minPrice&&r.price<parseFloat(minPrice))return false;
-    if(maxPrice&&r.price>parseFloat(maxPrice))return false;
-    if(mcapMin&&(r.adv||0)<parseFloat(mcapMin)*1e6)return false;
-    if(mcapMax&&(r.adv||0)>parseFloat(mcapMax)*1e6)return false;
-    // Avg swing MIN is bypassed when the user has typed specific tickers OR is viewing
-    // a saved list — both are deliberate "show me these exact names" actions and should
-    // surface regardless of their swing size.
-    if(swingUsdMin&&!searchActive&&!listActive&&r.avgUsd<parseFloat(swingUsdMin))return false;
-    if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
-    // Price vs Yahoo mean price target. '' = off. Rows with no target are excluded
-    // when this filter is active (can't judge a name with no analyst target).
-    if(targetFilter){
-      var rtF=ratings[r.ticker];
-      var tgt=(rtF&&rtF.target_mean!=null&&rtF.target_mean>0)?rtF.target_mean:null;
-      if(tgt==null||!r.price)return false;
-      if(targetFilter==='yes'&&!(r.price<tgt))return false;   // keep only price below target
-      if(targetFilter==='no'&&!(r.price>=tgt))return false;   // keep only price at/above target
+    // A manual ticker search (searchActive) is a deliberate "show me exactly these names"
+    // lookup, so it bypasses ALL the value-gating screen filters below — the searched
+    // tickers always surface if they're in the dataset. The resolution gate (hasRes) and
+    // the list-view filter above still apply. Normal browsing keeps every filter.
+    if(!searchActive){
+      if(minPrice&&r.price<parseFloat(minPrice))return false;
+      if(maxPrice&&r.price>parseFloat(maxPrice))return false;
+      if(mcapMin&&(r.adv||0)<parseFloat(mcapMin)*1e6)return false;
+      if(mcapMax&&(r.adv||0)>parseFloat(mcapMax)*1e6)return false;
+      // Avg swing MIN is also bypassed when viewing a saved list (deliberate selection).
+      if(swingUsdMin&&!listActive&&r.avgUsd<parseFloat(swingUsdMin))return false;
+      if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
+      // Price vs Yahoo mean price target. '' = off. Rows with no target are excluded
+      // when this filter is active (can't judge a name with no analyst target).
+      if(targetFilter){
+        var rtF=ratings[r.ticker];
+        var tgt=(rtF&&rtF.target_mean!=null&&rtF.target_mean>0)?rtF.target_mean:null;
+        if(tgt==null||!r.price)return false;
+        if(targetFilter==='yes'&&!(r.price<tgt))return false;   // keep only price below target
+        if(targetFilter==='no'&&!(r.price>=tgt))return false;   // keep only price at/above target
+      }
+      // Min number of analysts (optional). Names without analyst data are excluded when active.
+      if(minAnalysts){
+        var rtA=ratings[r.ticker];
+        var na=(rtA&&rtA.num_analysts!=null)?rtA.num_analysts:null;
+        if(na==null||na<parseFloat(minAnalysts))return false;
+      }
+      // Min % upside vs mean target (optional). (target_mean/price - 1)*100. Needs target + price.
+      if(minUpside){
+        var rtU=ratings[r.ticker];
+        var tgtU=(rtU&&rtU.target_mean!=null&&rtU.target_mean>0)?rtU.target_mean:null;
+        if(tgtU==null||!r.price)return false;
+        var ups=(tgtU/r.price-1)*100;
+        if(ups<parseFloat(minUpside)-1e-9)return false;
+      }
+      // Market cap filter (B). ETFs have null mcap — treat null as pass so the
+      // mcap filter never silently excludes funds (use $ Vol/day to gate those).
+      if(mktCapMin&&r.market_cap!=null&&r.market_cap<parseFloat(mktCapMin)*1e9)return false;
+      if(mktCapMax&&r.market_cap!=null&&r.market_cap>parseFloat(mktCapMax)*1e9)return false;
+      if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
+      if(typeFilter==='etfs'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
     }
-    // Min number of analysts (optional). Names without analyst data are excluded when active.
-    if(minAnalysts){
-      var rtA=ratings[r.ticker];
-      var na=(rtA&&rtA.num_analysts!=null)?rtA.num_analysts:null;
-      if(na==null||na<parseFloat(minAnalysts))return false;
-    }
-    // Min % upside vs mean target (optional). (target_mean/price - 1)*100. Needs target + price.
-    if(minUpside){
-      var rtU=ratings[r.ticker];
-      var tgtU=(rtU&&rtU.target_mean!=null&&rtU.target_mean>0)?rtU.target_mean:null;
-      if(tgtU==null||!r.price)return false;
-      var ups=(tgtU/r.price-1)*100;
-      if(ups<parseFloat(minUpside)-1e-9)return false;
-    }
-    // Market cap filter (B). ETFs have null mcap — treat null as pass so the
-    // mcap filter never silently excludes funds (use $ Vol/day to gate those).
-    if(mktCapMin&&r.market_cap!=null&&r.market_cap<parseFloat(mktCapMin)*1e9)return false;
-    if(mktCapMax&&r.market_cap!=null&&r.market_cap>parseFloat(mktCapMax)*1e9)return false;
-    if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
-    if(typeFilter==='etfs'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
     return true;
   });
 
