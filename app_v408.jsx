@@ -19035,6 +19035,8 @@ function ViolentChopScreenerPage(p){
   var s10tf=useState(''),targetFilter=s10tf[0],setTargetFilter=s10tf[1]; // '' = not selected, 'yes' = price below avg target, 'no' = price at/above target
   var s10d=useState('1'),mktCapMin=s10d[0],setMktCapMin=s10d[1];   // market cap filter (B), separate from $Vol
   var s10e=useState(''),mktCapMax=s10e[0],setMktCapMax=s10e[1];
+  var s10na=useState(''),minAnalysts=s10na[0],setMinAnalysts=s10na[1]; // optional min number of analysts
+  var s10up=useState(''),minUpside=s10up[0],setMinUpside=s10up[1];     // optional min % upside vs mean target
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
   var s12=useState('capEff'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
@@ -19448,6 +19450,20 @@ function ViolentChopScreenerPage(p){
       if(targetFilter==='yes'&&!(r.price<tgt))return false;   // keep only price below target
       if(targetFilter==='no'&&!(r.price>=tgt))return false;   // keep only price at/above target
     }
+    // Min number of analysts (optional). Names without analyst data are excluded when active.
+    if(minAnalysts){
+      var rtA=ratings[r.ticker];
+      var na=(rtA&&rtA.num_analysts!=null)?rtA.num_analysts:null;
+      if(na==null||na<parseFloat(minAnalysts))return false;
+    }
+    // Min % upside vs mean target (optional). (target_mean/price - 1)*100. Needs target + price.
+    if(minUpside){
+      var rtU=ratings[r.ticker];
+      var tgtU=(rtU&&rtU.target_mean!=null&&rtU.target_mean>0)?rtU.target_mean:null;
+      if(tgtU==null||!r.price)return false;
+      var ups=(tgtU/r.price-1)*100;
+      if(ups<parseFloat(minUpside)-1e-9)return false;
+    }
     // Market cap filter (B). ETFs have null mcap — treat null as pass so the
     // mcap filter never silently excludes funds (use $ Vol/day to gate those).
     if(mktCapMin&&r.market_cap!=null&&r.market_cap<parseFloat(mktCapMin)*1e9)return false;
@@ -19594,6 +19610,17 @@ function ViolentChopScreenerPage(p){
         })}
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Filters by current price vs Yahoo mean analyst target. Names without a target are hidden when Yes/No is active.</span>
       </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+        <div>
+          <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Min analysts</label>
+          <input value={minAnalysts} onChange={function(e){setMinAnalysts(e.target.value);}} placeholder="e.g. 5" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+        </div>
+        <div>
+          <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Min upside %</label>
+          <input value={minUpside} onChange={function(e){setMinUpside(e.target.value);}} placeholder="e.g. 20" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+        </div>
+      </div>
+      <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:3}}>Both optional &amp; analyst-based: % upside = mean target vs current price. Names without analyst data are hidden when either is set.</div>
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
         {[['all','All'],['stocks','Stocks'],['etfs','ETFs']].map(function(t){
