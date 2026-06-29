@@ -19032,7 +19032,7 @@ function ViolentChopScreenerPage(p){
   var s10=useState(''),mcapMax=s10[0],setMcapMax=s10[1];
   var s10b=useState('0.03'),swingUsdMin=s10b[0],setSwingUsdMin=s10b[1];
   var s10c=useState(''),swingUsdMax=s10c[0],setSwingUsdMax=s10c[1];
-  var s10d=useState(''),targetFilter=s10d[0],setTargetFilter=s10d[1]; // '' = not selected, 'yes' = price below avg target, 'no' = price at/above target
+  var s10tf=useState(''),targetFilter=s10tf[0],setTargetFilter=s10tf[1]; // '' = not selected, 'yes' = price below avg target, 'no' = price at/above target
   var s10d=useState('1'),mktCapMin=s10d[0],setMktCapMin=s10d[1];   // market cap filter (B), separate from $Vol
   var s10e=useState(''),mktCapMax=s10e[0],setMktCapMax=s10e[1];
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
