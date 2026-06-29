@@ -19015,7 +19015,7 @@ function ViolentChopScreenerPage(p){
   var freeze=(p.devView==='tablet'||p.devView==='laptop'||isPhone);
   var frozenCount=isPhone?3:5; // how many leftmost columns stick — phone: #/Ticker/Price; tablet+laptop: also Links/Type
   var FZ_W=[24,42,48,88,40]; var FZ_L=[0,24,66,114,202]; // widths / cumulative lefts (px) — order: # Ticker Price Links Type (tightened for mobile width)
-  var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:3,background:C.bgCard,overflow:'hidden'}:{};};
+  var fzTh=function(idx){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],top:0,width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:6,background:C.bgCard,overflow:'hidden'}:{};};
   var fzTd=function(idx,rowBg){return (freeze&&idx<frozenCount)?{position:'sticky',left:FZ_L[idx],width:FZ_W[idx],minWidth:FZ_W[idx],maxWidth:FZ_W[idx],zIndex:1,background:rowBg,overflow:'hidden'}:{};};
   var s1=useState(null),data=s1[0],setData=s1[1];
   var s2=useState(true),loading=s2[0],setLoading=s2[1];
@@ -19462,9 +19462,9 @@ function ViolentChopScreenerPage(p){
           Column guide
         </button>
       </div>
-      <div style={{overflowX:'auto'}}>
+      <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'72vh',position:'relative'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8},freeze?{minWidth:1100}:{})}>
-          <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+          <thead><tr style={{borderBottom:'1px solid '+C.border,position:'sticky',top:0,zIndex:4,background:C.bgCard}}>
             <th style={Object.assign({padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(0))}>#</th>
             <th onClick={function(){doSort('ticker');}} style={Object.assign({},thS('ticker'),{textAlign:'left'},fzTh(1))}>Ticker{sortKey==='ticker'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             <th onClick={function(){doSort('price');}} style={Object.assign({},thS('price'),{textAlign:'left'},fzTh(2))}>Price{sortKey==='price'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
