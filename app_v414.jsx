@@ -19642,9 +19642,11 @@ function ViolentChopScreenerPage(p){
   }).filter(function(r){
     if(!r.hasRes)return false; // resolution missing for this ticker
     if(viewListTk&&!viewListTk[r.ticker])return false; // active list view filter (stacks)
+    var searchActive=false;
     if(filter){
       var toks=filter.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});
       if(toks.length){
+        searchActive=true;
         var hit=toks.some(function(t){return r.ticker===t;});
         if(!hit)return false;
       }
@@ -19653,7 +19655,9 @@ function ViolentChopScreenerPage(p){
     if(maxPrice&&r.price>parseFloat(maxPrice))return false;
     if(mcapMin&&(r.adv||0)<parseFloat(mcapMin)*1e6)return false;
     if(mcapMax&&(r.adv||0)>parseFloat(mcapMax)*1e6)return false;
-    if(swingUsdMin&&r.avgUsd<parseFloat(swingUsdMin))return false;
+    // Avg swing MIN is bypassed when the user has typed specific tickers — a manual
+    // search should surface those exact names regardless of their swing size.
+    if(swingUsdMin&&!searchActive&&r.avgUsd<parseFloat(swingUsdMin))return false;
     if(swingUsdMax&&r.avgUsd>parseFloat(swingUsdMax))return false;
     // Price vs Yahoo mean price target. '' = off. Rows with no target are excluded
     // when this filter is active (can't judge a name with no analyst target).
