@@ -19647,10 +19647,14 @@ function ViolentChopScreenerPage(p){
     return {avg:out,composite:csN?cs/csN:0};
   };
 
+  var PRICE_FRESH_MS=2*3600*1000; // a live price is "fresh" only if stamped within 2h
+  var nowMs=Date.now();
   var rows=(data||[]).map(function(row){
     var g=getAvg(row);var a=g?g.avg:null;var sc=num(row.price);var lp=num(row.live_price);var px=lp>0?lp:sc;
+    var liveMs=row.live_price_at?(new Date(row.live_price_at)).getTime():0;
+    var priceFresh=lp>0&&liveMs>0&&(nowMs-liveMs)<=PRICE_FRESH_MS; // true live & recent
     return {
-      ticker:row.ticker,price:px,scanClose:sc,livePrice:lp,liveAt:row.live_price_at,market_cap:row.market_cap,ticker_type:row.ticker_type,adv:num(row.adv_dollars),
+      ticker:row.ticker,price:px,scanClose:sc,livePrice:lp,liveAt:row.live_price_at,priceFresh:priceFresh,market_cap:row.market_cap,ticker_type:row.ticker_type,adv:num(row.adv_dollars),
       composite:g?num(g.composite):0,lookback:a&&a.nDays?a.nDays:row.lookback_days,
       cnt:a?num(a.cnt):0,
       avgPct:a?num(a.avgPct):0,avgUsd:a?num(a.avgUsd):0,
@@ -19935,7 +19939,18 @@ function ViolentChopScreenerPage(p){
               return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.grid,background:'transparent'}}>
                 <td style={Object.assign({padding:'4px 3px',color:idx<10?C.gold:C.txtDim,textAlign:'center',fontWeight:idx<10?700:400},fzTd(0,rowBg))}>{idx+1}</td>
                 <td style={Object.assign({padding:'4px 3px',color:C.txtBright,fontWeight:700,textAlign:'left'},fzTd(1,rowBg))}>{r.ticker}</td>
-                <td style={Object.assign({padding:'4px 3px',color:C.txt,textAlign:'left'},fzTd(2,rowBg))} title={r.livePrice>0?('Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)'):'Scan close (prior session)'}>{'$'+r.price.toFixed(2)}{r.livePrice>0&&r.liveAt?<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{(function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'';}})(r.liveAt)}</div>:null}</td>
+                {(function(){
+                  var fmtT=function(ts){try{return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return'?';}};
+                  var ttl;
+                  if(r.priceFresh){ttl='Live intraday \u2014 scan close $'+r.scanClose.toFixed(2)+' (prior session)';}
+                  else if(r.livePrice>0){ttl='Live price may be stale (as of '+(r.liveAt?fmtT(r.liveAt):'?')+' ET)';}
+                  else{ttl='No live price \u2014 showing scan close from '+(scanDate||'prior session');}
+                  var sub;
+                  if(r.priceFresh){sub=<div style={{fontSize:6,color:C.accent,lineHeight:1.1}}>{r.liveAt?fmtT(r.liveAt):''}</div>;}
+                  else if(r.livePrice>0&&r.liveAt){sub=<div style={{fontSize:6,color:(C.warn||'#f59e0b'),lineHeight:1.1}}>{'as of '+fmtT(r.liveAt)}</div>;}
+                  else{sub=<div style={{fontSize:6,color:(C.warn||'#f59e0b'),lineHeight:1.1}}>{'scan '+(function(d){try{return new Date((d||'')+'T00:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'});}catch(e){return'close';}})(scanDate)}</div>;}
+                  return <td style={Object.assign({padding:'4px 3px',color:r.priceFresh?C.txt:C.txtDim,textAlign:'left'},fzTd(2,rowBg))} title={ttl}>{'$'+r.price.toFixed(2)}{sub}</td>;
+                })()}
                 <td style={Object.assign({padding:'1px 5px',whiteSpace:'nowrap',textAlign:'center'},fzTd(3,rowBg))}>
                   <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:14,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:5,lineHeight:1}} title="Yahoo Finance">Y</a>
                   {p.onCheatSheet&&<a href={'#cheatsheet:'+r.ticker} onClick={function(tk){return function(e){e.preventDefault();window.open(window.location.origin+window.location.pathname+'#cheatsheet:'+tk,'_blank');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:14,fontFamily:F,textDecoration:'none',lineHeight:1,cursor:'pointer'}} title="Stock Profile Cheat Sheet">{'\u2197'}</a>}
