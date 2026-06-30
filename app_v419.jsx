@@ -19878,7 +19878,10 @@ function ViolentChopScreenerPage(p){
           return <button key={t[0]} onClick={function(){setTypeFilter(t[0]);}} style={{padding:'4px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
             border:'1px solid '+(typeFilter===t[0]?C.blue+'66':C.border),background:typeFilter===t[0]?C.blue+'10':'transparent',color:typeFilter===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;
         })}
-        <button onClick={runScan} disabled={scanning} style={{marginLeft:'auto',padding:'7px 16px',border:'none',borderRadius:6,background:scanning?C.border:'linear-gradient(135deg,#a855f7,#7c3aed)',color:scanning?C.txtDim:'#fff',fontFamily:F,fontSize:10,fontWeight:700,cursor:scanning?'default':'pointer'}}>{scanning?'Scanning...':'Run New Scan'}</button>
+        {(function(){
+          var scanActive=scanning||(pipeStatus&&pipeStatus.status==='running');
+          return <button onClick={runScan} disabled={scanActive} style={{marginLeft:'auto',padding:'7px 16px',border:'none',borderRadius:6,background:scanActive?C.border:'linear-gradient(135deg,#a855f7,#7c3aed)',color:scanActive?C.txtDim:'#fff',fontFamily:F,fontSize:10,fontWeight:700,cursor:scanActive?'not-allowed':'pointer',opacity:scanActive?0.45:1,pointerEvents:scanActive?'none':'auto'}}>{scanActive?'Scanning...':'Run New Scan'}</button>;
+        })()}
         <span style={{fontSize:7,fontFamily:F,color:C.txtDim}}>Full universe, ~7,500 Polygon calls</span>
       </div>
 
