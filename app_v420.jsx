@@ -31372,17 +31372,25 @@ function App(){
   var GH_TOKEN_DEFAULT='';
   var sGh=useState(GH_TOKEN_DEFAULT),ghToken=sGh[0],setGhToken=sGh[1];
   useEffect(function(){
-    // Load saved keys from app_config. Retries until populated, because on a cold
-    // first load SB_URL/SB_KEY may not be ready yet, or a fetch may transiently fail —
-    // without this, landing directly on an Alpaca page shows "Waiting for API keys".
+    // Load saved keys via the get_app_client_keys RPC. The app_config table is locked
+    // to anon (secrets); this SECURITY DEFINER RPC returns ONLY the whitelisted client
+    // keys (alpaca_key, alpaca_secret, github_pat). Retries until populated, because on a
+    // cold first load SB_URL/SB_KEY may not be ready yet, or a fetch may transiently fail.
     var got={gh:false,ak:false,as:false};
     var tries=0;
     var load=function(){
       tries++;
       if(!SB_URL||!SB_KEY)return; // not ready yet — let the interval retry
-      if(!got.gh)fetch(SB_URL+'/rest/v1/app_config?key=eq.github_pat&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value){setGhToken(d[0].value);got.gh=true;}}).catch(function(){});
-      if(!got.ak)fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_key&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value){setAlpKey(d[0].value);got.ak=true;}}).catch(function(){});
-      if(!got.as)fetch(SB_URL+'/rest/v1/app_config?key=eq.alpaca_secret&select=value',{headers:getSbHeaders()}).then(function(r){return r.json();}).then(function(d){if(d.length&&d[0].value){setAlpSecret(d[0].value);got.as=true;}}).catch(function(){});
+      var h=Object.assign({},getSbHeaders(),{'Content-Type':'application/json'});
+      fetch(SB_URL+'/rest/v1/rpc/get_app_client_keys',{method:'POST',headers:h,body:'{}'}).then(function(r){return r.ok?r.json():[];}).then(function(d){
+        if(!Array.isArray(d))return;
+        d.forEach(function(row){
+          if(!row||!row.value)return;
+          if(row.key==='github_pat'){setGhToken(row.value);got.gh=true;}
+          else if(row.key==='alpaca_key'){setAlpKey(row.value);got.ak=true;}
+          else if(row.key==='alpaca_secret'){setAlpSecret(row.value);got.as=true;}
+        });
+      }).catch(function(){});
     };
     load();
     var id=setInterval(function(){
@@ -31718,7 +31726,7 @@ function App(){
     {page==='cheatsheet'&&<StockProfileCheatSheetPage apiKey={pgKey} initialTicker={csTarget} onBack={function(){setCsTarget('');setPage('home');}}/>}
     {page==='dbmanage'&&<DbManagePage onBack={function(){setPage('main');}}/>}
     {page==='source'&&<SourcePage onBack={function(){setPage('main');}}/>}
-    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} alpKey={alpKey} alpSecret={alpSecret} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);var uh=Object.assign({},getSbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'});fetch(SB_URL+'/rest/v1/app_config?on_conflict=key',{method:'POST',headers:uh,body:JSON.stringify({key:'github_pat',value:t,updated_at:new Date().toISOString()})}).catch(function(){});}} onSaveAlp={function(k,s){setAlpKey(k);setAlpSecret(s);var uh=Object.assign({},getSbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'});fetch(SB_URL+'/rest/v1/app_config?on_conflict=key',{method:'POST',headers:uh,body:JSON.stringify({key:'alpaca_key',value:k,updated_at:new Date().toISOString()})}).catch(function(){});fetch(SB_URL+'/rest/v1/app_config?on_conflict=key',{method:'POST',headers:uh,body:JSON.stringify({key:'alpaca_secret',value:s,updated_at:new Date().toISOString()})}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
+    {page==='settings'&&<SettingsPage apiKey={pgKey} sbUrl={sbUrl} sbKey={sbKey} ghToken={ghToken} alpKey={alpKey} alpSecret={alpSecret} onSave={function(k){setPgKey(k);}} onSaveSb={function(u,k){setSbUrl(u);setSbKey(k);SB_URL=u;SB_KEY=k;}} onSaveGh={function(t){setGhToken(t);var uh=Object.assign({},getSbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'});fetch(SB_URL+'/rest/v1/rpc/set_app_client_key',{method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_key:'github_pat',p_value:t})}).catch(function(){});}} onSaveAlp={function(k,s){setAlpKey(k);setAlpSecret(s);var uh=Object.assign({},getSbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'});fetch(SB_URL+'/rest/v1/rpc/set_app_client_key',{method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_key:'alpaca_key',p_value:k})}).catch(function(){});fetch(SB_URL+'/rest/v1/rpc/set_app_client_key',{method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_key:'alpaca_secret',p_value:s})}).catch(function(){});}} onBack={function(){setPage('main');}}/>}
     {page==='logic'&&<LogicPage onBack={function(){setPage('main');}}/>}
     {page==='main'&&<div>
       {!pgKey&&<Cd style={{borderColor:C.warn}}><div style={{color:C.warn,fontSize:11,fontFamily:F,textAlign:'center'}}>No API key. Tap menu → Settings.</div></Cd>}
