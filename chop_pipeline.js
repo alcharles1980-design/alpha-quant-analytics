@@ -79,6 +79,11 @@ function computeChop(bars, maxDays) {
   var dates = Object.keys(byDay).sort();
   for (var di = 0; di < dates.length; di++) {
     var dayBars = byDay[dates[di]];
+    // Ensure ascending time order WITHIN the day: the swing below is measured from
+    // this bar's low to the NEXT bar's high, which is only meaningful chronologically.
+    // The fetch uses sort=desc (so the 3-page cap drops the OLDEST days, never today),
+    // so bars can arrive newest-first — re-sort each day ascending before the swing loop.
+    dayBars.sort(function (x, y) { return x.t - y.t; });
     if (dayBars.length < 2) continue; // need at least one consecutive pair
     var swP = [], swU = [];
     for (var j = 0; j + 1 < dayBars.length; j++) {
@@ -241,14 +246,18 @@ async function fetchPage(urlStr, attempts) {
 async function fetchAggs(POLYGON_KEY, ticker, mult, unit, start, end) {
   var url = 'https://api.polygon.io/v2/aggs/ticker/' + encodeURIComponent(ticker) +
     '/range/' + mult + '/' + unit + '/' + start + '/' + end +
-    '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
+    '?adjusted=true&sort=desc&limit=50000&apiKey=' + POLYGON_KEY;
   var all = [];
   var next = url;
   var guard = 0;
   var pagesOk = 0;
-  // Cap pages at 3. Page 1 already returns ~8k bars (~3 RTH days) for liquid
-  // names — plenty, since the metric averages per-day. Paginating 12 deep on
-  // ultra-liquid names was taking minutes/ticker and stalling the whole scan.
+  // Cap pages at 3. Polygon caps a 10s-agg page at ~8k bars regardless of the limit
+  // param — for a liquid name that's ~2 trading days of bars (RTH + extended), so 3
+  // pages reach ~5 completed sessions. We fetch sort=DESC (newest-first) on purpose:
+  // if the page cap is ever hit, the days that fall off are the OLDEST in the window
+  // (the tail of a 5-day average), never today or the most recent sessions. Paginating
+  // deeper on ultra-liquid names was taking minutes/ticker and stalling the scan.
+  // (computeChop re-sorts each day ascending internally, so desc fetch order is safe.)
   while (next && guard < 3) {
     var res = await fetchPage(next, 2);
     if (!res.ok) {
