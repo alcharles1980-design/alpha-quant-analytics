@@ -368,6 +368,7 @@ async function runChopScreener(deps) {
       var bestComposite = 0;
       var nDaysSampled = 0;
       var tenSecFailed = false;
+      var sameDayClose = null; // current-session close, taken from the 1d bar dated scanDate
       for (var ri = 0; ri < CHOP_RES.length; ri++) {
         var res = CHOP_RES[ri];
         var resMode = res[3] || 'within';
@@ -387,6 +388,17 @@ async function runChopScreener(deps) {
           if (fr.status === 'failed') tenSecFailed = true;
         }
         if (res[2] === '10s') { dbg.bars_10s = bars ? bars.length : 0; dbg.fetch_status = fr.status; }
+        // Capture the current-session close from the daily bar dated scanDate. The 1d
+        // resolution is already fetched here (for the across-window 1d chop), and its
+        // bars easily fit one page (~21 daily bars), so this reaches TODAY unlike the
+        // 10s bars (which page-cap to the oldest ~3 days). Post-close this is the final
+        // RTH close; if today's daily bar isn't present (e.g. a pre-open run) sameDayClose
+        // stays null and we fall back to the universe price below. Zero extra API calls.
+        if (res[2] === '1d' && bars && bars.length) {
+          for (var bi = bars.length - 1; bi >= 0; bi--) {
+            if (etParts(bars[bi].t).date === scanDate) { sameDayClose = bars[bi].c; break; }
+          }
+        }
         if (!bars || bars.length < 2) { profile[res[2]] = null; continue; }
         var c = (resMode === 'across') ? computeChopAcross(bars) : computeChop(bars, resLookback);
         if (!c) { profile[res[2]] = null; continue; }
@@ -405,7 +417,7 @@ async function runChopScreener(deps) {
       return {
         ticker: u.ticker,
         scan_date: scanDate,
-        price: u.price,
+        price: (sameDayClose != null ? sameDayClose : u.price),
         market_cap: u.market_cap,
         ticker_type: u.ticker_type,
         adv_dollars: u.adv_dollars,
