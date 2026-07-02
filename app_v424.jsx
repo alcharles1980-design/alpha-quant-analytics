@@ -17893,6 +17893,8 @@ function AHProfilePage(p){
   var s8=useState({absmove:true,range:true,signed:false,trades:true}),vis=s8[0],setVis=s8[1];
   var s9=useState(null),meta=s9[0],setMeta=s9[1];
   var s10=useState(''),customTk=s10[0],setCustomTk=s10[1];   // dedicated custom-ticker input
+  var s11=useState(null),perDay=s11[0],setPerDay=s11[1];     // per-session AH returns
+  var s12=useState(null),cumPath=s12[0],setCumPath=s12[1];   // avg cumulative return path
 
   var tickers=function(){return tickInput.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});};
 
@@ -17917,7 +17919,7 @@ function AHProfilePage(p){
     if(!tk){setErr('Enter a ticker.');return;}
     setSel(tk);
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setLoading(true);setErr('');setProf(null);setMeta(null);
+    setLoading(true);setErr('');setProf(null);setMeta(null);setPerDay(null);setCumPath(null);
     var end=new Date();var start=new Date(end);start.setDate(start.getDate()-lookback);
     var fromStr=start.toISOString().slice(0,10);var toStr=end.toISOString().slice(0,10);
     // fetch 1-min bars, paginate (sort=desc so a page cap drops oldest, never recent)
@@ -17961,6 +17963,38 @@ function AHProfilePage(p){
           samples:v.n
         };
       });
+      // ---- Per-session grouping for the two RETURN graphs ----
+      // Group AH bars by session date, anchor each session to its FIRST AH bar's open
+      // (≈4:15 PM), then derive: (a) per-day return = lastClose/firstOpen-1, and
+      // (b) average cumulative return path = mean across sessions of close(m)/firstOpen-1.
+      var sess={};
+      for(var si=0;si<all.length;si++){
+        var sb=all[si];var sem=etMinOfDay(sb.t);
+        if(sem<975||sem>=1200)continue;
+        var sdk=new Date(sb.t-4*3600*1000).toISOString().slice(0,10);
+        (sess[sdk]=sess[sdk]||[]).push({m:sem-AH_START,o:sb.o,c:sb.c,t:sb.t});
+      }
+      var dayRows=[];var cumAcc={};
+      Object.keys(sess).sort().forEach(function(dk){
+        var arr=sess[dk].slice().sort(function(a,b){return a.t-b.t;});
+        if(arr.length<2)return;
+        var open415=arr[0].o;if(!(open415>0))return;
+        var lastClose=arr[arr.length-1].c;
+        dayRows.push({d:dk,ret:(lastClose/open415-1)*100});
+        for(var ai=0;ai<arr.length;ai++){
+          var bk2=Math.floor(arr[ai].m/reso)*reso;
+          var cr=(arr[ai].c/open415-1)*100;   // cumulative return from AH open, %
+          if(!cumAcc[bk2])cumAcc[bk2]={s:0,n:0};
+          cumAcc[bk2].s+=cr;cumAcc[bk2].n+=1;
+        }
+      });
+      var avgRet=dayRows.length?dayRows.reduce(function(a,r){return a+r.ret;},0)/dayRows.length:0;
+      dayRows.forEach(function(r){r.avg=avgRet;});
+      var cumRows=Object.keys(cumAcc).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(k){
+        return {m:k,cum:cumAcc[k].s/cumAcc[k].n};
+      });
+      setPerDay(dayRows);setCumPath(cumRows);
+
       setProf(rows);
       setMeta({ticker:tk,sessions:Object.keys(sessions).length,bars:all.length,from:fromStr,to:toStr});
       setLoading(false);
@@ -18008,6 +18042,53 @@ function AHProfilePage(p){
   };
 
   var btn=function(active,label,onClick,col){return <button onClick={onClick} style={{padding:'5px 11px',border:'1px solid '+(active?(col||C.accent):C.border),borderRadius:6,background:active?(col||C.accent):C.bgCard,color:active?(col==='transparent'?C.txt:'#04121e'):C.txt,fontFamily:F,fontSize:9.5,fontWeight:active?700:400,cursor:'pointer'}}>{label}</button>;};
+
+  // ---- Chart 2: average cumulative return path (held from 4:15, walking to 8:00) ----
+  var cumChart=function(){
+    if(!cumPath||!cumPath.length)return null;
+    var W=760,H=210,padL=44,padR=16,padT=14,padB=30;
+    var xs=cumPath.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
+    var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
+    var ys=cumPath.map(function(r){return r.cum;});var yMax=Math.max.apply(null,ys),yMin=Math.min.apply(null,ys);
+    yMax=Math.max(yMax,0);yMin=Math.min(yMin,0);if(yMax===yMin)yMax=yMin+0.1;
+    var pad=(yMax-yMin)*0.1;yMax+=pad;yMin-=pad;
+    var Y=function(v){return padT+(1-(v-yMin)/(yMax-yMin))*(H-padT-padB);};
+    var d='';cumPath.forEach(function(r,i){d+=(i===0?'M':'L')+X(r.m).toFixed(1)+' '+Y(r.cum).toFixed(1)+' ';});
+    var area=d+'L'+X(cumPath[cumPath.length-1].m).toFixed(1)+' '+Y(0).toFixed(1)+' L'+X(cumPath[0].m).toFixed(1)+' '+Y(0).toFixed(1)+' Z';
+    var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;return Math.floor(t/60)+':'+((t%60)<10?'0':'')+(t%60);};
+    var last=cumPath[cumPath.length-1].cum;var col=last>=0?C.accent:C.red;
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
+      {[0,0.5,1].map(function(g,i){var v=yMin+(yMax-yMin)*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(2)}%</text></g>;})}
+      <line x1={padL} y1={Y(0)} x2={W-padR} y2={Y(0)} stroke={C.txtDim} strokeWidth="1"/>
+      {xticks.map(function(m,i){return <text key={i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
+      <path d={area} fill={col} opacity="0.12"/>
+      <path d={d} fill="none" stroke={col} strokeWidth="2"/>
+      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>avg cum return</text>
+    </svg>;
+  };
+
+  // ---- Chart 3: per-day AH returns (4:15→8:00) across the lookback, with average line ----
+  var dayChart=function(){
+    if(!perDay||!perDay.length)return null;
+    var W=760,H=210,padL=44,padR=16,padT=14,padB=40;
+    var n=perDay.length;var bw=(W-padL-padR)/n;
+    var ys=perDay.map(function(r){return r.ret;});var yMax=Math.max.apply(null,ys),yMin=Math.min.apply(null,ys);
+    yMax=Math.max(yMax,0);yMin=Math.min(yMin,0);if(yMax===yMin)yMax=yMin+0.1;
+    var pad=(yMax-yMin)*0.12;yMax+=pad;yMin-=pad;
+    var Y=function(v){return padT+(1-(v-yMin)/(yMax-yMin))*(H-padT-padB);};
+    var avg=perDay[0].avg;
+    var showEvery=Math.ceil(n/10);
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
+      {[0,0.5,1].map(function(g,i){var v=yMin+(yMax-yMin)*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(2)}%</text></g>;})}
+      <line x1={padL} y1={Y(0)} x2={W-padR} y2={Y(0)} stroke={C.txtDim} strokeWidth="1"/>
+      {perDay.map(function(r,i){var x=padL+i*bw;var y0=Y(0),y1=Y(r.ret);var up=r.ret>=0;return <rect key={i} x={x+bw*0.15} y={Math.min(y0,y1)} width={bw*0.7} height={Math.max(1,Math.abs(y1-y0))} fill={up?C.accent:C.red} opacity="0.85"/>;})}
+      <line x1={padL} y1={Y(avg)} x2={W-padR} y2={Y(avg)} stroke={C.gold} strokeWidth="1.5" strokeDasharray="4 3"/>
+      <text x={W-padR-2} y={Y(avg)-3} textAnchor="end" fontSize="8.5" fill={C.gold} fontFamily={F}>avg {avg.toFixed(3)}%</text>
+      {perDay.map(function(r,i){if(i%showEvery!==0)return null;var x=padL+i*bw+bw/2;return <text key={'d'+i} x={x} y={H-8} textAnchor="middle" fontSize="7" fill={C.txtDim} fontFamily={F} transform={'rotate(45 '+x+' '+(H-8)+')'}>{r.d.slice(5)}</text>;})}
+      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>daily AH return</text>
+    </svg>;
+  };
+
   var legToggle=function(key,label,col){var on=vis[key];return <button onClick={function(){var v=Object.assign({},vis);v[key]=!v[key];setVis(v);}} style={{padding:'4px 9px',border:'1px solid '+col,borderRadius:5,background:on?col+'22':C.bgCard,color:on?col:C.txtDim,fontFamily:F,fontSize:9,fontWeight:on?700:400,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}><span style={{width:9,height:9,background:on?col:'transparent',border:'1px solid '+col,borderRadius:2,display:'inline-block'}}></span>{label}</button>;};
 
   return <div>
@@ -18055,6 +18136,18 @@ function AHProfilePage(p){
       </div>
       {chart()}
       <div style={{marginTop:6,fontFamily:F,fontSize:8,color:C.txtDim}}>X = minutes into after-hours (4:15 PM → 8:00 PM ET). Left axis: price move in basis points (avg per {reso}-min bucket across sessions). Right axis: avg trades per minute. Range = (high−low), the full oscillation amplitude; a large range with small abs/signed move indicates choppy mean-reversion.</div>
+
+      {cumPath&&cumPath.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Average Cumulative Return · held from 4:15 PM</div>
+        {cumChart()}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average P&amp;L path if you entered at the 4:15 PM open and held through the session, meaned across all {meta?meta.sessions:''} sessions. A path that hugs zero = pure oscillation (no drift); a path that trends away = directional after-hours bias.</div>
+      </div>}
+
+      {perDay&&perDay.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Daily After-Hours Return · 4:15 PM → 8:00 PM · per session</div>
+        {dayChart()}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each bar = one session's net return from the 4:15 PM open to the 8:00 PM close (green up, red down). Gold dashed line = average across the lookback ({perDay.length} sessions). A near-zero average with bars scattered both sides confirms mean-reversion rather than persistent drift.</div>
+      </div>}
     </div>}
     {prof&&prof.length===0&&<div style={{marginTop:12,fontFamily:F,fontSize:10,color:C.txtDim}}>No after-hours bars found for {meta?meta.ticker:''} in this window (the name may not trade extended hours).</div>}
   </div>;
