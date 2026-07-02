@@ -3741,15 +3741,17 @@ async function runExtendedVolume() {
   }
   console.log('Universe size (deduped): ' + universe.length);
 
-  // 25-day window covers 20-day rolling avg with weekend buffer
+  // 40-day calendar window ≈ 28 trading days, so the 20-day rolling average (which
+  // excludes the current day, and drops half-days) is genuinely ~20 valid days even
+  // with a holiday or two in range. A liquid name is ~950 1-min bars/day → ~27k over
+  // the window, still one page (50k cap), so no extra cost.
   var endDate = new Date();
-  var startDate = new Date(endDate); startDate.setDate(startDate.getDate() - 30);
+  var startDate = new Date(endDate); startDate.setDate(startDate.getDate() - 40);
   var startStr = startDate.toISOString().slice(0, 10);
   var endStr = endDate.toISOString().slice(0, 10);
   console.log('Date range: ' + startStr + ' to ' + endStr);
 
   var inserted = 0, skipped = 0, errored = 0;
-  var pageSize = 100;
 
   // Debug: write to extvol_debug_log so we can read without GH Action logs
   var debugLog = async function (tk, step, detail) {
@@ -3824,12 +3826,12 @@ async function runExtendedVolume() {
         // Exact minute-of-day session windows (ET). Auction-heavy boundary minutes are
         // deliberately EXCLUDED so they can't contaminate the extended-hours activity:
         //   PM  = 04:00-09:15  (240-555)  — drops 09:15-09:30 run-into-open
-        //   RTH = 09:30-16:00  (570-960)  — continuous regular session
-        //   AH  = 16:15-20:00  (975-1200) — drops 16:00-16:15 closing-auction spike
+        //   RTH = 09:30-16:00  (570-960 inclusive) — regular session incl. the 16:00 closing print
+        //   AH  = 16:15-20:00  (975-1200) — drops 16:00-16:15 closing-auction settle
         // Anything else (pre-4am, the two dropped boundary bands, overnight 20:00-04:00) is skipped.
         var session = null;
         if (etTotalMin >= 240 && etTotalMin < 555) session = 'PM';
-        else if (etTotalMin >= 570 && etTotalMin < 960) session = 'RTH';
+        else if (etTotalMin >= 570 && etTotalMin <= 960) session = 'RTH';
         else if (etTotalMin >= 975 && etTotalMin < 1200) session = 'AH';
         else continue; // dropped boundary bands + overnight
 
@@ -3870,15 +3872,19 @@ async function runExtendedVolume() {
         if (rthMins >= 120) validDays.push(dayKeys[dk]);
       }
 
-      // Latest day = scan_date
-      var latest = dayKeys[dayKeys.length - 1];
-      var latestDay = byDay[latest];
+      // The displayed row represents ONE day. Prefer the bar-day that actually equals
+      // scanDate (the calendar day the scan runs). If today has no bars yet (pre-market
+      // run, holiday, or a name that hasn't traded today), fall back to the most recent
+      // bar-day BUT stamp the row with that true date — never label yesterday's numbers
+      // as today's. rowDate is what we write as scan_date.
+      var rowDate = byDay[scanDate] ? scanDate : dayKeys[dayKeys.length - 1];
+      var latestDay = byDay[rowDate];
       var pm = latestDay.pm, rth = latestDay.rth, ah = latestDay.ah;
       var totalDv = pm.dv + rth.dv + ah.dv;
       var totalTr = pm.tr + rth.tr + ah.tr;
 
       // Rolling averages: last N valid days excluding current scan date
-      var hist = validDays.filter(function (d) { return d !== latest; });
+      var hist = validDays.filter(function (d) { return d !== rowDate; });
       var calcAvg = function (days, sess, field) {
         if (!days.length) return null;
         var sum = 0;
@@ -3917,7 +3923,7 @@ async function runExtendedVolume() {
       });
 
       var row = {
-        ticker: tk, scan_date: scanDate,
+        ticker: tk, scan_date: rowDate,
         pm_dollar_volume: Math.round(pm.dv), pm_trades: Math.round(pm.tr), pm_volume_shares: Math.round(pm.sh),
         rth_dollar_volume: Math.round(rth.dv), rth_trades: Math.round(rth.tr), rth_volume_shares: Math.round(rth.sh),
         ah_dollar_volume: Math.round(ah.dv), ah_trades: Math.round(ah.tr), ah_volume_shares: Math.round(ah.sh),
@@ -3939,8 +3945,10 @@ async function runExtendedVolume() {
         ticker_type: u.ticker_type || null
       };
 
-      // DELETE existing row for this (ticker, scan_date) then INSERT (PostgREST PATCH unreliable)
-      await fetch(SB_URL + '/rest/v1/extended_hours_volume?ticker=eq.' + tk + '&scan_date=eq.' + scanDate, { method: 'DELETE', headers: sbHeaders() });
+      // DELETE existing row for this (ticker, rowDate) then INSERT (PostgREST PATCH unreliable).
+      // Must match rowDate — the day we're actually writing — not scanDate, which can differ
+      // in the fallback case (today has no bars yet).
+      await fetch(SB_URL + '/rest/v1/extended_hours_volume?ticker=eq.' + tk + '&scan_date=eq.' + rowDate, { method: 'DELETE', headers: sbHeaders() });
       var ir = await fetch(SB_URL + '/rest/v1/extended_hours_volume', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
       if (verbose) { console.log('[DBG] ' + tk + ' INSERT status=' + ir.status + ' pm=' + Math.round(pm.dv) + ' rth=' + Math.round(rth.dv) + ' ah=' + Math.round(ah.dv)); var et2 = ir.ok ? 'ok' : (await ir.text()).slice(0, 400); await debugLog(tk, 'insert', 'http=' + ir.status + ' pm=' + Math.round(pm.dv) + ' rth=' + Math.round(rth.dv) + ' ah=' + Math.round(ah.dv) + ' body=' + et2); }
       if (ir.ok) inserted++;
