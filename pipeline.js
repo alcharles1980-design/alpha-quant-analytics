@@ -3773,22 +3773,38 @@ async function runExtendedVolume() {
       var etStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(testDate);
       var etOff = utcH - parseInt(etStr); // 4 in EDT, 5 in EST
 
-      var url = 'https://api.polygon.io/v2/aggs/ticker/' + tk + '/range/1/hour/' + startStr + '/' + endStr + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
-      var ctrl = new AbortController();
-      var timer = setTimeout(function () { ctrl.abort(); }, 30000);
-      var r = await fetch(url, { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (verbose) { console.log('[DBG] ' + tk + ' HTTP ' + r.status); await debugLog(tk, 'http', String(r.status)); }
-      if (!r.ok) {
-        errored++;
-        if (errored <= 10) console.log('HTTP ' + r.status + ' for ' + tk + (r.status === 401 || r.status === 403 ? ' [AUTH]' : (r.status === 429 ? ' [RATE]' : '')));
-        continue;
+      // 1-MINUTE bars so the session windows can be defined to the exact minute
+      // (PM 4:00-9:15 AM, RTH 9:30 AM-4:00 PM, AH 4:15-8:00 PM). Hour bars could not
+      // separate the 4:00 closing auction from genuine after-hours trading. A liquid
+      // name over the 30-day window can approach the 50k page cap, so paginate via
+      // next_url (order-independent aggregation, so sort direction is irrelevant here).
+      var allResults = [];
+      var pageUrl = 'https://api.polygon.io/v2/aggs/ticker/' + tk + '/range/1/minute/' + startStr + '/' + endStr + '?adjusted=true&sort=asc&limit=50000&apiKey=' + POLYGON_KEY;
+      var pageGuard = 0;
+      var fetchErr = false;
+      while (pageUrl && pageGuard < 6) {
+        pageGuard++;
+        var ctrl = new AbortController();
+        var timer = setTimeout(function () { ctrl.abort(); }, 30000);
+        var r = await fetch(pageUrl, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (verbose) { console.log('[DBG] ' + tk + ' HTTP ' + r.status + ' (page ' + pageGuard + ')'); await debugLog(tk, 'http', String(r.status) + ' p' + pageGuard); }
+        if (!r.ok) {
+          errored++;
+          if (errored <= 10) console.log('HTTP ' + r.status + ' for ' + tk + (r.status === 401 || r.status === 403 ? ' [AUTH]' : (r.status === 429 ? ' [RATE]' : '')));
+          fetchErr = true;
+          break;
+        }
+        var pageBody = await r.json();
+        if (pageBody.results && pageBody.results.length) allResults = allResults.concat(pageBody.results);
+        pageUrl = pageBody.next_url ? (pageBody.next_url + '&apiKey=' + POLYGON_KEY) : null;
       }
-      var body = await r.json();
-      if (verbose) { console.log('[DBG] ' + tk + ' results count: ' + (body.results ? body.results.length : 'null') + ' status:' + body.status); await debugLog(tk, 'results', 'count=' + (body.results ? body.results.length : 'null') + ' status=' + body.status); }
+      if (fetchErr) continue;
+      var body = { results: allResults };
+      if (verbose) { console.log('[DBG] ' + tk + ' results count: ' + allResults.length + ' (pages ' + pageGuard + ')'); await debugLog(tk, 'results', 'count=' + allResults.length + ' pages=' + pageGuard); }
       if (!body.results || !body.results.length) {
         skipped++;
-        if (skipped <= 5) console.log('No results for ' + tk + ' (status=' + body.status + ')');
+        if (skipped <= 5) console.log('No results for ' + tk);
         continue;
       }
 
@@ -3798,29 +3814,24 @@ async function runExtendedVolume() {
         var bar = body.results[bi];
         var ms = bar.t;
         var dt = new Date(ms);
-        var utcHr = dt.getUTCHours();
-        var etHour = utcHr - etOff;
-        if (etHour < 0) etHour += 24;
+        var etTotalMin = dt.getUTCHours() * 60 + dt.getUTCMinutes() - etOff * 60;
+        if (etTotalMin < 0) etTotalMin += 1440;
+        var etHour = Math.floor(etTotalMin / 60); // kept for the hourly_breakdown label/detail
         // Date in ET
         var dtET = new Date(ms - etOff * 3600 * 1000);
         var dayKey = dtET.toISOString().slice(0, 10);
 
-        // Bucket: 4-9 PM, 9-16 RTH, 16-20 AH, else skip overnight
+        // Exact minute-of-day session windows (ET). Auction-heavy boundary minutes are
+        // deliberately EXCLUDED so they can't contaminate the extended-hours activity:
+        //   PM  = 04:00-09:15  (240-555)  — drops 09:15-09:30 run-into-open
+        //   RTH = 09:30-16:00  (570-960)  — continuous regular session
+        //   AH  = 16:15-20:00  (975-1200) — drops 16:00-16:15 closing-auction spike
+        // Anything else (pre-4am, the two dropped boundary bands, overnight 20:00-04:00) is skipped.
         var session = null;
-        if (etHour >= 4 && etHour < 9) session = 'PM';
-        else if (etHour === 9) {
-          // 9 AM ET hour bar contains both pre (9:00-9:30) and RTH (9:30-10:00) - assign to PM (close to 9:30 cutoff)
-          session = 'PM';
-        }
-        else if (etHour >= 10 && etHour < 16) session = 'RTH';
-        else if (etHour === 16) {
-          // 4 PM ET hour bar contains close. Assign to RTH (closing minutes are RTH-meaningful).
-          session = 'RTH';
-        }
-        else if (etHour >= 17 && etHour < 20) session = 'AH';
-        else session = 'OVN'; // skip overnight 20-04
-
-        if (session === 'OVN') continue;
+        if (etTotalMin >= 240 && etTotalMin < 555) session = 'PM';
+        else if (etTotalMin >= 570 && etTotalMin < 960) session = 'RTH';
+        else if (etTotalMin >= 975 && etTotalMin < 1200) session = 'AH';
+        else continue; // dropped boundary bands + overnight
 
         if (!byDay[dayKey]) byDay[dayKey] = { pm: { dv: 0, tr: 0, sh: 0 }, rth: { dv: 0, tr: 0, sh: 0 }, ah: { dv: 0, tr: 0, sh: 0 }, hours: [] };
         var dv = (bar.vw || bar.c || 0) * (bar.v || 0);
@@ -3848,12 +3859,15 @@ async function runExtendedVolume() {
         continue;
       }
 
-      // Filter out half-days (less than 4 hours of RTH activity) for averages only
+      // Filter out half-days for averages only. day.hours now holds one entry per
+      // MINUTE bar (not per hour), so count RTH minutes: a full session is ~390, an
+      // early-close half-day ~210. Require >=120 RTH minutes with trades — filters out
+      // genuine half-days and near-empty days without excluding thinly-traded names.
       var validDays = [];
       for (var dk = 0; dk < dayKeys.length; dk++) {
         var day = byDay[dayKeys[dk]];
-        var rthHrs = day.hours.filter(function (h) { return h.session === 'RTH'; }).length;
-        if (rthHrs >= 4) validDays.push(dayKeys[dk]);
+        var rthMins = day.hours.filter(function (h) { return h.session === 'RTH'; }).length;
+        if (rthMins >= 120) validDays.push(dayKeys[dk]);
       }
 
       // Latest day = scan_date

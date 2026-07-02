@@ -18022,7 +18022,7 @@ function ExtendedHoursVolumePage(p){
     </div>
 
     <Cd glow={true}>
-      <SectionHead title="Pre/Post Market $-Volume + Trade Count Ranking" sub={data?(data.length+' tickers, scan '+lastScanDate):'Loading...'} info="Hourly aggregate bars bucketed into Pre-Market (4:00-9:30 AM ET), Regular (9:30 AM - 4:00 PM ET), and After-Hours (4:00-8:00 PM ET). Sorted by selected metric. The colored bar shows PM/RTH/AH split as % of day's $-volume."/>
+      <SectionHead title="Pre/Post Market $-Volume + Trade Count Ranking" sub={data?(data.length+' tickers, scan '+lastScanDate):'Loading...'} info="1-minute bars bucketed into Pre-Market (4:00-9:15 AM ET), Regular (9:30 AM - 4:00 PM ET), and After-Hours (4:15-8:00 PM ET). Auction-heavy boundary minutes (9:15-9:30 run-into-open and 4:00-4:15 closing cross) are excluded so they don't inflate extended-hours activity. $Vol and trade counts (Tr) shown per session; sortable by any column. The colored bar shows PM/RTH/AH split as % of day's $-volume."/>
 
       <div style={{display:'flex',gap:4,marginTop:10,marginBottom:8}}>
         <button onClick={function(){setMode('1d');}} style={{flex:1,padding:'8px',border:'1px solid '+(mode==='1d'?C.accent:C.border),background:mode==='1d'?C.accentDim:'transparent',color:mode==='1d'?C.accent:C.txt,fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,borderRadius:6,cursor:'pointer'}}>1 Day</button>
