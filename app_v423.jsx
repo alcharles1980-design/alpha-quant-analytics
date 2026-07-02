@@ -17892,8 +17892,17 @@ function AHProfilePage(p){
   var s7=useState(''),err=s7[0],setErr=s7[1];
   var s8=useState({absmove:true,range:true,signed:false,trades:true}),vis=s8[0],setVis=s8[1];
   var s9=useState(null),meta=s9[0],setMeta=s9[1];
+  var s10=useState(''),customTk=s10[0],setCustomTk=s10[1];   // dedicated custom-ticker input
 
   var tickers=function(){return tickInput.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});};
+
+  // Auto-replot when lookback or resolution changes, but only after a profile already exists
+  // (so changing a knob updates the chart without re-clicking Plot). Guarded by sel + prof.
+  var firstRun=useRef(true);
+  useEffect(function(){
+    if(firstRun.current){firstRun.current=false;return;}
+    if(sel&&prof){run(sel);}
+  },[lookback,reso]);
 
   // ET minute-of-day from a ms timestamp, DST-safe via Intl
   var etMinOfDay=function(ms){
@@ -17903,9 +17912,10 @@ function AHProfilePage(p){
     var hh=parseInt(parts.hour,10)%24;return hh*60+parseInt(parts.minute,10);
   };
 
-  var run=function(){
-    var tk=sel||tickers()[0];
-    if(!tk){setErr('Enter at least one ticker.');return;}
+  var run=function(tkArg){
+    var tk=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():(sel||tickers()[0]);
+    if(!tk){setErr('Enter a ticker.');return;}
+    setSel(tk);
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
     setLoading(true);setErr('');setProf(null);setMeta(null);
     var end=new Date();var start=new Date(end);start.setDate(start.getDate()-lookback);
@@ -18008,18 +18018,28 @@ function AHProfilePage(p){
     </div>
 
     <div style={{marginTop:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:12}}>
-      <div style={{fontFamily:F,fontSize:9,color:C.txtDim,marginBottom:4}}>Shortlist (comma-separated)</div>
-      <input value={tickInput} onChange={function(e){setTickInput(e.target.value);}} placeholder="NVDA, SOXL, TSLA" style={{width:'100%',boxSizing:'border-box',padding:'7px 9px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:12,marginBottom:8}}/>
-      <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-        <span style={{fontFamily:F,fontSize:9,color:C.txtDim}}>View:</span>
-        {tickers().map(function(t){return btn(sel===t,t,function(){setSel(t);},C.accent);})}
+      {/* Dedicated custom-ticker input — plots any single ticker directly, independent of the shortlist */}
+      <div style={{fontFamily:F,fontSize:9,color:C.accent,marginBottom:4,fontWeight:700}}>Custom ticker</div>
+      <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:12,flexWrap:'wrap'}}>
+        <input value={customTk} onChange={function(e){setCustomTk(e.target.value);}} onKeyDown={function(e){if(e.key==='Enter'&&customTk.trim()){run(customTk);}}} placeholder="Type any ticker, e.g. TSLA — Enter to plot" style={{flex:'1 1 200px',minWidth:160,boxSizing:'border-box',padding:'8px 10px',background:C.bgDeep,border:'1px solid '+C.accent+'88',borderRadius:6,color:C.txt,fontFamily:F,fontSize:13}}/>
+        <button onClick={function(){if(customTk.trim())run(customTk);}} disabled={loading||!customTk.trim()} style={{padding:'8px 16px',border:'none',borderRadius:6,background:(loading||!customTk.trim())?C.border:'linear-gradient(135deg,#22c55e,#16a34a)',color:(loading||!customTk.trim())?C.txtDim:'#04121e',fontFamily:F,fontSize:10,fontWeight:700,cursor:(loading||!customTk.trim())?'default':'pointer'}}>{loading?'Loading…':'Plot'}</button>
       </div>
-      <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:10,alignItems:'center'}}>
+
+      {/* Carried-over shortlist (from Extended Hours) — click a chip to plot it */}
+      {tickers().length>0&&<div>
+        <div style={{fontFamily:F,fontSize:9,color:C.txtDim,marginBottom:4}}>Shortlist — click to plot</div>
+        <input value={tickInput} onChange={function(e){setTickInput(e.target.value);}} placeholder="NVDA, SOXL, TSLA" style={{width:'100%',boxSizing:'border-box',padding:'6px 9px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:6,color:C.txt,fontFamily:F,fontSize:11,marginBottom:7}}/>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+          {tickers().map(function(t){return btn(sel===t,t,function(){run(t);},C.accent);})}
+        </div>
+      </div>}
+
+      <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:12,alignItems:'center'}}>
         <div style={{display:'flex',gap:5,alignItems:'center'}}><span style={{fontFamily:F,fontSize:9,color:C.txtDim}}>Lookback:</span>
           {btn(lookback===7,'1 wk',function(){setLookback(7);})}{btn(lookback===14,'2 wk',function(){setLookback(14);})}{btn(lookback===31,'1 mo',function(){setLookback(31);})}</div>
         <div style={{display:'flex',gap:5,alignItems:'center'}}><span style={{fontFamily:F,fontSize:9,color:C.txtDim}}>Resolution:</span>
           {btn(reso===1,'1 min',function(){setReso(1);})}{btn(reso===5,'5 min',function(){setReso(5);})}{btn(reso===10,'10 min',function(){setReso(10);})}</div>
-        <button onClick={run} disabled={loading} style={{padding:'6px 16px',border:'none',borderRadius:6,background:loading?C.border:'linear-gradient(135deg,#22c55e,#16a34a)',color:loading?C.txtDim:'#04121e',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer'}}>{loading?'Loading…':'Plot Profile'}</button>
+        {sel&&<button onClick={function(){run(sel);}} disabled={loading} style={{padding:'6px 16px',border:'1px solid '+C.border,borderRadius:6,background:C.bgCard,color:C.txt,fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer'}}>{loading?'Loading…':'Replot '+sel}</button>}
       </div>
       {err&&<div style={{marginTop:8,fontFamily:F,fontSize:9.5,color:C.red}}>{err}</div>}
     </div>
