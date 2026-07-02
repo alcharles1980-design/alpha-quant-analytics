@@ -18070,7 +18070,7 @@ function AHProfilePage(p){
   // ---- Chart 3: per-day AH returns (4:15→8:00) across the lookback, with average line ----
   var dayChart=function(){
     if(!perDay||!perDay.length)return null;
-    var W=760,H=210,padL=44,padR=16,padT=14,padB=40;
+    var W=760,H=630,padL=44,padR=16,padT=14,padB=40;
     var n=perDay.length;var bw=(W-padL-padR)/n;
     var ys=perDay.map(function(r){return r.ret;});var yMax=Math.max.apply(null,ys),yMin=Math.min.apply(null,ys);
     yMax=Math.max(yMax,0);yMin=Math.min(yMin,0);if(yMax===yMin)yMax=yMin+0.1;
@@ -18079,7 +18079,7 @@ function AHProfilePage(p){
     var avg=perDay[0].avg;
     var showEvery=Math.ceil(n/10);
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.5,1].map(function(g,i){var v=yMin+(yMax-yMin)*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(2)}%</text></g>;})}
+      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=yMin+(yMax-yMin)*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(2)}%</text></g>;})}
       <line x1={padL} y1={Y(0)} x2={W-padR} y2={Y(0)} stroke={C.txtDim} strokeWidth="1"/>
       {perDay.map(function(r,i){var x=padL+i*bw;var y0=Y(0),y1=Y(r.ret);var up=r.ret>=0;return <rect key={i} x={x+bw*0.15} y={Math.min(y0,y1)} width={bw*0.7} height={Math.max(1,Math.abs(y1-y0))} fill={up?C.accent:C.red} opacity="0.85"/>;})}
       <line x1={padL} y1={Y(avg)} x2={W-padR} y2={Y(avg)} stroke={C.gold} strokeWidth="1.5" strokeDasharray="4 3"/>
