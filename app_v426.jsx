@@ -1,8 +1,8 @@
 const{useState,useEffect,useRef}=React;
 var RC=typeof Recharts!=="undefined"?Recharts:{};
 var THEMES={
-  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#e0eaf4",txtDim:"#a0b8d0",txtBright:"#f4f8fc",grid:"#14203a",code:"#8ec07c",codeBg:"#0a0e14",codeDim:"#a0b4c8",codeBright:"#e8f0f8"},
-  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00875a",accentDim:"#00875a15",warn:"#c03020",warnDim:"#c0302015",blue:"#1860c0",blueDim:"#1860c015",purple:"#5c2da0",gold:"#a87010",goldDim:"#a8701015",txt:"#101828",txtDim:"#3a4a68",txtBright:"#060e18",grid:"#e0e4e8",code:"#1a6b1a",codeBg:"#f4f6f8",codeDim:"#5a6878",codeBright:"#202830"}
+  dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",red:"#ff3b47",redDim:"#ff3b4720",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#e0eaf4",txtDim:"#a0b8d0",txtBright:"#f4f8fc",grid:"#14203a",code:"#8ec07c",codeBg:"#0a0e14",codeDim:"#a0b4c8",codeBright:"#e8f0f8"},
+  light:{bg:"#f0f2f5",bgCard:"#ffffff",bgInput:"#f8f9fb",bgDeep:"#f0f2f5",border:"#d0d8e0",accent:"#00875a",accentDim:"#00875a15",warn:"#c03020",warnDim:"#c0302015",red:"#d61f2b",redDim:"#d61f2b15",blue:"#1860c0",blueDim:"#1860c015",purple:"#5c2da0",gold:"#a87010",goldDim:"#a8701015",txt:"#101828",txtDim:"#3a4a68",txtBright:"#060e18",grid:"#e0e4e8",code:"#1a6b1a",codeBg:"#f4f6f8",codeDim:"#5a6878",codeBright:"#202830"}
 };
 var CURRENT_THEME=(function(){try{return localStorage.getItem('aq_theme')||'dark';}catch(e){return 'dark';}})();
 var C=Object.assign({},THEMES[CURRENT_THEME]);
