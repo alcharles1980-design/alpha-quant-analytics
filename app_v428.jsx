@@ -18004,7 +18004,7 @@ function AHProfilePage(p){
   // ---- chart (hand-built SVG, dual axis: moves in bps left, trades right) ----
   var chart=function(){
     if(!prof||!prof.length)return null;
-    var W=760,H=340,padL=44,padR=16,padT=16,padB=34;
+    var W=760,H=630,padL=44,padR=16,padT=16,padB=34;
     var xs=prof.map(function(r){return r.m;});
     var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
@@ -18022,7 +18022,7 @@ function AHProfilePage(p){
     var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return (hh)+':'+(mm<10?'0':'')+mm;};
     var zeroY=(vis.signed&&lMin<0)?YL(0):null;
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=lMin+(lMax-lMin)*g;return <g key={'gl'+i}>
+      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=lMin+(lMax-lMin)*g;return <g key={'gl'+i}>
         <line x1={padL} y1={YL(v)} x2={W-padR} y2={YL(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/>
         <text x={padL-4} y={YL(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(1)}</text>
       </g>;})}
@@ -18038,7 +18038,7 @@ function AHProfilePage(p){
   // ---- Standalone Trades/min chart (own single axis, same AH time X-axis) ----
   var tradesChart=function(){
     if(!prof||!prof.length)return null;
-    var W=760,H=240,padL=48,padR=16,padT=16,padB=34;
+    var W=760,H=630,padL=48,padR=16,padT=16,padB=34;
     var xs=prof.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
     var tMax=Math.max.apply(null,prof.map(function(r){return r.trades;}));if(!(tMax>0))tMax=1;
@@ -18048,7 +18048,7 @@ function AHProfilePage(p){
     var area=d+'L'+X(prof[prof.length-1].m).toFixed(1)+' '+Y(0).toFixed(1)+' L'+X(prof[0].m).toFixed(1)+' '+Y(0).toFixed(1)+' Z';
     var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=tMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)}</text></g>;})}
+      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=tMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)}</text></g>;})}
       {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
       <path d={area} fill={C.blue} opacity="0.12"/>
       <path d={d} fill="none" stroke={C.blue} strokeWidth="2"/>
@@ -18061,7 +18061,7 @@ function AHProfilePage(p){
   // ---- Chart 2: average cumulative return path (held from 4:15, walking to 8:00) ----
   var cumChart=function(){
     if(!cumPath||!cumPath.length)return null;
-    var W=760,H=210,padL=44,padR=16,padT=14,padB=30;
+    var W=760,H=630,padL=44,padR=16,padT=14,padB=30;
     var xs=cumPath.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
     var ys=cumPath.map(function(r){return r.cum;});var yMax=Math.max.apply(null,ys),yMin=Math.min.apply(null,ys);
@@ -18073,7 +18073,7 @@ function AHProfilePage(p){
     var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;return Math.floor(t/60)+':'+((t%60)<10?'0':'')+(t%60);};
     var last=cumPath[cumPath.length-1].cum;var col=last>=0?C.accent:C.red;
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.5,1].map(function(g,i){var v=yMin+(yMax-yMin)*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(2)}%</text></g>;})}
+      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=yMin+(yMax-yMin)*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(2)}%</text></g>;})}
       <line x1={padL} y1={Y(0)} x2={W-padR} y2={Y(0)} stroke={C.txtDim} strokeWidth="1"/>
       {xticks.map(function(m,i){return <text key={i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
       <path d={area} fill={col} opacity="0.12"/>
