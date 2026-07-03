@@ -17895,6 +17895,7 @@ function AHProfilePage(p){
   var s10=useState(''),customTk=s10[0],setCustomTk=s10[1];   // dedicated custom-ticker input
   var s11=useState(null),perDay=s11[0],setPerDay=s11[1];     // per-session AH returns
   var s12=useState(null),cumPath=s12[0],setCumPath=s12[1];   // avg cumulative return path
+  var s13=useState(null),atrProf=s13[0],setAtrProf=s13[1];   // ATR profile at 1/5/10-min resolutions
 
   var tickers=function(){return tickInput.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});};
 
@@ -17919,7 +17920,7 @@ function AHProfilePage(p){
     if(!tk){setErr('Enter a ticker.');return;}
     setSel(tk);
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setLoading(true);setErr('');setProf(null);setMeta(null);setPerDay(null);setCumPath(null);
+    setLoading(true);setErr('');setProf(null);setMeta(null);setPerDay(null);setCumPath(null);setAtrProf(null);
     var end=new Date();var start=new Date(end);start.setDate(start.getDate()-lookback);
     var fromStr=start.toISOString().slice(0,10);var toStr=end.toISOString().slice(0,10);
     // fetch 1-min bars, paginate (sort=desc so a page cap drops oldest, never recent)
@@ -17972,7 +17973,7 @@ function AHProfilePage(p){
         var sb=all[si];var sem=etMinOfDay(sb.t);
         if(sem<975||sem>=1200)continue;
         var sdk=new Date(sb.t-4*3600*1000).toISOString().slice(0,10);
-        (sess[sdk]=sess[sdk]||[]).push({m:sem-AH_START,o:sb.o,c:sb.c,t:sb.t});
+        (sess[sdk]=sess[sdk]||[]).push({m:sem-AH_START,o:sb.o,c:sb.c,h:sb.h,l:sb.l,t:sb.t});
       }
       var dayRows=[];var cumAcc={};
       Object.keys(sess).sort().forEach(function(dk){
@@ -17993,6 +17994,43 @@ function AHProfilePage(p){
       var cumRows=Object.keys(cumAcc).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(k){
         return {m:k,cum:cumAcc[k].s/cumAcc[k].n};
       });
+      // ---- ATR profile at 1 / 5 / 10-min resolutions (overlaid) ----
+      // For each resolution R: within each session, resample the 1-min bars into R-min
+      // OHLC bars (grouped by minute-into-AH / R), compute True Range per R-bar using the
+      // PRIOR R-bar's close in the SAME session (no gap-bridging), express TR in bps of
+      // that bar's close, and average per minute-into-AH bucket across sessions.
+      var atrRes=[1,5,10];var atrAcc={};atrRes.forEach(function(R){atrAcc[R]={};});
+      Object.keys(sess).forEach(function(dk){
+        var arr=sess[dk].slice().sort(function(a,b){return a.t-b.t;});
+        if(arr.length<2)return;
+        atrRes.forEach(function(R){
+          // build R-min OHLC bars for this session, keyed by bucket start minute
+          var bars={};var order=[];
+          for(var i=0;i<arr.length;i++){
+            var bk=Math.floor(arr[i].m/R)*R;
+            if(!bars[bk]){bars[bk]={o:arr[i].o,h:arr[i].h,l:arr[i].l,c:arr[i].c,m:bk};order.push(bk);}
+            else{var bb=bars[bk];if(arr[i].h>bb.h)bb.h=arr[i].h;if(arr[i].l<bb.l)bb.l=arr[i].l;bb.c=arr[i].c;}
+          }
+          order.sort(function(a,b){return a-b;});
+          var prevC=null;
+          for(var j=0;j<order.length;j++){
+            var b2=bars[order[j]];
+            if(prevC!=null&&b2.c>0){
+              var tr=Math.max(b2.h-b2.l,Math.abs(b2.h-prevC),Math.abs(b2.l-prevC))/b2.c*10000; // bps
+              if(!atrAcc[R][b2.m])atrAcc[R][b2.m]={s:0,n:0};
+              atrAcc[R][b2.m].s+=tr;atrAcc[R][b2.m].n+=1;
+            }
+            prevC=b2.c;
+          }
+        });
+      });
+      // merge the three resolutions onto a common set of bucket minutes
+      var atrMinsSet={};atrRes.forEach(function(R){Object.keys(atrAcc[R]).forEach(function(k){atrMinsSet[k]=1;});});
+      var atrRows=Object.keys(atrMinsSet).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(m){
+        var row={m:m};atrRes.forEach(function(R){var a=atrAcc[R][m];row['r'+R]=a?a.s/a.n:null;});return row;
+      });
+      setAtrProf(atrRows);
+
       setPerDay(dayRows);setCumPath(cumRows);
 
       setProf(rows);
@@ -18106,6 +18144,28 @@ function AHProfilePage(p){
 
   var legToggle=function(key,label,col){var on=vis[key];return <button onClick={function(){var v=Object.assign({},vis);v[key]=!v[key];setVis(v);}} style={{padding:'4px 9px',border:'1px solid '+col,borderRadius:5,background:on?col+'22':C.bgCard,color:on?col:C.txtDim,fontFamily:F,fontSize:9,fontWeight:on?700:400,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}><span style={{width:9,height:9,background:on?col:'transparent',border:'1px solid '+col,borderRadius:2,display:'inline-block'}}></span>{label}</button>;};
 
+  // ---- ATR chart: avg True Range (bps) at 1 / 5 / 10-min resolutions, overlaid ----
+  var atrChart=function(){
+    if(!atrProf||!atrProf.length)return null;
+    var W=760,H=630,padL=48,padR=16,padT=16,padB=34;
+    var xs=atrProf.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
+    var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
+    var vals=[];atrProf.forEach(function(r){[r.r1,r.r5,r.r10].forEach(function(v){if(v!=null)vals.push(v);});});
+    var vMax=vals.length?Math.max.apply(null,vals):1;if(!(vMax>0))vMax=1;vMax=vMax*1.08;
+    var Y=function(v){return padT+(1-v/vMax)*(H-padT-padB);};
+    var mkLine=function(key){var d='';var started=false;atrProf.forEach(function(r){var v=r[key];if(v==null){started=false;return;}d+=(started?'L':'M')+X(r.m).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});return d;};
+    var COL={r1:C.blue,r5:C.gold,r10:C.purple};
+    var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
+      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=vMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(1)}</text></g>;})}
+      {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
+      <path d={mkLine('r1')} fill="none" stroke={COL.r1} strokeWidth="1.6"/>
+      <path d={mkLine('r5')} fill="none" stroke={COL.r5} strokeWidth="1.8"/>
+      <path d={mkLine('r10')} fill="none" stroke={COL.r10} strokeWidth="1.8"/>
+      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>ATR (bps)</text>
+    </svg>;
+  };
+
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
       <button onClick={p.onBack} style={{padding:'6px 12px',border:'1px solid '+C.border,borderRadius:6,background:C.bgCard,color:C.txt,fontFamily:F,fontSize:10,cursor:'pointer'}}>← Back</button>
@@ -18167,6 +18227,17 @@ function AHProfilePage(p){
         <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Trades per Minute · 4:15 PM → 8:00 PM</div>
         {tradesChart()}
         <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg number of trades per minute across the lookback, by minute into the after-hours session. Y axis = trades/min. The shape shows where liquidity concentrates (typically a post-close burst that fades), which is where oscillation is most tradeable.</div>
+      </div>}
+
+      {atrProf&&atrProf.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR · Average True Range · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
+        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
+          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
+          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
+          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
+        </div>
+        {atrChart()}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range in basis points, by minute into the after-hours session, at three bar resolutions. True range is computed within each session (no overnight gap), normalised to price. Larger-resolution bars show bigger ATR (they span more time); the shape reveals where volatility concentrates — useful for sizing grid spacing to the actual swing size at each point in the session.</div>
       </div>}
     </div>}
     {prof&&prof.length===0&&<div style={{marginTop:12,fontFamily:F,fontSize:10,color:C.txtDim}}>No after-hours bars found for {meta?meta.ticker:''} in this window (the name may not trade extended hours).</div>}
