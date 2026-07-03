@@ -18016,9 +18016,10 @@ function AHProfilePage(p){
           for(var j=0;j<order.length;j++){
             var b2=bars[order[j]];
             if(prevC!=null&&b2.c>0){
-              var tr=Math.max(b2.h-b2.l,Math.abs(b2.h-prevC),Math.abs(b2.l-prevC))/b2.c*10000; // bps
-              if(!atrAcc[R][b2.m])atrAcc[R][b2.m]={s:0,n:0};
-              atrAcc[R][b2.m].s+=tr;atrAcc[R][b2.m].n+=1;
+              var trUsd=Math.max(b2.h-b2.l,Math.abs(b2.h-prevC),Math.abs(b2.l-prevC)); // dollars
+              var trPct=trUsd/b2.c*100;                                                 // percent
+              if(!atrAcc[R][b2.m])atrAcc[R][b2.m]={su:0,sp:0,n:0};
+              atrAcc[R][b2.m].su+=trUsd;atrAcc[R][b2.m].sp+=trPct;atrAcc[R][b2.m].n+=1;
             }
             prevC=b2.c;
           }
@@ -18027,7 +18028,7 @@ function AHProfilePage(p){
       // merge the three resolutions onto a common set of bucket minutes
       var atrMinsSet={};atrRes.forEach(function(R){Object.keys(atrAcc[R]).forEach(function(k){atrMinsSet[k]=1;});});
       var atrRows=Object.keys(atrMinsSet).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(m){
-        var row={m:m};atrRes.forEach(function(R){var a=atrAcc[R][m];row['r'+R]=a?a.s/a.n:null;});return row;
+        var row={m:m};atrRes.forEach(function(R){var a=atrAcc[R][m];row['u'+R]=a?a.su/a.n:null;row['p'+R]=a?a.sp/a.n:null;});return row;
       });
       setAtrProf(atrRows);
 
@@ -18144,25 +18145,27 @@ function AHProfilePage(p){
 
   var legToggle=function(key,label,col){var on=vis[key];return <button onClick={function(){var v=Object.assign({},vis);v[key]=!v[key];setVis(v);}} style={{padding:'4px 9px',border:'1px solid '+col,borderRadius:5,background:on?col+'22':C.bgCard,color:on?col:C.txtDim,fontFamily:F,fontSize:9,fontWeight:on?700:400,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}><span style={{width:9,height:9,background:on?col:'transparent',border:'1px solid '+col,borderRadius:2,display:'inline-block'}}></span>{label}</button>;};
 
-  // ---- ATR chart: avg True Range (bps) at 1 / 5 / 10-min resolutions, overlaid ----
-  var atrChart=function(){
+  // ---- ATR chart: avg True Range at 1/5/10-min resolutions, overlaid. mode: 'u'=$ / 'p'=% ----
+  var atrChart=function(mode){
     if(!atrProf||!atrProf.length)return null;
-    var W=760,H=630,padL=48,padR=16,padT=16,padB=34;
+    var pfx=mode;var fmt=mode==='u'?function(v){return '$'+v.toFixed(v<0.1?3:2);}:function(v){return v.toFixed(2)+'%';};
+    var lblFmt=mode==='u'?function(v){return '$'+(v<0.1?v.toFixed(3):v.toFixed(2));}:function(v){return v.toFixed(2)+'%';};
+    var W=760,H=630,padL=54,padR=16,padT=16,padB=34;
     var xs=atrProf.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
-    var vals=[];atrProf.forEach(function(r){[r.r1,r.r5,r.r10].forEach(function(v){if(v!=null)vals.push(v);});});
+    var vals=[];atrProf.forEach(function(r){[r[pfx+1],r[pfx+5],r[pfx+10]].forEach(function(v){if(v!=null)vals.push(v);});});
     var vMax=vals.length?Math.max.apply(null,vals):1;if(!(vMax>0))vMax=1;vMax=vMax*1.08;
     var Y=function(v){return padT+(1-v/vMax)*(H-padT-padB);};
     var mkLine=function(key){var d='';var started=false;atrProf.forEach(function(r){var v=r[key];if(v==null){started=false;return;}d+=(started?'L':'M')+X(r.m).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});return d;};
-    var COL={r1:C.blue,r5:C.gold,r10:C.purple};
+    var COL={1:C.blue,5:C.gold,10:C.purple};
     var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=vMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(1)}</text></g>;})}
+      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=vMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{lblFmt(v)}</text></g>;})}
       {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
-      <path d={mkLine('r1')} fill="none" stroke={COL.r1} strokeWidth="1.6"/>
-      <path d={mkLine('r5')} fill="none" stroke={COL.r5} strokeWidth="1.8"/>
-      <path d={mkLine('r10')} fill="none" stroke={COL.r10} strokeWidth="1.8"/>
-      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>ATR (bps)</text>
+      <path d={mkLine(pfx+'1')} fill="none" stroke={COL[1]} strokeWidth="1.6"/>
+      <path d={mkLine(pfx+'5')} fill="none" stroke={COL[5]} strokeWidth="1.8"/>
+      <path d={mkLine(pfx+'10')} fill="none" stroke={COL[10]} strokeWidth="1.8"/>
+      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{mode==='u'?'ATR ($)':'ATR (%)'}</text>
     </svg>;
   };
 
@@ -18230,14 +18233,25 @@ function AHProfilePage(p){
       </div>}
 
       {atrProf&&atrProf.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR · Average True Range · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR (%) · Average True Range · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
         <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
           <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
           <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
           <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
         </div>
-        {atrChart()}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range in basis points, by minute into the after-hours session, at three bar resolutions. True range is computed within each session (no overnight gap), normalised to price. Larger-resolution bars show bigger ATR (they span more time); the shape reveals where volatility concentrates — useful for sizing grid spacing to the actual swing size at each point in the session.</div>
+        {atrChart('p')}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range as a percentage of price, by minute into the after-hours session, at three bar resolutions. TR computed within each session (no overnight gap). % is comparable across price levels — use it to gauge the typical swing size relative to price at each point in the session.</div>
+      </div>}
+
+      {atrProf&&atrProf.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR ($) · Average True Range · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
+        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
+          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
+          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
+          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
+        </div>
+        {atrChart('u')}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range in dollars per share, by minute into the after-hours session, at three bar resolutions. This is the actual price swing — size your grid spacing / take-profit increment against the $ ATR at the times you intend to trade (e.g. the post-close and ~6 PM peaks).</div>
       </div>}
     </div>}
     {prof&&prof.length===0&&<div style={{marginTop:12,fontFamily:F,fontSize:10,color:C.txtDim}}>No after-hours bars found for {meta?meta.ticker:''} in this window (the name may not trade extended hours).</div>}
