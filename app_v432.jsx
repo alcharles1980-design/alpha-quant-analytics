@@ -17943,7 +17943,7 @@ function AHProfilePage(p){
         if(em<975||em>=1200)continue;
         var minInto=em-AH_START;                // 0..224
         var bk=Math.floor(minInto/reso)*reso;   // group
-        if(!buckets[bk])buckets[bk]={am:0,rg:0,sg:0,tr:0,n:0};
+        if(!buckets[bk])buckets[bk]={am:0,rg:0,sg:0,tr:0,vol:0,n:0};
         var o=b.o,c=b.c,h=b.h,l=b.l;
         if(o>0){
           buckets[bk].am+=Math.abs(c-o)/o;      // abs move (fraction)
@@ -17951,6 +17951,7 @@ function AHProfilePage(p){
           buckets[bk].sg+=(c-o)/o;              // signed move (fraction)
         }
         buckets[bk].tr+=(b.n||0);               // trade count
+        buckets[bk].vol+=(b.v||0);              // share volume
         buckets[bk].n+=1;
         var dk=new Date(b.t-4*3600*1000).toISOString().slice(0,10);sessions[dk]=1;
       }
@@ -17962,6 +17963,7 @@ function AHProfilePage(p){
           range:(v.rg/n)*10000,     // bps
           signed:(v.sg/n)*10000,    // bps (signed)
           trades:v.tr/n,            // avg trades per minute in bucket
+          volume:v.vol/n,           // avg share volume per minute in bucket
           samples:v.n
         };
       });
@@ -18090,25 +18092,28 @@ function AHProfilePage(p){
   };
 
   // ---- Standalone Trades/min chart (own single axis, same AH time X-axis) ----
-  var tradesChart=function(){
+  // Generic single-series area chart over the prof buckets (X = minute into AH).
+  var areaChart=function(field,color,label){
     if(!prof||!prof.length)return null;
     var W=760,H=630,padL=48,padR=16,padT=16,padB=34;
     var xs=prof.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
-    var tMax=Math.max.apply(null,prof.map(function(r){return r.trades;}));if(!(tMax>0))tMax=1;
+    var tMax=Math.max.apply(null,prof.map(function(r){return r[field];}));if(!(tMax>0))tMax=1;
     tMax=tMax*1.08; // headroom
     var Y=function(v){return padT+(1-v/tMax)*(H-padT-padB);};
-    var d='';prof.forEach(function(r,i){d+=(i===0?'M':'L')+X(r.m).toFixed(1)+' '+Y(r.trades).toFixed(1)+' ';});
+    var d='';prof.forEach(function(r,i){d+=(i===0?'M':'L')+X(r.m).toFixed(1)+' '+Y(r[field]).toFixed(1)+' ';});
     var area=d+'L'+X(prof[prof.length-1].m).toFixed(1)+' '+Y(0).toFixed(1)+' L'+X(prof[0].m).toFixed(1)+' '+Y(0).toFixed(1)+' Z';
     var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
       {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=tMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)}</text></g>;})}
       {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
-      <path d={area} fill={C.blue} opacity="0.12"/>
-      <path d={d} fill="none" stroke={C.blue} strokeWidth="2"/>
-      <text x={padL} y={11} fontSize="8.5" fill={C.blue} fontFamily={F}>trades / min</text>
+      <path d={area} fill={color} opacity="0.12"/>
+      <path d={d} fill="none" stroke={color} strokeWidth="2"/>
+      <text x={padL} y={11} fontSize="8.5" fill={color} fontFamily={F}>{label}</text>
     </svg>;
   };
+  var tradesChart=function(){return areaChart('trades',C.blue,'trades / min');};
+  var volChart=function(){return areaChart('volume',C.accent,'shares / min');};
 
   var btn=function(active,label,onClick,col){return <button onClick={onClick} style={{padding:'5px 11px',border:'1px solid '+(active?(col||C.accent):C.border),borderRadius:6,background:active?(col||C.accent):C.bgCard,color:active?(col==='transparent'?C.txt:'#04121e'):C.txt,fontFamily:F,fontSize:9.5,fontWeight:active?700:400,cursor:'pointer'}}>{label}</button>;};
 
@@ -18248,6 +18253,12 @@ function AHProfilePage(p){
         <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Trades per Minute · 4:15 PM → 8:00 PM</div>
         {tradesChart()}
         <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg number of trades per minute across the lookback, by minute into the after-hours session. Y axis = trades/min. The shape shows where liquidity concentrates (typically a post-close burst that fades), which is where oscillation is most tradeable.</div>
+      </div>}
+
+      {prof&&prof.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Volume per Minute · shares · 4:15 PM → 8:00 PM</div>
+        {volChart()}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg share volume per minute across the lookback, by minute into the after-hours session (averaged over each {reso}-min bucket). Y axis = shares/min. Volume shows the depth of liquidity available to fill grid orders — high-volume windows can absorb larger size without moving the price.</div>
       </div>}
 
       {atrProf&&atrProf.length>0&&<div style={{marginTop:16}}>
