@@ -17896,6 +17896,7 @@ function AHProfilePage(p){
   var s11=useState(null),perDay=s11[0],setPerDay=s11[1];     // per-session AH returns
   var s12=useState(null),cumPath=s12[0],setCumPath=s12[1];   // avg cumulative return path
   var s13=useState(null),atrProf=s13[0],setAtrProf=s13[1];   // ATR profile at 1/5/10-min resolutions
+  var s14=useState(null),swingProf=s14[0],setSwingProf=s14[1]; // bar-low -> next-bar-high swing, per resolution
 
   var tickers=function(){return tickInput.toUpperCase().split(/[\s,]+/).filter(function(t){return t.length>0;});};
 
@@ -17920,7 +17921,7 @@ function AHProfilePage(p){
     if(!tk){setErr('Enter a ticker.');return;}
     setSel(tk);
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setLoading(true);setErr('');setProf(null);setMeta(null);setPerDay(null);setCumPath(null);setAtrProf(null);
+    setLoading(true);setErr('');setProf(null);setMeta(null);setPerDay(null);setCumPath(null);setAtrProf(null);setSwingProf(null);
     var end=new Date();var start=new Date(end);start.setDate(start.getDate()-lookback);
     var fromStr=start.toISOString().slice(0,10);var toStr=end.toISOString().slice(0,10);
     // fetch 1-min bars, paginate (sort=desc so a page cap drops oldest, never recent)
@@ -17999,7 +18000,7 @@ function AHProfilePage(p){
       // OHLC bars (grouped by minute-into-AH / R), compute True Range per R-bar using the
       // PRIOR R-bar's close in the SAME session (no gap-bridging), express TR in bps of
       // that bar's close, and average per minute-into-AH bucket across sessions.
-      var atrRes=[1,5,10];var atrAcc={};atrRes.forEach(function(R){atrAcc[R]={};});
+      var atrRes=[1,5,10];var atrAcc={};var swAcc={};atrRes.forEach(function(R){atrAcc[R]={};swAcc[R]={};});
       Object.keys(sess).forEach(function(dk){
         var arr=sess[dk].slice().sort(function(a,b){return a.t-b.t;});
         if(arr.length<2)return;
@@ -18022,6 +18023,15 @@ function AHProfilePage(p){
               atrAcc[R][b2.m].su+=trUsd;atrAcc[R][b2.m].sp+=trPct;atrAcc[R][b2.m].n+=1;
             }
             prevC=b2.c;
+            // Swing: THIS bar's low -> NEXT bar's high, in $ and %. Anchored at this bar's minute.
+            if(j<order.length-1){
+              var nb=bars[order[j+1]];var lo=b2.l;
+              if(lo>0){
+                var swUsd=nb.h-lo;var swPct=swUsd/lo*100;
+                if(!swAcc[R][b2.m])swAcc[R][b2.m]={su:0,sp:0,n:0};
+                swAcc[R][b2.m].su+=swUsd;swAcc[R][b2.m].sp+=swPct;swAcc[R][b2.m].n+=1;
+              }
+            }
           }
         });
       });
@@ -18031,6 +18041,11 @@ function AHProfilePage(p){
         var row={m:m};atrRes.forEach(function(R){var a=atrAcc[R][m];row['u'+R]=a?a.su/a.n:null;row['p'+R]=a?a.sp/a.n:null;});return row;
       });
       setAtrProf(atrRows);
+      var swMinsSet={};atrRes.forEach(function(R){Object.keys(swAcc[R]).forEach(function(k){swMinsSet[k]=1;});});
+      var swRows=Object.keys(swMinsSet).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(m){
+        var row={m:m};atrRes.forEach(function(R){var a=swAcc[R][m];row['u'+R]=a?a.su/a.n:null;row['p'+R]=a?a.sp/a.n:null;});return row;
+      });
+      setSwingProf(swRows);
 
       setPerDay(dayRows);setCumPath(cumRows);
 
@@ -18146,17 +18161,19 @@ function AHProfilePage(p){
   var legToggle=function(key,label,col){var on=vis[key];return <button onClick={function(){var v=Object.assign({},vis);v[key]=!v[key];setVis(v);}} style={{padding:'4px 9px',border:'1px solid '+col,borderRadius:5,background:on?col+'22':C.bgCard,color:on?col:C.txtDim,fontFamily:F,fontSize:9,fontWeight:on?700:400,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}><span style={{width:9,height:9,background:on?col:'transparent',border:'1px solid '+col,borderRadius:2,display:'inline-block'}}></span>{label}</button>;};
 
   // ---- ATR chart: avg True Range at 1/5/10-min resolutions, overlaid. mode: 'u'=$ / 'p'=% ----
-  var atrChart=function(mode){
-    if(!atrProf||!atrProf.length)return null;
-    var pfx=mode;var fmt=mode==='u'?function(v){return '$'+v.toFixed(v<0.1?3:2);}:function(v){return v.toFixed(2)+'%';};
+  // Generic 1/5/10-min overlay chart. data = rows with u1/u5/u10 ($) or p1/p5/p10 (%).
+  // mode: 'u' or 'p'. label = y-axis title.
+  var resChart=function(data,mode,label){
+    if(!data||!data.length)return null;
+    var pfx=mode;
     var lblFmt=mode==='u'?function(v){return '$'+(v<0.1?v.toFixed(3):v.toFixed(2));}:function(v){return v.toFixed(2)+'%';};
     var W=760,H=630,padL=54,padR=16,padT=16,padB=34;
-    var xs=atrProf.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
+    var xs=data.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
-    var vals=[];atrProf.forEach(function(r){[r[pfx+1],r[pfx+5],r[pfx+10]].forEach(function(v){if(v!=null)vals.push(v);});});
+    var vals=[];data.forEach(function(r){[r[pfx+1],r[pfx+5],r[pfx+10]].forEach(function(v){if(v!=null)vals.push(v);});});
     var vMax=vals.length?Math.max.apply(null,vals):1;if(!(vMax>0))vMax=1;vMax=vMax*1.08;
     var Y=function(v){return padT+(1-v/vMax)*(H-padT-padB);};
-    var mkLine=function(key){var d='';var started=false;atrProf.forEach(function(r){var v=r[key];if(v==null){started=false;return;}d+=(started?'L':'M')+X(r.m).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});return d;};
+    var mkLine=function(key){var d='';var started=false;data.forEach(function(r){var v=r[key];if(v==null){started=false;return;}d+=(started?'L':'M')+X(r.m).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});return d;};
     var COL={1:C.blue,5:C.gold,10:C.purple};
     var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
@@ -18165,9 +18182,10 @@ function AHProfilePage(p){
       <path d={mkLine(pfx+'1')} fill="none" stroke={COL[1]} strokeWidth="1.6"/>
       <path d={mkLine(pfx+'5')} fill="none" stroke={COL[5]} strokeWidth="1.8"/>
       <path d={mkLine(pfx+'10')} fill="none" stroke={COL[10]} strokeWidth="1.8"/>
-      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{mode==='u'?'ATR ($)':'ATR (%)'}</text>
+      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{label}</text>
     </svg>;
   };
+  var atrChart=function(mode){return resChart(atrProf,mode,mode==='u'?'ATR ($)':'ATR (%)');};
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
@@ -18252,6 +18270,28 @@ function AHProfilePage(p){
         </div>
         {atrChart('u')}
         <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range in dollars per share, by minute into the after-hours session, at three bar resolutions. This is the actual price swing — size your grid spacing / take-profit increment against the $ ATR at the times you intend to trade (e.g. the post-close and ~6 PM peaks).</div>
+      </div>}
+
+      {swingProf&&swingProf.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Swing (%) · bar low → next bar high · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
+        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
+          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
+          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
+          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
+        </div>
+        {resChart(swingProf,'p','Swing (%)')}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each bar's low to the NEXT bar's high, as a percentage, averaged per minute into the session (within-session only). This is the up-move available from one bar's trough to the next bar's peak — the harvestable oscillation leg for a grid buy filled at the low.</div>
+      </div>}
+
+      {swingProf&&swingProf.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Swing ($) · bar low → next bar high · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
+        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
+          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
+          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
+          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
+        </div>
+        {resChart(swingProf,'u','Swing ($)')}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each bar's low to the NEXT bar's high, in dollars per share, averaged per minute into the session. The actual dollar up-move per bar interval — directly the profit you'd capture on a grid rung bought at one bar's low and sold into the next bar's high.</div>
       </div>}
     </div>}
     {prof&&prof.length===0&&<div style={{marginTop:12,fontFamily:F,fontSize:10,color:C.txtDim}}>No after-hours bars found for {meta?meta.ticker:''} in this window (the name may not trade extended hours).</div>}
