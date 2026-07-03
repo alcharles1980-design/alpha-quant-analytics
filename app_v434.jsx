@@ -17935,119 +17935,76 @@ function AHProfilePage(p){
     };
     step(url).then(function(){
       // Filter to AH window 16:15-20:00 ET (etmin 975..1199); bucket by minute-into-AH (0..224)
-      // grouped at chosen resolution. Accumulate per-bucket: abs move, range, signed move, trades.
-      var AH_START=975;var buckets={};var sessions={};
-      for(var i=0;i<all.length;i++){
-        var b=all[i];var em=etMinOfDay(b.t);
-        if(em<975||em>=1200)continue;
-        var minInto=em-AH_START;                // 0..224
-        var bk=Math.floor(minInto/reso)*reso;   // group
-        if(!buckets[bk])buckets[bk]={am:0,rg:0,sg:0,tr:0,vol:0,n:0};
-        var o=b.o,c=b.c,h=b.h,l=b.l;
-        if(o>0){
-          buckets[bk].am+=Math.abs(c-o)/o;      // abs move (fraction)
-          buckets[bk].rg+=(h-l)/o;              // range (fraction)
-          buckets[bk].sg+=(c-o)/o;              // signed move (fraction)
-        }
-        buckets[bk].tr+=(b.n||0);               // trade count
-        buckets[bk].vol+=(b.v||0);              // share volume
-        buckets[bk].n+=1;
-        var dk=new Date(b.t-4*3600*1000).toISOString().slice(0,10);sessions[dk]=1;
-      }
-      var rows=Object.keys(buckets).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(k){
-        var v=buckets[k];var n=v.n||1;
-        return {
-          m:k,
-          absmove:(v.am/n)*10000,   // bps
-          range:(v.rg/n)*10000,     // bps
-          signed:(v.sg/n)*10000,    // bps (signed)
-          trades:v.tr/n,            // avg trades per minute in bucket
-          volume:v.vol/n,           // avg share volume per minute in bucket
-          samples:v.n
-        };
-      });
-      // ---- Per-session grouping for the two RETURN graphs ----
-      // Group AH bars by session date, anchor each session to its FIRST AH bar's open
-      // (≈4:15 PM), then derive: (a) per-day return = lastClose/firstOpen-1, and
-      // (b) average cumulative return path = mean across sessions of close(m)/firstOpen-1.
+      // ===== Unified computation at the SELECTED resolution (reso) =====
+      // Everything is computed on REAL reso-minute OHLC bars, per session, then averaged
+      // across sessions per minute-into-AH bucket. So every chart reflects the chosen
+      // bucket size: a 5-min ATR/swing/trades/volume shows the 5-min figure (bigger),
+      // not a per-minute value. One line per chart.
+      var AH_START=975;var R=reso;
+      // group raw 1-min bars by session
       var sess={};
       for(var si=0;si<all.length;si++){
         var sb=all[si];var sem=etMinOfDay(sb.t);
         if(sem<975||sem>=1200)continue;
         var sdk=new Date(sb.t-4*3600*1000).toISOString().slice(0,10);
-        (sess[sdk]=sess[sdk]||[]).push({m:sem-AH_START,o:sb.o,c:sb.c,h:sb.h,l:sb.l,t:sb.t});
+        (sess[sdk]=sess[sdk]||[]).push({m:sem-AH_START,o:sb.o,c:sb.c,h:sb.h,l:sb.l,v:sb.v,n:sb.n,t:sb.t});
       }
-      var dayRows=[];var cumAcc={};
+      // accumulators keyed by bucket minute (bucket start = floor(minute/R)*R)
+      var mvAcc={};    // abs move / range / signed (bps) + trades + volume, per R-bar
+      var atrAcc={};   // ATR $ and %
+      var swAcc={};    // swing $ and %
+      var cumAcc={};   // cumulative return %
+      var dayRows=[];
+      var sessCount=0;
       Object.keys(sess).sort().forEach(function(dk){
         var arr=sess[dk].slice().sort(function(a,b){return a.t-b.t;});
         if(arr.length<2)return;
-        var open415=arr[0].o;if(!(open415>0))return;
-        var lastClose=arr[arr.length-1].c;
-        dayRows.push({d:dk,ret:(lastClose/open415-1)*100});
-        for(var ai=0;ai<arr.length;ai++){
-          var bk2=Math.floor(arr[ai].m/reso)*reso;
-          var cr=(arr[ai].c/open415-1)*100;   // cumulative return from AH open, %
-          if(!cumAcc[bk2])cumAcc[bk2]={s:0,n:0};
-          cumAcc[bk2].s+=cr;cumAcc[bk2].n+=1;
+        // build R-min OHLC bars for this session (sum v and n within each bar)
+        var bars={};var order=[];
+        for(var i=0;i<arr.length;i++){
+          var bk=Math.floor(arr[i].m/R)*R;
+          if(!bars[bk]){bars[bk]={o:arr[i].o,h:arr[i].h,l:arr[i].l,c:arr[i].c,v:arr[i].v||0,n:arr[i].n||0,m:bk};order.push(bk);}
+          else{var bb=bars[bk];if(arr[i].h>bb.h)bb.h=arr[i].h;if(arr[i].l<bb.l)bb.l=arr[i].l;bb.c=arr[i].c;bb.v+=(arr[i].v||0);bb.n+=(arr[i].n||0);}
+        }
+        order.sort(function(a,b){return a-b;});
+        if(order.length<1)return;
+        sessCount++;
+        var open415=bars[order[0]].o;
+        var lastClose=bars[order[order.length-1]].c;
+        if(open415>0)dayRows.push({d:dk,ret:(lastClose/open415-1)*100});
+        var prevC=null;
+        for(var j=0;j<order.length;j++){
+          var b2=bars[order[j]];var m=b2.m;
+          // move / range / signed (bps of open), trades, volume — per R-bar
+          if(!mvAcc[m])mvAcc[m]={am:0,rg:0,sg:0,tr:0,vol:0,n:0};
+          if(b2.o>0){mvAcc[m].am+=Math.abs(b2.c-b2.o)/b2.o;mvAcc[m].rg+=(b2.h-b2.l)/b2.o;mvAcc[m].sg+=(b2.c-b2.o)/b2.o;}
+          mvAcc[m].tr+=b2.n;mvAcc[m].vol+=b2.v;mvAcc[m].n+=1;
+          // ATR: true range of R-bar vs prior R-bar close (same session)
+          if(prevC!=null&&b2.c>0){
+            var trUsd=Math.max(b2.h-b2.l,Math.abs(b2.h-prevC),Math.abs(b2.l-prevC));
+            if(!atrAcc[m])atrAcc[m]={su:0,sp:0,n:0};
+            atrAcc[m].su+=trUsd;atrAcc[m].sp+=trUsd/b2.c*100;atrAcc[m].n+=1;
+          }
+          prevC=b2.c;
+          // swing: this R-bar low -> next R-bar high
+          if(j<order.length-1){
+            var nb=bars[order[j+1]];var lo=b2.l;
+            if(lo>0){if(!swAcc[m])swAcc[m]={su:0,sp:0,n:0};swAcc[m].su+=(nb.h-lo);swAcc[m].sp+=(nb.h-lo)/lo*100;swAcc[m].n+=1;}
+          }
+          // cumulative return from session AH open
+          if(open415>0){if(!cumAcc[m])cumAcc[m]={s:0,n:0};cumAcc[m].s+=(b2.c/open415-1)*100;cumAcc[m].n+=1;}
         }
       });
       var avgRet=dayRows.length?dayRows.reduce(function(a,r){return a+r.ret;},0)/dayRows.length:0;
       dayRows.forEach(function(r){r.avg=avgRet;});
-      var cumRows=Object.keys(cumAcc).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(k){
-        return {m:k,cum:cumAcc[k].s/cumAcc[k].n};
-      });
-      // ---- ATR profile at 1 / 5 / 10-min resolutions (overlaid) ----
-      // For each resolution R: within each session, resample the 1-min bars into R-min
-      // OHLC bars (grouped by minute-into-AH / R), compute True Range per R-bar using the
-      // PRIOR R-bar's close in the SAME session (no gap-bridging), express TR in bps of
-      // that bar's close, and average per minute-into-AH bucket across sessions.
-      var atrRes=[1,5,10];var atrAcc={};var swAcc={};atrRes.forEach(function(R){atrAcc[R]={};swAcc[R]={};});
-      Object.keys(sess).forEach(function(dk){
-        var arr=sess[dk].slice().sort(function(a,b){return a.t-b.t;});
-        if(arr.length<2)return;
-        atrRes.forEach(function(R){
-          // build R-min OHLC bars for this session, keyed by bucket start minute
-          var bars={};var order=[];
-          for(var i=0;i<arr.length;i++){
-            var bk=Math.floor(arr[i].m/R)*R;
-            if(!bars[bk]){bars[bk]={o:arr[i].o,h:arr[i].h,l:arr[i].l,c:arr[i].c,m:bk};order.push(bk);}
-            else{var bb=bars[bk];if(arr[i].h>bb.h)bb.h=arr[i].h;if(arr[i].l<bb.l)bb.l=arr[i].l;bb.c=arr[i].c;}
-          }
-          order.sort(function(a,b){return a-b;});
-          var prevC=null;
-          for(var j=0;j<order.length;j++){
-            var b2=bars[order[j]];
-            if(prevC!=null&&b2.c>0){
-              var trUsd=Math.max(b2.h-b2.l,Math.abs(b2.h-prevC),Math.abs(b2.l-prevC)); // dollars
-              var trPct=trUsd/b2.c*100;                                                 // percent
-              if(!atrAcc[R][b2.m])atrAcc[R][b2.m]={su:0,sp:0,n:0};
-              atrAcc[R][b2.m].su+=trUsd;atrAcc[R][b2.m].sp+=trPct;atrAcc[R][b2.m].n+=1;
-            }
-            prevC=b2.c;
-            // Swing: THIS bar's low -> NEXT bar's high, in $ and %. Anchored at this bar's minute.
-            if(j<order.length-1){
-              var nb=bars[order[j+1]];var lo=b2.l;
-              if(lo>0){
-                var swUsd=nb.h-lo;var swPct=swUsd/lo*100;
-                if(!swAcc[R][b2.m])swAcc[R][b2.m]={su:0,sp:0,n:0};
-                swAcc[R][b2.m].su+=swUsd;swAcc[R][b2.m].sp+=swPct;swAcc[R][b2.m].n+=1;
-              }
-            }
-          }
-        });
-      });
-      // merge the three resolutions onto a common set of bucket minutes
-      var atrMinsSet={};atrRes.forEach(function(R){Object.keys(atrAcc[R]).forEach(function(k){atrMinsSet[k]=1;});});
-      var atrRows=Object.keys(atrMinsSet).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(m){
-        var row={m:m};atrRes.forEach(function(R){var a=atrAcc[R][m];row['u'+R]=a?a.su/a.n:null;row['p'+R]=a?a.sp/a.n:null;});return row;
-      });
+      var sortMins=function(o){return Object.keys(o).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;});};
+      // profile rows: trades + volume are AVG PER R-BAR (per bucket period), reflecting bucket size
+      var rows=sortMins(mvAcc).map(function(m){var v=mvAcc[m];var n=v.n||1;return {m:m,absmove:(v.am/n)*10000,range:(v.rg/n)*10000,signed:(v.sg/n)*10000,trades:v.tr/n,volume:v.vol/n,samples:v.n};});
+      var atrRows=sortMins(atrAcc).map(function(m){var a=atrAcc[m];return {m:m,u:a.su/a.n,p:a.sp/a.n};});
+      var swRows=sortMins(swAcc).map(function(m){var a=swAcc[m];return {m:m,u:a.su/a.n,p:a.sp/a.n};});
+      var cumRows=sortMins(cumAcc).map(function(m){return {m:m,cum:cumAcc[m].s/cumAcc[m].n};});
       setAtrProf(atrRows);
-      var swMinsSet={};atrRes.forEach(function(R){Object.keys(swAcc[R]).forEach(function(k){swMinsSet[k]=1;});});
-      var swRows=Object.keys(swMinsSet).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}).map(function(m){
-        var row={m:m};atrRes.forEach(function(R){var a=swAcc[R][m];row['u'+R]=a?a.su/a.n:null;row['p'+R]=a?a.sp/a.n:null;});return row;
-      });
       setSwingProf(swRows);
-
       setPerDay(dayRows);setCumPath(cumRows);
 
       setProf(rows);
@@ -18079,8 +18036,8 @@ function AHProfilePage(p){
       <text x={padL} y={11} fontSize="8.5" fill={color} fontFamily={F}>{label}</text>
     </svg>;
   };
-  var tradesChart=function(){return areaChart('trades',C.blue,'trades / min');};
-  var volChart=function(){return areaChart('volume',C.accent,'shares / min');};
+  var tradesChart=function(){return areaChart('trades',C.blue,'trades / '+reso+'min');};
+  var volChart=function(){return areaChart('volume',C.accent,'shares / '+reso+'min');};
 
   var btn=function(active,label,onClick,col){return <button onClick={onClick} style={{padding:'5px 11px',border:'1px solid '+(active?(col||C.accent):C.border),borderRadius:6,background:active?(col||C.accent):C.bgCard,color:active?(col==='transparent'?C.txt:'#04121e'):C.txt,fontFamily:F,fontSize:9.5,fontWeight:active?700:400,cursor:'pointer'}}>{label}</button>;};
 
@@ -18134,29 +18091,26 @@ function AHProfilePage(p){
   // ---- ATR chart: avg True Range at 1/5/10-min resolutions, overlaid. mode: 'u'=$ / 'p'=% ----
   // Generic 1/5/10-min overlay chart. data = rows with u1/u5/u10 ($) or p1/p5/p10 (%).
   // mode: 'u' or 'p'. label = y-axis title.
-  var resChart=function(data,mode,label){
+  var resChart=function(data,mode,label,color){
     if(!data||!data.length)return null;
-    var pfx=mode;
     var lblFmt=mode==='u'?function(v){return '$'+(v<0.1?v.toFixed(3):v.toFixed(2));}:function(v){return v.toFixed(2)+'%';};
     var W=760,H=630,padL=54,padR=16,padT=16,padB=34;
     var xs=data.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
-    var vals=[];data.forEach(function(r){[r[pfx+1],r[pfx+5],r[pfx+10]].forEach(function(v){if(v!=null)vals.push(v);});});
+    var vals=[];data.forEach(function(r){if(r[mode]!=null)vals.push(r[mode]);});
     var vMax=vals.length?Math.max.apply(null,vals):1;if(!(vMax>0))vMax=1;vMax=vMax*1.08;
     var Y=function(v){return padT+(1-v/vMax)*(H-padT-padB);};
-    var mkLine=function(key){var d='';var started=false;data.forEach(function(r){var v=r[key];if(v==null){started=false;return;}d+=(started?'L':'M')+X(r.m).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});return d;};
-    var COL={1:C.blue,5:C.gold,10:C.purple};
+    var d='';var started=false;data.forEach(function(r){var v=r[mode];if(v==null){started=false;return;}d+=(started?'L':'M')+X(r.m).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});
+    var col=color||C.blue;
     var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
       {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=vMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{lblFmt(v)}</text></g>;})}
       {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
-      <path d={mkLine(pfx+'1')} fill="none" stroke={COL[1]} strokeWidth="1.6"/>
-      <path d={mkLine(pfx+'5')} fill="none" stroke={COL[5]} strokeWidth="1.8"/>
-      <path d={mkLine(pfx+'10')} fill="none" stroke={COL[10]} strokeWidth="1.8"/>
-      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{label}</text>
+      <path d={d} fill="none" stroke={col} strokeWidth="2"/>
+      <text x={padL} y={11} fontSize="8.5" fill={col} fontFamily={F}>{label}</text>
     </svg>;
   };
-  var atrChart=function(mode){return resChart(atrProf,mode,mode==='u'?'ATR ($)':'ATR (%)');};
+  var atrChart=function(mode){return resChart(atrProf,mode,mode==='u'?'ATR ($)':'ATR (%)',mode==='u'?C.gold:C.blue);};
 
   return <div>
     <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
@@ -18209,59 +18163,39 @@ function AHProfilePage(p){
       </div>}
 
       {prof&&prof.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Trades per Minute · 4:15 PM → 8:00 PM</div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Trades per {reso}-min bar · 4:15 PM → 8:00 PM</div>
         {tradesChart()}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg number of trades per minute across the lookback, by minute into the after-hours session. Y axis = trades/min. The shape shows where liquidity concentrates (typically a post-close burst that fades), which is where oscillation is most tradeable.</div>
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg number of trades per {reso}-minute bar across the lookback, by time into the after-hours session. Larger resolution → more trades per bar. The shape shows where liquidity concentrates (typically a post-close burst that fades), which is where oscillation is most tradeable.</div>
       </div>}
 
       {prof&&prof.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Volume per Minute · shares · 4:15 PM → 8:00 PM</div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Volume per {reso}-min bar · shares · 4:15 PM → 8:00 PM</div>
         {volChart()}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg share volume per minute across the lookback, by minute into the after-hours session (averaged over each {reso}-min bucket). Y axis = shares/min. Volume shows the depth of liquidity available to fill grid orders — high-volume windows can absorb larger size without moving the price.</div>
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg share volume per {reso}-minute bar across the lookback, by time into the after-hours session. Larger resolution → more shares per bar. Volume shows the depth of liquidity available to fill grid orders — high-volume windows can absorb larger size without moving the price.</div>
       </div>}
 
       {atrProf&&atrProf.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR (%) · Average True Range · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
-        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
-          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
-          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
-          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
-        </div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR (%) · Average True Range · {reso}-min bars · 4:15 PM → 8:00 PM</div>
         {atrChart('p')}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range as a percentage of price, by minute into the after-hours session, at three bar resolutions. TR computed within each session (no overnight gap). % is comparable across price levels — use it to gauge the typical swing size relative to price at each point in the session.</div>
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range as a percentage of price, per {reso}-minute bar, by time into the after-hours session. TR computed within each session (no overnight gap). % is comparable across price levels. Larger resolution → larger ATR (the bar spans more time).</div>
       </div>}
 
       {atrProf&&atrProf.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR ($) · Average True Range · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
-        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
-          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
-          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
-          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
-        </div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>ATR ($) · Average True Range · {reso}-min bars · 4:15 PM → 8:00 PM</div>
         {atrChart('u')}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range in dollars per share, by minute into the after-hours session, at three bar resolutions. This is the actual price swing — size your grid spacing / take-profit increment against the $ ATR at the times you intend to trade (e.g. the post-close and ~6 PM peaks).</div>
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Average True Range in dollars per share, per {reso}-minute bar, by time into the after-hours session. This is the actual price swing over a {reso}-min bar — size your grid spacing / take-profit increment against it at the times you intend to trade.</div>
       </div>}
 
       {swingProf&&swingProf.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Swing (%) · bar low → next bar high · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
-        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
-          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
-          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
-          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
-        </div>
-        {resChart(swingProf,'p','Swing (%)')}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each bar's low to the NEXT bar's high, as a percentage, averaged per minute into the session (within-session only). This is the up-move available from one bar's trough to the next bar's peak — the harvestable oscillation leg for a grid buy filled at the low.</div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Swing (%) · bar low → next bar high · {reso}-min bars · 4:15 PM → 8:00 PM</div>
+        {resChart(swingProf,'p','Swing (%)',C.blue)}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each {reso}-minute bar's low to the NEXT {reso}-minute bar's high, as a percentage, by time into the session (within-session only). The up-move available from one bar's trough to the next bar's peak — the harvestable oscillation leg for a grid buy filled at the low.</div>
       </div>}
 
       {swingProf&&swingProf.length>0&&<div style={{marginTop:16}}>
-        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Swing ($) · bar low → next bar high · 1 / 5 / 10-min · 4:15 PM → 8:00 PM</div>
-        <div style={{display:'flex',gap:12,marginBottom:8,fontFamily:F,fontSize:9}}>
-          <span style={{color:C.blue,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.blue,display:'inline-block'}}></span>1-min</span>
-          <span style={{color:C.gold,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.gold,display:'inline-block'}}></span>5-min</span>
-          <span style={{color:C.purple,display:'flex',alignItems:'center',gap:5}}><span style={{width:14,height:2,background:C.purple,display:'inline-block'}}></span>10-min</span>
-        </div>
-        {resChart(swingProf,'u','Swing ($)')}
-        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each bar's low to the NEXT bar's high, in dollars per share, averaged per minute into the session. The actual dollar up-move per bar interval — directly the profit you'd capture on a grid rung bought at one bar's low and sold into the next bar's high.</div>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Swing ($) · bar low → next bar high · {reso}-min bars · 4:15 PM → 8:00 PM</div>
+        {resChart(swingProf,'u','Swing ($)',C.gold)}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each {reso}-minute bar's low to the NEXT {reso}-minute bar's high, in dollars per share, by time into the session. The actual dollar up-move per {reso}-min interval — directly the profit on a grid rung bought at one bar's low and sold into the next bar's high.</div>
       </div>}
     </div>}
     {prof&&prof.length===0&&<div style={{marginTop:12,fontFamily:F,fontSize:10,color:C.txtDim}}>No after-hours bars found for {meta?meta.ticker:''} in this window (the name may not trade extended hours).</div>}
