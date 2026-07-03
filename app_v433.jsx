@@ -17890,7 +17890,6 @@ function AHProfilePage(p){
   var s5=useState(null),prof=s5[0],setProf=s5[1];         // computed profile
   var s6=useState(false),loading=s6[0],setLoading=s6[1];
   var s7=useState(''),err=s7[0],setErr=s7[1];
-  var s8=useState({absmove:true,range:true,signed:false,trades:true}),vis=s8[0],setVis=s8[1];
   var s9=useState(null),meta=s9[0],setMeta=s9[1];
   var s10=useState(''),customTk=s10[0],setCustomTk=s10[1];   // dedicated custom-ticker input
   var s11=useState(null),perDay=s11[0],setPerDay=s11[1];     // per-session AH returns
@@ -18058,38 +18057,6 @@ function AHProfilePage(p){
   };
 
   // ---- chart (hand-built SVG, dual axis: moves in bps left, trades right) ----
-  var chart=function(){
-    if(!prof||!prof.length)return null;
-    var W=760,H=630,padL=44,padR=16,padT=16,padB=34;
-    var xs=prof.map(function(r){return r.m;});
-    var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
-    var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
-    // single left axis (bps) covers absmove/range/signed
-    var lvals=[];prof.forEach(function(r){if(vis.absmove)lvals.push(r.absmove);if(vis.range)lvals.push(r.range);if(vis.signed)lvals.push(r.signed);});
-    var lMax=lvals.length?Math.max.apply(null,lvals):1;var lMin=lvals.length?Math.min.apply(null,lvals):0;
-    if(vis.signed)lMin=Math.min(lMin,0);else lMin=0;
-    if(lMax===lMin)lMax=lMin+1;
-    var YL=function(v){return padT+(1-(v-lMin)/(lMax-lMin))*(H-padT-padB);};
-    var line=function(key,yfn,acc){
-      var d='';prof.forEach(function(r,i){var y=yfn(r[acc!==undefined?acc:key]);d+=(i===0?'M':'L')+X(r.m).toFixed(1)+' '+y.toFixed(1)+' ';});return d;
-    };
-    var COL={absmove:C.accent,range:C.gold,signed:C.purple};
-    var xticks=[0,45,90,135,180,224];
-    var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return (hh)+':'+(mm<10?'0':'')+mm;};
-    var zeroY=(vis.signed&&lMin<0)?YL(0):null;
-    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1].map(function(g,i){var v=lMin+(lMax-lMin)*g;return <g key={'gl'+i}>
-        <line x1={padL} y1={YL(v)} x2={W-padR} y2={YL(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/>
-        <text x={padL-4} y={YL(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(1)}</text>
-      </g>;})}
-      {zeroY!=null&&<line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="1"/>}
-      {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
-      {vis.range&&<path d={line('range',YL)} fill="none" stroke={COL.range} strokeWidth="1.6"/>}
-      {vis.absmove&&<path d={line('absmove',YL)} fill="none" stroke={COL.absmove} strokeWidth="2"/>}
-      {vis.signed&&<path d={line('signed',YL)} fill="none" stroke={COL.signed} strokeWidth="1.6" strokeDasharray="3 2"/>}
-      <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>bps</text>
-    </svg>;
-  };
 
   // ---- Standalone Trades/min chart (own single axis, same AH time X-axis) ----
   // Generic single-series area chart over the prof buckets (X = minute into AH).
@@ -18163,7 +18130,6 @@ function AHProfilePage(p){
     </svg>;
   };
 
-  var legToggle=function(key,label,col){var on=vis[key];return <button onClick={function(){var v=Object.assign({},vis);v[key]=!v[key];setVis(v);}} style={{padding:'4px 9px',border:'1px solid '+col,borderRadius:5,background:on?col+'22':C.bgCard,color:on?col:C.txtDim,fontFamily:F,fontSize:9,fontWeight:on?700:400,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}><span style={{width:9,height:9,background:on?col:'transparent',border:'1px solid '+col,borderRadius:2,display:'inline-block'}}></span>{label}</button>;};
 
   // ---- ATR chart: avg True Range at 1/5/10-min resolutions, overlaid. mode: 'u'=$ / 'p'=% ----
   // Generic 1/5/10-min overlay chart. data = rows with u1/u5/u10 ($) or p1/p5/p10 (%).
@@ -18229,13 +18195,6 @@ function AHProfilePage(p){
     {meta&&<div style={{marginTop:10,fontFamily:F,fontSize:9,color:C.txtDim}}>{meta.ticker} · {meta.sessions} AH sessions · {meta.bars.toLocaleString()} bars · {meta.from} → {meta.to} · resolution {reso}min</div>}
 
     {prof&&prof.length>0&&<div style={{marginTop:8}}>
-      <div style={{display:'flex',gap:7,flexWrap:'wrap',marginBottom:8}}>
-        {legToggle('absmove','Abs move',C.accent)}
-        {legToggle('range','Range',C.gold)}
-        {legToggle('signed','Signed move',C.purple)}
-      </div>
-      {chart()}
-      <div style={{marginTop:6,fontFamily:F,fontSize:8,color:C.txtDim}}>X = minutes into after-hours (4:15 PM → 8:00 PM ET). Y axis: price move in basis points (avg per {reso}-min bucket across sessions). Range = (high−low), the full oscillation amplitude; a large range with small abs/signed move indicates choppy mean-reversion. Trades/min shown separately below.</div>
 
       {cumPath&&cumPath.length>0&&<div style={{marginTop:16}}>
         <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Average Cumulative Return · held from 4:15 PM</div>
