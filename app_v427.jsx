@@ -18004,23 +18004,20 @@ function AHProfilePage(p){
   // ---- chart (hand-built SVG, dual axis: moves in bps left, trades right) ----
   var chart=function(){
     if(!prof||!prof.length)return null;
-    var W=760,H=340,padL=44,padR=48,padT=16,padB=34;
+    var W=760,H=340,padL=44,padR=16,padT=16,padB=34;
     var xs=prof.map(function(r){return r.m;});
     var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
     var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
-    // left axis (bps) covers absmove/range/signed
+    // single left axis (bps) covers absmove/range/signed
     var lvals=[];prof.forEach(function(r){if(vis.absmove)lvals.push(r.absmove);if(vis.range)lvals.push(r.range);if(vis.signed)lvals.push(r.signed);});
     var lMax=lvals.length?Math.max.apply(null,lvals):1;var lMin=lvals.length?Math.min.apply(null,lvals):0;
     if(vis.signed)lMin=Math.min(lMin,0);else lMin=0;
     if(lMax===lMin)lMax=lMin+1;
     var YL=function(v){return padT+(1-(v-lMin)/(lMax-lMin))*(H-padT-padB);};
-    // right axis (trades)
-    var tMax=vis.trades?Math.max.apply(null,prof.map(function(r){return r.trades;})):1;if(tMax<=0)tMax=1;
-    var YR=function(v){return padT+(1-v/tMax)*(H-padT-padB);};
     var line=function(key,yfn,acc){
       var d='';prof.forEach(function(r,i){var y=yfn(r[acc!==undefined?acc:key]);d+=(i===0?'M':'L')+X(r.m).toFixed(1)+' '+y.toFixed(1)+' ';});return d;
     };
-    var COL={absmove:C.accent,range:C.gold,signed:C.purple,trades:C.blue};
+    var COL={absmove:C.accent,range:C.gold,signed:C.purple};
     var xticks=[0,45,90,135,180,224];
     var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return (hh)+':'+(mm<10?'0':'')+mm;};
     var zeroY=(vis.signed&&lMin<0)?YL(0):null;
@@ -18029,15 +18026,33 @@ function AHProfilePage(p){
         <line x1={padL} y1={YL(v)} x2={W-padR} y2={YL(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/>
         <text x={padL-4} y={YL(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(1)}</text>
       </g>;})}
-      {vis.trades&&[0,0.5,1].map(function(g,i){var v=tMax*g;return <text key={'tr'+i} x={W-padR+4} y={YR(v)+3} textAnchor="start" fontSize="8.5" fill={C.blue} fontFamily={F}>{Math.round(v)}</text>;})}
       {zeroY!=null&&<line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="1"/>}
       {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
-      {vis.trades&&<path d={line('trades',YR)} fill="none" stroke={COL.trades} strokeWidth="1.4" opacity="0.85"/>}
       {vis.range&&<path d={line('range',YL)} fill="none" stroke={COL.range} strokeWidth="1.6"/>}
       {vis.absmove&&<path d={line('absmove',YL)} fill="none" stroke={COL.absmove} strokeWidth="2"/>}
       {vis.signed&&<path d={line('signed',YL)} fill="none" stroke={COL.signed} strokeWidth="1.6" strokeDasharray="3 2"/>}
       <text x={padL} y={11} fontSize="8.5" fill={C.txtDim} fontFamily={F}>bps</text>
-      {vis.trades&&<text x={W-padR} y={11} textAnchor="end" fontSize="8.5" fill={C.blue} fontFamily={F}>trades/min</text>}
+    </svg>;
+  };
+
+  // ---- Standalone Trades/min chart (own single axis, same AH time X-axis) ----
+  var tradesChart=function(){
+    if(!prof||!prof.length)return null;
+    var W=760,H=240,padL=48,padR=16,padT=16,padB=34;
+    var xs=prof.map(function(r){return r.m;});var xMin=Math.min.apply(null,xs),xMax=Math.max.apply(null,xs);
+    var X=function(m){return padL+(xMax===xMin?0:(m-xMin)/(xMax-xMin))*(W-padL-padR);};
+    var tMax=Math.max.apply(null,prof.map(function(r){return r.trades;}));if(!(tMax>0))tMax=1;
+    tMax=tMax*1.08; // headroom
+    var Y=function(v){return padT+(1-v/tMax)*(H-padT-padB);};
+    var d='';prof.forEach(function(r,i){d+=(i===0?'M':'L')+X(r.m).toFixed(1)+' '+Y(r.trades).toFixed(1)+' ';});
+    var area=d+'L'+X(prof[prof.length-1].m).toFixed(1)+' '+Y(0).toFixed(1)+' L'+X(prof[0].m).toFixed(1)+' '+Y(0).toFixed(1)+' Z';
+    var xticks=[0,45,90,135,180,224];var clk=function(m){var t=16*60+15+m;var hh=Math.floor(t/60),mm=t%60;return hh+':'+(mm<10?'0':'')+mm;};
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
+      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=tMax*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-4} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)}</text></g>;})}
+      {xticks.map(function(m,i){return <text key={'x'+i} x={X(m)} y={H-8} textAnchor={i===0?'start':i===xticks.length-1?'end':'middle'} fontSize="8.5" fill={C.txtDim} fontFamily={F}>{clk(m)}</text>;})}
+      <path d={area} fill={C.blue} opacity="0.12"/>
+      <path d={d} fill="none" stroke={C.blue} strokeWidth="2"/>
+      <text x={padL} y={11} fontSize="8.5" fill={C.blue} fontFamily={F}>trades / min</text>
     </svg>;
   };
 
@@ -18132,10 +18147,9 @@ function AHProfilePage(p){
         {legToggle('absmove','Abs move',C.accent)}
         {legToggle('range','Range',C.gold)}
         {legToggle('signed','Signed move',C.purple)}
-        {legToggle('trades','Trades/min',C.blue)}
       </div>
       {chart()}
-      <div style={{marginTop:6,fontFamily:F,fontSize:8,color:C.txtDim}}>X = minutes into after-hours (4:15 PM → 8:00 PM ET). Left axis: price move in basis points (avg per {reso}-min bucket across sessions). Right axis: avg trades per minute. Range = (high−low), the full oscillation amplitude; a large range with small abs/signed move indicates choppy mean-reversion.</div>
+      <div style={{marginTop:6,fontFamily:F,fontSize:8,color:C.txtDim}}>X = minutes into after-hours (4:15 PM → 8:00 PM ET). Y axis: price move in basis points (avg per {reso}-min bucket across sessions). Range = (high−low), the full oscillation amplitude; a large range with small abs/signed move indicates choppy mean-reversion. Trades/min shown separately below.</div>
 
       {cumPath&&cumPath.length>0&&<div style={{marginTop:16}}>
         <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Average Cumulative Return · held from 4:15 PM</div>
@@ -18147,6 +18161,12 @@ function AHProfilePage(p){
         <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Daily After-Hours Return · 4:15 PM → 8:00 PM · per session</div>
         {dayChart()}
         <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Each bar = one session's net return from the 4:15 PM open to the 8:00 PM close (green up, red down). Gold dashed line = average across the lookback ({perDay.length} sessions). A near-zero average with bars scattered both sides confirms mean-reversion rather than persistent drift.</div>
+      </div>}
+
+      {prof&&prof.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontFamily:F,fontSize:10,color:C.txtBright,fontWeight:700,marginBottom:6}}>Trades per Minute · 4:15 PM → 8:00 PM</div>
+        {tradesChart()}
+        <div style={{marginTop:5,fontFamily:F,fontSize:8,color:C.txtDim}}>Avg number of trades per minute across the lookback, by minute into the after-hours session. Y axis = trades/min. The shape shows where liquidity concentrates (typically a post-close burst that fades), which is where oscillation is most tradeable.</div>
       </div>}
     </div>}
     {prof&&prof.length===0&&<div style={{marginTop:12,fontFamily:F,fontSize:10,color:C.txtDim}}>No after-hours bars found for {meta?meta.ticker:''} in this window (the name may not trade extended hours).</div>}
