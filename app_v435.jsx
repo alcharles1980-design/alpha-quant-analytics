@@ -18008,7 +18008,7 @@ function AHProfilePage(p){
       setPerDay(dayRows);setCumPath(cumRows);
 
       setProf(rows);
-      setMeta({ticker:tk,sessions:Object.keys(sessions).length,bars:all.length,from:fromStr,to:toStr});
+      setMeta({ticker:tk,sessions:sessCount,bars:all.length,from:fromStr,to:toStr});
       setLoading(false);
     }).catch(function(e){setErr('Fetch failed: '+e.message);setLoading(false);});
   };
