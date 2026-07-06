@@ -20078,10 +20078,11 @@ function ViolentChopScreenerPage(p){
         </div>}
       </div>
       <div style={{marginTop:6}}>
-            <button onClick={function(){setShowInstr(!showInstr);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 9px',border:'1px solid '+C.accent+'55',borderRadius:5,background:showInstr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>
-              <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:12,height:12,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:8,fontStyle:'italic',fontWeight:700}}>i</span>
+            <button onClick={function(){setShowInstr(!showInstr);}} style={{display:'inline-flex',alignItems:'center',gap:8,padding:'7px 12px',border:'1px solid '+C.accent,borderRadius:6,background:showInstr?C.accent+'20':C.accent+'0c',color:C.accent,fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer'}}>
+              <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:14,height:14,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:9,fontStyle:'italic',fontWeight:700}}>i</span>
               Instructions
-              <span style={{fontSize:7,transform:showInstr?'rotate(90deg)':'none',transition:'transform 0.15s'}}>{'\u25B8'}</span>
+              <span style={{marginLeft:2,fontSize:8,fontWeight:600,opacity:0.85}}>{showInstr?'Hide':'Show'}</span>
+              <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:4,background:C.accent,color:C.bg,fontSize:13,fontWeight:900,lineHeight:1}}>{showInstr?'\u2212':'+'}</span>
             </button>
             {showInstr&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,lineHeight:1.6,paddingLeft:2}}>
               <span style={{color:C.accent,fontWeight:700}}>What this is.</span> A volatility ranking tool. It ranks the top ~2,400 US stocks purely by how much they oscillate, measured at the bar resolution you pick below — 10-second, 1-minute, 10-minute, hourly, or daily.
