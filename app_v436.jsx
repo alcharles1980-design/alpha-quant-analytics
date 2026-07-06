@@ -19582,6 +19582,7 @@ function ViolentChopScreenerPage(p){
   var s10e=useState(''),mktCapMax=s10e[0],setMktCapMax=s10e[1];
   var s10na=useState(''),minAnalysts=s10na[0],setMinAnalysts=s10na[1]; // optional min number of analysts
   var s10up=useState(''),minUpside=s10up[0],setMinUpside=s10up[1];     // optional min % upside vs mean target
+  var s10af=useState(false),showMoreFilters=s10af[0],setShowMoreFilters=s10af[1]; // "Additional Filters" collapse toggle
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
   var s12=useState('capEff'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
@@ -20169,6 +20170,12 @@ function ViolentChopScreenerPage(p){
         </div>}
         {listErr&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:listErr.indexOf('added')>=0?C.accent:(C.warn||'#f59e0b')}}>{listErr}</div>}
       </div>
+      <div style={{marginTop:10,border:'1px solid '+C.border,borderRadius:8,background:C.bg,overflow:'hidden'}}>
+        <div onClick={function(){setShowMoreFilters(!showMoreFilters);}} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',cursor:'pointer',userSelect:'none'}}>
+          <span style={{fontSize:9,fontFamily:F,color:C.txt,fontWeight:700,letterSpacing:0.5}}>Additional Filters</span>
+          <span style={{fontSize:10,fontFamily:F,color:C.accent,fontWeight:700}}>{showMoreFilters?'\u2212':'+'}</span>
+        </div>
+        {showMoreFilters&&<div style={{padding:'0 12px 12px'}}>
       {[
         ['Price',minPrice,setMinPrice,maxPrice,setMaxPrice,null],
         ['$ Vol / day (M)',mcapMin,setMcapMin,mcapMax,setMcapMax,null],
@@ -20203,6 +20210,8 @@ function ViolentChopScreenerPage(p){
         </div>
       </div>
       <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:3}}>Both optional &amp; analyst-based: % upside = mean target vs current price. Names without analyst data are hidden when either is set.</div>
+        </div>}
+      </div>
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
         {[['all','All'],['stocks','Stocks'],['etfs','ETFs']].map(function(t){
