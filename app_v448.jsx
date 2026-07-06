@@ -20136,7 +20136,7 @@ function ViolentChopScreenerPage(p){
             <div style={{fontSize:12,color:C.accent,fontFamily:F,fontWeight:700,marginTop:2}}>{val}</div>
           </div>;};
           return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
-            {box('Increment',(inc!=null)?fmtUsd(inc):'\u2014')}
+            {box('Increment',(inc!=null)?(fmtUsd(inc)+' \u00b7 '+(inc/mid*100).toFixed(2)+'%'):'\u2014')}
             {box('Ranges',(levels!=null&&levels>0)?levels.toLocaleString():'\u2014')}
             {box('Price range covered',(range!=null)?(fmtUsd(range)+' \u00b7 '+rangePct.toFixed(1)+'%'):'\u2014')}
           </div>;
