@@ -20102,7 +20102,7 @@ function ViolentChopScreenerPage(p){
       {/* Grid increment calculator — shares/level sizing */}
       <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:8,background:C.bg,padding:12}}>
         <div style={{fontSize:9,fontFamily:F,color:C.accent,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>Increment Calculator</div>
-        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:8}}>Enter top &amp; bottom price and the capital you'll expose. Each level buys the same share quantity at its own price up the grid. Levels = the most rungs your capital can afford; increment = range / (levels - 1).</div>
+        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:8}}>Enter top &amp; bottom price and the capital amount you're willing to expose. The lower the increment the more cycles you will do — however your increment is decided by your capital and the price range you want to cover.</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
           <div>
             <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Top price ($)</label>
