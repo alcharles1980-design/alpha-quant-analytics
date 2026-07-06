@@ -20096,6 +20096,8 @@ function ViolentChopScreenerPage(p){
               <span style={{color:C.accent,fontWeight:700}}>How to use it.</span> Treat it as a volatility screen, then combine it with the other technical and fundamental data at your fingertips (analyst targets, 52W/30d/7d ranges, ATR, and more) to make the call.
               <br/><br/>
               <span style={{color:C.accent,fontWeight:700}}>How to decide the increment.</span> The first thing you should look at is the various fundamentals — price targets, recent price moves, support and resistance ranges, and so on. After you have decided the top and bottom price, you need to decide how much capital you are willing to expose. This will lead to calculating the increment.
+              <br/><br/>
+              <span style={{color:C.accent,fontWeight:700}}>How to decide the optimal profit taker.</span> The system is designed to work on micro oscillations.<br/><br/>You need to check if your increment fits within the average swing size on the 30-second or the 1-minute time frame.<br/><br/>Your profit taker % should be the optimal, or slightly less than the optimal, swing size % for that period — which you'll see in the ranking table below.<br/><br/>The lower the resolution and profit taker, the more cycles you will do.<br/><br/>The higher the profit taker, the fewer cycles you will do.
             </div>}
       </div>
 
