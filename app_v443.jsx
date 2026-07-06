@@ -19601,7 +19601,7 @@ function ViolentChopScreenerPage(p){
   var s20=useState(''),calcTop=s20[0],setCalcTop=s20[1];       // increment calc: top price
   var s21=useState(''),calcBot=s21[0],setCalcBot=s21[1];       // bottom price
   var s22=useState(''),calcCap=s22[0],setCalcCap=s22[1];       // capital
-  var s23=useState('100'),calcPer=s23[0],setCalcPer=s23[1];    // $ per level (editable, default 100)
+  var s23=useState('1'),calcShares=s23[0],setCalcShares=s23[1]; // shares per level (editable, default 1)
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
   var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
   var s52=useState({}),wk52=s52[0],setWk52=s52[1];             // {ticker:{high,low}} 52-week range from cached_oscillation_screener.range_position
@@ -20099,10 +20099,10 @@ function ViolentChopScreenerPage(p){
             </div>}
       </div>
 
-      {/* Grid increment calculator */}
+      {/* Grid increment calculator — shares/level sizing */}
       <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:8,background:C.bg,padding:12}}>
         <div style={{fontSize:9,fontFamily:F,color:C.accent,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>Increment Calculator</div>
-        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:8}}>Enter your top &amp; bottom price and the capital you'll expose. Levels = capital / $-per-level; increment = range / (levels - 1).</div>
+        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:8}}>Enter top &amp; bottom price and the capital you'll expose. Each level buys the same share quantity at its own price up the grid. Levels = the most rungs your capital can afford; increment = range / (levels - 1).</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
           <div>
             <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Top price ($)</label>
@@ -20119,13 +20119,16 @@ function ViolentChopScreenerPage(p){
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,alignItems:'end'}}>
           <div>
-            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>$ per level</label>
-            <input value={calcPer} onChange={function(e){setCalcPer(e.target.value);}} placeholder="100" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Shares / level</label>
+            <input value={calcShares} onChange={function(e){setCalcShares(e.target.value);}} placeholder="1" type="number" step="any" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
           </div>
           {(function(){
-            var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),per=parseFloat(calcPer);
-            var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(per)&&per>0&&cap>0&&top>bot;
-            var levels=ok?Math.floor(cap/per):null;
+            var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),sh=parseFloat(calcShares);
+            var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(sh)&&sh>0&&cap>0&&top>bot;
+            // Evenly-spaced grid: prices average to the midpoint, so N levels cost sh*N*(top+bot)/2.
+            // Largest affordable N given capital:
+            var mid=ok?(top+bot)/2:null;
+            var levels=ok?Math.floor(cap/(sh*mid)):null;
             var inc=(ok&&levels>1)?(top-bot)/(levels-1):null;
             var box=function(label,val){return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.accent+'55',borderRadius:5,padding:'6px 8px'}}>
               <div style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{label}</div>
@@ -20138,12 +20141,18 @@ function ViolentChopScreenerPage(p){
           })()}
         </div>
         {(function(){
-          var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),per=parseFloat(calcPer);
-          var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(per)&&per>0&&cap>0;
+          var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),sh=parseFloat(calcShares);
+          var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(sh)&&sh>0&&cap>0;
           if(ok&&top<=bot)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Top price must be above bottom price.</div>;
-          var levels=ok?Math.floor(cap/per):null;
-          if(ok&&levels<2)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Capital / $-per-level must give at least 2 levels.</div>;
-          if(ok&&top>bot&&levels>=2)return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:6}}>{'Grid: '+levels.toLocaleString()+' buy levels from $'+bot+' to $'+top+', spaced $'+(((top-bot)/(levels-1))<0.1?((top-bot)/(levels-1)).toFixed(4):((top-bot)/(levels-1)).toFixed(2))+' apart, ~$'+per+' per level.'}</div>;
+          var mid=ok?(top+bot)/2:null;
+          var levels=(ok&&top>bot)?Math.floor(cap/(sh*mid)):null;
+          if(ok&&top>bot&&levels<2)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Capital too small for 2+ levels at this share size. Lower shares/level or raise capital.</div>;
+          if(ok&&top>bot&&levels>=2){
+            var incr=(top-bot)/(levels-1);
+            var totalShares=sh*levels;
+            var totalCost=sh*levels*mid;
+            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:6}}>{'Grid: '+levels.toLocaleString()+' buy levels from $'+bot+' to $'+top+', spaced $'+(incr<0.1?incr.toFixed(4):incr.toFixed(2))+' apart, '+(sh===1?'1 share':sh+' shares')+' per level ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
+          }
           return null;
         })()}
       </div>
