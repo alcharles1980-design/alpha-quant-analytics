@@ -20103,55 +20103,55 @@ function ViolentChopScreenerPage(p){
       <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:8,background:C.bg,padding:12}}>
         <div style={{fontSize:9,fontFamily:F,color:C.accent,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>Increment Calculator</div>
         <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:8}}>Enter top &amp; bottom price and the capital amount you're willing to expose. The lower the increment the more cycles you will do — however your increment is decided by your capital and the price range you want to cover.</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8}}>
           <div>
-            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Top price ($)</label>
-            <input value={calcTop} onChange={function(e){setCalcTop(e.target.value);}} placeholder="e.g. 60" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F,display:'block',marginBottom:2}}>Top price ($)</label>
+            <input value={calcTop} onChange={function(e){setCalcTop(e.target.value);}} placeholder="e.g. 60" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
           </div>
           <div>
-            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Bottom price ($)</label>
-            <input value={calcBot} onChange={function(e){setCalcBot(e.target.value);}} placeholder="e.g. 50" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F,display:'block',marginBottom:2}}>Bottom price ($)</label>
+            <input value={calcBot} onChange={function(e){setCalcBot(e.target.value);}} placeholder="e.g. 50" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
           </div>
           <div>
-            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Capital ($)</label>
-            <input value={calcCap} onChange={function(e){setCalcCap(e.target.value);}} placeholder="e.g. 10000" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F,display:'block',marginBottom:2}}>Capital ($)</label>
+            <input value={calcCap} onChange={function(e){setCalcCap(e.target.value);}} placeholder="e.g. 10000" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
           </div>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,alignItems:'end'}}>
           <div>
-            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Shares / level</label>
-            <input value={calcShares} onChange={function(e){setCalcShares(e.target.value);}} placeholder="1" type="number" step="any" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F,display:'block',marginBottom:2}}>Shares / range</label>
+            <input value={calcShares} onChange={function(e){setCalcShares(e.target.value);}} placeholder="1" type="number" step="any" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box'}}/>
           </div>
-          {(function(){
-            var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),sh=parseFloat(calcShares);
-            var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(sh)&&sh>0&&cap>0&&top>bot;
-            // Evenly-spaced grid: prices average to the midpoint, so N levels cost sh*N*(top+bot)/2.
-            // Largest affordable N given capital:
-            var mid=ok?(top+bot)/2:null;
-            var levels=ok?Math.floor(cap/(sh*mid)):null;
-            var inc=(ok&&levels>1)?(top-bot)/(levels-1):null;
-            var box=function(label,val){return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.accent+'55',borderRadius:5,padding:'6px 8px'}}>
-              <div style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{label}</div>
-              <div style={{fontSize:12,color:C.accent,fontFamily:F,fontWeight:700,marginTop:1}}>{val}</div>
-            </div>;};
-            return [
-              box('Increment',inc!=null?('$'+(inc<0.1?inc.toFixed(4):inc.toFixed(2))):'\u2014'),
-              box('Levels',levels!=null&&levels>0?levels.toLocaleString():'\u2014')
-            ];
-          })()}
         </div>
         {(function(){
           var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),sh=parseFloat(calcShares);
+          var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(sh)&&sh>0&&cap>0&&top>bot;
+          // Evenly-spaced grid: prices average to the midpoint, so N levels cost sh*N*(top+bot)/2.
+          var mid=ok?(top+bot)/2:null;
+          var levels=ok?Math.floor(cap/(sh*mid)):null;
+          var inc=(ok&&levels>1)?(top-bot)/(levels-1):null;
+          var range=ok?(top-bot):null;
+          var fmtUsd=function(v){return '$'+(v<0.1?v.toFixed(4):v.toFixed(2));};
+          var box=function(label,val){return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.accent+'55',borderRadius:5,padding:'7px 9px'}}>
+            <div style={{fontSize:7,color:C.txtDim,fontFamily:F,whiteSpace:'nowrap'}}>{label}</div>
+            <div style={{fontSize:12,color:C.accent,fontFamily:F,fontWeight:700,marginTop:2}}>{val}</div>
+          </div>;};
+          return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
+            {box('Increment',(inc!=null)?fmtUsd(inc):'\u2014')}
+            {box('Ranges',(levels!=null&&levels>0)?levels.toLocaleString():'\u2014')}
+            {box('Price range covered',(range!=null)?fmtUsd(range):'\u2014')}
+          </div>;
+        })()}
+        {(function(){
+          var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),sh=parseFloat(calcShares);
           var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(sh)&&sh>0&&cap>0;
-          if(ok&&top<=bot)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Top price must be above bottom price.</div>;
+          if(ok&&top<=bot)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:8}}>Top price must be above bottom price.</div>;
           var mid=ok?(top+bot)/2:null;
           var levels=(ok&&top>bot)?Math.floor(cap/(sh*mid)):null;
-          if(ok&&top>bot&&levels<2)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Capital too small for 2+ levels at this share size. Lower shares/level or raise capital.</div>;
+          if(ok&&top>bot&&levels<2)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:8}}>Capital too small for 2+ ranges at this share size. Lower shares/range or raise capital.</div>;
           if(ok&&top>bot&&levels>=2){
             var incr=(top-bot)/(levels-1);
             var totalShares=sh*levels;
             var totalCost=sh*levels*mid;
-            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:6}}>{'Config: '+levels.toLocaleString()+' ranges from $'+top+' to $'+bot+', spaced $'+(incr<0.1?incr.toFixed(4):incr.toFixed(2))+' apart, '+(sh===1?'1 share':sh+' shares')+' per level ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
+            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:8}}>{'Config: '+levels.toLocaleString()+' ranges from $'+top+' to $'+bot+', spaced $'+(incr<0.1?incr.toFixed(4):incr.toFixed(2))+' apart, '+(sh===1?'1 share':sh+' shares')+' per range ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
           }
           return null;
         })()}
