@@ -20070,8 +20070,8 @@ function ViolentChopScreenerPage(p){
 
   return <div>
     <Cd glow>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8}}>
-        <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'nowrap',gap:8}}>
+        <div style={{flex:'1 1 auto',minWidth:0}}>
           <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F,letterSpacing:1}}>HOLY GRAIL SCREENER</div>
           <div style={{marginTop:6}}>
             <button onClick={function(){setShowInstr(!showInstr);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 9px',border:'1px solid '+C.accent+'55',borderRadius:5,background:showInstr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>
@@ -20088,7 +20088,7 @@ function ViolentChopScreenerPage(p){
             </div>}
           </div>
         </div>
-        {scanDate&&<div style={{textAlign:'right'}}>
+        {scanDate&&<div style={{textAlign:'right',flex:'0 0 auto'}}>
           <div style={{background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,whiteSpace:'nowrap'}}>{'SCAN: '+scanDate+' | '+(data?data.length:0)+' tickers'}</div>
           {(function(){var lr=fmtLastRun(lastRunTs);return lr?<div style={{fontSize:7,fontFamily:F,color:lr.stale?C.warn:C.txtDim,marginTop:3,whiteSpace:'nowrap'}}>{'Last run: '+lr.rel+' \u00B7 '+lr.local}</div>:null;})()}
         </div>}
