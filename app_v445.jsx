@@ -20151,7 +20151,7 @@ function ViolentChopScreenerPage(p){
             var incr=(top-bot)/(levels-1);
             var totalShares=sh*levels;
             var totalCost=sh*levels*mid;
-            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:6}}>{'Grid: '+levels.toLocaleString()+' buy levels from $'+bot+' to $'+top+', spaced $'+(incr<0.1?incr.toFixed(4):incr.toFixed(2))+' apart, '+(sh===1?'1 share':sh+' shares')+' per level ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
+            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:6}}>{'Config: '+levels.toLocaleString()+' ranges from $'+top+' to $'+bot+', spaced $'+(incr<0.1?incr.toFixed(4):incr.toFixed(2))+' apart, '+(sh===1?'1 share':sh+' shares')+' per level ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
           }
           return null;
         })()}
