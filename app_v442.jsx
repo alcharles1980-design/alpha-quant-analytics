@@ -19598,6 +19598,10 @@ function ViolentChopScreenerPage(p){
   var sAtr=useState(null),atrTk=sAtr[0],setAtrTk=sAtr[1];           // null = closed; else ticker for 24H trade-profile popup
   var s16=useState(null),pipeStatus=s16[0],setPipeStatus=s16[1];
   var s17=useState(null),lastRunTs=s17[0],setLastRunTs=s17[1];
+  var s20=useState(''),calcTop=s20[0],setCalcTop=s20[1];       // increment calc: top price
+  var s21=useState(''),calcBot=s21[0],setCalcBot=s21[1];       // bottom price
+  var s22=useState(''),calcCap=s22[0],setCalcCap=s22[1];       // capital
+  var s23=useState('100'),calcPer=s23[0],setCalcPer=s23[1];    // $ per level (editable, default 100)
   var s18=useState({}),ratings=s18[0],setRatings=s18[1];        // {ticker: {reco_key,target_*,num_analysts,...}}
   var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
   var s52=useState({}),wk52=s52[0],setWk52=s52[1];             // {ticker:{high,low}} 52-week range from cached_oscillation_screener.range_position
@@ -20094,6 +20098,56 @@ function ViolentChopScreenerPage(p){
               <span style={{color:C.accent,fontWeight:700}}>How to decide the increment.</span> The first thing you should look at is the various fundamentals — price targets, recent price moves, support and resistance ranges, and so on. After you have decided the top and bottom price, you need to decide how much capital you are willing to expose. This will lead to calculating the increment.
             </div>}
       </div>
+
+      {/* Grid increment calculator */}
+      <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:8,background:C.bg,padding:12}}>
+        <div style={{fontSize:9,fontFamily:F,color:C.accent,fontWeight:700,letterSpacing:0.5,marginBottom:2}}>Increment Calculator</div>
+        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginBottom:8}}>Enter your top &amp; bottom price and the capital you'll expose. Levels = capital / $-per-level; increment = range / (levels - 1).</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+          <div>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Top price ($)</label>
+            <input value={calcTop} onChange={function(e){setCalcTop(e.target.value);}} placeholder="e.g. 60" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+          </div>
+          <div>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Bottom price ($)</label>
+            <input value={calcBot} onChange={function(e){setCalcBot(e.target.value);}} placeholder="e.g. 50" type="number" step="0.01" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+          </div>
+          <div>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Capital ($)</label>
+            <input value={calcCap} onChange={function(e){setCalcCap(e.target.value);}} placeholder="e.g. 10000" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,alignItems:'end'}}>
+          <div>
+            <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>$ per level</label>
+            <input value={calcPer} onChange={function(e){setCalcPer(e.target.value);}} placeholder="100" type="number" step="1" style={{width:'100%',padding:'6px 8px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:5,color:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2}}/>
+          </div>
+          {(function(){
+            var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),per=parseFloat(calcPer);
+            var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(per)&&per>0&&cap>0&&top>bot;
+            var levels=ok?Math.floor(cap/per):null;
+            var inc=(ok&&levels>1)?(top-bot)/(levels-1):null;
+            var box=function(label,val){return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.accent+'55',borderRadius:5,padding:'6px 8px'}}>
+              <div style={{fontSize:7,color:C.txtDim,fontFamily:F}}>{label}</div>
+              <div style={{fontSize:12,color:C.accent,fontFamily:F,fontWeight:700,marginTop:1}}>{val}</div>
+            </div>;};
+            return [
+              box('Increment',inc!=null?('$'+(inc<0.1?inc.toFixed(4):inc.toFixed(2))):'\u2014'),
+              box('Levels',levels!=null&&levels>0?levels.toLocaleString():'\u2014')
+            ];
+          })()}
+        </div>
+        {(function(){
+          var top=parseFloat(calcTop),bot=parseFloat(calcBot),cap=parseFloat(calcCap),per=parseFloat(calcPer);
+          var ok=isFinite(top)&&isFinite(bot)&&isFinite(cap)&&isFinite(per)&&per>0&&cap>0;
+          if(ok&&top<=bot)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Top price must be above bottom price.</div>;
+          var levels=ok?Math.floor(cap/per):null;
+          if(ok&&levels<2)return <div style={{fontSize:7,fontFamily:F,color:C.warn,marginTop:6}}>Capital / $-per-level must give at least 2 levels.</div>;
+          if(ok&&top>bot&&levels>=2)return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:6}}>{'Grid: '+levels.toLocaleString()+' buy levels from $'+bot+' to $'+top+', spaced $'+(((top-bot)/(levels-1))<0.1?((top-bot)/(levels-1)).toFixed(4):((top-bot)/(levels-1)).toFixed(2))+' apart, ~$'+per+' per level.'}</div>;
+          return null;
+        })()}
+      </div>
+
 
       {/* Resolution toggle */}
       <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
