@@ -20071,27 +20071,25 @@ function ViolentChopScreenerPage(p){
   return <div>
     <Cd glow>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'nowrap',gap:8}}>
-        <div style={{flex:'1 1 auto',minWidth:0}}>
-          <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F,letterSpacing:1}}>HOLY GRAIL SCREENER</div>
-          <div style={{marginTop:6}}>
+        <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F,letterSpacing:1,flex:'1 1 auto',minWidth:0}}>HOLY GRAIL SCREENER</div>
+        {scanDate&&<div style={{textAlign:'right',flex:'0 0 auto'}}>
+          <div style={{background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,whiteSpace:'nowrap'}}>{'SCAN: '+scanDate+' | '+(loading&&!(data&&data.length)?'loading\u2026':((data?data.length:0)+' tickers'))}</div>
+          {(function(){var lr=fmtLastRun(lastRunTs);return lr?<div style={{fontSize:7,fontFamily:F,color:lr.stale?C.warn:C.txtDim,marginTop:3,whiteSpace:'nowrap'}}>{'Last run: '+lr.rel+' \u00B7 '+lr.local}</div>:null;})()}
+        </div>}
+      </div>
+      <div style={{marginTop:6}}>
             <button onClick={function(){setShowInstr(!showInstr);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 9px',border:'1px solid '+C.accent+'55',borderRadius:5,background:showInstr?C.accent+'18':'transparent',color:C.accent,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer'}}>
               <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:12,height:12,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:8,fontStyle:'italic',fontWeight:700}}>i</span>
               Instructions
               <span style={{fontSize:7,transform:showInstr?'rotate(90deg)':'none',transition:'transform 0.15s'}}>{'\u25B8'}</span>
             </button>
-            {showInstr&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,maxWidth:560,lineHeight:1.6,paddingLeft:2}}>
+            {showInstr&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,lineHeight:1.6,paddingLeft:2}}>
               <span style={{color:C.accent,fontWeight:700}}>What this is.</span> A volatility ranking tool. It ranks the top ~2,400 US stocks purely by how much they oscillate, measured at the bar resolution you pick below — 10-second, 1-minute, 10-minute, hourly, or daily.
               <br/><br/>
               <span style={{color:C.accent,fontWeight:700}}>What it does not do.</span> It does not rank by fundamentals, price targets, or anything else — only technical volatility, to surface the names with the most oscillation for volatility trading.
               <br/><br/>
               <span style={{color:C.accent,fontWeight:700}}>How to use it.</span> Treat it as a volatility screen, then combine it with the other technical and fundamental data at your fingertips (analyst targets, 52W/30d/7d ranges, ATR, and more) to make the call.
             </div>}
-          </div>
-        </div>
-        {scanDate&&<div style={{textAlign:'right',flex:'0 0 auto'}}>
-          <div style={{background:C.accent+'26',border:'1px solid '+C.accent,borderRadius:4,padding:'2px 8px',fontSize:7,color:C.accent,fontFamily:F,fontWeight:700,whiteSpace:'nowrap'}}>{'SCAN: '+scanDate+' | '+(loading&&!(data&&data.length)?'loading\u2026':((data?data.length:0)+' tickers'))}</div>
-          {(function(){var lr=fmtLastRun(lastRunTs);return lr?<div style={{fontSize:7,fontFamily:F,color:lr.stale?C.warn:C.txtDim,marginTop:3,whiteSpace:'nowrap'}}>{'Last run: '+lr.rel+' \u00B7 '+lr.local}</div>:null;})()}
-        </div>}
       </div>
 
       {/* Resolution toggle */}
