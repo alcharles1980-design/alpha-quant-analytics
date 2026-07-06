@@ -20129,6 +20129,7 @@ function ViolentChopScreenerPage(p){
           var levels=ok?Math.floor(cap/(sh*mid)):null;
           var inc=(ok&&levels>1)?(top-bot)/(levels-1):null;
           var range=ok?(top-bot):null;
+          var rangePct=(ok&&bot>0)?((top-bot)/bot*100):null;
           var fmtUsd=function(v){return '$'+(v<0.1?v.toFixed(4):v.toFixed(2));};
           var box=function(label,val){return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.accent+'55',borderRadius:5,padding:'7px 9px'}}>
             <div style={{fontSize:7,color:C.txtDim,fontFamily:F,whiteSpace:'nowrap'}}>{label}</div>
@@ -20137,7 +20138,7 @@ function ViolentChopScreenerPage(p){
           return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
             {box('Increment',(inc!=null)?fmtUsd(inc):'\u2014')}
             {box('Ranges',(levels!=null&&levels>0)?levels.toLocaleString():'\u2014')}
-            {box('Price range covered',(range!=null)?fmtUsd(range):'\u2014')}
+            {box('Price range covered',(range!=null)?(fmtUsd(range)+' \u00b7 '+rangePct.toFixed(1)+'%'):'\u2014')}
           </div>;
         })()}
         {(function(){
