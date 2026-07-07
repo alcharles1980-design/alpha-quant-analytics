@@ -4210,6 +4210,11 @@ function StockProfileCheatSheetPage(p){
         </div>;
       })()}
 
+      {/* Note replacing the hidden Ranges & Cycles Estimator + Profit Taker Comparison cards */}
+      <div style={{marginTop:12,padding:'12px 14px',background:C.accent+'0f',border:'1px solid '+C.accent+'55',borderRadius:8}}>
+        <div style={{color:C.accent,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Ranges &amp; cycles estimation has moved</div>
+        <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:4,lineHeight:1.5}}>Use the Holy Grail Screener to model ranges, increments, capital and profit takers for this stock.</div>
+      </div>
       {/* RANGES & CYCLES ESTIMATOR card (v234, math corrected v235) — placed
           after SWING POTENTIAL TARGETS at the very bottom of the cheat sheet.
           Interactive oscillation-trading calculator: a staggered buy ladder spaced
@@ -4244,7 +4249,7 @@ function StockProfileCheatSheetPage(p){
                                     capital is uniform across rungs)
           
           Default expanded. */}
-      {(function(){
+      {false && (function(){
         var parseNum=function(s){
           if(s==null||s==='')return NaN;
           var n=parseFloat(String(s).replace(/[^0-9.\-]/g,''));
@@ -4515,7 +4520,7 @@ function StockProfileCheatSheetPage(p){
           Entirely derived from rcBottom/rcTop/rcIncrement/rcCapital — no own
           inputs. Highlights the row matching the active rcTpPct so the user
           sees their current setting in context. */}
-      {!!data&&(function(){
+      {false && !!data&&(function(){
         var bottom=parseFloat(String(rcBottom||'').replace(/[^0-9.\-]/g,''));
         var top=parseFloat(String(rcTop||'').replace(/[^0-9.\-]/g,''));
         var increment=parseFloat(String(rcIncrement||'').replace(/[^0-9.\-]/g,''));
