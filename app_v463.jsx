@@ -20155,7 +20155,7 @@ function ViolentChopScreenerPage(p){
             <div style={{fontSize:12,color:C.accent,fontFamily:F,fontWeight:700,marginTop:2}}>{val}</div>
           </div>;};
           return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8}}>
-            {box('Increment',(inc!=null)?(fmtUsd(inc)+' \u00b7 '+(inc/mid*100).toFixed(2)+'%'):'\u2014')}
+            {box('Increment',(inc!=null)?(('$'+inc.toFixed(2))+' \u00b7 '+(inc/mid*100).toFixed(2)+'%'):'\u2014')}
             {box('Ranges',(levels!=null&&levels>0)?levels.toLocaleString():'\u2014')}
             {box('Price range covered',(range!=null)?(fmtUsd(range)+' \u00b7 '+rangePct.toFixed(1)+'%'):'\u2014')}
           </div>;
@@ -20171,7 +20171,7 @@ function ViolentChopScreenerPage(p){
             var incr=(top-bot)/(levels-1);
             var totalShares=sh*levels;
             var totalCost=sh*levels*mid;
-            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:8}}>{'Config: '+levels.toLocaleString()+' ranges from $'+top+' to $'+bot+', spaced $'+(incr<0.1?incr.toFixed(4):incr.toFixed(2))+' apart, '+(sh===1?'1 share':sh+' shares')+' per range ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
+            return <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:8}}>{'Config: '+levels.toLocaleString()+' ranges from $'+top+' to $'+bot+', spaced $'+incr.toFixed(2)+' apart, '+(sh===1?'1 share':sh+' shares')+' per range ('+totalShares.toLocaleString()+' shares total, ~$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0})+' deployed).'}</div>;
           }
           return null;
         })()}
