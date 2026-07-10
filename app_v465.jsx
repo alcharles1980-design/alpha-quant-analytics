@@ -17971,7 +17971,7 @@ function CompanyFundamentalsPage(p){
   var chart=function(){
     if(!rows||!rows.length)return null;
     var data=rows.slice(-12); // last 12 periods
-    var W=760,H=300,padL=64,padR=16,padT=16,padB=44;
+    var W=760,H=600,padL=64,padR=16,padT=16,padB=44;
     var vals=[];data.forEach(function(d){if(d.revenue!=null)vals.push(d.revenue);if(d.netIncome!=null)vals.push(d.netIncome);});
     if(!vals.length)return null;
     var maxV=Math.max.apply(null,vals),minV=Math.min.apply(null,vals,0);
