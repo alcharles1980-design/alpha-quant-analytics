@@ -18070,7 +18070,7 @@ function CompanyFundamentalsPage(p){
           {name:'Net',color:C.accent,vals:d.map(function(r){return (r.netIncome!=null)?r.netIncome/r.revenue*100:null;})}
         ].filter(function(s){return s.vals.some(function(x){return x!=null;});});
         if(!series.length)return null;
-        var W=760,H=340,padL=52,padR=16,padT=16,padB=44;
+        var W=760,H=600,padL=52,padR=16,padT=16,padB=44;
         var allv=[];series.forEach(function(s){s.vals.forEach(function(x){if(x!=null)allv.push(x);});});
         var mx=Math.max.apply(null,allv),mn=Math.min.apply(null,allv,0);if(mn>0)mn=0;
         var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
@@ -18148,7 +18148,7 @@ function CompanyFundamentalsPage(p){
         var d=rows.slice(-12).filter(function(r){return r.opCashFlow!=null;});
         if(!d.length)return null;
         var latest=d[d.length-1];
-        var W=760,H=300,padL=64,padR=16,padT=16,padB=44;
+        var W=760,H=600,padL=64,padR=16,padT=16,padB=44;
         var vals=d.map(function(r){return r.opCashFlow;});
         var mx=Math.max.apply(null,vals),mn=Math.min.apply(null,vals,0);if(mn>0)mn=0;
         var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
@@ -18176,7 +18176,7 @@ function CompanyFundamentalsPage(p){
           var pts=rows.filter(function(r){return r.eps!=null;});
           if(pts.length<=lag)return null;
           var show=pts.slice(-12);
-          var W=760,H=340,padL=52,padR=16,padT=30,padB=44;
+          var W=760,H=600,padL=52,padR=16,padT=30,padB=44;
           var vals=show.map(function(r){return r.eps;});
           var mx=Math.max.apply(null,vals),mn=Math.min.apply(null,vals,0);if(mn>0)mn=0;if(mx<0)mx=0;
           var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
