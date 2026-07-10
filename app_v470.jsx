@@ -17963,13 +17963,13 @@ function CompanyFundamentalsPage(p){
     var d=rows.slice(-(isQ?12:10));
     var vals=[];d.forEach(function(r){series.forEach(function(s){var v=s.get(r);if(v!=null)vals.push(v);});});
     if(!vals.length)return <div style={{fontSize:9,color:C.txtDim,fontFamily:F,padding:'8px 2px'}}>No data reported.</div>;
-    var W=760,H=600,padL=64,padR=16,padT=16,padB=44;
+    var W=760,H=600,padL=68,padR=16,padT=16,padB=52;
     var mx=Math.max.apply(null,vals),mn=Math.min.apply(null,vals,0);if(mn>0)mn=0;if(mx<0)mx=0;
     var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
     var n=d.length;var slot=(W-padL-padR)/n;var zeroY=Y(0);
     var two=series.length>1;var bw=Math.min(slot*(two?0.34:0.5),two?26:34);
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-5} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{yFmt(v)}</text></g>;})}
+      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-8} y={Y(v)+5} textAnchor="end" fontSize="14" fill={C.txtDim} fontFamily={F}>{yFmt(v)}</text></g>;})}
       <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="0.8"/>
       {d.map(function(r,i){
         var cx=padL+slot*i+slot/2;
@@ -17979,7 +17979,7 @@ function CompanyFundamentalsPage(p){
           var fill=(typeof s.color==='function')?s.color(v):s.color;
           return <rect key={si} x={x} y={Math.min(Y(v),zeroY)} width={bw} height={Math.abs(Y(v)-zeroY)} fill={fill} rx="1.5"/>;
         });
-        return <g key={i}>{bars}<text x={cx} y={H-padB+14} textAnchor="middle" fontSize="7.5" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+cx+' '+(H-padB+14)+')'):''}>{lblOf(r,isQ)}</text></g>;
+        return <g key={i}>{bars}<text x={cx} y={H-padB+18} textAnchor="middle" fontSize="13" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+cx+' '+(H-padB+14)+')'):''}>{lblOf(r,isQ)}</text></g>;
       })}
     </svg>;
   };
@@ -17991,16 +17991,16 @@ function CompanyFundamentalsPage(p){
     if(d.length<2)return <div style={{fontSize:9,color:C.txtDim,fontFamily:F,padding:'8px 2px'}}>Not enough data.</div>;
     var series=lines.map(function(s){return {name:s.name,color:s.color,vals:d.map(s.get)};}).filter(function(s){return s.vals.some(function(x){return x!=null;});});
     if(!series.length)return <div style={{fontSize:9,color:C.txtDim,fontFamily:F,padding:'8px 2px'}}>No data reported.</div>;
-    var W=760,H=600,padL=52,padR=16,padT=16,padB=44;
+    var W=760,H=600,padL=60,padR=16,padT=16,padB=52;
     var allv=[];series.forEach(function(s){s.vals.forEach(function(x){if(x!=null)allv.push(x);});});
     var mx=Math.max.apply(null,allv),mn=Math.min.apply(null,allv,0);if(mn>0)mn=0;
     var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
     var n=d.length;var X=function(i){return padL+(n<=1?0:(i/(n-1))*(W-padL-padR));};var zeroY=Y(0);
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-5} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(0)+'%'}</text></g>;})}
+      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-8} y={Y(v)+5} textAnchor="end" fontSize="14" fill={C.txtDim} fontFamily={F}>{v.toFixed(0)+'%'}</text></g>;})}
       <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="0.8"/>
       {series.map(function(s){var pts=[];s.vals.forEach(function(v,i){if(v!=null)pts.push(X(i)+','+Y(v));});return <g key={s.name}><polyline points={pts.join(' ')} fill="none" stroke={s.color} strokeWidth="2"/>{s.vals.map(function(v,i){return v!=null?<circle key={i} cx={X(i)} cy={Y(v)} r="2.5" fill={s.color}/>:null;})}</g>;})}
-      {d.map(function(r,i){return <text key={i} x={X(i)} y={H-padB+14} textAnchor="middle" fontSize="7.5" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+X(i)+' '+(H-padB+14)+')'):''}>{lblOf(r,isQ)}</text>;})}
+      {d.map(function(r,i){return <text key={i} x={X(i)} y={H-padB+18} textAnchor="middle" fontSize="13" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+X(i)+' '+(H-padB+14)+')'):''}>{lblOf(r,isQ)}</text>;})}
     </svg>;
   };
 
@@ -18010,21 +18010,21 @@ function CompanyFundamentalsPage(p){
     var pts=rows.filter(function(r){return r.eps!=null;});
     if(pts.length<=lag)return <div style={{fontSize:9,color:C.txtDim,fontFamily:F,padding:'8px 2px'}}>Not enough EPS history.</div>;
     var show=pts.slice(-(isQ?12:10));
-    var W=760,H=600,padL=52,padR=16,padT=30,padB=44;
+    var W=760,H=600,padL=60,padR=16,padT=30,padB=52;
     var vals=show.map(function(r){return r.eps;});
     var mx=Math.max.apply(null,vals),mn=Math.min.apply(null,vals,0);if(mn>0)mn=0;if(mx<0)mx=0;
     var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
     var n=show.length;var slot=(W-padL-padR)/n;var bw=Math.min(slot*0.5,34);var zeroY=Y(0);
     var idxInPts=function(r){for(var k=0;k<pts.length;k++){if(pts[k].end===r.end)return k;}return -1;};
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-5} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{'$'+v.toFixed(2)}</text></g>;})}
+      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-8} y={Y(v)+5} textAnchor="end" fontSize="14" fill={C.txtDim} fontFamily={F}>{'$'+v.toFixed(2)}</text></g>;})}
       <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="0.8"/>
       {show.map(function(r,i){
         var cx=padL+slot*i+slot/2;var v=r.eps;
         var ki=idxInPts(r);var prev=(ki-lag>=0)?pts[ki-lag]:null;
         var gr=(prev&&prev.eps!=null&&prev.eps!==0)?((v-prev.eps)/Math.abs(prev.eps)*100):null;
         var grCol=(gr==null)?C.txtDim:(gr>=0?C.accent:C.red);var barTop=Math.min(Y(v),zeroY);
-        return <g key={i}><rect x={cx-bw/2} y={barTop} width={bw} height={Math.abs(Y(v)-zeroY)} fill={v>=0?C.blue:C.red} rx="1.5"/>{gr!=null&&<text x={cx} y={barTop-4} textAnchor="middle" fontSize="8" fontWeight="700" fill={grCol} fontFamily={F}>{(gr>=0?'+':'')+gr.toFixed(0)+'%'}</text>}<text x={cx} y={H-padB+14} textAnchor="middle" fontSize="7.5" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+cx+' '+(H-padB+14)+')'):''}>{lblOf(r,isQ)}</text></g>;
+        return <g key={i}><rect x={cx-bw/2} y={barTop} width={bw} height={Math.abs(Y(v)-zeroY)} fill={v>=0?C.blue:C.red} rx="1.5"/>{gr!=null&&<text x={cx} y={barTop-4} textAnchor="middle" fontSize="13" fontWeight="700" fill={grCol} fontFamily={F}>{(gr>=0?'+':'')+gr.toFixed(0)+'%'}</text>}<text x={cx} y={H-padB+18} textAnchor="middle" fontSize="13" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+cx+' '+(H-padB+14)+')'):''}>{lblOf(r,isQ)}</text></g>;
       })}
     </svg>;
   };
