@@ -17928,19 +17928,30 @@ function CompanyFundamentalsPage(p){
     };
     step(url).then(function(){
       if(!all.length){setErr('No financials found for '+t+'.');setLoading(false);return;}
-      // parse income statement fields, build tidy rows
+      // parse income statement + balance sheet + cash flow fields, build tidy rows
       var parsed=all.map(function(r){
         var is=(r.financials&&r.financials.income_statement)||{};
-        var g=function(k){return (is[k]&&typeof is[k].value==='number')?is[k].value:null;};
+        var bs=(r.financials&&r.financials.balance_sheet)||{};
+        var cf=(r.financials&&r.financials.cash_flow_statement)||{};
+        var g=function(o,k){return (o[k]&&typeof o[k].value==='number')?o[k].value:null;};
         return {
           period:(r.fiscal_period||'')+' '+(r.fiscal_year||''),
           fp:r.fiscal_period||'', fy:r.fiscal_year||'',
           end:r.end_date||r.period_of_report_date||'',
-          revenue:g('revenues'),
-          netIncome:g('net_income_loss'),
-          grossProfit:g('gross_profit'),
-          opIncome:g('operating_income_loss'),
-          eps:g('diluted_earnings_per_share')!=null?g('diluted_earnings_per_share'):g('basic_earnings_per_share')
+          revenue:g(is,'revenues'),
+          netIncome:g(is,'net_income_loss'),
+          grossProfit:g(is,'gross_profit'),
+          opIncome:g(is,'operating_income_loss'),
+          eps:g(is,'diluted_earnings_per_share')!=null?g(is,'diluted_earnings_per_share'):g(is,'basic_earnings_per_share'),
+          // balance sheet
+          assets:g(bs,'assets'),
+          equity:g(bs,'equity')!=null?g(bs,'equity'):g(bs,'equity_attributable_to_parent'),
+          longTermDebt:g(bs,'long_term_debt'),
+          curAssets:g(bs,'current_assets'),
+          curLiab:g(bs,'current_liabilities'),
+          liabilities:g(bs,'liabilities'),
+          // cash flow
+          opCashFlow:g(cf,'net_cash_flow_from_operating_activities')
         };
       }).filter(function(r){return r.revenue!=null||r.netIncome!=null;});
       // dedupe by period end, sort oldest->newest for charting
@@ -18049,6 +18060,113 @@ function CompanyFundamentalsPage(p){
         {chart()}
         <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:6}}>{'Last '+Math.min(rows.length,12)+' '+(tf==='quarterly'?'quarters':'years')+'. Red bars = net loss. No fees / adjustments applied.'}</div>
       </div>
+      {/* MARGINS OVER TIME (gross / operating / net) */}
+      {(function(){
+        var d=rows.slice(-12).filter(function(r){return r.revenue&&r.revenue!==0;});
+        if(d.length<2)return null;
+        var series=[
+          {name:'Gross',color:C.blue,vals:d.map(function(r){return (r.grossProfit!=null)?r.grossProfit/r.revenue*100:null;})},
+          {name:'Operating',color:C.gold,vals:d.map(function(r){return (r.opIncome!=null)?r.opIncome/r.revenue*100:null;})},
+          {name:'Net',color:C.accent,vals:d.map(function(r){return (r.netIncome!=null)?r.netIncome/r.revenue*100:null;})}
+        ].filter(function(s){return s.vals.some(function(x){return x!=null;});});
+        if(!series.length)return null;
+        var W=760,H=340,padL=52,padR=16,padT=16,padB=44;
+        var allv=[];series.forEach(function(s){s.vals.forEach(function(x){if(x!=null)allv.push(x);});});
+        var mx=Math.max.apply(null,allv),mn=Math.min.apply(null,allv,0);if(mn>0)mn=0;
+        var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
+        var n=d.length;var X=function(i){return padL+(n<=1?0:(i/(n-1))*(W-padL-padR));};
+        var zeroY=Y(0);
+        return <div style={{marginTop:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>MARGINS OVER TIME</div>
+            <div style={{display:'flex',gap:12,fontSize:8,fontFamily:F}}>{series.map(function(s){return <span key={s.name} style={{color:s.color}}>&#9632; {s.name}</span>;})}</div>
+          </div>
+          <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
+            {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-5} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{v.toFixed(0)+'%'}</text></g>;})}
+            <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="0.8"/>
+            {series.map(function(s){
+              var pts=[];s.vals.forEach(function(v,i){if(v!=null)pts.push(X(i)+','+Y(v));});
+              return <g key={s.name}><polyline points={pts.join(' ')} fill="none" stroke={s.color} strokeWidth="2"/>{s.vals.map(function(v,i){return v!=null?<circle key={i} cx={X(i)} cy={Y(v)} r="2.5" fill={s.color}/>:null;})}</g>;
+            })}
+            {d.map(function(r,i){var lbl=tf==='quarterly'?(r.fp+' '+String(r.fy).slice(2)):String(r.fy);return <text key={i} x={X(i)} y={H-padB+14} textAnchor="middle" fontSize="7.5" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+X(i)+' '+(H-padB+14)+')'):''}>{lbl}</text>;})}
+          </svg>
+          <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:6}}>Each margin = line item / revenue. Gaps where a value wasn't reported.</div>
+        </div>;
+      })()}
+
+      {/* YoY GROWTH (revenue + net income) */}
+      {(function(){
+        var lag=(tf==='quarterly')?4:1;
+        if(rows.length<=lag)return null;
+        var cur=rows[rows.length-1];var prev=rows[rows.length-1-lag];
+        var yoy=function(c,p){return (c!=null&&p!=null&&p!==0)?((c-p)/Math.abs(p)*100):null;};
+        var revG=yoy(cur.revenue,prev.revenue);var niG=yoy(cur.netIncome,prev.netIncome);
+        var pill=function(label,val){
+          var col=(val==null)?C.txtDim:(val>=0?C.accent:C.red);
+          return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,padding:'8px 10px'}}>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>{label}</div>
+            <div style={{fontSize:14,color:col,fontFamily:F,fontWeight:700,marginTop:2}}>{val==null?'\u2014':((val>=0?'+':'')+val.toFixed(1)+'%')}</div>
+          </div>;
+        };
+        return <div style={{marginTop:12}}>
+          <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginBottom:6}}>{'YoY GROWTH ('+(tf==='quarterly'?'vs 4 quarters ago':'vs prior year')+')'}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {pill('Revenue growth',revG)}
+            {pill('Net income growth',niG)}
+          </div>
+        </div>;
+      })()}
+
+      {/* BALANCE-SHEET HEALTH SNAPSHOT */}
+      {(function(){
+        var latest=rows[rows.length-1];
+        var hasBS=(latest.assets!=null||latest.equity!=null||latest.longTermDebt!=null||latest.curAssets!=null);
+        if(!hasBS)return null;
+        var d2e=(latest.longTermDebt!=null&&latest.equity!=null&&latest.equity!==0)?(latest.longTermDebt/latest.equity):null;
+        var curRatio=(latest.curAssets!=null&&latest.curLiab!=null&&latest.curLiab!==0)?(latest.curAssets/latest.curLiab):null;
+        var box=function(label,val,col){
+          return <div key={label} style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:6,padding:'8px 10px'}}>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>{label}</div>
+            <div style={{fontSize:13,color:col||C.txtBright,fontFamily:F,fontWeight:700,marginTop:2}}>{val}</div>
+          </div>;
+        };
+        return <div style={{marginTop:12}}>
+          <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginBottom:6}}>{'BALANCE-SHEET HEALTH ('+latest.period+')'}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5, 1fr)',gap:8}}>
+            {box('Total equity',fmtBig(latest.equity))}
+            {box('Total assets',fmtBig(latest.assets))}
+            {box('Long-term debt',fmtBig(latest.longTermDebt))}
+            {box('Debt / equity',d2e==null?'\u2014':d2e.toFixed(2),d2e==null?null:(d2e<1?C.accent:d2e<2?C.gold:C.red))}
+            {box('Current ratio',curRatio==null?'\u2014':curRatio.toFixed(2),curRatio==null?null:(curRatio>=1.5?C.accent:curRatio>=1?C.gold:C.red))}
+          </div>
+          <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:6}}>Debt/equity: lower is safer (green &lt;1). Current ratio: &gt;1 means current assets cover current liabilities. Balance-sheet items are sometimes sparse on quarterly filings.</div>
+        </div>;
+      })()}
+
+      {/* OPERATING CASH FLOW */}
+      {(function(){
+        var d=rows.slice(-12).filter(function(r){return r.opCashFlow!=null;});
+        if(!d.length)return null;
+        var latest=d[d.length-1];
+        var W=760,H=300,padL=64,padR=16,padT=16,padB=44;
+        var vals=d.map(function(r){return r.opCashFlow;});
+        var mx=Math.max.apply(null,vals),mn=Math.min.apply(null,vals,0);if(mn>0)mn=0;
+        var sp=(mx-mn)||1;var Y=function(v){return padT+(1-(v-mn)/sp)*(H-padT-padB);};
+        var n=d.length;var slot=(W-padL-padR)/n;var bw=Math.min(slot*0.5,34);var zeroY=Y(0);
+        var yFmt=function(v){var a=Math.abs(v);if(a>=1e12)return (v/1e12).toFixed(1)+'T';if(a>=1e9)return (v/1e9).toFixed(0)+'B';if(a>=1e6)return (v/1e6).toFixed(0)+'M';if(a>=1e3)return (v/1e3).toFixed(0)+'K';return v.toFixed(0);};
+        return <div style={{marginTop:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>OPERATING CASH FLOW</div>
+            <div style={{fontSize:10,fontFamily:F,color:latest.opCashFlow>=0?C.accent:C.red,fontWeight:700}}>{'latest: '+fmtBig(latest.opCashFlow)}</div>
+          </div>
+          <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
+            {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+sp*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-5} y={Y(v)+3} textAnchor="end" fontSize="8.5" fill={C.txtDim} fontFamily={F}>{yFmt(v)}</text></g>;})}
+            <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="0.8"/>
+            {d.map(function(r,i){var cx=padL+slot*i+slot/2;var v=r.opCashFlow;var lbl=tf==='quarterly'?(r.fp+' '+String(r.fy).slice(2)):String(r.fy);return <g key={i}><rect x={cx-bw/2} y={Math.min(Y(v),zeroY)} width={bw} height={Math.abs(Y(v)-zeroY)} fill={v>=0?C.accent:C.red} rx="1.5"/><text x={cx} y={H-padB+14} textAnchor="middle" fontSize="7.5" fill={C.txtDim} fontFamily={F} transform={n>8?('rotate(35 '+cx+' '+(H-padB+14)+')'):''}>{lbl}</text></g>;})}
+          </svg>
+          <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:6}}>Cash generated by core operations. Red = negative. Often sparse on quarterly filings.</div>
+        </div>;
+      })()}
     </div>}
   </div>;
 }
