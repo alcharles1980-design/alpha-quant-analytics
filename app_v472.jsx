@@ -18192,7 +18192,12 @@ function MultiViewChartsPage(p){
     {key:'5Y',label:'5 YEARS',mult:1,span:'week',yearsBack:5,bar:'weekly'},
     {key:'3Y',label:'3 YEARS',mult:1,span:'day',yearsBack:3,bar:'daily'},
     {key:'1Y',label:'1 YEAR',mult:1,span:'day',yearsBack:1,bar:'daily'},
-    {key:'YTD',label:'YEAR TO DATE',mult:1,span:'hour',ytd:true,bar:'hourly'}
+    {key:'YTD',label:'YEAR TO DATE',mult:1,span:'hour',ytd:true,bar:'hourly'},
+    {key:'3M',label:'LAST 3 MONTHS',mult:1,span:'hour',monthsBack:3,bar:'hourly'},
+    {key:'30D',label:'LAST 30 DAYS',mult:1,span:'hour',daysBack:30,bar:'hourly'},
+    {key:'7D',label:'LAST 7 DAYS',mult:1,span:'hour',daysBack:7,bar:'hourly'},
+    {key:'YEST',label:'YESTERDAY',mult:5,span:'minute',dayOffset:1,bar:'5-minute'},
+    {key:'TODAY',label:'TODAY',mult:5,span:'minute',dayOffset:0,bar:'5-minute'}
   ];
 
   var fetchAgg=function(t,tf){
@@ -18200,6 +18205,19 @@ function MultiViewChartsPage(p){
     var to=iso(now);
     var from;
     if(tf.ytd){from=now.getUTCFullYear()+'-01-01';}
+    else if(tf.dayOffset!=null){
+      // single-day range: 0 = today, 1 = yesterday
+      var dd=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.dayOffset));
+      from=iso(dd);to=iso(dd);
+    }
+    else if(tf.monthsBack!=null){
+      var dm=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-tf.monthsBack,now.getUTCDate()));
+      from=iso(dm);
+    }
+    else if(tf.daysBack!=null){
+      var dq=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.daysBack));
+      from=iso(dq);
+    }
     else{var d=new Date(Date.UTC(now.getUTCFullYear()-tf.yearsBack,now.getUTCMonth(),now.getUTCDate()));from=iso(d);}
     var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+tf.mult+'/'+tf.span+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=5000&apiKey='+p.apiKey;
     var all=[],guard=0;
@@ -18302,7 +18320,9 @@ function MultiViewChartsPage(p){
             <div style={{color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8,marginLeft:6}}>{tf.bar+' candles · '+bars.length+' bars'}</span></div>
             {st&&<div style={{fontFamily:F,fontSize:11,fontWeight:700,color:st.pct>=0?C.accent:C.red}}>{(st.pct>=0?'+':'')+st.pct.toFixed(1)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9,marginLeft:6}}>{'last '+fmtPx(st.last)}</span></div>}
           </div>
-          {candles(bars,tf)}
+          {(bars.length===0&&(tf.key==='TODAY'||tf.key==='YEST'))
+            ? <div style={{fontSize:10,color:C.txtDim,fontFamily:F,padding:'10px 2px'}}>{tf.key==='TODAY'?'No bars yet today — the market may not have opened, it may be a weekend/holiday, or data is delayed ~15 min.':'No bars for yesterday — it may have been a weekend or market holiday.'}</div>
+            : candles(bars,tf)}
         </div>;
       })}
       <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center'}}>Green candles close up, red close down. Adjusted for splits. No indicators applied.</div>
