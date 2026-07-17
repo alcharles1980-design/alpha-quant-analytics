@@ -18276,6 +18276,7 @@ function MultiViewChartsPage(p){
     var volTop=PADT+priceH+gap;
     var Yv=function(v){return volTop+(1-(v/vmax))*volH;};
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
+    var dense=n>300;   // sub-pixel candles blur together; render as area of closes instead
     var cw=Math.max(Math.min(slot*0.66,16),0.8);
     var last=bars[n-1].c, first=bars[0].c;
     var hi=Math.max.apply(null,his), lo=Math.min.apply(null,los);
@@ -18299,8 +18300,25 @@ function MultiViewChartsPage(p){
     return <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onMove} onTouchMove={onMove} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y'}}>
       {/* price gridlines + labels */}
       {priceTicks.map(function(g,i){var v=pmn+psv*g;return <g key={'p'+i}><line x1={PADL} y1={Yp(v)} x2={W-PADR} y2={Yp(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={PADL-8} y={Yp(v)+5} textAnchor="end" fontSize="13.5" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
-      {/* candles */}
-      {bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var yO=Yp(b.o),yC=Yp(b.c),yH=Yp(b.h),yL=Yp(b.l);var top=Math.min(yO,yC),bh=Math.max(Math.abs(yO-yC),0.8);return <g key={i}><line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={Math.max(cw*0.16,0.6)}/><rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/></g>;})}
+      {/* price: candlesticks when readable, close-price area when too dense */}
+      {dense
+        ? (function(){
+            var cxOf=function(i){return PADL+slot*i+slot/2;};
+            var band=[]; // high-low envelope (subtle)
+            bars.forEach(function(b,i){band.push(cxOf(i)+','+Yp(b.h));});
+            for(var i=bars.length-1;i>=0;i--){band.push(cxOf(i)+','+Yp(bars[i].l));}
+            var closePts=bars.map(function(b,i){return cxOf(i)+','+Yp(b.c);});
+            var areaPts=closePts.slice();
+            areaPts.push(cxOf(bars.length-1)+','+(PADT+priceH));
+            areaPts.push(cxOf(0)+','+(PADT+priceH));
+            var rising=last>=first;var col=rising?UP:DN;
+            return <g>
+              <polygon points={band.join(' ')} fill={col} opacity="0.10"/>
+              <polygon points={areaPts.join(' ')} fill={col} opacity="0.14"/>
+              <polyline points={closePts.join(' ')} fill="none" stroke={col} strokeWidth="1.4"/>
+            </g>;
+          })()
+        : bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var yO=Yp(b.o),yC=Yp(b.c),yH=Yp(b.h),yL=Yp(b.l);var top=Math.min(yO,yC),bh=Math.max(Math.abs(yO-yC),0.8);return <g key={i}><line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={Math.max(cw*0.16,0.6)}/><rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/></g>;})}
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
@@ -18370,7 +18388,7 @@ function MultiViewChartsPage(p){
         var st=(bars&&bars.length)?winStat(bars):null;
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}</span></div>
+            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'+(bars.length>300?' · line view':'')):'')}</span></div>
             {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(st.last)}</span></div>}
           </div>
           {!isDone
