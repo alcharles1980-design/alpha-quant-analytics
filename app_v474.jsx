@@ -18179,45 +18179,58 @@ function CompanyFundamentalsPage(p){
 function MultiViewChartsPage(p){
   var s1=useState(''),tk=s1[0],setTk=s1[1];
   var s2=useState(''),sym=s2[0],setSym=s2[1];
-  var s3=useState(null),data=s3[0],setData=s3[1];   // {key: bars[]}
+  var s3=useState({}),data=s3[0],setData=s3[1];        // {key: bars[]} — filled progressively
+  var s3b=useState({}),done=s3b[0],setDone=s3b[1];     // {key: true} when that tf finished
   var s4=useState(false),loading=s4[0],setLoading=s4[1];
   var s5=useState(''),err=s5[0],setErr=s5[1];
-  var s6=useState(''),prog=s6[0],setProg=s6[1];
+  var s7=useState(null),asof=s7[0],setAsof=s7[1];
+  var s8=useState({}),hover=s8[0],setHover=s8[1];      // {key: barIndex} for crosshair
 
-  // timeframe definitions (fixed granularity per chart)
   var pad=function(n){return (n<10?'0':'')+n;};
   var iso=function(d){return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());};
+
   var TFS=[
-    {key:'10Y',label:'10 YEARS',mult:1,span:'month',yearsBack:10,bar:'monthly'},
-    {key:'5Y',label:'5 YEARS',mult:1,span:'week',yearsBack:5,bar:'weekly'},
-    {key:'3Y',label:'3 YEARS',mult:1,span:'day',yearsBack:3,bar:'daily'},
-    {key:'1Y',label:'1 YEAR',mult:1,span:'day',yearsBack:1,bar:'daily'},
-    {key:'YTD',label:'YEAR TO DATE',mult:1,span:'hour',ytd:true,bar:'hourly'},
-    {key:'3M',label:'LAST 3 MONTHS',mult:1,span:'hour',monthsBack:3,bar:'hourly'},
-    {key:'30D',label:'LAST 30 DAYS',mult:1,span:'hour',daysBack:30,bar:'hourly'},
-    {key:'7D',label:'LAST 7 DAYS',mult:1,span:'hour',daysBack:7,bar:'hourly'},
-    {key:'YEST',label:'YESTERDAY',mult:5,span:'minute',dayOffset:1,bar:'5-minute'},
-    {key:'TODAY',label:'TODAY',mult:5,span:'minute',dayOffset:0,bar:'5-minute'}
+    {key:'10Y',label:'10 YEARS',mult:1,span:'month',yearsBack:10,bar:'monthly',kind:'long'},
+    {key:'5Y',label:'5 YEARS',mult:1,span:'week',yearsBack:5,bar:'weekly',kind:'long'},
+    {key:'3Y',label:'3 YEARS',mult:1,span:'day',yearsBack:3,bar:'daily',kind:'day'},
+    {key:'1Y',label:'1 YEAR',mult:1,span:'day',yearsBack:1,bar:'daily',kind:'day'},
+    {key:'YTD',label:'YEAR TO DATE',mult:1,span:'hour',ytd:true,bar:'hourly',kind:'hour'},
+    {key:'3M',label:'LAST 3 MONTHS',mult:1,span:'hour',monthsBack:3,bar:'hourly',kind:'hour'},
+    {key:'30D',label:'LAST 30 DAYS',mult:1,span:'hour',daysBack:30,bar:'hourly',kind:'hour'},
+    {key:'7D',label:'LAST 7 DAYS',mult:1,span:'hour',daysBack:7,bar:'hourly',kind:'intraday'},
+    {key:'YEST',label:'YESTERDAY',mult:5,span:'minute',dayOffset:1,bar:'5-minute',kind:'intraday'},
+    {key:'TODAY',label:'TODAY',mult:5,span:'minute',dayOffset:0,bar:'5-minute',kind:'intraday'}
   ];
 
+  // ---- ET (market time) formatting via Intl, DST-safe ----
+  var etParts=function(ms){
+    try{
+      var f=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+      var o={};f.formatToParts(new Date(ms)).forEach(function(part){o[part.type]=part.value;});
+      return {y:+o.year,mo:+o.month,d:+o.day,h:(o.hour==='24'?0:+o.hour),mi:+o.minute};
+    }catch(e){var d=new Date(ms);return {y:d.getUTCFullYear(),mo:d.getUTCMonth()+1,d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes()};}
+  };
+  var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var axisLabel=function(ms,kind){
+    var e=etParts(ms);
+    if(kind==='long')return MON[e.mo-1]+" '"+pad(e.y%100);          // Jul '24
+    if(kind==='day')return e.mo+'/'+e.d+'/'+pad(e.y%100);           // 7/16/26
+    if(kind==='hour')return e.mo+'/'+e.d;                           // 7/16
+    return pad(e.h)+':'+pad(e.mi);                                  // 09:30 (intraday, ET)
+  };
+  var fullStamp=function(ms,kind){
+    var e=etParts(ms);
+    var date=MON[e.mo-1]+' '+e.d+', '+e.y;
+    if(kind==='long'||kind==='day')return date;
+    return date+'  '+pad(e.h)+':'+pad(e.mi)+' ET';
+  };
+
   var fetchAgg=function(t,tf){
-    var now=new Date();
-    var to=iso(now);
-    var from;
+    var now=new Date(),to=iso(now),from;
     if(tf.ytd){from=now.getUTCFullYear()+'-01-01';}
-    else if(tf.dayOffset!=null){
-      // single-day range: 0 = today, 1 = yesterday
-      var dd=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.dayOffset));
-      from=iso(dd);to=iso(dd);
-    }
-    else if(tf.monthsBack!=null){
-      var dm=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-tf.monthsBack,now.getUTCDate()));
-      from=iso(dm);
-    }
-    else if(tf.daysBack!=null){
-      var dq=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.daysBack));
-      from=iso(dq);
-    }
+    else if(tf.dayOffset!=null){var dd=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.dayOffset));from=iso(dd);to=iso(dd);}
+    else if(tf.monthsBack!=null){var dm=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-tf.monthsBack,now.getUTCDate()));from=iso(dm);}
+    else if(tf.daysBack!=null){var dq=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.daysBack));from=iso(dq);}
     else{var d=new Date(Date.UTC(now.getUTCFullYear()-tf.yearsBack,now.getUTCMonth(),now.getUTCDate()));from=iso(d);}
     var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+tf.mult+'/'+tf.span+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=5000&apiKey='+p.apiKey;
     var all=[],guard=0;
@@ -18233,68 +18246,104 @@ function MultiViewChartsPage(p){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setSym(t);setLoading(true);setErr('');setData(null);setProg('Fetching '+t+'…');
-    var out={};var i=0;
+    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());
+    var out={},dn={},i=0;
     var next=function(){
-      if(i>=TFS.length){setData(out);setLoading(false);setProg('');return;}
-      var tf=TFS[i];setProg('Loading '+tf.label+' ('+tf.bar+')…');
-      fetchAgg(t,tf).then(function(bars){out[tf.key]=bars;i++;next();})
-        .catch(function(e){out[tf.key]=[];i++;next();});
+      if(i>=TFS.length){setLoading(false);return;}
+      var tf=TFS[i];
+      fetchAgg(t,tf).then(function(bars){out[tf.key]=bars;dn[tf.key]=true;setData(Object.assign({},out));setDone(Object.assign({},dn));i++;next();})
+        .catch(function(){out[tf.key]=[];dn[tf.key]=true;setData(Object.assign({},out));setDone(Object.assign({},dn));i++;next();});
     };
     next();
   };
 
-  var fmtPx=function(v){return '$'+(v>=1000?v.toFixed(0):v>=1?v.toFixed(2):v.toFixed(4));};
+  var fmtPx=function(v){if(v==null||!isFinite(v))return '—';return '$'+(v>=1000?v.toFixed(0):v>=1?v.toFixed(2):v.toFixed(4));};
+  var fmtVol=function(v){if(v==null)return '—';var a=Math.abs(v);if(a>=1e9)return (v/1e9).toFixed(2)+'B';if(a>=1e6)return (v/1e6).toFixed(1)+'M';if(a>=1e3)return (v/1e3).toFixed(0)+'K';return ''+v;};
 
-  // ---- candlestick chart ----
-  var candles=function(bars,tf){
-    if(!bars||!bars.length)return <div style={{fontSize:10,color:C.txtDim,fontFamily:F,padding:'10px 2px'}}>No data for this range.</div>;
-    var W=760,H=440,padL=64,padR=10,padT=16,padB=46;
+  var UP=C.accent,DN=C.red;
+
+  // ---- interactive candlestick + volume chart ----
+  var Chart=function(tf,bars){
+    if(!bars||!bars.length)return null;
+    var W=760,PADL=66,PADR=12;
+    var priceH=380, volH=90, gap=8, axisH=30, PADT=14;
+    var H=PADT+priceH+gap+volH+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
-    var spanv=(mx-mn)||1;mx+=spanv*0.04;mn-=spanv*0.04;spanv=mx-mn;
-    var Y=function(v){return padT+(1-(v-mn)/spanv)*(H-padT-padB);};
-    var n=bars.length;var slot=(W-padL-padR)/n;var cw=Math.max(Math.min(slot*0.62,14),0.6);
-    var first=bars[0].c,last=bars[bars.length-1].c;
-    var up=C.accent,dn=C.red;
-    // x labels: show ~8 evenly spaced dates
-    var dt=function(t){var d=new Date(t);return d;};
-    var lblFmt=function(d){
-      if(tf.span==='hour')return pad(d.getUTCMonth()+1)+'/'+pad(d.getUTCDate());
-      if(tf.span==='day')return (d.getUTCMonth()+1)+'/'+String(d.getUTCFullYear()).slice(2);
-      return (d.getUTCMonth()+1)+'/'+String(d.getUTCFullYear()).slice(2);
+    var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
+    var Yp=function(v){return PADT+(1-(v-pmn)/psv)*priceH;};
+    var vmax=Math.max.apply(null,bars.map(function(b){return b.v||0;}))||1;
+    var volTop=PADT+priceH+gap;
+    var Yv=function(v){return volTop+(1-(v/vmax))*volH;};
+    var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
+    var cw=Math.max(Math.min(slot*0.66,16),0.8);
+    var last=bars[n-1].c, first=bars[0].c;
+    var hi=Math.max.apply(null,his), lo=Math.min.apply(null,los);
+    var hiIdx=his.indexOf(hi), loIdx=los.indexOf(lo);
+    var lastY=Yp(last);
+    var step=Math.max(1,Math.round(n/7));
+    var hIdx=(hover[tf.key]!=null)?hover[tf.key]:null;
+    var hb=(hIdx!=null&&bars[hIdx])?bars[hIdx]:null;
+
+    var onMove=function(e){
+      var svg=e.currentTarget;var r=svg.getBoundingClientRect();
+      var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+      var xv=cx/r.width*W; // to viewBox coords
+      var idx=Math.floor((xv-PADL)/slot);
+      if(idx<0)idx=0;if(idx>n-1)idx=n-1;
+      var nh=Object.assign({},hover);nh[tf.key]=idx;setHover(nh);
     };
-    var step=Math.max(1,Math.floor(n/8));
-    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block'}}>
-      {[0,0.25,0.5,0.75,1].map(function(g,i){var v=mn+spanv*g;return <g key={i}><line x1={padL} y1={Y(v)} x2={W-padR} y2={Y(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={padL-8} y={Y(v)+5} textAnchor="end" fontSize="14" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
-      {bars.map(function(b,i){
-        var cx=padL+slot*i+slot/2;
-        var col=(b.c>=b.o)?up:dn;
-        var yO=Y(b.o),yC=Y(b.c),yH=Y(b.h),yL=Y(b.l);
-        var top=Math.min(yO,yC),bh=Math.max(Math.abs(yO-yC),0.8);
-        return <g key={i}>
-          <line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={Math.max(cw*0.14,0.5)}/>
-          <rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/>
+    var onLeave=function(){var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
+
+    var priceTicks=[0,0.25,0.5,0.75,1];
+    return <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onMove} onTouchMove={onMove} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y'}}>
+      {/* price gridlines + labels */}
+      {priceTicks.map(function(g,i){var v=pmn+psv*g;return <g key={'p'+i}><line x1={PADL} y1={Yp(v)} x2={W-PADR} y2={Yp(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={PADL-8} y={Yp(v)+5} textAnchor="end" fontSize="13.5" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
+      {/* candles */}
+      {bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var yO=Yp(b.o),yC=Yp(b.c),yH=Yp(b.h),yL=Yp(b.l);var top=Math.min(yO,yC),bh=Math.max(Math.abs(yO-yC),0.8);return <g key={i}><line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={Math.max(cw*0.16,0.6)}/><rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/></g>;})}
+      {/* high / low markers */}
+      {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
+      {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
+      {/* last price line */}
+      <line x1={PADL} y1={lastY} x2={W-PADR} y2={lastY} stroke={last>=first?UP:DN} strokeWidth="1" strokeDasharray="4 3" opacity="0.7"/>
+      <rect x={W-PADR-58} y={lastY-9} width="58" height="18" fill={last>=first?UP:DN} rx="3"/>
+      <text x={W-PADR-29} y={lastY+4} textAnchor="middle" fontSize="11" fontWeight="700" fill={'#04121e'} fontFamily={F}>{fmtPx(last)}</text>
+      {/* volume panel */}
+      <text x={PADL-8} y={volTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>Vol</text>
+      <text x={PADL-8} y={volTop+volH} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>{fmtVol(vmax)}</text>
+      {bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var vy=Yv(b.v||0);return <rect key={'v'+i} x={cx-cw/2} y={vy} width={cw} height={Math.max(volTop+volH-vy,0.5)} fill={col} opacity="0.55"/>;})}
+      <line x1={PADL} y1={volTop+volH} x2={W-PADR} y2={volTop+volH} stroke={C.border} strokeWidth="0.6"/>
+      {/* x-axis labels */}
+      {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
+      {/* crosshair + tooltip */}
+      {hb&&(function(){
+        var cx=PADL+slot*hIdx+slot/2;var cyp=Yp(hb.c);
+        var chg=first?((hb.c-first)/first*100):0;
+        var boxW=176,boxH=104;var bx=(cx>W/2)?(cx-boxW-10):(cx+10);if(bx<PADL)bx=PADL;if(bx+boxW>W-2)bx=W-2-boxW;
+        var by=PADT+6;
+        var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
+        return <g>
+          <line x1={cx} y1={PADT} x2={cx} y2={volTop+volH} stroke={C.txtDim} strokeWidth="0.7" strokeDasharray="3 3"/>
+          <circle cx={cx} cy={cyp} r="3" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1"/>
+          <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill={C.bgCard} stroke={C.border} strokeWidth="1" opacity="0.98"/>
+          <text x={bx+10} y={by+16} fontSize="10.5" fontWeight="700" fill={C.txtBright} fontFamily={F}>{fullStamp(hb.t,tf.kind)}</text>
+          <text x={bx+10} y={by+31} fontSize="10" fontWeight="700" fill={hb.c>=hb.o?UP:DN} fontFamily={F}>{(chg>=0?'+':'')+chg.toFixed(2)+'% from start'}</text>
+          {rows.map(function(rw,ri){var yy=by+46+ri*11;return <g key={ri}><text x={bx+10} y={yy} fontSize="9.5" fill={C.txtDim} fontFamily={F}>{rw[0]}</text><text x={bx+boxW-10} y={yy} textAnchor="end" fontSize="9.5" fontWeight="700" fill={C.txt} fontFamily={F}>{rw[1]}</text></g>;})}
         </g>;
-      })}
-      {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=padL+slot*i+slot/2;return <text key={'x'+i} x={cx} y={H-padB+24} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{lblFmt(dt(b.t))}</text>;})}
+      })()}
     </svg>;
   };
 
-  // header stat for a timeframe (return % over the window)
-  var winStat=function(bars){
-    if(!bars||bars.length<2)return null;
-    var a=bars[0].c,b=bars[bars.length-1].c;
-    if(!a)return null;
-    var pct=(b-a)/a*100;
-    return {pct:pct,last:b};
-  };
+  var winStat=function(bars){if(!bars||bars.length<2)return null;var a=bars[0].c,b=bars[bars.length-1].c;if(!a)return null;return {pct:(b-a)/a*100,last:b,hi:Math.max.apply(null,bars.map(function(x){return x.h;})),lo:Math.min.apply(null,bars.map(function(x){return x.l;}))};};
 
-  return <div style={{maxWidth:900,margin:'0 auto',padding:'0 4px'}}>
+  var started=sym!=='';
+  var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
+
+  return <div style={{maxWidth:920,margin:'0 auto',padding:'0 4px'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
       <div>
         <div style={{color:C.accent,fontSize:15,fontFamily:F,fontWeight:700,letterSpacing:1}}>MULTI VIEW CHARTS</div>
-        <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:2}}>One ticker across five timeframes · candlesticks · source: Polygon aggregates</div>
+        <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:2}}>One ticker · ten timeframes · interactive candlesticks with volume · Polygon</div>
       </div>
       <button onClick={p.onBack} style={{padding:'6px 12px',border:'1px solid '+C.border,borderRadius:6,background:C.bgCard,color:C.txt,fontFamily:F,fontSize:10,cursor:'pointer'}}>&#8592; Back</button>
     </div>
@@ -18302,30 +18351,36 @@ function MultiViewChartsPage(p){
     {/* Search */}
     <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:12}}>
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-        <input value={tk} onChange={function(e){setTk(e.target.value);}} onKeyDown={function(e){if(e.key==='Enter'&&tk.trim())run(tk);}} placeholder="Enter ticker, e.g. NVDA — Enter to load" style={{flex:'1 1 220px',minWidth:180,boxSizing:'border-box',padding:'9px 11px',background:C.bgDeep,border:'1px solid '+C.accent+'88',borderRadius:6,color:C.txt,fontFamily:F,fontSize:13}}/>
-        <button onClick={function(){if(tk.trim())run(tk);}} disabled={loading||!tk.trim()} style={{padding:'9px 18px',border:'none',borderRadius:6,background:(loading||!tk.trim())?C.border:'linear-gradient(135deg,#22c55e,#16a34a)',color:(loading||!tk.trim())?C.txtDim:'#04121e',fontFamily:F,fontSize:10,fontWeight:700,cursor:(loading||!tk.trim())?'default':'pointer'}}>{loading?'Loading…':'Load'}</button>
+        <input value={tk} onChange={function(e){setTk(e.target.value);}} onKeyDown={function(e){if(e.key==='Enter'&&tk.trim())run(tk);}} placeholder="Enter ticker, e.g. NVDA — Enter to load" style={{flex:'1 1 220px',minWidth:180,boxSizing:'border-box',padding:'10px 12px',background:C.bgDeep,border:'1px solid '+C.accent+'88',borderRadius:6,color:C.txt,fontFamily:F,fontSize:14}}/>
+        <button onClick={function(){if(tk.trim())run(tk);}} disabled={loading||!tk.trim()} style={{padding:'10px 20px',border:'none',borderRadius:6,background:(loading||!tk.trim())?C.border:'linear-gradient(135deg,#22c55e,#16a34a)',color:(loading||!tk.trim())?C.txtDim:'#04121e',fontFamily:F,fontSize:11,fontWeight:700,cursor:(loading||!tk.trim())?'default':'pointer'}}>{loading?'Loading…':'Load'}</button>
       </div>
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8}}>Bars: 10Y monthly · 5Y weekly · 3Y daily · 1Y daily · YTD hourly. Data is 15-min delayed (Developer tier).</div>
-      {loading&&prog&&<div style={{marginTop:8,color:C.accent,fontFamily:F,fontSize:9}}>{prog}</div>}
-      {err&&<div style={{marginTop:8,color:C.warn,fontFamily:F,fontSize:9}}>{err}</div>}
+      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.5}}>Timeframes: 10Y monthly · 5Y weekly · 3Y &amp; 1Y daily · YTD / 3M / 30D / 7D hourly · Yesterday &amp; Today 5-min. Hover or tap a chart to inspect any candle. Times shown in ET; data is ~15-min delayed.</div>
+      {err&&<div style={{marginTop:8,color:C.warn,fontFamily:F,fontSize:10}}>{err}</div>}
     </div>
 
-    {data&&<div>
-      <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700,marginTop:14}}>{sym}</div>
+    {started&&<div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:14,flexWrap:'wrap',gap:6}}>
+        <div style={{color:C.txtBright,fontSize:16,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{sym}</div>
+        <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F}}>{loading?('Loading '+(Object.keys(done).length)+' / '+TFS.length+' timeframes…'):('Loaded '+asof.toLocaleDateString()+' · as of '+etNow)}</div>
+      </div>
+
       {TFS.map(function(tf){
-        var bars=data[tf.key]||[];
-        var st=winStat(bars);
+        var isDone=done[tf.key];
+        var bars=data[tf.key];
+        var st=(bars&&bars.length)?winStat(bars):null;
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8,marginLeft:6}}>{tf.bar+' candles · '+bars.length+' bars'}</span></div>
-            {st&&<div style={{fontFamily:F,fontSize:11,fontWeight:700,color:st.pct>=0?C.accent:C.red}}>{(st.pct>=0?'+':'')+st.pct.toFixed(1)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9,marginLeft:6}}>{'last '+fmtPx(st.last)}</span></div>}
+            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}</span></div>
+            {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(st.last)}</span></div>}
           </div>
-          {(bars.length===0&&(tf.key==='TODAY'||tf.key==='YEST'))
-            ? <div style={{fontSize:10,color:C.txtDim,fontFamily:F,padding:'10px 2px'}}>{tf.key==='TODAY'?'No bars yet today — the market may not have opened, it may be a weekend/holiday, or data is delayed ~15 min.':'No bars for yesterday — it may have been a weekend or market holiday.'}</div>
-            : candles(bars,tf)}
+          {!isDone
+            ? <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>Loading {tf.bar} data…</div>
+            : (bars&&bars.length)
+              ? Chart(tf,bars)
+              : <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8,padding:'0 16px'}}>{tf.key==='TODAY'?'No bars yet today — the market may not have opened, it may be a weekend/holiday, or data is still delayed (~15 min).':tf.key==='YEST'?'No bars for yesterday — it may have been a weekend or market holiday.':'No data available for this range.'}</div>}
         </div>;
       })}
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center'}}>Green candles close up, red close down. Adjusted for splits. No indicators applied.</div>
+      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.5}}>Green = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume shown below each chart. Prices split-adjusted; intraday includes pre / post-market. No indicators applied.</div>
     </div>}
   </div>;
 }
