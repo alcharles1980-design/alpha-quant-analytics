@@ -18249,7 +18249,7 @@ function MultiViewChartsPage(p){
   // ---- candlestick chart ----
   var candles=function(bars,tf){
     if(!bars||!bars.length)return <div style={{fontSize:10,color:C.txtDim,fontFamily:F,padding:'10px 2px'}}>No data for this range.</div>;
-    var W=760,H=380,padL=64,padR=10,padT=14,padB=40;
+    var W=760,H=440,padL=64,padR=10,padT=16,padB=46;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var spanv=(mx-mn)||1;mx+=spanv*0.04;mn-=spanv*0.04;spanv=mx-mn;
@@ -18277,7 +18277,7 @@ function MultiViewChartsPage(p){
           <rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/>
         </g>;
       })}
-      {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=padL+slot*i+slot/2;return <text key={'x'+i} x={cx} y={H-padB+20} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{lblFmt(dt(b.t))}</text>;})}
+      {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=padL+slot*i+slot/2;return <text key={'x'+i} x={cx} y={H-padB+24} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{lblFmt(dt(b.t))}</text>;})}
     </svg>;
   };
 
