@@ -18266,12 +18266,7 @@ function MultiViewChartsPage(p){
   var Chart=function(tf,bars){
     if(!bars||!bars.length)return null;
     var PADL=66,PADR=12;
-    var baseW=760;                                   // fits container without scroll
-    var basePlot=baseW-PADL-PADR;
-    var minSlot=4;                                   // if base slot >= this, no scroll needed
-    var needsScroll=(basePlot/bars.length)<minSlot;
-    var W=needsScroll?(bars.length*8+PADL+PADR):baseW; // 8px/candle when scrolling
-    var scrollable=needsScroll;
+    var W=760;                                        // fixed width — every chart uniform, full period visible
     var priceH=380, volH=90, gap=8, axisH=30, PADT=14;
     var H=PADT+priceH+gap+volH+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
@@ -18282,13 +18277,12 @@ function MultiViewChartsPage(p){
     var volTop=PADT+priceH+gap;
     var Yv=function(v){return volTop+(1-(v/vmax))*volH;};
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
-    var cw=Math.max(Math.min(slot*0.7,18),1.2);
+    var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
     var hi=Math.max.apply(null,his), lo=Math.min.apply(null,los);
     var hiIdx=his.indexOf(hi), loIdx=los.indexOf(lo);
     var lastY=Yp(last);
-    var targetLabels=scrollable?Math.max(8,Math.round(W/140)):7;
-    var step=Math.max(1,Math.round(n/targetLabels));
+    var step=Math.max(1,Math.round(n/7));
     var hIdx=(hover[tf.key]!=null)?hover[tf.key]:null;
     var hb=(hIdx!=null&&bars[hIdx])?bars[hIdx]:null;
 
@@ -18303,11 +18297,7 @@ function MultiViewChartsPage(p){
     var onLeave=function(){var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
 
     var priceTicks=[0,0.25,0.5,0.75,1];
-    var svgStyle=scrollable
-      ? {width:(W/baseW*100)+'%',minWidth:W+'px',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-x'}
-      : {width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y'};
-    return <div style={{overflowX:scrollable?'auto':'visible',overflowY:'hidden',WebkitOverflowScrolling:'touch',borderRadius:8}}>
-    <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onMove} onTouchMove={onMove} style={svgStyle}>
+    return <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onMove} onTouchMove={onMove} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y'}}>
       {/* price gridlines + labels */}
       {priceTicks.map(function(g,i){var v=pmn+psv*g;return <g key={'p'+i}><line x1={PADL} y1={Yp(v)} x2={W-PADR} y2={Yp(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={PADL-8} y={Yp(v)+5} textAnchor="end" fontSize="13.5" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
       {/* candlesticks (always) */}
@@ -18342,8 +18332,7 @@ function MultiViewChartsPage(p){
           {rows.map(function(rw,ri){var yy=by+46+ri*11;return <g key={ri}><text x={bx+10} y={yy} fontSize="9.5" fill={C.txtDim} fontFamily={F}>{rw[0]}</text><text x={bx+boxW-10} y={yy} textAnchor="end" fontSize="9.5" fontWeight="700" fill={C.txt} fontFamily={F}>{rw[1]}</text></g>;})}
         </g>;
       })()}
-    </svg>
-    </div>;
+    </svg>;
   };
 
   var winStat=function(bars){if(!bars||bars.length<2)return null;var a=bars[0].c,b=bars[bars.length-1].c;if(!a)return null;return {pct:(b-a)/a*100,last:b,hi:Math.max.apply(null,bars.map(function(x){return x.h;})),lo:Math.min.apply(null,bars.map(function(x){return x.l;}))};};
@@ -18382,7 +18371,7 @@ function MultiViewChartsPage(p){
         var st=(bars&&bars.length)?winStat(bars):null;
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'+(bars.length*7>682?' · scroll →':'')):'')}</span></div>
+            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}</span></div>
             {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(st.last)}</span></div>}
           </div>
           {!isDone
