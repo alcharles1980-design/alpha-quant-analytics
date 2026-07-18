@@ -18446,8 +18446,9 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, macdH=90, gap=8, axisH=30, PADT=14;
-    var H=PADT+priceH+gap+volH+gap+macdH+axisH;
+    var priceH=380, volH=90, macdH=90, epsH=80, gap=8, axisH=30, PADT=14;
+    var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
+    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
@@ -18476,6 +18477,12 @@ function MultiViewChartsPage(p){
     var mAbs=Math.max(Math.abs(mMax),Math.abs(mMin))||1;   // symmetric around zero
     var Ym=function(v){return macdTop+(1-(v+mAbs)/(2*mAbs))*macdH;};
     var macdZeroY=Ym(0);
+    // EPS panel geometry (only when hasEps) — quarterly diluted EPS bars, colored by YoY
+    var epsTop=macdTop+macdH+gap;
+    var epsInWin=hasEps?epsQ.filter(function(q){return q.ms>=bars[0].t-86400000*15&&q.ms<=bars[bars.length-1].t+86400000*15;}):[];
+    var epsMaxVal=epsInWin.length?Math.max.apply(null,epsInWin.map(function(q){return q.eps!=null?q.eps:0;})):1;
+    if(epsMaxVal<=0)epsMaxVal=1;
+    var Ye=function(v){return epsTop+(1-(v/epsMaxVal))*epsH;};
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
@@ -18536,45 +18543,6 @@ function MultiViewChartsPage(p){
           return <polyline key={d.key} points={pts.join(' ')} fill="none" stroke={d.color} strokeWidth="1.5" strokeDasharray={d.dash} opacity="0.95"/>;
         });
       })()}
-      {/* earnings markers (quarterly) — colored by YoY beat/miss, tappable for EPS */}
-      {(function(){
-        if(!epsQ||!epsQ.length)return null;
-        var t0=bars[0].t, t1=bars[n-1].t;
-        var spanDays=(t1-t0)/86400000;
-        if(spanDays<20)return null; // not meaningful on very short windows
-        var nearestX=function(ms){
-          // find bar index with closest timestamp
-          var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-ms);if(dd<bd){bd=dd;bi=i;}}
-          return {x:PADL+slot*bi+slot/2,within:(ms>=t0-86400000*10&&ms<=t1+86400000*10)};
-        };
-        return epsQ.map(function(eq,ei){
-          if(eq.ms<t0-86400000*10||eq.ms>t1+86400000*10)return null;
-          var nx=nearestX(eq.ms);
-          var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
-          return <g key={'eps'+ei} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},epsHover);nh[tf.key]=(nh[tf.key]===ei?undefined:ei);setEpsHover(nh);}} style={{cursor:'pointer'}}>
-            <line x1={nx.x} y1={PADT} x2={nx.x} y2={PADT+priceH} stroke={col} strokeWidth="1" strokeDasharray="2 3" opacity="0.55"/>
-            <rect x={nx.x-6} y={PADT+priceH-14} width="12" height="12" rx="2" fill={col} opacity="0.9"/>
-            <text x={nx.x} y={PADT+priceH-5} textAnchor="middle" fontSize="9" fontWeight="700" fill={'#04121e'} fontFamily={F}>E</text>
-          </g>;
-        });
-      })()}
-      {/* earnings tooltip */}
-      {(function(){
-        var ei=epsHover[tf.key];
-        if(ei==null||!epsQ[ei])return null;
-        var eq=epsQ[ei];
-        var t0=bars[0].t,t1=bars[n-1].t;if(eq.ms<t0-86400000*10||eq.ms>t1+86400000*10)return null;
-        var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-eq.ms);if(dd<bd){bd=dd;bi=i;}}
-        var ex=PADL+slot*bi+slot/2;
-        var bw=150,bh=64;var bx=Math.min(Math.max(ex-bw/2,PADL),W-PADR-bw);var by=PADT+8;
-        var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
-        return <g>
-          <rect x={bx} y={by} width={bw} height={bh} rx="6" fill={C.bgCard} stroke={col} strokeWidth="1.2" opacity="0.98"/>
-          <text x={bx+10} y={by+18} fontSize="12" fontWeight="700" fill={C.txtBright} fontFamily={F}>{eq.label}</text>
-          <text x={bx+10} y={by+37} fontSize="11" fill={C.txtDim} fontFamily={F}>Diluted EPS: <tspan fill={C.txtBright} fontWeight="700">{eq.eps!=null?('$'+eq.eps.toFixed(2)):'n/a'}</tspan></text>
-          <text x={bx+10} y={by+54} fontSize="11" fill={C.txtDim} fontFamily={F}>YoY: <tspan fill={col} fontWeight="700">{eq.yoy!=null?((eq.yoy>=0?'+':'')+eq.yoy.toFixed(1)+'%'):'n/a'}</tspan></text>
-        </g>;
-      })()}
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
@@ -18595,6 +18563,39 @@ function MultiViewChartsPage(p){
       {(function(){var pts=[];mac.macd.forEach(function(v,i){if(v!=null)pts.push((PADL+slot*i+slot/2)+','+Ym(v));});return pts.length>1?<polyline points={pts.join(' ')} fill="none" stroke={C.blue} strokeWidth="1.3"/>:null;})()}
       {(function(){var pts=[];mac.signal.forEach(function(v,i){if(v!=null)pts.push((PADL+slot*i+slot/2)+','+Ym(v));});return pts.length>1?<polyline points={pts.join(' ')} fill="none" stroke={C.gold} strokeWidth="1.3"/>:null;})()}
       <line x1={PADL} y1={macdTop+macdH} x2={W-PADR} y2={macdTop+macdH} stroke={C.border} strokeWidth="0.6"/>
+      {/* EPS panel — quarterly diluted EPS bars at their period-end dates, colored by YoY beat/miss, tappable */}
+      {hasEps&&<text x={PADL-8} y={epsTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>EPS</text>}
+      {hasEps&&<text x={PADL-8} y={epsTop+epsH-2} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>diluted</text>}
+      {hasEps&&<line x1={PADL} y1={epsTop+epsH} x2={W-PADR} y2={epsTop+epsH} stroke={C.border} strokeWidth="0.6"/>}
+      {hasEps&&epsInWin.map(function(eq,ei){
+        // nearest bar by time for x-position
+        var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-eq.ms);if(dd<bd){bd=dd;bi=i;}}
+        var cx=PADL+slot*bi+slot/2;
+        var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
+        var bw2=Math.min(Math.max(slot*0.5,6),22);
+        var yTop=(eq.eps!=null&&eq.eps>0)?Ye(eq.eps):epsTop+epsH;
+        var isSel=(epsHover[tf.key]===ei);
+        return <g key={'epsb'+ei} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},epsHover);nh[tf.key]=(nh[tf.key]===ei?undefined:ei);setEpsHover(nh);}} style={{cursor:'pointer'}}>
+          {eq.eps!=null&&eq.eps>0&&<rect x={cx-bw2/2} y={yTop} width={bw2} height={Math.max(epsTop+epsH-yTop,1)} fill={col} opacity={isSel?0.95:0.6} stroke={isSel?C.txtBright:'none'} strokeWidth={isSel?1:0}/>}
+          {eq.eps==null&&<circle cx={cx} cy={epsTop+epsH-4} r="2.5" fill={C.txtDim}/>}
+          <text x={cx} y={epsTop+epsH+9} textAnchor="middle" fontSize="7" fill={C.txtDim} fontFamily={F}>{eq.fp}</text>
+        </g>;
+      })}
+      {/* EPS detail tooltip (in EPS panel) */}
+      {hasEps&&(function(){
+        var ei=epsHover[tf.key];if(ei==null||!epsInWin[ei])return null;
+        var eq=epsInWin[ei];
+        var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-eq.ms);if(dd<bd){bd=dd;bi=i;}}
+        var cx=PADL+slot*bi+slot/2;
+        var bw=158,bh=58;var bx=Math.min(Math.max(cx-bw/2,PADL),W-PADR-bw);var by=epsTop-4;
+        var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
+        return <g>
+          <rect x={bx} y={by} width={bw} height={bh} rx="6" fill={C.bgCard} stroke={col} strokeWidth="1.2" opacity="0.98"/>
+          <text x={bx+10} y={by+17} fontSize="11.5" fontWeight="700" fill={C.txtBright} fontFamily={F}>{eq.label}</text>
+          <text x={bx+10} y={by+33} fontSize="10.5" fill={C.txtDim} fontFamily={F}>Diluted EPS: <tspan fill={C.txtBright} fontWeight="700">{eq.eps!=null?('$'+eq.eps.toFixed(2)):'n/a'}</tspan></text>
+          <text x={bx+10} y={by+49} fontSize="10.5" fill={C.txtDim} fontFamily={F}>YoY: <tspan fill={col} fontWeight="700">{eq.yoy!=null?((eq.yoy>=0?'+':'')+eq.yoy.toFixed(1)+'%'):'n/a'}</tspan></text>
+        </g>;
+      })()}
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
       {/* crosshair + tooltip */}
@@ -18605,7 +18606,7 @@ function MultiViewChartsPage(p){
         var by=PADT+8;
         var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
         return <g>
-          <line x1={cx} y1={PADT} x2={cx} y2={macdTop+macdH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
+          <line x1={cx} y1={PADT} x2={cx} y2={hasEps?epsTop+epsH:macdTop+macdH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
           <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
           <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
           <g onClick={closeHover} onTouchStart={closeHover} style={{cursor:'pointer'}}>
@@ -18716,7 +18717,7 @@ function MultiViewChartsPage(p){
           </div>
         </div>;
       })}
-      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume below each chart. Prices split-adjusted; intraday includes pre / post-market. "E" marks a quarterly report at the period end — green = EPS up year-over-year, red = down, gray = no prior-year quarter; tap it for the diluted EPS and YoY change.</div>
+      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume, MACD (12/26/9) and EPS shown in panels below each chart. Prices split-adjusted; intraday includes pre / post-market. In the EPS panel, each bar is a quarter's diluted EPS at its report date — green = up year-over-year, red = down, gray dot = no prior-year quarter; tap a bar for the value and YoY change.</div>
     </div>}
   </div>;
 }
