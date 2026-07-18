@@ -18187,6 +18187,7 @@ function MultiViewChartsPage(p){
   var s8=useState({}),hover=s8[0],setHover=s8[1];      // {key: barIndex} for crosshair
   var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
   var s10=useState(null),atrPct=s10[0],setAtrPct=s10[1];   // true 14-period DAILY ATR% (same on every chart)
+  var s11=useState(null),c2hPct=s11[0],setC2hPct=s11[1];  // avg (today High - prev Close)/prev Close % over daily bars
   var toggleMa=function(k){var nm=Object.assign({},ma);nm[k]=!nm[k];setMa(nm);};
 
   var pad=function(n){return (n<10?'0':'')+n;};
@@ -18254,7 +18255,7 @@ function MultiViewChartsPage(p){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrPct(null);
+    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrPct(null);setC2hPct(null);
     // Dedicated daily-bars fetch (~60 calendar days) to compute a true 14-period DAILY ATR%,
     // shown identically on every chart regardless of that chart's own bar size.
     (function(){
@@ -18263,8 +18264,8 @@ function MultiViewChartsPage(p){
       var fromD=iso(new Date(Date.UTC(e.y,e.mo-1,e.d-60)));
       var durl='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/day/'+fromD+'/'+toD+'?adjusted=true&sort=asc&limit=5000&apiKey='+p.apiKey;
       fetch(durl).then(function(r){return r.json();}).then(function(j){
-        setAtrPct(atr14Pct(j.results||[]));
-      }).catch(function(){setAtrPct(null);});
+        var dr=j.results||[];setAtrPct(atr14Pct(dr));setC2hPct(closeToHighPct(dr));
+      }).catch(function(){setAtrPct(null);setC2hPct(null);});
     })();
     var out={},dn={},i=0;
     var next=function(){
@@ -18295,6 +18296,18 @@ function MultiViewChartsPage(p){
     var lastClose=daily[daily.length-1].c;
     if(!lastClose)return null;
     return atr/lastClose*100;
+  };
+
+  // ---- avg (today's High - prev Close)/prev Close % over all daily bars (negatives included) ----
+  var closeToHighPct=function(daily){
+    if(!daily||daily.length<2)return null;
+    var sum=0,cnt=0;
+    for(var i=1;i<daily.length;i++){
+      var pc=daily[i-1].c;
+      if(!pc)continue;
+      sum+=(daily[i].h-pc)/pc*100;cnt++;
+    }
+    return cnt?sum/cnt:null;
   };
 
   var UP=C.accent,DN=C.red;
@@ -18497,7 +18510,7 @@ function MultiViewChartsPage(p){
         var st=(bars&&bars.length)?winStat(bars):null;
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrPct!=null?(' · daily ATR '+atrPct.toFixed(2)+'%'):''}</span></div>
+            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrPct!=null?(' · daily ATR '+atrPct.toFixed(2)+'%'):''}{c2hPct!=null?(' · close→high '+(c2hPct>=0?'+':'')+c2hPct.toFixed(2)+'%'):''}</span></div>
             {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(st.last)}</span></div>}
           </div>
           {!isDone
