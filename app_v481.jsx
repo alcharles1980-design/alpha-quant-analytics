@@ -18338,6 +18338,7 @@ function MultiViewChartsPage(p){
       var nh=Object.assign({},hover);nh[tf.key]=idx;setHover(nh);
     };
     var onLeave=function(){var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
+    var closeHover=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(e&&e.preventDefault)e.preventDefault();var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
 
     var priceTicks=[0,0.25,0.5,0.75,1];
     var onTouch=function(e){if(e.touches&&e.touches.length>1)return;onMove(e);};
@@ -18399,6 +18400,10 @@ function MultiViewChartsPage(p){
           <line x1={cx} y1={PADT} x2={cx} y2={volTop+volH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
           <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
           <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
+          <g onClick={closeHover} onTouchStart={closeHover} style={{cursor:'pointer'}}>
+            <circle cx={bx+boxW-20} cy={by+20} r="14" fill={C.bgDeep} stroke={C.border} strokeWidth="1"/>
+            <text x={bx+boxW-20} y={by+26} textAnchor="middle" fontSize="20" fontWeight="700" fill={C.txtBright} fontFamily={F}>×</text>
+          </g>
           <text x={bx+18} y={by+30} fontSize="19" fontWeight="700" fill={C.txtBright} fontFamily={F}>{fullStamp(hb.t,tf.kind)}</text>
           <text x={bx+18} y={by+56} fontSize="18" fontWeight="700" fill={hb.c>=hb.o?UP:DN} fontFamily={F}>{(chg>=0?'+':'')+chg.toFixed(2)+'% from start'}</text>
           {rows.map(function(rw,ri){var yy=by+86+ri*22;return <g key={ri}><text x={bx+18} y={yy} fontSize="17" fill={C.txtDim} fontFamily={F}>{rw[0]}</text><text x={bx+boxW-18} y={yy} textAnchor="end" fontSize="17" fontWeight="700" fill={C.txt} fontFamily={F}>{rw[1]}</text></g>;})}
