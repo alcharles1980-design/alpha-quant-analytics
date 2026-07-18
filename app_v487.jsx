@@ -18186,7 +18186,7 @@ function MultiViewChartsPage(p){
   var s7=useState(null),asof=s7[0],setAsof=s7[1];
   var s8=useState({}),hover=s8[0],setHover=s8[1];      // {key: barIndex} for crosshair
   var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
-  var s10=useState(null),atrPct=s10[0],setAtrPct=s10[1];   // true 14-period DAILY ATR% (same on every chart)
+  var s10=useState({}),atrMap=s10[0],setAtrMap=s10[1];   // per-tf 14-period daily ATR% (over each chart's own window)
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
   var toggleMa=function(k){var nm=Object.assign({},ma);nm[k]=!nm[k];setMa(nm);};
 
@@ -18255,9 +18255,9 @@ function MultiViewChartsPage(p){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrPct(null);setC2hMap({});
-    // One long DAILY fetch (10y) drives two daily stats: a shared 14-period ATR% and,
-    // per chart, the close->high average over THAT chart's own date range (sliced from this series).
+    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});
+    // One long DAILY fetch (10y) drives two per-chart daily stats: 14-period ATR% and the
+    // close->high average, each computed over THAT chart's own date range (sliced from this series).
     (function(){
       var e=etParts(Date.now());
       var toD=iso(new Date(Date.UTC(e.y,e.mo-1,e.d)));
@@ -18269,31 +18269,26 @@ function MultiViewChartsPage(p){
         g++;if(j.next_url&&g<6)return stp(j.next_url+'&apiKey='+p.apiKey);
       });};
       stp(durl).then(function(){
-        if(!acc.length){setAtrPct(null);setC2hMap({});return;}
-        // shared ATR% from the most recent ~60 daily bars
-        setAtrPct(atr14Pct(acc.slice(-60)));
-        // per-tf close->high over each chart's own window
-        var nowMs=Date.now();
+        if(!acc.length){setAtrMap({});setC2hMap({});return;}
         var startMsFor=function(tf){
-          var d;
           if(tf.ytd){return Date.UTC(e.y,0,1);}
           if(tf.dayOffset!=null){return Date.UTC(e.y,e.mo-1,e.d-tf.dayOffset);}
           if(tf.monthsBack!=null){return Date.UTC(e.y,e.mo-1-tf.monthsBack,e.d);}
           if(tf.daysBack!=null){return Date.UTC(e.y,e.mo-1,e.d-tf.daysBack);}
           return Date.UTC(e.y-tf.yearsBack,e.mo-1,e.d);
         };
-        var m={};
+        var am={},cm={};
         TFS.forEach(function(tf){
           var s=startMsFor(tf);
-          // include one bar before the window start so the first day has a prior close
           var slice=acc.filter(function(b){return b.t>=s;});
-          // prepend the last bar before s (for prev-close of the first in-window day)
+          // prepend the last bar before the window so the first in-window day has a prior close
           var before=null;acc.forEach(function(b){if(b.t<s)before=b;});
           var series=before?[before].concat(slice):slice;
-          m[tf.key]=closeToHighPct(series);
+          am[tf.key]=atr14Pct(series);        // null if <15 daily bars in window (7D/Yest/Today)
+          cm[tf.key]=closeToHighPct(series);
         });
-        setC2hMap(m);
-      }).catch(function(){setAtrPct(null);setC2hMap({});});
+        setAtrMap(am);setC2hMap(cm);
+      }).catch(function(){setAtrMap({});setC2hMap({});});
     })();
     var out={},dn={},i=0;
     var next=function(){
@@ -18538,7 +18533,7 @@ function MultiViewChartsPage(p){
         var st=(bars&&bars.length)?winStat(bars):null;
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrPct!=null?(' · daily ATR '+atrPct.toFixed(2)+'%'):''}{c2hMap[tf.key]!=null?(' · close→high '+(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'):''}</span></div>
+            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrMap[tf.key]!=null?(' · daily ATR '+atrMap[tf.key].toFixed(2)+'%'):''}{c2hMap[tf.key]!=null?(' · close→high '+(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'):''}</span></div>
             {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(st.last)}</span></div>}
           </div>
           {!isDone
