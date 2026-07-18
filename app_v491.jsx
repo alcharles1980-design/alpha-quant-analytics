@@ -18185,6 +18185,7 @@ function MultiViewChartsPage(p){
   var s5=useState(''),err=s5[0],setErr=s5[1];
   var s7=useState(null),asof=s7[0],setAsof=s7[1];
   var s8=useState({}),hover=s8[0],setHover=s8[1];      // {key: barIndex} for crosshair
+  var suppressRef=useRef({});                          // {key: ms-until} — after closing (×), ignore re-trigger for 5s
   var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
   var s10=useState({}),atrMap=s10[0],setAtrMap=s10[1];   // per-tf 14-period daily ATR% (over each chart's own window)
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
@@ -18413,6 +18414,7 @@ function MultiViewChartsPage(p){
     var hb=(hIdx!=null&&bars[hIdx])?bars[hIdx]:null;
 
     var onMove=function(e){
+      if((suppressRef.current[tf.key]||0)>Date.now())return;   // recently closed via × — ignore for 5s
       var svg=e.currentTarget;var r=svg.getBoundingClientRect();
       var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
       var xv=cx/r.width*W; // to viewBox coords
@@ -18421,7 +18423,7 @@ function MultiViewChartsPage(p){
       var nh=Object.assign({},hover);nh[tf.key]=idx;setHover(nh);
     };
     var onLeave=function(){var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
-    var closeHover=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(e&&e.preventDefault)e.preventDefault();var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
+    var closeHover=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(e&&e.preventDefault)e.preventDefault();suppressRef.current[tf.key]=Date.now()+5000;var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
 
     var priceTicks=[0,0.25,0.5,0.75,1];
     var onTouch=function(e){if(e.touches&&e.touches.length>1)return;onMove(e);};
