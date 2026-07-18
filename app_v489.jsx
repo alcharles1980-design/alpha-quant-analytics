@@ -18297,7 +18297,7 @@ function MultiViewChartsPage(p){
           // prepend the last bar before the window so the first in-window day has a prior close
           var before=null;acc.forEach(function(b){if(b.t<s)before=b;});
           var series=before?[before].concat(slice):slice;
-          am[tf.key]=atr14Pct(series);        // null if <15 daily bars in window (7D/Yest/Today)
+          am[tf.key]=avgTrPct(series);        // simple avg of daily TR% over this window
           cm[tf.key]=closeToHighPct(series);
         });
         setAtrMap(am);setC2hMap(cm);
@@ -18317,21 +18317,17 @@ function MultiViewChartsPage(p){
   var fmtVol=function(v){if(v==null)return '—';var a=Math.abs(v);if(a>=1e9)return (v/1e9).toFixed(2)+'B';if(a>=1e6)return (v/1e6).toFixed(1)+'M';if(a>=1e3)return (v/1e3).toFixed(0)+'K';return ''+v;};
 
   // ---- 14-period ATR% (Wilder) from DAILY bars; returns pct of latest close ----
-  var atr14Pct=function(daily){
-    if(!daily||daily.length<15)return null;
-    var trs=[];
+  // ---- average daily True Range %, simple mean over the window (each day's TR / that day's close) ----
+  var avgTrPct=function(daily){
+    if(!daily||daily.length<2)return null;
+    var sum=0,cnt=0;
     for(var i=1;i<daily.length;i++){
-      var h=daily[i].h,l=daily[i].l,pc=daily[i-1].c;
+      var h=daily[i].h,l=daily[i].l,c=daily[i].c,pc=daily[i-1].c;
+      if(!c)continue;
       var tr=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));
-      trs.push(tr);
+      sum+=tr/c*100;cnt++;
     }
-    if(trs.length<14)return null;
-    // Wilder's smoothing: seed = simple avg of first 14 TR, then ATR = (prevATR*13 + TR)/14
-    var atr=0;for(var j=0;j<14;j++)atr+=trs[j];atr/=14;
-    for(var k=14;k<trs.length;k++){atr=(atr*13+trs[k])/14;}
-    var lastClose=daily[daily.length-1].c;
-    if(!lastClose)return null;
-    return atr/lastClose*100;
+    return cnt?sum/cnt:null;
   };
 
   // ---- avg (today's High - prev Close)/prev Close % over all daily bars (negatives included) ----
@@ -18549,7 +18545,7 @@ function MultiViewChartsPage(p){
         var st=(bars&&bars.length)?winStat(bars):null;
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrMap[tf.key]!=null?(' · daily ATR '+atrMap[tf.key].toFixed(2)+'%'):''}{c2hMap[tf.key]!=null?(' · close→high '+(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'):''}</span></div>
+            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrMap[tf.key]!=null?(' · avg daily range '+atrMap[tf.key].toFixed(2)+'%'):''}{c2hMap[tf.key]!=null?(' · close→high '+(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'):''}</span></div>
             {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(livePrice!=null?livePrice:st.last)}</span></div>}
           </div>
           {!isDone
