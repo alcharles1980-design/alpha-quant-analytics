@@ -18228,12 +18228,17 @@ function MultiViewChartsPage(p){
   };
 
   var fetchAgg=function(t,tf){
-    var now=new Date(),to=iso(now),from;
-    if(tf.ytd){from=now.getUTCFullYear()+'-01-01';}
-    else if(tf.dayOffset!=null){var dd=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.dayOffset));from=iso(dd);to=iso(dd);}
-    else if(tf.monthsBack!=null){var dm=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-tf.monthsBack,now.getUTCDate()));from=iso(dm);}
-    else if(tf.daysBack!=null){var dq=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()-tf.daysBack));from=iso(dq);}
-    else{var d=new Date(Date.UTC(now.getUTCFullYear()-tf.yearsBack,now.getUTCMonth(),now.getUTCDate()));from=iso(d);}
+    // Anchor "today" to the current date in ET (America/New_York), not UTC —
+    // otherwise in the evening ET the UTC date has already rolled over and
+    // Today/Yesterday would request the wrong trading day.
+    var e=etParts(Date.now());
+    var etToday=new Date(Date.UTC(e.y,e.mo-1,e.d)); // midnight of the ET calendar day (as a UTC anchor for date arithmetic)
+    var to=iso(etToday),from;
+    if(tf.ytd){from=e.y+'-01-01';}
+    else if(tf.dayOffset!=null){var dd=new Date(Date.UTC(e.y,e.mo-1,e.d-tf.dayOffset));from=iso(dd);to=iso(dd);}
+    else if(tf.monthsBack!=null){var dm=new Date(Date.UTC(e.y,e.mo-1-tf.monthsBack,e.d));from=iso(dm);}
+    else if(tf.daysBack!=null){var dq=new Date(Date.UTC(e.y,e.mo-1,e.d-tf.daysBack));from=iso(dq);}
+    else{var d=new Date(Date.UTC(e.y-tf.yearsBack,e.mo-1,e.d));from=iso(d);}
     var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+tf.mult+'/'+tf.span+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=5000&apiKey='+p.apiKey;
     var all=[],guard=0;
     var step=function(u){return fetch(u).then(function(r){return r.json();}).then(function(j){
