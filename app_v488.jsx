@@ -18188,6 +18188,7 @@ function MultiViewChartsPage(p){
   var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
   var s10=useState({}),atrMap=s10[0],setAtrMap=s10[1];   // per-tf 14-period daily ATR% (over each chart's own window)
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
+  var s12=useState(null),livePrice=s12[0],setLivePrice=s12[1];  // single most-recent traded price, same tag on every chart
   var toggleMa=function(k){var nm=Object.assign({},ma);nm[k]=!nm[k];setMa(nm);};
 
   var pad=function(n){return (n<10?'0':'')+n;};
@@ -18255,7 +18256,19 @@ function MultiViewChartsPage(p){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});
+    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});setLivePrice(null);
+    // Fetch the single most-recent traded price (freshest 1-min bar over the last few days,
+    // includes extended hours) so every chart shows the SAME "last price" tag.
+    (function(){
+      var e=etParts(Date.now());
+      var toL=iso(new Date(Date.UTC(e.y,e.mo-1,e.d)));
+      var fromL=iso(new Date(Date.UTC(e.y,e.mo-1,e.d-6)));
+      var lurl='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/1/minute/'+fromL+'/'+toL+'?adjusted=true&sort=desc&limit=1&apiKey='+p.apiKey;
+      fetch(lurl).then(function(r){return r.json();}).then(function(j){
+        var last=(j.results&&j.results.length)?j.results[0].c:null;
+        setLivePrice((last!=null&&isFinite(last))?last:null);
+      }).catch(function(){setLivePrice(null);});
+    })();
     // One long DAILY fetch (10y) drives two per-chart daily stats: 14-period ATR% and the
     // close->high average, each computed over THAT chart's own date range (sliced from this series).
     (function(){
@@ -18393,9 +18406,12 @@ function MultiViewChartsPage(p){
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
+    var tagPrice=(livePrice!=null)?livePrice:last;   // same "last price" on every chart when live price is available
     var hi=Math.max.apply(null,his), lo=Math.min.apply(null,los);
     var hiIdx=his.indexOf(hi), loIdx=los.indexOf(lo);
     var lastY=Yp(last);
+    var tagY=Math.min(Math.max(Yp(tagPrice),PADT+9),PADT+priceH-9);   // clamp within price panel
+    var tagUp=(tagPrice>=first);
     var step=Math.max(1,Math.round(n/7));
     var hIdx=(hover[tf.key]!=null)?hover[tf.key]:null;
     var hb=(hIdx!=null&&bars[hIdx])?bars[hIdx]:null;
@@ -18449,10 +18465,10 @@ function MultiViewChartsPage(p){
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
-      {/* last price line */}
-      <line x1={PADL} y1={lastY} x2={W-PADR} y2={lastY} stroke={last>=first?UP:DN} strokeWidth="1" strokeDasharray="4 3" opacity="0.7"/>
-      <rect x={W-PADR-58} y={lastY-9} width="58" height="18" fill={last>=first?UP:DN} rx="3"/>
-      <text x={W-PADR-29} y={lastY+4} textAnchor="middle" fontSize="11" fontWeight="700" fill={'#04121e'} fontFamily={F}>{fmtPx(last)}</text>
+      {/* last price line (single most-recent traded price — identical value on every chart) */}
+      <line x1={PADL} y1={tagY} x2={W-PADR} y2={tagY} stroke={tagUp?UP:DN} strokeWidth="1" strokeDasharray="4 3" opacity="0.7"/>
+      <rect x={W-PADR-58} y={tagY-9} width="58" height="18" fill={tagUp?UP:DN} rx="3"/>
+      <text x={W-PADR-29} y={tagY+4} textAnchor="middle" fontSize="11" fontWeight="700" fill={'#04121e'} fontFamily={F}>{fmtPx(tagPrice)}</text>
       {/* volume panel */}
       <text x={PADL-8} y={volTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>Vol</text>
       <text x={PADL-8} y={volTop+volH} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>{fmtVol(vmax)}</text>
@@ -18534,7 +18550,7 @@ function MultiViewChartsPage(p){
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
             <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrMap[tf.key]!=null?(' · daily ATR '+atrMap[tf.key].toFixed(2)+'%'):''}{c2hMap[tf.key]!=null?(' · close→high '+(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'):''}</span></div>
-            {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(st.last)}</span></div>}
+            {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(livePrice!=null?livePrice:st.last)}</span></div>}
           </div>
           {!isDone
             ? <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>Loading {tf.bar} data…</div>
