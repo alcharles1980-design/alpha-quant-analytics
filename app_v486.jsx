@@ -18241,12 +18241,12 @@ function MultiViewChartsPage(p){
     else if(tf.monthsBack!=null){var dm=new Date(Date.UTC(e.y,e.mo-1-tf.monthsBack,e.d));from=iso(dm);}
     else if(tf.daysBack!=null){var dq=new Date(Date.UTC(e.y,e.mo-1,e.d-tf.daysBack));from=iso(dq);}
     else{var d=new Date(Date.UTC(e.y-tf.yearsBack,e.mo-1,e.d));from=iso(d);}
-    var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+tf.mult+'/'+tf.span+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=5000&apiKey='+p.apiKey;
+    var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+tf.mult+'/'+tf.span+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
     var all=[],guard=0;
     var step=function(u){return fetch(u).then(function(r){return r.json();}).then(function(j){
       if(j.results&&j.results.length)all=all.concat(j.results);
       guard++;
-      if(j.next_url&&guard<8)return step(j.next_url+'&apiKey='+p.apiKey);
+      if(j.next_url&&guard<12)return step(j.next_url+'&apiKey='+p.apiKey);
     });};
     return step(url).then(function(){return all;});
   };
