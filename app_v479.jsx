@@ -18313,7 +18313,8 @@ function MultiViewChartsPage(p){
     var onLeave=function(){var nh=Object.assign({},hover);delete nh[tf.key];setHover(nh);};
 
     var priceTicks=[0,0.25,0.5,0.75,1];
-    return <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onMove} onTouchMove={onMove} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y'}}>
+    var onTouch=function(e){if(e.touches&&e.touches.length>1)return;onMove(e);};
+    return <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onTouch} onTouchMove={onTouch} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y pinch-zoom'}}>
       {/* volume profile (left gutter): horizontal bars, colored by up/down dominance */}
       {bins.map(function(bin,i){
         if(bin.tot<=0)return null;
@@ -18349,16 +18350,16 @@ function MultiViewChartsPage(p){
       {hb&&(function(){
         var cx=PADL+slot*hIdx+slot/2;var cyp=Yp(hb.c);
         var chg=first?((hb.c-first)/first*100):0;
-        var boxW=176,boxH=104;var bx=(cx>W/2)?(cx-boxW-10):(cx+10);if(bx<PADL)bx=PADL;if(bx+boxW>W-2)bx=W-2-boxW;
-        var by=PADT+6;
+        var boxW=352,boxH=200;var bx=(cx>W/2)?(cx-boxW-14):(cx+14);if(bx<PADL)bx=PADL;if(bx+boxW>W-2)bx=W-2-boxW;
+        var by=PADT+8;
         var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
         return <g>
-          <line x1={cx} y1={PADT} x2={cx} y2={volTop+volH} stroke={C.txtDim} strokeWidth="0.7" strokeDasharray="3 3"/>
-          <circle cx={cx} cy={cyp} r="3" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1"/>
-          <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill={C.bgCard} stroke={C.border} strokeWidth="1" opacity="0.98"/>
-          <text x={bx+10} y={by+16} fontSize="10.5" fontWeight="700" fill={C.txtBright} fontFamily={F}>{fullStamp(hb.t,tf.kind)}</text>
-          <text x={bx+10} y={by+31} fontSize="10" fontWeight="700" fill={hb.c>=hb.o?UP:DN} fontFamily={F}>{(chg>=0?'+':'')+chg.toFixed(2)+'% from start'}</text>
-          {rows.map(function(rw,ri){var yy=by+46+ri*11;return <g key={ri}><text x={bx+10} y={yy} fontSize="9.5" fill={C.txtDim} fontFamily={F}>{rw[0]}</text><text x={bx+boxW-10} y={yy} textAnchor="end" fontSize="9.5" fontWeight="700" fill={C.txt} fontFamily={F}>{rw[1]}</text></g>;})}
+          <line x1={cx} y1={PADT} x2={cx} y2={volTop+volH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
+          <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
+          <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
+          <text x={bx+18} y={by+30} fontSize="19" fontWeight="700" fill={C.txtBright} fontFamily={F}>{fullStamp(hb.t,tf.kind)}</text>
+          <text x={bx+18} y={by+56} fontSize="18" fontWeight="700" fill={hb.c>=hb.o?UP:DN} fontFamily={F}>{(chg>=0?'+':'')+chg.toFixed(2)+'% from start'}</text>
+          {rows.map(function(rw,ri){var yy=by+86+ri*22;return <g key={ri}><text x={bx+18} y={yy} fontSize="17" fill={C.txtDim} fontFamily={F}>{rw[0]}</text><text x={bx+boxW-18} y={yy} textAnchor="end" fontSize="17" fontWeight="700" fill={C.txt} fontFamily={F}>{rw[1]}</text></g>;})}
         </g>;
       })()}
     </svg>;
