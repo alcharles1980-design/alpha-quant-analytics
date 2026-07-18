@@ -18265,7 +18265,10 @@ function MultiViewChartsPage(p){
   // ---- interactive candlestick + volume chart ----
   var Chart=function(tf,bars){
     if(!bars||!bars.length)return null;
-    var PADL=66,PADR=12;
+    var LABELW=52;                                     // price labels, far left (left-aligned)
+    var PROFX=LABELW+4;                                // profile band starts after labels
+    var PROFW=96;                                      // volume-profile band width
+    var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
     var priceH=380, volH=90, gap=8, axisH=30, PADT=14;
     var H=PADT+priceH+gap+volH+axisH;
@@ -18273,6 +18276,19 @@ function MultiViewChartsPage(p){
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
     var Yp=function(v){return PADT+(1-(v-pmn)/psv)*priceH;};
+    // ---- volume profile: bin volume by typical price (H+L+C)/3, split up/down ----
+    var NB=24;
+    var bins=[];for(var bi=0;bi<NB;bi++)bins.push({up:0,dn:0,tot:0});
+    bars.forEach(function(b){
+      var tp=(b.h+b.l+b.c)/3;
+      var idx=Math.floor((tp-pmn)/psv*NB);
+      if(idx<0)idx=0;if(idx>NB-1)idx=NB-1;
+      var vv=b.v||0;bins[idx].tot+=vv;
+      if(b.c>=b.o)bins[idx].up+=vv;else bins[idx].dn+=vv;
+    });
+    var maxBin=Math.max.apply(null,bins.map(function(x){return x.tot;}))||1;
+    var pocIdx=bins.reduce(function(best,x,i){return x.tot>bins[best].tot?i:best;},0);
+    var binH=priceH/NB;
     var vmax=Math.max.apply(null,bars.map(function(b){return b.v||0;}))||1;
     var volTop=PADT+priceH+gap;
     var Yv=function(v){return volTop+(1-(v/vmax))*volH;};
@@ -18298,8 +18314,21 @@ function MultiViewChartsPage(p){
 
     var priceTicks=[0,0.25,0.5,0.75,1];
     return <svg viewBox={'0 0 '+W+' '+H} onMouseMove={onMove} onMouseLeave={onLeave} onTouchStart={onMove} onTouchMove={onMove} style={{width:'100%',height:'auto',background:C.bgDeep,borderRadius:8,display:'block',touchAction:'pan-y'}}>
-      {/* price gridlines + labels */}
-      {priceTicks.map(function(g,i){var v=pmn+psv*g;return <g key={'p'+i}><line x1={PADL} y1={Yp(v)} x2={W-PADR} y2={Yp(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={PADL-8} y={Yp(v)+5} textAnchor="end" fontSize="13.5" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
+      {/* volume profile (left gutter): horizontal bars, colored by up/down dominance */}
+      {bins.map(function(bin,i){
+        if(bin.tot<=0)return null;
+        var wpx=bin.tot/maxBin*PROFW;
+        var yTop=PADT+priceH-(i+1)*binH;
+        var upDom=bin.up>=bin.dn;
+        var col=(i===pocIdx)?C.gold:(upDom?UP:DN);
+        var op=(i===pocIdx)?0.85:0.45;
+        return <rect key={'vp'+i} x={PROFX} y={yTop+0.5} width={Math.max(wpx,0.6)} height={Math.max(binH-1,0.6)} fill={col} opacity={op} rx="1"/>;
+      })}
+      {/* profile axis hairline + label + POC price */}
+      <line x1={PADL-2} y1={PADT} x2={PADL-2} y2={PADT+priceH} stroke={C.border} strokeWidth="0.5"/>
+      <text x={PROFX} y={PADT-3} fontSize="8.5" fill={C.txtDim} fontFamily={F}>Vol profile · POC {fmtPx(pmn+psv*((pocIdx+0.5)/NB))}</text>
+      {/* price gridlines + labels (labels sit between profile and plot) */}
+      {priceTicks.map(function(g,i){var v=pmn+psv*g;return <g key={'p'+i}><line x1={PADL} y1={Yp(v)} x2={W-PADR} y2={Yp(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={2} y={Yp(v)+5} textAnchor="start" fontSize="12.5" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
       {/* candlesticks (always) */}
       {bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var yO=Yp(b.o),yC=Yp(b.c),yH=Yp(b.h),yL=Yp(b.l);var top=Math.min(yO,yC),bh=Math.max(Math.abs(yO-yC),0.8);return <g key={i}><line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={Math.max(cw*0.16,0.7)}/><rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/></g>;})}
       {/* high / low markers */}
