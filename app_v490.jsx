@@ -18543,19 +18543,42 @@ function MultiViewChartsPage(p){
         var isDone=done[tf.key];
         var bars=data[tf.key];
         var st=(bars&&bars.length)?winStat(bars):null;
+        var px=(livePrice!=null?livePrice:(st?st.last:null));
+        var lblCss={fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase'};
+        var valCss={fontSize:11,color:C.txtBright,fontFamily:F,fontWeight:700};
+        var stat=function(label,node){return <div style={{display:'flex',flexDirection:'column',gap:1}}><span style={lblCss}>{label}</span><span style={valCss}>{node}</span></div>;};
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,flexWrap:'wrap',gap:6}}>
-            <div style={{color:C.accent,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.8}}>{tf.label}<span style={{color:C.txtDim,fontWeight:400,fontSize:8.5,marginLeft:8}}>{tf.bar+(bars?(' · '+bars.length+' bars'):'')}{atrMap[tf.key]!=null?(' · avg daily range '+atrMap[tf.key].toFixed(2)+'%'):''}{c2hMap[tf.key]!=null?(' · close→high '+(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'):''}</span></div>
-            {st&&<div style={{fontFamily:F,fontSize:12,fontWeight:700,color:st.pct>=0?UP:DN}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}<span style={{color:C.txtDim,fontWeight:400,fontSize:9.5,marginLeft:8}}>{fmtPx(livePrice!=null?livePrice:st.last)}</span></div>}
+          {/* Row 1: timeframe title + current price / period return */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+            <div style={{color:C.accent,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:1}}>{tf.label}</div>
+            {px!=null&&<div style={{display:'flex',alignItems:'flex-end',gap:14}}>
+              <div style={{display:'flex',flexDirection:'column',gap:1,alignItems:'flex-end'}}>
+                <span style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.6}}>PRICE</span>
+                <span style={{fontFamily:F,fontSize:16,fontWeight:700,color:C.txtBright,lineHeight:1}}>{fmtPx(px)}</span>
+              </div>
+              {st&&<div style={{display:'flex',flexDirection:'column',gap:1,alignItems:'flex-end'}}>
+                <span style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.6}}>RETURN</span>
+                <span style={{fontFamily:F,fontSize:13,fontWeight:700,color:st.pct>=0?UP:DN,lineHeight:1}}>{(st.pct>=0?'+':'')+st.pct.toFixed(2)+'%'}</span>
+              </div>}
+            </div>}
           </div>
+          {/* Row 2: labeled stats strip */}
+          <div style={{display:'flex',flexWrap:'wrap',gap:'8px 18px',marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border}}>
+            {stat('Interval',tf.bar)}
+            {bars&&stat('Bars',bars.length.toLocaleString())}
+            {atrMap[tf.key]!=null&&stat('Avg daily range',atrMap[tf.key].toFixed(2)+'%')}
+            {c2hMap[tf.key]!=null&&stat('Avg close→high',<span style={{color:c2hMap[tf.key]>=0?UP:DN}}>{(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'}</span>)}
+          </div>
+          <div style={{marginTop:10}}>
           {!isDone
             ? <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>Loading {tf.bar} data…</div>
             : (bars&&bars.length)
               ? Chart(tf,bars)
               : <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8,padding:'0 16px'}}>{tf.key==='TODAY'?'No bars yet today — the market may not have opened, it may be a weekend/holiday, or data is still delayed (~15 min).':tf.key==='YEST'?'No bars for yesterday — it may have been a weekend or market holiday.':'No data available for this range.'}</div>}
+          </div>
         </div>;
       })}
-      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.5}}>Green = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume shown below each chart. Prices split-adjusted; intraday includes pre / post-market. No indicators applied.</div>
+      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume below each chart. Prices split-adjusted; intraday includes pre / post-market.</div>
     </div>}
   </div>;
 }
