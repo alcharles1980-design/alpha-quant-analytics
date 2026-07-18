@@ -18190,6 +18190,14 @@ function MultiViewChartsPage(p){
   var s10=useState({}),atrMap=s10[0],setAtrMap=s10[1];   // per-tf 14-period daily ATR% (over each chart's own window)
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
   var s12=useState(null),livePrice=s12[0],setLivePrice=s12[1];  // single most-recent traded price, same tag on every chart
+  var s13=useState({}),intervalMap=s13[0],setIntervalMap=s13[1];  // {tfKey: {span,bar,kind}} per-chart interval override
+  // interval options offered per chart (only where the window is long enough to be meaningful)
+  var INTERVAL_OPTS={
+    'YTD':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
+    '3M':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
+    '30D':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'}],
+    '7D':[{span:'hour',bar:'hourly',kind:'intraday',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'}]
+  };
   var toggleMa=function(k){var nm=Object.assign({},ma);nm[k]=!nm[k];setMa(nm);};
 
   var pad=function(n){return (n<10?'0':'')+n;};
@@ -18231,7 +18239,7 @@ function MultiViewChartsPage(p){
     return date+'  '+pad(e.h)+':'+pad(e.mi)+' ET';
   };
 
-  var fetchAgg=function(t,tf){
+  var fetchAgg=function(t,tf,ovArg){
     // Anchor "today" to the current date in ET (America/New_York), not UTC —
     // otherwise in the evening ET the UTC date has already rolled over and
     // Today/Yesterday would request the wrong trading day.
@@ -18243,7 +18251,11 @@ function MultiViewChartsPage(p){
     else if(tf.monthsBack!=null){var dm=new Date(Date.UTC(e.y,e.mo-1-tf.monthsBack,e.d));from=iso(dm);}
     else if(tf.daysBack!=null){var dq=new Date(Date.UTC(e.y,e.mo-1,e.d-tf.daysBack));from=iso(dq);}
     else{var d=new Date(Date.UTC(e.y-tf.yearsBack,e.mo-1,e.d));from=iso(d);}
-    var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+tf.mult+'/'+tf.span+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+    // apply per-chart interval override if set (Hour/Day/Week)
+    var ov=ovArg!==undefined?ovArg:intervalMap[tf.key];
+    var effSpan=ov?ov.span:tf.span;
+    var effMult=ov?1:tf.mult;
+    var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(t)+'/range/'+effMult+'/'+effSpan+'/'+from+'/'+to+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
     var all=[],guard=0;
     var step=function(u){return fetch(u).then(function(r){return r.json();}).then(function(j){
       if(j.results&&j.results.length)all=all.concat(j.results);
@@ -18312,6 +18324,23 @@ function MultiViewChartsPage(p){
         .catch(function(){out[tf.key]=[];dn[tf.key]=true;setData(Object.assign({},out));setDone(Object.assign({},dn));i++;next();});
     };
     next();
+  };
+
+  // change one chart's interval (Hour/Day/Week) and refetch just that chart
+  var changeInterval=function(tfKey,opt){
+    var tf=null;TFS.forEach(function(x){if(x.key===tfKey)tf=x;});
+    if(!tf||!sym)return;
+    var nim=Object.assign({},intervalMap);nim[tfKey]=opt;setIntervalMap(nim);
+    // mark this chart loading
+    var nd=Object.assign({},done);delete nd[tfKey];setDone(nd);
+    var ndata=Object.assign({},data);delete ndata[tfKey];setData(ndata);
+    fetchAgg(sym,tf,opt).then(function(bars){
+      setData(function(prev){var o=Object.assign({},prev);o[tfKey]=bars;return o;});
+      setDone(function(prev){var o=Object.assign({},prev);o[tfKey]=true;return o;});
+    }).catch(function(){
+      setData(function(prev){var o=Object.assign({},prev);o[tfKey]=[];return o;});
+      setDone(function(prev){var o=Object.assign({},prev);o[tfKey]=true;return o;});
+    });
   };
 
   var fmtPx=function(v){if(v==null||!isFinite(v))return '—';return '$'+(v>=1000?v.toFixed(0):v>=1?v.toFixed(2):v.toFixed(4));};
@@ -18574,6 +18603,8 @@ function MultiViewChartsPage(p){
       </div>
 
       {TFS.map(function(tf){
+        var ovSel=intervalMap[tf.key];
+        if(ovSel){tf=Object.assign({},tf,{bar:ovSel.bar,kind:ovSel.kind});}  // reflect chosen interval in label + axis formatting
         var isDone=done[tf.key];
         var bars=data[tf.key];
         var st=(bars&&bars.length)?winStat(bars):null;
@@ -18597,8 +18628,18 @@ function MultiViewChartsPage(p){
             </div>}
           </div>
           {/* Row 2: labeled stats strip */}
-          <div style={{display:'flex',flexWrap:'wrap',gap:'8px 18px',marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border}}>
-            {stat('Interval',tf.bar)}
+          <div style={{display:'flex',flexWrap:'wrap',gap:'8px 18px',marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border,alignItems:'flex-end'}}>
+            {INTERVAL_OPTS[tf.key]
+              ? (function(){
+                  var cur=intervalMap[tf.key]||INTERVAL_OPTS[tf.key][0];
+                  return <div style={{display:'flex',flexDirection:'column',gap:1}}>
+                    <span style={lblCss}>Interval</span>
+                    <select value={cur.span} onChange={function(ev){var o=INTERVAL_OPTS[tf.key].filter(function(x){return x.span===ev.target.value;})[0];if(o)changeInterval(tf.key,o);}} style={{background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:700,border:'1px solid '+C.accent+'88',borderRadius:5,padding:'2px 6px',cursor:'pointer'}}>
+                      {INTERVAL_OPTS[tf.key].map(function(o){return <option key={o.span} value={o.span}>{o.label}</option>;})}
+                    </select>
+                  </div>;
+                })()
+              : stat('Interval',tf.bar)}
             {bars&&stat('Bars',bars.length.toLocaleString())}
             {atrMap[tf.key]!=null&&stat('Avg daily range',atrMap[tf.key].toFixed(2)+'%')}
             {c2hMap[tf.key]!=null&&stat('Avg close→high',<span style={{color:c2hMap[tf.key]>=0?UP:DN}}>{(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'}</span>)}
