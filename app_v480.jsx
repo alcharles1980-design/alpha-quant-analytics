@@ -18185,6 +18185,8 @@ function MultiViewChartsPage(p){
   var s5=useState(''),err=s5[0],setErr=s5[1];
   var s7=useState(null),asof=s7[0],setAsof=s7[1];
   var s8=useState({}),hover=s8[0],setHover=s8[1];      // {key: barIndex} for crosshair
+  var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
+  var toggleMa=function(k){var nm=Object.assign({},ma);nm[k]=!nm[k];setMa(nm);};
 
   var pad=function(n){return (n<10?'0':'')+n;};
   var iso=function(d){return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());};
@@ -18262,6 +18264,31 @@ function MultiViewChartsPage(p){
 
   var UP=C.accent,DN=C.red;
 
+  // ---- moving-average helpers (over close prices) ----
+  var smaSeries=function(closes,N){
+    var out=[];var sum=0;
+    for(var i=0;i<closes.length;i++){sum+=closes[i];if(i>=N)sum-=closes[i-N];out.push(i>=N-1?sum/N:null);}
+    return out;
+  };
+  var emaSeries=function(closes,N){
+    var out=[];var k=2/(N+1);var prev=null;
+    for(var i=0;i<closes.length;i++){
+      if(i<N-1){out.push(null);continue;}
+      if(prev==null){var s=0;for(var j=i-N+1;j<=i;j++)s+=closes[j];prev=s/N;out.push(prev);continue;}
+      prev=closes[i]*k+prev*(1-k);out.push(prev);
+    }
+    return out;
+  };
+  // MA definitions: key, type, period, color, dash
+  var MA_DEFS=[
+    {key:'sma50',type:'SMA',n:50,color:C.blue,dash:''},
+    {key:'sma100',type:'SMA',n:100,color:C.gold,dash:''},
+    {key:'sma200',type:'SMA',n:200,color:C.purple,dash:''},
+    {key:'ema50',type:'EMA',n:50,color:C.blue,dash:'5 3'},
+    {key:'ema100',type:'EMA',n:100,color:C.gold,dash:'5 3'},
+    {key:'ema200',type:'EMA',n:200,color:C.purple,dash:'5 3'}
+  ];
+
   // ---- interactive candlestick + volume chart ----
   var Chart=function(tf,bars){
     if(!bars||!bars.length)return null;
@@ -18332,6 +18359,21 @@ function MultiViewChartsPage(p){
       {priceTicks.map(function(g,i){var v=pmn+psv*g;return <g key={'p'+i}><line x1={PADL} y1={Yp(v)} x2={W-PADR} y2={Yp(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="2 4"/><text x={2} y={Yp(v)+5} textAnchor="start" fontSize="12.5" fill={C.txtDim} fontFamily={F}>{fmtPx(v)}</text></g>;})}
       {/* candlesticks (always) */}
       {bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var yO=Yp(b.o),yC=Yp(b.c),yH=Yp(b.h),yL=Yp(b.l);var top=Math.min(yO,yC),bh=Math.max(Math.abs(yO-yC),0.8);return <g key={i}><line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={Math.max(cw*0.16,0.7)}/><rect x={cx-cw/2} y={top} width={cw} height={bh} fill={col}/></g>;})}
+      {/* moving-average overlays */}
+      {(function(){
+        var anyOn=MA_DEFS.some(function(d){return ma[d.key];});
+        if(!anyOn)return null;
+        var closes=bars.map(function(b){return b.c;});
+        var cxOf=function(i){return PADL+slot*i+slot/2;};
+        return MA_DEFS.map(function(d){
+          if(!ma[d.key])return null;
+          if(bars.length<d.n)return null; // not enough bars for this period
+          var ser=(d.type==='SMA')?smaSeries(closes,d.n):emaSeries(closes,d.n);
+          var pts=[];ser.forEach(function(v,i){if(v!=null)pts.push(cxOf(i)+','+Yp(v));});
+          if(pts.length<2)return null;
+          return <polyline key={d.key} points={pts.join(' ')} fill="none" stroke={d.color} strokeWidth="1.5" strokeDasharray={d.dash} opacity="0.95"/>;
+        });
+      })()}
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
@@ -18387,6 +18429,20 @@ function MultiViewChartsPage(p){
       </div>
       <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.5}}>Timeframes: 10Y monthly · 5Y weekly · 3Y &amp; 1Y daily · YTD / 3M / 30D / 7D hourly · Yesterday &amp; Today 5-min. Hover or tap a chart to inspect any candle. Times shown in ET; data is ~15-min delayed.</div>
       {err&&<div style={{marginTop:8,color:C.warn,fontFamily:F,fontSize:10}}>{err}</div>}
+    </div>
+
+    {/* Moving-average toggles (apply to all charts) */}
+    <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'10px 12px',marginTop:10}}>
+      <div style={{fontSize:9,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',marginBottom:8}}>Moving averages <span style={{fontWeight:400,textTransform:'none'}}>· period counts use each chart's own bars · solid = SMA, dashed = EMA</span></div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {MA_DEFS.map(function(d){
+          var on=ma[d.key];
+          return <button key={d.key} onClick={function(){toggleMa(d.key);}} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 11px',border:'1px solid '+(on?d.color:C.border),borderRadius:6,background:on?d.color+'22':'transparent',color:on?C.txtBright:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+            <span style={{width:16,height:0,borderTop:(d.type==='EMA'?'2px dashed ':'2px solid ')+d.color,display:'inline-block'}}></span>
+            {d.type+' '+d.n}
+          </button>;
+        })}
+      </div>
     </div>
 
     {started&&<div>
