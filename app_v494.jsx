@@ -18191,6 +18191,8 @@ function MultiViewChartsPage(p){
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
   var s12=useState(null),livePrice=s12[0],setLivePrice=s12[1];  // single most-recent traded price, same tag on every chart
   var s13=useState({}),intervalMap=s13[0],setIntervalMap=s13[1];  // {tfKey: {span,bar,kind}} per-chart interval override
+  var s14=useState([]),epsQ=s14[0],setEpsQ=s14[1];  // [{ms,label,eps,yoy}] diluted quarterly EPS with YoY, oldest→newest
+  var s15=useState({}),epsHover=s15[0],setEpsHover=s15[1];  // {tfKey: epsIndex} earnings-marker tap
   // interval options offered per chart (only where the window is long enough to be meaningful)
   var INTERVAL_OPTS={
     'YTD':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
@@ -18269,7 +18271,7 @@ function MultiViewChartsPage(p){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});setLivePrice(null);
+    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});setLivePrice(null);setEpsQ([]);setEpsHover({});
     // Fetch the single most-recent traded price (freshest 1-min bar over the last few days,
     // includes extended hours) so every chart shows the SAME "last price" tag.
     (function(){
@@ -18281,6 +18283,27 @@ function MultiViewChartsPage(p){
         var last=(j.results&&j.results.length)?j.results[0].c:null;
         setLivePrice((last!=null&&isFinite(last))?last:null);
       }).catch(function(){setLivePrice(null);});
+    })();
+    // Fetch quarterly diluted EPS (~20 quarters) for earnings markers + YoY growth.
+    (function(){
+      var furl='https://api.polygon.io/vX/reference/financials?ticker='+encodeURIComponent(t)+'&timeframe=quarterly&limit=20&order=desc&sort=period_of_report_date&apiKey='+p.apiKey;
+      fetch(furl).then(function(r){return r.json();}).then(function(j){
+        var rows=(j.results||[]).map(function(r){
+          var inc=(r.financials&&r.financials.income_statement)||{};
+          var d=inc.diluted_earnings_per_share;
+          var eps=(d&&typeof d.value==='number')?d.value:null;
+          var dt=r.end_date||r.period_of_report_date;
+          return {fp:r.fiscal_period,fy:+r.fiscal_year,ms:dt?new Date(dt+'T00:00:00Z').getTime():null,eps:eps};
+        }).filter(function(x){return x.ms!=null&&x.fp&&x.fy;});
+        // YoY: match same fiscal_period one fiscal_year earlier
+        rows.forEach(function(row){
+          var prior=rows.filter(function(o){return o.fp===row.fp&&o.fy===row.fy-1&&o.eps!=null;})[0];
+          row.yoy=(row.eps!=null&&prior&&prior.eps!=null&&prior.eps!==0)?((row.eps-prior.eps)/Math.abs(prior.eps)*100):null;
+          row.label=row.fp+' FY'+String(row.fy).slice(-2);
+        });
+        rows.sort(function(a,b){return a.ms-b.ms;}); // oldest→newest
+        setEpsQ(rows);
+      }).catch(function(){setEpsQ([]);});
     })();
     // One long DAILY fetch (10y) drives two per-chart daily stats: 14-period ATR% and the
     // close->high average, each computed over THAT chart's own date range (sliced from this series).
@@ -18513,6 +18536,45 @@ function MultiViewChartsPage(p){
           return <polyline key={d.key} points={pts.join(' ')} fill="none" stroke={d.color} strokeWidth="1.5" strokeDasharray={d.dash} opacity="0.95"/>;
         });
       })()}
+      {/* earnings markers (quarterly) — colored by YoY beat/miss, tappable for EPS */}
+      {(function(){
+        if(!epsQ||!epsQ.length)return null;
+        var t0=bars[0].t, t1=bars[n-1].t;
+        var spanDays=(t1-t0)/86400000;
+        if(spanDays<20)return null; // not meaningful on very short windows
+        var nearestX=function(ms){
+          // find bar index with closest timestamp
+          var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-ms);if(dd<bd){bd=dd;bi=i;}}
+          return {x:PADL+slot*bi+slot/2,within:(ms>=t0-86400000*10&&ms<=t1+86400000*10)};
+        };
+        return epsQ.map(function(eq,ei){
+          if(eq.ms<t0-86400000*10||eq.ms>t1+86400000*10)return null;
+          var nx=nearestX(eq.ms);
+          var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
+          return <g key={'eps'+ei} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},epsHover);nh[tf.key]=(nh[tf.key]===ei?undefined:ei);setEpsHover(nh);}} style={{cursor:'pointer'}}>
+            <line x1={nx.x} y1={PADT} x2={nx.x} y2={PADT+priceH} stroke={col} strokeWidth="1" strokeDasharray="2 3" opacity="0.55"/>
+            <rect x={nx.x-6} y={PADT+priceH-14} width="12" height="12" rx="2" fill={col} opacity="0.9"/>
+            <text x={nx.x} y={PADT+priceH-5} textAnchor="middle" fontSize="9" fontWeight="700" fill={'#04121e'} fontFamily={F}>E</text>
+          </g>;
+        });
+      })()}
+      {/* earnings tooltip */}
+      {(function(){
+        var ei=epsHover[tf.key];
+        if(ei==null||!epsQ[ei])return null;
+        var eq=epsQ[ei];
+        var t0=bars[0].t,t1=bars[n-1].t;if(eq.ms<t0-86400000*10||eq.ms>t1+86400000*10)return null;
+        var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-eq.ms);if(dd<bd){bd=dd;bi=i;}}
+        var ex=PADL+slot*bi+slot/2;
+        var bw=150,bh=64;var bx=Math.min(Math.max(ex-bw/2,PADL),W-PADR-bw);var by=PADT+8;
+        var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
+        return <g>
+          <rect x={bx} y={by} width={bw} height={bh} rx="6" fill={C.bgCard} stroke={col} strokeWidth="1.2" opacity="0.98"/>
+          <text x={bx+10} y={by+18} fontSize="12" fontWeight="700" fill={C.txtBright} fontFamily={F}>{eq.label}</text>
+          <text x={bx+10} y={by+37} fontSize="11" fill={C.txtDim} fontFamily={F}>Diluted EPS: <tspan fill={C.txtBright} fontWeight="700">{eq.eps!=null?('$'+eq.eps.toFixed(2)):'n/a'}</tspan></text>
+          <text x={bx+10} y={by+54} fontSize="11" fill={C.txtDim} fontFamily={F}>YoY: <tspan fill={col} fontWeight="700">{eq.yoy!=null?((eq.yoy>=0?'+':'')+eq.yoy.toFixed(1)+'%'):'n/a'}</tspan></text>
+        </g>;
+      })()}
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
@@ -18643,6 +18705,7 @@ function MultiViewChartsPage(p){
             {bars&&stat('Bars',bars.length.toLocaleString())}
             {atrMap[tf.key]!=null&&stat('Avg daily range',atrMap[tf.key].toFixed(2)+'%')}
             {c2hMap[tf.key]!=null&&stat('Avg close→high',<span style={{color:c2hMap[tf.key]>=0?UP:DN}}>{(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'}</span>)}
+            {(function(){var q=null;for(var i=epsQ.length-1;i>=0;i--){if(epsQ[i].yoy!=null){q=epsQ[i];break;}}return q?stat('EPS YoY ('+q.label+')',<span style={{color:q.yoy>=0?UP:DN}}>{(q.yoy>=0?'+':'')+q.yoy.toFixed(1)+'%'}</span>):null;})()}
           </div>
           <div style={{marginTop:10}}>
           {!isDone
@@ -18653,7 +18716,7 @@ function MultiViewChartsPage(p){
           </div>
         </div>;
       })}
-      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume below each chart. Prices split-adjusted; intraday includes pre / post-market.</div>
+      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume below each chart. Prices split-adjusted; intraday includes pre / post-market. "E" marks a quarterly report at the period end — green = EPS up year-over-year, red = down, gray = no prior-year quarter; tap it for the diluted EPS and YoY change.</div>
     </div>}
   </div>;
 }
