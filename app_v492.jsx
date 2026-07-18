@@ -18360,6 +18360,22 @@ function MultiViewChartsPage(p){
     }
     return out;
   };
+  // ---- MACD (12/26/9): macd line = EMA12-EMA26, signal = EMA9 of macd, hist = macd-signal ----
+  var macdSeries=function(closes){
+    var e12=emaSeries(closes,12),e26=emaSeries(closes,26);
+    var macd=closes.map(function(_,i){return (e12[i]!=null&&e26[i]!=null)?(e12[i]-e26[i]):null;});
+    // EMA9 of the macd line, over only the defined portion
+    var sig=[];var k=2/(9+1);var prev=null;var seededAt=null;var buf=[];
+    for(var i=0;i<macd.length;i++){
+      if(macd[i]==null){sig.push(null);continue;}
+      buf.push(macd[i]);
+      if(buf.length<9){sig.push(null);continue;}
+      if(prev==null){var s=0;for(var j=buf.length-9;j<buf.length;j++)s+=buf[j];prev=s/9;sig.push(prev);continue;}
+      prev=macd[i]*k+prev*(1-k);sig.push(prev);
+    }
+    var hist=macd.map(function(v,i){return (v!=null&&sig[i]!=null)?(v-sig[i]):null;});
+    return {macd:macd,signal:sig,hist:hist};
+  };
   // MA definitions: key, type, period, color, dash
   var MA_DEFS=[
     {key:'sma50',type:'SMA',n:50,color:C.blue,dash:''},
@@ -18378,8 +18394,8 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, gap=8, axisH=30, PADT=14;
-    var H=PADT+priceH+gap+volH+axisH;
+    var priceH=380, volH=90, macdH=90, gap=8, axisH=30, PADT=14;
+    var H=PADT+priceH+gap+volH+gap+macdH+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
@@ -18400,6 +18416,14 @@ function MultiViewChartsPage(p){
     var vmax=Math.max.apply(null,bars.map(function(b){return b.v||0;}))||1;
     var volTop=PADT+priceH+gap;
     var Yv=function(v){return volTop+(1-(v/vmax))*volH;};
+    // MACD panel geometry + series (computed on this chart's closes)
+    var macdTop=volTop+volH+gap;
+    var mac=macdSeries(bars.map(function(b){return b.c;}));
+    var macdVals=[];mac.macd.forEach(function(v){if(v!=null)macdVals.push(v);});mac.signal.forEach(function(v){if(v!=null)macdVals.push(v);});mac.hist.forEach(function(v){if(v!=null)macdVals.push(v);});
+    var mMax=macdVals.length?Math.max.apply(null,macdVals):1, mMin=macdVals.length?Math.min.apply(null,macdVals):-1;
+    var mAbs=Math.max(Math.abs(mMax),Math.abs(mMin))||1;   // symmetric around zero
+    var Ym=function(v){return macdTop+(1-(v+mAbs)/(2*mAbs))*macdH;};
+    var macdZeroY=Ym(0);
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
@@ -18472,6 +18496,14 @@ function MultiViewChartsPage(p){
       <text x={PADL-8} y={volTop+volH} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>{fmtVol(vmax)}</text>
       {bars.map(function(b,i){var cx=PADL+slot*i+slot/2;var col=(b.c>=b.o)?UP:DN;var vy=Yv(b.v||0);return <rect key={'v'+i} x={cx-cw/2} y={vy} width={cw} height={Math.max(volTop+volH-vy,0.5)} fill={col} opacity="0.55"/>;})}
       <line x1={PADL} y1={volTop+volH} x2={W-PADR} y2={volTop+volH} stroke={C.border} strokeWidth="0.6"/>
+      {/* MACD panel (12/26/9): histogram + MACD line + signal line */}
+      <text x={PADL-8} y={macdTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>MACD</text>
+      <text x={PADL-8} y={macdTop+macdH-2} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>12/26/9</text>
+      <line x1={PADL} y1={macdZeroY} x2={W-PADR} y2={macdZeroY} stroke={C.txtDim} strokeWidth="0.5" strokeDasharray="2 3"/>
+      {mac.hist.map(function(v,i){if(v==null)return null;var cx=PADL+slot*i+slot/2;var y0=macdZeroY,y1=Ym(v);return <rect key={'mh'+i} x={cx-cw/2} y={Math.min(y0,y1)} width={cw} height={Math.max(Math.abs(y1-y0),0.5)} fill={v>=0?UP:DN} opacity="0.5"/>;})}
+      {(function(){var pts=[];mac.macd.forEach(function(v,i){if(v!=null)pts.push((PADL+slot*i+slot/2)+','+Ym(v));});return pts.length>1?<polyline points={pts.join(' ')} fill="none" stroke={C.blue} strokeWidth="1.3"/>:null;})()}
+      {(function(){var pts=[];mac.signal.forEach(function(v,i){if(v!=null)pts.push((PADL+slot*i+slot/2)+','+Ym(v));});return pts.length>1?<polyline points={pts.join(' ')} fill="none" stroke={C.gold} strokeWidth="1.3"/>:null;})()}
+      <line x1={PADL} y1={macdTop+macdH} x2={W-PADR} y2={macdTop+macdH} stroke={C.border} strokeWidth="0.6"/>
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
       {/* crosshair + tooltip */}
@@ -18482,7 +18514,7 @@ function MultiViewChartsPage(p){
         var by=PADT+8;
         var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
         return <g>
-          <line x1={cx} y1={PADT} x2={cx} y2={volTop+volH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
+          <line x1={cx} y1={PADT} x2={cx} y2={macdTop+macdH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
           <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
           <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
           <g onClick={closeHover} onTouchStart={closeHover} style={{cursor:'pointer'}}>
