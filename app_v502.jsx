@@ -18541,7 +18541,7 @@ function MultiViewChartsPage(p){
     var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
     // revenue/income panel shows whenever EPS does AND at least one quarter in-window has revenue or net income
     var hasRinc=hasEps&&(function(){var t0b=bars[0].t,t1b=bars[bars.length-1].t;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15&&(q.rev!=null||q.ni!=null);});})();
-    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+rincH:0)+axisH;
+    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+6+rincH:0)+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
@@ -18582,14 +18582,18 @@ function MultiViewChartsPage(p){
     var Ye=function(v){return epsTop+(1-(v-epsLo)/epsSpan)*epsH;};
     var epsZeroY=Ye(0);
     // Revenue/income panel geometry (only when hasRinc) — grouped bars: revenue + net income, shared $ scale
-    var rincTop=epsTop+epsH+gap;
+    var rincGap=gap+6;                          // a little extra separation from the EPS panel above
+    var rincTop=epsTop+epsH+rincGap;
     var rincInWin=hasRinc?epsQ.filter(function(q){return q.ms>=bars[0].t-86400000*15&&q.ms<=bars[bars.length-1].t+86400000*15&&(q.rev!=null||q.ni!=null);}):[];
     var rincVals=[];rincInWin.forEach(function(q){if(q.rev!=null)rincVals.push(q.rev);if(q.ni!=null)rincVals.push(q.ni);});
     var rincHi=rincVals.length?Math.max.apply(null,rincVals):1;
     var rincLo=rincVals.length?Math.min.apply(null,rincVals):0;
     if(rincHi<=0)rincHi=1; if(rincLo>0)rincLo=0;   // always include zero baseline (net income can be negative)
     var rincSpan=(rincHi-rincLo)||1;
-    var Yr=function(v){return rincTop+(1-(v-rincLo)/rincSpan)*rincH;};
+    // reserve headroom at the panel top for the value labels so the tallest bar's label
+    // stays INSIDE this panel (doesn't spill up into the EPS panel above)
+    var rincLabelPad=14;
+    var Yr=function(v){return rincTop+rincLabelPad+(1-(v-rincLo)/rincSpan)*(rincH-rincLabelPad);};
     var rincZeroY=Yr(0);
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
@@ -18721,7 +18725,12 @@ function MultiViewChartsPage(p){
           <text x={W-PADR-66} y={rincTop+10} fontSize="9" fill={C.txtDim} fontFamily={F}>Net income</text>
         </g>;
       })()}
-      {hasRinc&&rincInWin.map(function(q,qi){
+      {hasRinc&&(function(){
+        // label density: each $ label is ~34px wide; only label every Nth quarter when bars are tight,
+        // so labels never overlap horizontally on dense charts (10Y/5Y). Bars always draw.
+        var perQ=(rincInWin.length>1)?((W-PADL-PADR)/rincInWin.length):999;
+        var labelEvery=Math.max(1,Math.ceil(34/perQ));
+        return rincInWin.map(function(q,qi){
         var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-q.ms);if(dd<bd){bd=dd;bi=i;}}
         var cx=PADL+slot*bi+slot/2;
         // two side-by-side bars centered on cx; width scales with available slot
@@ -18730,13 +18739,15 @@ function MultiViewChartsPage(p){
         var niCol=(q.ni!=null&&q.ni<0)?DN:C.accent;
         var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
         var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
+        var showLabel=(qi%labelEvery===0);
         return <g key={'rinc'+qi}>
           {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity="0.75"/>}
           {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity="0.8"/>}
-          {q.rev!=null&&<text x={cx} y={Math.min(revYA,(q.ni!=null?niYA:revYA))-3} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
-          {q.ni!=null&&<text x={cx} y={(rincTop+rincH)+9} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
+          {showLabel&&q.rev!=null&&<text x={cx} y={Math.min(revYA,(q.ni!=null?niYA:revYA))-3} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
+          {showLabel&&q.ni!=null&&<text x={cx} y={(rincTop+rincH)+9} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
         </g>;
-      })}
+        });
+      })()}
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
       {/* crosshair + tooltip */}
