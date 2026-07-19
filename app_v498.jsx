@@ -17907,51 +17907,103 @@ function CompanyFundamentalsPage(p){
   };
   var yFmt=function(v){var a=Math.abs(v);if(a>=1e12)return (v/1e12).toFixed(1)+'T';if(a>=1e9)return (v/1e9).toFixed(0)+'B';if(a>=1e6)return (v/1e6).toFixed(0)+'M';if(a>=1e3)return (v/1e3).toFixed(0)+'K';return v.toFixed(0);};
 
-  var parseRows=function(all){
-    var parsed=all.map(function(r){
-      var is=(r.financials&&r.financials.income_statement)||{};
-      var bs=(r.financials&&r.financials.balance_sheet)||{};
-      var cf=(r.financials&&r.financials.cash_flow_statement)||{};
-      var g=function(o,k){return (o[k]&&typeof o[k].value==='number')?o[k].value:null;};
+  // ---- SEC EDGAR companyfacts extraction (authoritative, complete — replaces Polygon financials) ----
+  var EDGAR='https://edgar-proxy.alcharles1980.workers.dev';
+  var secGet=function(path,host){return fetch(EDGAR,{headers:{'X-SEC-Path':path,'X-SEC-Host':host||'data.sec.gov'}}).then(function(r){return r.ok?r.json():null;});};
+  // XBRL tag candidates per field (first present wins); some fields sum a tag across fallbacks
+  var TAGS={
+    revenue:['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'],
+    netIncome:['NetIncomeLoss','ProfitLoss'],
+    grossProfit:['GrossProfit'],
+    opIncome:['OperatingIncomeLoss'],
+    epsDil:['EarningsPerShareDiluted','EarningsPerShareBasicAndDiluted'],
+    epsBas:['EarningsPerShareBasic'],
+    assets:['Assets'],
+    equity:['StockholdersEquity','StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
+    longTermDebt:['LongTermDebtNoncurrent','LongTermDebt'],
+    curAssets:['AssetsCurrent'],
+    curLiab:['LiabilitiesCurrent'],
+    opCashFlow:['NetCashProvidedByUsedInOperatingActivities','NetCashProvidedByUsedInOperatingActivitiesContinuingOperations']
+  };
+  var qFrame=/^CY\d{4}Q[1-4]$/, aFrame=/^CY\d{4}$/, qInstFrame=/^CY\d{4}Q[1-4]I$/, aInstFrame=/^CY\d{4}Q[24]I$/;
+  // pull one concept's facts (USD or USD/shares) keyed by end-date, for the requested period kind
+  var conceptByEnd=function(facts,tags,kind,unit){
+    var out={};
+    for(var ti=0;ti<tags.length;ti++){
+      var node=facts&&facts[tags[ti]]&&facts[tags[ti]].units&&facts[tags[ti]].units[unit];
+      if(!node)continue;
+      node.forEach(function(e){
+        if(!e.frame)return;
+        var fr=e.frame, days=(new Date(e.end)-new Date(e.start))/86400000;
+        var ok=false;
+        if(kind==='q') ok=qFrame.test(fr)&&days>=80&&days<=100;
+        else if(kind==='a') ok=aFrame.test(fr)&&days>=350&&days<=380;
+        else if(kind==='qi') ok=qInstFrame.test(fr);          // quarterly balance-sheet instant
+        else if(kind==='ai') ok=aInstFrame.test(fr);          // annual (fiscal year-end) instant
+        if(ok&&out[e.end]===undefined) out[e.end]=+e.val;
+      });
+      if(Object.keys(out).length)break; // first tag that yields data wins
+    }
+    return out;
+  };
+  // build rows ({end, revenue, netIncome, ...}) for a period kind: 'quarterly' or 'annual'
+  var buildRows=function(facts,isQ){
+    var durKind=isQ?'q':'a', instKind=isQ?'qi':'ai';
+    var rev=conceptByEnd(facts,TAGS.revenue,durKind,'USD');
+    var ni=conceptByEnd(facts,TAGS.netIncome,durKind,'USD');
+    var gp=conceptByEnd(facts,TAGS.grossProfit,durKind,'USD');
+    var oi=conceptByEnd(facts,TAGS.opIncome,durKind,'USD');
+    var epsD=conceptByEnd(facts,TAGS.epsDil,durKind,'USD/shares');
+    var epsB=conceptByEnd(facts,TAGS.epsBas,durKind,'USD/shares');
+    var as=conceptByEnd(facts,TAGS.assets,instKind,'USD');
+    var eq=conceptByEnd(facts,TAGS.equity,instKind,'USD');
+    var ltd=conceptByEnd(facts,TAGS.longTermDebt,instKind,'USD');
+    var ca=conceptByEnd(facts,TAGS.curAssets,instKind,'USD');
+    var cl=conceptByEnd(facts,TAGS.curLiab,instKind,'USD');
+    var ocf=conceptByEnd(facts,TAGS.opCashFlow,durKind,'USD');
+    // union of all period-end dates seen across the duration (income/cf) concepts
+    var ends={};[rev,ni,gp,oi,epsD,epsB,ocf].forEach(function(m){Object.keys(m).forEach(function(k){ends[k]=1;});});
+    var pick=function(m,end){return (m[end]!==undefined)?m[end]:null;};
+    // for balance-sheet (instant) items, match the closest instant on/near this period-end (±7d)
+    var pickInst=function(m,end){
+      if(m[end]!==undefined)return m[end];
+      var et=new Date(end).getTime(),best=null,bd=8*86400000;
+      Object.keys(m).forEach(function(k){var dd=Math.abs(new Date(k).getTime()-et);if(dd<bd){bd=dd;best=m[k];}});
+      return best;
+    };
+    var rows=Object.keys(ends).map(function(end){
+      var y=+end.slice(0,4), mo=+end.slice(5,7);
+      var qn=Math.floor((mo-1)/3)+1;
       return {
-        period:(r.fiscal_period||'')+' '+(r.fiscal_year||''), fp:r.fiscal_period||'', fy:r.fiscal_year||'',
-        end:r.end_date||r.period_of_report_date||'',
-        revenue:g(is,'revenues'), netIncome:g(is,'net_income_loss'),
-        grossProfit:g(is,'gross_profit'), opIncome:g(is,'operating_income_loss'),
-        eps:g(is,'diluted_earnings_per_share')!=null?g(is,'diluted_earnings_per_share'):g(is,'basic_earnings_per_share'),
-        assets:g(bs,'assets'), equity:g(bs,'equity')!=null?g(bs,'equity'):g(bs,'equity_attributable_to_parent'),
-        longTermDebt:g(bs,'long_term_debt'), curAssets:g(bs,'current_assets'), curLiab:g(bs,'current_liabilities'),
-        opCashFlow:g(cf,'net_cash_flow_from_operating_activities')
+        end:end, fp:isQ?('Q'+qn):'FY', fy:String(y), period:(isQ?('Q'+qn):'FY')+' '+y,
+        revenue:pick(rev,end), netIncome:pick(ni,end), grossProfit:pick(gp,end), opIncome:pick(oi,end),
+        eps:(epsD[end]!==undefined?epsD[end]:(epsB[end]!==undefined?epsB[end]:null)),
+        assets:pickInst(as,end), equity:pickInst(eq,end), longTermDebt:pickInst(ltd,end),
+        curAssets:pickInst(ca,end), curLiab:pickInst(cl,end), opCashFlow:pick(ocf,end)
       };
     }).filter(function(r){return r.revenue!=null||r.netIncome!=null;});
-    var seen={},uniq=[];
-    parsed.forEach(function(r){if(!seen[r.end]){seen[r.end]=1;uniq.push(r);}});
-    uniq.sort(function(a,b){return (a.end<b.end)?-1:(a.end>b.end)?1:0;});
-    return uniq;
-  };
-
-  var fetchTf=function(t,timeframe){
-    var url='https://api.polygon.io/vX/reference/financials?ticker='+encodeURIComponent(t)+'&timeframe='+timeframe+'&order=desc&limit=20&sort=period_of_report_date&apiKey='+p.apiKey;
-    var all=[],guard=0;
-    var step=function(u){return fetch(u).then(function(r){return r.json();}).then(function(j){
-      if(j.results&&j.results.length)all=all.concat(j.results);
-      guard++;
-      if(j.next_url&&guard<4)return step(j.next_url+'&apiKey='+p.apiKey);
-    });};
-    return step(url).then(function(){return all;});
+    rows.sort(function(a,b){return (a.end<b.end)?-1:(a.end>b.end)?1:0;});
+    return rows;
   };
 
   var run=function(tkArg){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
-    if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
     setSym(t);setLoading(true);setErr('');setRowsQ(null);setRowsA(null);setName(null);
-    Promise.all([fetchTf(t,'quarterly'),fetchTf(t,'annual')]).then(function(res){
-      var q=res[0],a=res[1];
-      if((!q||!q.length)&&(!a||!a.length)){setErr('No financials found for '+t+'.');setLoading(false);return;}
-      var nm=(q&&q[0]&&q[0].company_name)||(a&&a[0]&&a[0].company_name)||null;
+    secGet('/files/company_tickers.json','www.sec.gov').then(function(map){
+      if(!map)throw new Error('CIK map unavailable');
+      var cik=null,nm=null,up=t.toUpperCase();
+      for(var kk in map){if(map[kk]&&map[kk].ticker&&map[kk].ticker.toUpperCase()===up){cik=map[kk].cik_str;nm=map[kk].title||null;break;}}
+      if(cik==null)throw new Error('No SEC filer found for '+t+' (may be an ETF or foreign issuer without US filings).');
       if(nm)setName(nm);
-      setRowsQ(parseRows(q||[]));setRowsA(parseRows(a||[]));setLoading(false);
+      var cik10='CIK'+('0000000000'+cik).slice(-10);
+      return secGet('/api/xbrl/companyfacts/'+cik10+'.json').then(function(cf){
+        var facts=cf&&cf.facts&&cf.facts['us-gaap'];
+        if(!facts)throw new Error('No XBRL financial facts for '+t+'.');
+        var q=buildRows(facts,true), a=buildRows(facts,false);
+        if((!q||!q.length)&&(!a||!a.length)){setErr('No financials found for '+t+'.');setLoading(false);return;}
+        setRowsQ(q);setRowsA(a);setLoading(false);
+      });
     }).catch(function(e){setErr('Fetch failed: '+(e&&e.message?e.message:'unknown'));setLoading(false);});
   };
 
