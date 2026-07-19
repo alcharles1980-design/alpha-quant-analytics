@@ -18539,7 +18539,7 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, macdH=90, epsH=80, rincH=120, gap=8, axisH=30, PADT=14;
+    var priceH=380, volH=90, macdH=90, epsH=80, rincH=104, gap=8, axisH=30, PADT=14;
     var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
     // revenue/income panel shows whenever EPS does AND at least one quarter in-window has revenue or net income
     var hasRinc=hasEps&&(function(){var t0b=bars[0].t,t1b=bars[bars.length-1].t;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15&&(q.rev!=null||q.ni!=null);});})();
@@ -18594,7 +18594,7 @@ function MultiViewChartsPage(p){
     var rincSpan=(rincHi-rincLo)||1;
     // reserve headroom at the panel top for the value labels so the tallest bar's label
     // stays INSIDE this panel (doesn't spill up into the EPS panel above)
-    var rincLabelPad=26;
+    var rincLabelPad=12;
     var Yr=function(v){return rincTop+rincLabelPad+(1-(v-rincLo)/rincSpan)*(rincH-rincLabelPad);};
     var rincZeroY=Yr(0);
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
@@ -18743,15 +18743,17 @@ function MultiViewChartsPage(p){
         var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
         var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
         var showLabel=(qi%labelEvery===0);
-        // stack BOTH labels directly above the taller bar (revenue line, then net-income line below it),
-        // clamped so they never rise above the panel top — keeps them off the x-axis at the bottom too
-        var topBar=Math.min(revYA!=null?revYA:1e9, niYA!=null?niYA:1e9);
-        var labY=Math.max(topBar-14, rincTop+11);   // revenue label baseline
+        // Labels placed to stay INSIDE the panel: revenue value is rotated vertically and drawn INSIDE
+        // the (tall) revenue bar; net-income value sits just above its own (short) bar. Neither escapes
+        // the panel top nor the x-axis, and they don't crowd the bars above/below.
+        var revLblFits=(q.rev!=null&&(revYB-revYA)>=30);   // room to write inside the bar
+        var niLabY=Math.max((niYA!=null?niYA:rincZeroY)-3, rincTop+9);
         return <g key={'rinc'+qi}>
-          {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity="0.75"/>}
-          {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity="0.8"/>}
-          {showLabel&&q.rev!=null&&<text x={cx} y={labY} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
-          {showLabel&&q.ni!=null&&<text x={cx} y={labY+9} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
+          {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity="0.8"/>}
+          {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity="0.85"/>}
+          {showLabel&&q.rev!=null&&revLblFits&&<text x={revX+bw/2} y={revYA+4} textAnchor="end" fontSize="8" fontWeight="700" fill="#fff" fontFamily={F} transform={'rotate(-90 '+(revX+bw/2)+' '+(revYA+4)+')'}>{fmtUSD(q.rev)}</text>}
+          {showLabel&&q.rev!=null&&!revLblFits&&<text x={cx} y={Math.max(revYA-3,rincTop+9)} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
+          {showLabel&&q.ni!=null&&<text x={niX+bw/2} y={niLabY} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
         </g>;
         });
       })()}
