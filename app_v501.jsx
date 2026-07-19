@@ -18336,65 +18336,60 @@ function MultiViewChartsPage(p){
         setLivePrice((last!=null&&isFinite(last))?last:null);
       }).catch(function(){setLivePrice(null);});
     })();
-    // Fetch quarterly diluted EPS from SEC EDGAR (authoritative, complete) via the edgar-proxy Worker.
-    // Steps: ticker->CIK map -> companyconcept EPS facts -> keep clean single quarters (CYxxxxQx frame)
-    // + annual (FY) facts -> derive any missing fiscal-Q4 as annual-(sum of that FY's 3 quarters) -> YoY.
+    // Fetch quarterly fundamentals from SEC EDGAR companyfacts (one call, all concepts) via edgar-proxy.
+    // Extracts diluted EPS + revenue + net income; keeps clean single quarters (CYxxxxQx frame), derives
+    // any missing fiscal-Q4 as annual-(sum of that FY's 3 quarters), then YoY on EPS. Attached to epsQ rows.
     (function(){
       var EDGAR='https://edgar-proxy.alcharles1980.workers.dev';
       var secGet=function(path,host){var u=EDGAR+'?path='+encodeURIComponent(path)+'&host='+encodeURIComponent(host||'data.sec.gov');return fetch(u).then(function(r){return r.ok?r.json():null;});};
+      var dayMs=86400000, qframe=/^CY(\d{4})Q([1-4])$/;
+      // pull one concept's clean single-quarter values keyed by end-date, + derive fiscal-Q4 from annuals
+      var extractQuarterly=function(facts,tags,unit,round2){
+        var node=null;
+        for(var i=0;i<tags.length;i++){var nd=facts&&facts[tags[i]]&&facts[tags[i]].units&&facts[tags[i]].units[unit];if(nd&&nd.length){node=nd;break;}}
+        if(!node)return {};
+        var qs={},annuals=[];
+        node.forEach(function(f){
+          var days=(new Date(f.end)-new Date(f.start))/dayMs;
+          if(f.frame&&qframe.test(f.frame)&&days>=80&&days<=100){ if(qs[f.end]===undefined) qs[f.end]=+f.val; }
+          else if(days>=350&&days<=380){ annuals.push({start:new Date(f.start).getTime(),end:new Date(f.end).getTime(),endStr:f.end,val:+f.val}); }
+        });
+        annuals.forEach(function(a){
+          if(qs[a.endStr]!==undefined)return;
+          var withinKeys=Object.keys(qs).filter(function(k){var ms=new Date(k+'T00:00:00Z').getTime();return ms>a.start&&ms<=a.end;});
+          var hasYearEnd=withinKeys.some(function(k){return Math.abs(new Date(k+'T00:00:00Z').getTime()-a.end)<5*dayMs;});
+          if(withinKeys.length===3&&!hasYearEnd){
+            var sum3=withinKeys.reduce(function(s,k){return s+qs[k];},0);
+            var v=a.val-sum3; qs[a.endStr]=round2?Math.round(v*100)/100:Math.round(v);
+          }
+        });
+        return qs;
+      };
       secGet('/files/company_tickers.json','www.sec.gov').then(function(map){
         if(!map)throw new Error('cik map');
         var cik=null,up=t.toUpperCase();
         for(var kk in map){if(map[kk]&&map[kk].ticker&&map[kk].ticker.toUpperCase()===up){cik=map[kk].cik_str;break;}}
         if(cik==null)throw new Error('no cik');
         var cik10='CIK'+('0000000000'+cik).slice(-10);
-        // try diluted first, then basic-and-diluted fallback
-        var tryTags=function(tags){
-          if(!tags.length)return Promise.resolve(null);
-          return secGet('/api/xbrl/companyconcept/'+cik10+'/us-gaap/'+tags[0]+'.json').then(function(j){
-            if(j&&j.units&&j.units['USD/shares']&&j.units['USD/shares'].length)return j.units['USD/shares'];
-            return tryTags(tags.slice(1));
-          }).catch(function(){return tryTags(tags.slice(1));});
-        };
-        return tryTags(['EarningsPerShareDiluted','EarningsPerShareBasicAndDiluted','EarningsPerShareBasic']).then(function(facts){
-          if(!facts)throw new Error('no eps facts');
-          var dayMs=86400000;
-          var qframe=/^CY(\d{4})Q([1-4])$/;
-          // clean single quarters: has a calendar-quarter frame, ~85-95 days
-          var qs={};
-          facts.forEach(function(f){
-            if(!f.frame||!qframe.test(f.frame))return;
-            var days=(new Date(f.end)-new Date(f.start))/dayMs;
-            if(days<80||days>100)return;
-            qs[f.end]={ms:new Date(f.end+'T00:00:00Z').getTime(),eps:+f.val,end:f.end,fy:+f.fy,fp:f.fp};
-          });
-          // annual facts (~360-370 days) keyed by fiscal-year-end, to derive missing Q4
-          var annuals=[];
-          facts.forEach(function(f){
-            var days=(new Date(f.end)-new Date(f.start))/dayMs;
-            if(days>=350&&days<=380){annuals.push({start:new Date(f.start).getTime(),end:new Date(f.end).getTime(),endStr:f.end,eps:+f.val});}
-          });
-          // derive fiscal-Q4: for each annual period, find the 3 quarters that fall within it; if exactly 3
-          // and the 4th (ending at fiscal year-end) is absent, add annual - sum(those 3).
-          annuals.forEach(function(a){
-            if(qs[a.endStr])return; // a real filed quarter already sits at this date — never overwrite it
-            var within=Object.keys(qs).map(function(k){return qs[k];}).filter(function(q){return q.ms>a.start&&q.ms<=a.end;});
-            var hasYearEnd=within.some(function(q){return Math.abs(q.ms-a.end)<5*dayMs;});
-            if(within.length===3&&!hasYearEnd){
-              var sum3=within.reduce(function(s,q){return s+q.eps;},0);
-              var q4eps=Math.round((a.eps-sum3)*100)/100;
-              qs[a.endStr]={ms:a.end,eps:q4eps,end:a.endStr,derived:true};
-            }
-          });
-          var rows=Object.keys(qs).map(function(k){return qs[k];});
+        return secGet('/api/xbrl/companyfacts/'+cik10+'.json').then(function(cf){
+          var facts=cf&&cf.facts&&cf.facts['us-gaap'];
+          if(!facts)throw new Error('no facts');
+          var epsMap=extractQuarterly(facts,['EarningsPerShareDiluted','EarningsPerShareBasicAndDiluted','EarningsPerShareBasic'],'USD/shares',true);
+          var revMap=extractQuarterly(facts,['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'],'USD',false);
+          var niMap=extractQuarterly(facts,['NetIncomeLoss','ProfitLoss'],'USD',false);
+          // union of quarter-end dates across the three concepts
+          var ends={};[epsMap,revMap,niMap].forEach(function(m){Object.keys(m).forEach(function(k){ends[k]=1;});});
+          var rows=Object.keys(ends).map(function(end){
+            var ms=new Date(end+'T00:00:00Z').getTime();
+            return {ms:ms,end:end,eps:(epsMap[end]!==undefined?epsMap[end]:null),rev:(revMap[end]!==undefined?revMap[end]:null),ni:(niMap[end]!==undefined?niMap[end]:null)};
+          }).filter(function(r){return r.eps!=null||r.rev!=null||r.ni!=null;});
           rows.sort(function(x,y){return x.ms-y.ms;});
-          // label each quarter as Q1-Q4 by its month, and compute YoY vs the quarter ~1 year earlier
           rows.forEach(function(row){
             var d=new Date(row.ms);var mo=d.getUTCMonth();
-            row.qnum=Math.floor(mo/3)+1; // calendar quarter of the period-end
+            row.qnum=Math.floor(mo/3)+1;
             var prior=rows.filter(function(o){return o.ms<row.ms-300*dayMs&&o.ms>row.ms-430*dayMs;})[0];
-            row.yoy=(prior&&prior.eps!=null&&prior.eps!==0)?((row.eps-prior.eps)/Math.abs(prior.eps)*100):null;
-            row.label='Q'+row.qnum+" '"+String(d.getUTCFullYear()).slice(-2)+(row.derived?' (der.)':'');
+            row.yoy=(row.eps!=null&&prior&&prior.eps!=null&&prior.eps!==0)?((row.eps-prior.eps)/Math.abs(prior.eps)*100):null;
+            row.label='Q'+row.qnum+" '"+String(d.getUTCFullYear()).slice(-2);
             row.fp='Q'+row.qnum;
           });
           setEpsQ(rows);
@@ -18464,6 +18459,7 @@ function MultiViewChartsPage(p){
 
   var fmtPx=function(v){if(v==null||!isFinite(v))return '—';return '$'+(v>=1000?v.toFixed(0):v>=1?v.toFixed(2):v.toFixed(4));};
   var fmtVol=function(v){if(v==null)return '—';var a=Math.abs(v);if(a>=1e9)return (v/1e9).toFixed(2)+'B';if(a>=1e6)return (v/1e6).toFixed(1)+'M';if(a>=1e3)return (v/1e3).toFixed(0)+'K';return ''+v;};
+  var fmtUSD=function(v){if(v==null||!isFinite(v))return '—';var s=v<0?'-':'';var a=Math.abs(v);if(a>=1e9)return s+'$'+(a/1e9).toFixed(2)+'B';if(a>=1e6)return s+'$'+(a/1e6).toFixed(0)+'M';if(a>=1e3)return s+'$'+(a/1e3).toFixed(0)+'K';return s+'$'+a.toFixed(0);};
 
   // ---- average daily True Range %, simple mean over the window (each day's TR / that day's close) ----
   var avgTrPct=function(daily){
@@ -18541,9 +18537,11 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, macdH=90, epsH=80, gap=8, axisH=30, PADT=14;
+    var priceH=380, volH=90, macdH=90, epsH=80, rincH=92, gap=8, axisH=30, PADT=14;
     var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
-    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+axisH;
+    // revenue/income panel shows whenever EPS does AND at least one quarter in-window has revenue or net income
+    var hasRinc=hasEps&&(function(){var t0b=bars[0].t,t1b=bars[bars.length-1].t;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15&&(q.rev!=null||q.ni!=null);});})();
+    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+rincH:0)+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
@@ -18583,6 +18581,16 @@ function MultiViewChartsPage(p){
     var epsSpan=(epsHi-epsLo)||1;
     var Ye=function(v){return epsTop+(1-(v-epsLo)/epsSpan)*epsH;};
     var epsZeroY=Ye(0);
+    // Revenue/income panel geometry (only when hasRinc) — grouped bars: revenue + net income, shared $ scale
+    var rincTop=epsTop+epsH+gap;
+    var rincInWin=hasRinc?epsQ.filter(function(q){return q.ms>=bars[0].t-86400000*15&&q.ms<=bars[bars.length-1].t+86400000*15&&(q.rev!=null||q.ni!=null);}):[];
+    var rincVals=[];rincInWin.forEach(function(q){if(q.rev!=null)rincVals.push(q.rev);if(q.ni!=null)rincVals.push(q.ni);});
+    var rincHi=rincVals.length?Math.max.apply(null,rincVals):1;
+    var rincLo=rincVals.length?Math.min.apply(null,rincVals):0;
+    if(rincHi<=0)rincHi=1; if(rincLo>0)rincLo=0;   // always include zero baseline (net income can be negative)
+    var rincSpan=(rincHi-rincLo)||1;
+    var Yr=function(v){return rincTop+(1-(v-rincLo)/rincSpan)*rincH;};
+    var rincZeroY=Yr(0);
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
@@ -18699,6 +18707,36 @@ function MultiViewChartsPage(p){
           <text x={bx+10} y={by+49} fontSize="10.5" fill={C.txtDim} fontFamily={F}>YoY: <tspan fill={col} fontWeight="700">{eq.yoy!=null?((eq.yoy>=0?'+':'')+eq.yoy.toFixed(1)+'%'):'n/a'}</tspan></text>
         </g>;
       })()}
+      {/* Revenue / Net income panel — grouped bars per quarter (revenue + net income) with $ value labels */}
+      {hasRinc&&<text x={PADL-8} y={rincTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>REV /</text>}
+      {hasRinc&&<text x={PADL-8} y={rincTop+22} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>INC</text>}
+      {hasRinc&&<line x1={PADL} y1={rincTop+rincH} x2={W-PADR} y2={rincTop+rincH} stroke={C.border} strokeWidth="0.6"/>}
+      {hasRinc&&Math.abs(rincZeroY-(rincTop+rincH))>2&&<line x1={PADL} y1={rincZeroY} x2={W-PADR} y2={rincZeroY} stroke={C.txtDim} strokeWidth="0.5" strokeDasharray="2 3"/>}
+      {hasRinc&&(function(){
+        // small legend (top-right of panel)
+        return <g>
+          <rect x={W-PADR-150} y={rincTop+2} width="9" height="9" rx="1.5" fill={C.blue} opacity="0.75"/>
+          <text x={W-PADR-138} y={rincTop+10} fontSize="9" fill={C.txtDim} fontFamily={F}>Revenue</text>
+          <rect x={W-PADR-78} y={rincTop+2} width="9" height="9" rx="1.5" fill={C.accent} opacity="0.75"/>
+          <text x={W-PADR-66} y={rincTop+10} fontSize="9" fill={C.txtDim} fontFamily={F}>Net income</text>
+        </g>;
+      })()}
+      {hasRinc&&rincInWin.map(function(q,qi){
+        var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-q.ms);if(dd<bd){bd=dd;bi=i;}}
+        var cx=PADL+slot*bi+slot/2;
+        // two side-by-side bars centered on cx; width scales with available slot
+        var pairW=Math.min(Math.max(slot*0.62,10),30), bw=pairW/2-1;
+        var revX=cx-pairW/2, niX=cx+0.5;
+        var niCol=(q.ni!=null&&q.ni<0)?DN:C.accent;
+        var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
+        var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
+        return <g key={'rinc'+qi}>
+          {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity="0.75"/>}
+          {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity="0.8"/>}
+          {q.rev!=null&&<text x={cx} y={Math.min(revYA,(q.ni!=null?niYA:revYA))-3} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
+          {q.ni!=null&&<text x={cx} y={(rincTop+rincH)+9} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
+        </g>;
+      })}
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
       {/* crosshair + tooltip */}
@@ -18709,7 +18747,7 @@ function MultiViewChartsPage(p){
         var by=PADT+8;
         var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
         return <g>
-          <line x1={cx} y1={PADT} x2={cx} y2={hasEps?epsTop+epsH:macdTop+macdH} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
+          <line x1={cx} y1={PADT} x2={cx} y2={hasRinc?rincTop+rincH:(hasEps?epsTop+epsH:macdTop+macdH)} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
           <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
           <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
           <g onClick={closeHover} onTouchStart={closeHover} style={{cursor:'pointer'}}>
