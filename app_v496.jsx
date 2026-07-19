@@ -18284,9 +18284,11 @@ function MultiViewChartsPage(p){
         setLivePrice((last!=null&&isFinite(last))?last:null);
       }).catch(function(){setLivePrice(null);});
     })();
-    // Fetch quarterly diluted EPS (~20 quarters) for earnings markers + YoY growth.
+    // Fetch quarterly diluted EPS (~40 quarters) for the EPS panel + YoY growth.
+    // Sort by filing_date: period_of_report_date is null for some issuers (e.g. ORCL), which
+    // scrambles the ordering and can drop recent quarters when combined with the limit.
     (function(){
-      var furl='https://api.polygon.io/vX/reference/financials?ticker='+encodeURIComponent(t)+'&timeframe=quarterly&limit=20&order=desc&sort=period_of_report_date&apiKey='+p.apiKey;
+      var furl='https://api.polygon.io/vX/reference/financials?ticker='+encodeURIComponent(t)+'&timeframe=quarterly&limit=40&order=desc&sort=filing_date&apiKey='+p.apiKey;
       fetch(furl).then(function(r){return r.json();}).then(function(j){
         var rows=(j.results||[]).map(function(r){
           var inc=(r.financials&&r.financials.income_statement)||{};
