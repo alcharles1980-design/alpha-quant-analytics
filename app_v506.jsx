@@ -18713,49 +18713,72 @@ function MultiViewChartsPage(p){
           <text x={bx+10} y={by+49} fontSize="10.5" fill={C.txtDim} fontFamily={F}>YoY: <tspan fill={col} fontWeight="700">{eq.yoy!=null?((eq.yoy>=0?'+':'')+eq.yoy.toFixed(1)+'%'):'n/a'}</tspan></text>
         </g>;
       })()}
-      {/* Revenue / Net income panel — grouped bars per quarter (revenue + net income) with $ value labels */}
+      {/* Revenue / Net income panel — grouped bars per quarter; values inline only when sparse,
+          else a latest-quarter readout + tap-for-detail tooltip (keeps dense charts clean) */}
       {hasRinc&&<text x={PADL-8} y={rincTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>REV /</text>}
       {hasRinc&&<text x={PADL-8} y={rincTop+22} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>INC</text>}
       {hasRinc&&<line x1={PADL} y1={rincTop+rincH} x2={W-PADR} y2={rincTop+rincH} stroke={C.border} strokeWidth="0.6"/>}
       {hasRinc&&Math.abs(rincZeroY-(rincTop+rincH))>2&&<line x1={PADL} y1={rincZeroY} x2={W-PADR} y2={rincZeroY} stroke={C.txtDim} strokeWidth="0.5" strokeDasharray="2 3"/>}
       {hasRinc&&(function(){
-        // compact legend, bottom-left of panel (out of the bar-label zone at the top)
+        // Only draw per-bar value labels when there are few enough quarters that they won't collide
+        // (<=6 in-window, i.e. ~1Y or shorter). On dense charts we keep bars clean and rely on the
+        // latest-quarter readout (top-right) + tap tooltip.
+        var sparse=(rincInWin.length<=6);
+        return rincInWin.map(function(q,qi){
+          var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-q.ms);if(dd<bd){bd=dd;bi=i;}}
+          var cx=PADL+slot*bi+slot/2;
+          var pairW=Math.min(Math.max(slot*0.62,10),30), bw=pairW/2-1;
+          var revX=cx-pairW/2, niX=cx+0.5;
+          var niCol=(q.ni!=null&&q.ni<0)?DN:C.accent;
+          var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
+          var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
+          var isSel=(epsHover[tf.key]===qi);
+          return <g key={'rinc'+qi} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},epsHover);nh[tf.key]=(nh[tf.key]===qi?undefined:qi);setEpsHover(nh);}} style={{cursor:'pointer'}}>
+            {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity={isSel?1:0.8}/>}
+            {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity={isSel?1:0.85}/>}
+            {sparse&&q.rev!=null&&<text x={cx} y={Math.max(Math.min(revYA,(niYA!=null?niYA:revYA))-8,rincTop+9)} textAnchor="middle" fontSize="8" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
+            {sparse&&q.ni!=null&&<text x={cx} y={Math.max(Math.min(revYA,(niYA!=null?niYA:revYA))-8,rincTop+9)+9} textAnchor="middle" fontSize="8" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
+          </g>;
+        });
+      })()}
+      {/* latest-quarter readout (top-right of panel) — always shown so the current figures are visible */}
+      {hasRinc&&(function(){
+        var last=null;for(var i=rincInWin.length-1;i>=0;i--){if(rincInWin[i].rev!=null||rincInWin[i].ni!=null){last=rincInWin[i];break;}}
+        if(!last)return null;
+        return <g>
+          <text x={W-PADR} y={rincTop+10} textAnchor="end" fontSize="9" fontFamily={F}>
+            <tspan fill={C.txtDim}>{last.label} rev </tspan><tspan fill={C.blue} fontWeight="700">{fmtUSD(last.rev)}</tspan>
+          </text>
+          <text x={W-PADR} y={rincTop+22} textAnchor="end" fontSize="9" fontFamily={F}>
+            <tspan fill={C.txtDim}>net inc </tspan><tspan fill={(last.ni!=null&&last.ni<0)?DN:C.accent} fontWeight="700">{fmtUSD(last.ni)}</tspan>
+          </text>
+        </g>;
+      })()}
+      {/* compact legend, bottom-left */}
+      {hasRinc&&(function(){
         var ly=rincTop+rincH-5;
         return <g>
-          <rect x={PADL+4} y={ly-8} width="8" height="8" rx="1.5" fill={C.blue} opacity="0.75"/>
+          <rect x={PADL+4} y={ly-8} width="8" height="8" rx="1.5" fill={C.blue} opacity="0.85"/>
           <text x={PADL+15} y={ly-1} fontSize="8.5" fill={C.txtDim} fontFamily={F}>Revenue</text>
-          <rect x={PADL+62} y={ly-8} width="8" height="8" rx="1.5" fill={C.accent} opacity="0.75"/>
+          <rect x={PADL+62} y={ly-8} width="8" height="8" rx="1.5" fill={C.accent} opacity="0.85"/>
           <text x={PADL+73} y={ly-1} fontSize="8.5" fill={C.txtDim} fontFamily={F}>Net income</text>
         </g>;
       })()}
+      {/* Rev/income detail tooltip (tap a quarter) */}
       {hasRinc&&(function(){
-        // label density: a $ value label is ~34px wide; only label every Nth quarter when bars are
-        // tight so labels never overlap horizontally on dense charts (10Y/5Y). Bars always draw.
-        var perQ=(rincInWin.length>1)?((W-PADL-PADR)/rincInWin.length):999;
-        var labelEvery=Math.max(1,Math.ceil(36/perQ));
-        return rincInWin.map(function(q,qi){
+        var qi=epsHover[tf.key];if(qi==null||!rincInWin[qi])return null;
+        var q=rincInWin[qi];if(q.rev==null&&q.ni==null)return null;
         var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-q.ms);if(dd<bd){bd=dd;bi=i;}}
         var cx=PADL+slot*bi+slot/2;
-        // two side-by-side bars centered on cx; width scales with available slot
-        var pairW=Math.min(Math.max(slot*0.62,10),30), bw=pairW/2-1;
-        var revX=cx-pairW/2, niX=cx+0.5;
-        var niCol=(q.ni!=null&&q.ni<0)?DN:C.accent;
-        var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
-        var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
-        var showLabel=(qi%labelEvery===0);
-        // Labels placed to stay INSIDE the panel: revenue value is rotated vertically and drawn INSIDE
-        // the (tall) revenue bar; net-income value sits just above its own (short) bar. Neither escapes
-        // the panel top nor the x-axis, and they don't crowd the bars above/below.
-        var revLblFits=(q.rev!=null&&(revYB-revYA)>=30);   // room to write inside the bar
-        var niLabY=Math.max((niYA!=null?niYA:rincZeroY)-3, rincTop+9);
-        return <g key={'rinc'+qi}>
-          {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity="0.8"/>}
-          {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity="0.85"/>}
-          {showLabel&&q.rev!=null&&revLblFits&&<text x={revX+bw/2} y={revYA+4} textAnchor="end" fontSize="8" fontWeight="700" fill="#fff" fontFamily={F} transform={'rotate(-90 '+(revX+bw/2)+' '+(revYA+4)+')'}>{fmtUSD(q.rev)}</text>}
-          {showLabel&&q.rev!=null&&!revLblFits&&<text x={cx} y={Math.max(revYA-3,rincTop+9)} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
-          {showLabel&&q.ni!=null&&<text x={niX+bw/2} y={niLabY} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
+        var bw2=170,bh=76;var bx=Math.min(Math.max(cx-bw2/2,PADL),W-PADR-bw2);var by=rincTop+2;
+        var margin=(q.rev!=null&&q.rev!==0&&q.ni!=null)?(q.ni/q.rev*100):null;
+        return <g>
+          <rect x={bx} y={by} width={bw2} height={bh} rx="6" fill={C.bgCard} stroke={C.border} strokeWidth="1.2" opacity="0.98"/>
+          <text x={bx+10} y={by+17} fontSize="11.5" fontWeight="700" fill={C.txtBright} fontFamily={F}>{q.label}</text>
+          <text x={bx+10} y={by+34} fontSize="10.5" fill={C.txtDim} fontFamily={F}>Revenue: <tspan fill={C.blue} fontWeight="700">{fmtUSD(q.rev)}</tspan></text>
+          <text x={bx+10} y={by+50} fontSize="10.5" fill={C.txtDim} fontFamily={F}>Net income: <tspan fill={(q.ni!=null&&q.ni<0)?DN:C.accent} fontWeight="700">{fmtUSD(q.ni)}</tspan></text>
+          <text x={bx+10} y={by+66} fontSize="10.5" fill={C.txtDim} fontFamily={F}>Net margin: <tspan fill={C.txtBright} fontWeight="700">{margin!=null?(margin.toFixed(1)+'%'):'n/a'}</tspan></text>
         </g>;
-        });
       })()}
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
