@@ -17909,7 +17909,7 @@ function CompanyFundamentalsPage(p){
 
   // ---- SEC EDGAR companyfacts extraction (authoritative, complete — replaces Polygon financials) ----
   var EDGAR='https://edgar-proxy.alcharles1980.workers.dev';
-  var secGet=function(path,host){return fetch(EDGAR,{headers:{'X-SEC-Path':path,'X-SEC-Host':host||'data.sec.gov'}}).then(function(r){return r.ok?r.json():null;});};
+  var secGet=function(path,host){var u=EDGAR+'?path='+encodeURIComponent(path)+'&host='+encodeURIComponent(host||'data.sec.gov');return fetch(u).then(function(r){return r.ok?r.json():null;});};
   // XBRL tag candidates per field (first present wins); some fields sum a tag across fallbacks
   var TAGS={
     revenue:['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'],
@@ -18341,7 +18341,7 @@ function MultiViewChartsPage(p){
     // + annual (FY) facts -> derive any missing fiscal-Q4 as annual-(sum of that FY's 3 quarters) -> YoY.
     (function(){
       var EDGAR='https://edgar-proxy.alcharles1980.workers.dev';
-      var secGet=function(path,host){return fetch(EDGAR,{headers:{'X-SEC-Path':path,'X-SEC-Host':host||'data.sec.gov'}}).then(function(r){return r.ok?r.json():null;});};
+      var secGet=function(path,host){var u=EDGAR+'?path='+encodeURIComponent(path)+'&host='+encodeURIComponent(host||'data.sec.gov');return fetch(u).then(function(r){return r.ok?r.json():null;});};
       secGet('/files/company_tickers.json','www.sec.gov').then(function(map){
         if(!map)throw new Error('cik map');
         var cik=null,up=t.toUpperCase();

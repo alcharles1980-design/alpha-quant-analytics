@@ -15,8 +15,9 @@ export default {
       return new Response(null, { headers: Object.assign({ 'Access-Control-Max-Age': '86400' }, CORS) });
     }
 
-    const secPath = request.headers.get('X-SEC-Path');
-    let secHost = request.headers.get('X-SEC-Host') || 'data.sec.gov';
+    const url0 = new URL(request.url);
+    const secPath = request.headers.get('X-SEC-Path') || url0.searchParams.get('path');
+    let secHost = request.headers.get('X-SEC-Host') || url0.searchParams.get('host') || 'data.sec.gov';
 
     if (!secPath || !secPath.startsWith('/')) {
       return new Response(JSON.stringify({ error: 'Missing or invalid X-SEC-Path header' }), {
