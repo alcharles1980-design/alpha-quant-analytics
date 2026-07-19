@@ -18345,14 +18345,16 @@ function MultiViewChartsPage(p){
       var dayMs=86400000, qframe=/^CY(\d{4})Q([1-4])$/;
       // pull one concept's clean single-quarter values keyed by end-date, + derive fiscal-Q4 from annuals
       var extractQuarterly=function(facts,tags,unit,round2){
-        var node=null;
-        for(var i=0;i<tags.length;i++){var nd=facts&&facts[tags[i]]&&facts[tags[i]].units&&facts[tags[i]].units[unit];if(nd&&nd.length){node=nd;break;}}
-        if(!node)return {};
+        // MERGE facts across ALL candidate tags (companies switch XBRL tags over time — e.g. NVDA used
+        // RevenueFromContractWithCustomer... only ~2019-20, then Revenues — so a single tag misses eras).
+        var node=[];
+        for(var i=0;i<tags.length;i++){var nd=facts&&facts[tags[i]]&&facts[tags[i]].units&&facts[tags[i]].units[unit];if(nd&&nd.length)node=node.concat(nd);}
+        if(!node.length)return {};
         var qs={},annuals=[];
         node.forEach(function(f){
           var days=(new Date(f.end)-new Date(f.start))/dayMs;
           if(f.frame&&qframe.test(f.frame)&&days>=80&&days<=100){ if(qs[f.end]===undefined) qs[f.end]=+f.val; }
-          else if(days>=350&&days<=380){ annuals.push({start:new Date(f.start).getTime(),end:new Date(f.end).getTime(),endStr:f.end,val:+f.val}); }
+          else if(days>=350&&days<=380){ if(!annuals.some(function(a){return a.endStr===f.end;})) annuals.push({start:new Date(f.start).getTime(),end:new Date(f.end).getTime(),endStr:f.end,val:+f.val}); }
         });
         annuals.forEach(function(a){
           if(qs[a.endStr]!==undefined)return;
