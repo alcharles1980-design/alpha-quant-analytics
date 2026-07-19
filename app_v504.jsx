@@ -18539,7 +18539,7 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, macdH=90, epsH=80, rincH=92, gap=8, axisH=30, PADT=14;
+    var priceH=380, volH=90, macdH=90, epsH=80, rincH=120, gap=8, axisH=30, PADT=14;
     var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
     // revenue/income panel shows whenever EPS does AND at least one quarter in-window has revenue or net income
     var hasRinc=hasEps&&(function(){var t0b=bars[0].t,t1b=bars[bars.length-1].t;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15&&(q.rev!=null||q.ni!=null);});})();
@@ -18594,7 +18594,7 @@ function MultiViewChartsPage(p){
     var rincSpan=(rincHi-rincLo)||1;
     // reserve headroom at the panel top for the value labels so the tallest bar's label
     // stays INSIDE this panel (doesn't spill up into the EPS panel above)
-    var rincLabelPad=14;
+    var rincLabelPad=26;
     var Yr=function(v){return rincTop+rincLabelPad+(1-(v-rincLo)/rincSpan)*(rincH-rincLabelPad);};
     var rincZeroY=Yr(0);
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
@@ -18719,19 +18719,20 @@ function MultiViewChartsPage(p){
       {hasRinc&&<line x1={PADL} y1={rincTop+rincH} x2={W-PADR} y2={rincTop+rincH} stroke={C.border} strokeWidth="0.6"/>}
       {hasRinc&&Math.abs(rincZeroY-(rincTop+rincH))>2&&<line x1={PADL} y1={rincZeroY} x2={W-PADR} y2={rincZeroY} stroke={C.txtDim} strokeWidth="0.5" strokeDasharray="2 3"/>}
       {hasRinc&&(function(){
-        // small legend (top-right of panel)
+        // compact legend, bottom-left of panel (out of the bar-label zone at the top)
+        var ly=rincTop+rincH-5;
         return <g>
-          <rect x={W-PADR-150} y={rincTop+2} width="9" height="9" rx="1.5" fill={C.blue} opacity="0.75"/>
-          <text x={W-PADR-138} y={rincTop+10} fontSize="9" fill={C.txtDim} fontFamily={F}>Revenue</text>
-          <rect x={W-PADR-78} y={rincTop+2} width="9" height="9" rx="1.5" fill={C.accent} opacity="0.75"/>
-          <text x={W-PADR-66} y={rincTop+10} fontSize="9" fill={C.txtDim} fontFamily={F}>Net income</text>
+          <rect x={PADL+4} y={ly-8} width="8" height="8" rx="1.5" fill={C.blue} opacity="0.75"/>
+          <text x={PADL+15} y={ly-1} fontSize="8.5" fill={C.txtDim} fontFamily={F}>Revenue</text>
+          <rect x={PADL+62} y={ly-8} width="8" height="8" rx="1.5" fill={C.accent} opacity="0.75"/>
+          <text x={PADL+73} y={ly-1} fontSize="8.5" fill={C.txtDim} fontFamily={F}>Net income</text>
         </g>;
       })()}
       {hasRinc&&(function(){
-        // label density: each $ label is ~34px wide; only label every Nth quarter when bars are tight,
-        // so labels never overlap horizontally on dense charts (10Y/5Y). Bars always draw.
+        // label density: a $ value label is ~34px wide; only label every Nth quarter when bars are
+        // tight so labels never overlap horizontally on dense charts (10Y/5Y). Bars always draw.
         var perQ=(rincInWin.length>1)?((W-PADL-PADR)/rincInWin.length):999;
-        var labelEvery=Math.max(1,Math.ceil(34/perQ));
+        var labelEvery=Math.max(1,Math.ceil(36/perQ));
         return rincInWin.map(function(q,qi){
         var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-q.ms);if(dd<bd){bd=dd;bi=i;}}
         var cx=PADL+slot*bi+slot/2;
@@ -18742,11 +18743,15 @@ function MultiViewChartsPage(p){
         var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
         var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
         var showLabel=(qi%labelEvery===0);
+        // stack BOTH labels directly above the taller bar (revenue line, then net-income line below it),
+        // clamped so they never rise above the panel top — keeps them off the x-axis at the bottom too
+        var topBar=Math.min(revYA!=null?revYA:1e9, niYA!=null?niYA:1e9);
+        var labY=Math.max(topBar-14, rincTop+11);   // revenue label baseline
         return <g key={'rinc'+qi}>
           {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity="0.75"/>}
           {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity="0.8"/>}
-          {showLabel&&q.rev!=null&&<text x={cx} y={Math.min(revYA,(q.ni!=null?niYA:revYA))-3} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
-          {showLabel&&q.ni!=null&&<text x={cx} y={(rincTop+rincH)+9} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
+          {showLabel&&q.rev!=null&&<text x={cx} y={labY} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
+          {showLabel&&q.ni!=null&&<text x={cx} y={labY+9} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={niCol} fontFamily={F}>{fmtUSD(q.ni)}</text>}
         </g>;
         });
       })()}
