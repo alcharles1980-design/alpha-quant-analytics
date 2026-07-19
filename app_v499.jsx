@@ -18465,7 +18465,6 @@ function MultiViewChartsPage(p){
   var fmtPx=function(v){if(v==null||!isFinite(v))return '—';return '$'+(v>=1000?v.toFixed(0):v>=1?v.toFixed(2):v.toFixed(4));};
   var fmtVol=function(v){if(v==null)return '—';var a=Math.abs(v);if(a>=1e9)return (v/1e9).toFixed(2)+'B';if(a>=1e6)return (v/1e6).toFixed(1)+'M';if(a>=1e3)return (v/1e3).toFixed(0)+'K';return ''+v;};
 
-  // ---- 14-period ATR% (Wilder) from DAILY bars; returns pct of latest close ----
   // ---- average daily True Range %, simple mean over the window (each day's TR / that day's close) ----
   var avgTrPct=function(daily){
     if(!daily||daily.length<2)return null;
@@ -18513,7 +18512,7 @@ function MultiViewChartsPage(p){
     var e12=emaSeries(closes,12),e26=emaSeries(closes,26);
     var macd=closes.map(function(_,i){return (e12[i]!=null&&e26[i]!=null)?(e12[i]-e26[i]):null;});
     // EMA9 of the macd line, over only the defined portion
-    var sig=[];var k=2/(9+1);var prev=null;var seededAt=null;var buf=[];
+    var sig=[];var k=2/(9+1);var prev=null;var buf=[];
     for(var i=0;i<macd.length;i++){
       if(macd[i]==null){sig.push(null);continue;}
       buf.push(macd[i]);
@@ -18576,9 +18575,14 @@ function MultiViewChartsPage(p){
     // EPS panel geometry (only when hasEps) — quarterly diluted EPS bars, colored by YoY
     var epsTop=macdTop+macdH+gap;
     var epsInWin=hasEps?epsQ.filter(function(q){return q.ms>=bars[0].t-86400000*15&&q.ms<=bars[bars.length-1].t+86400000*15;}):[];
-    var epsMaxVal=epsInWin.length?Math.max.apply(null,epsInWin.map(function(q){return q.eps!=null?q.eps:0;})):1;
-    if(epsMaxVal<=0)epsMaxVal=1;
-    var Ye=function(v){return epsTop+(1-(v/epsMaxVal))*epsH;};
+    // scale spans the full EPS range including negatives; zero baseline so loss quarters draw downward
+    var epsVals=epsInWin.map(function(q){return q.eps!=null?q.eps:0;});
+    var epsHi=epsVals.length?Math.max.apply(null,epsVals):1;
+    var epsLo=epsVals.length?Math.min.apply(null,epsVals):0;
+    if(epsHi<=0)epsHi=0.01; if(epsLo>0)epsLo=0;   // always include zero in range
+    var epsSpan=(epsHi-epsLo)||1;
+    var Ye=function(v){return epsTop+(1-(v-epsLo)/epsSpan)*epsH;};
+    var epsZeroY=Ye(0);
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
@@ -18663,16 +18667,19 @@ function MultiViewChartsPage(p){
       {hasEps&&<text x={PADL-8} y={epsTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>EPS</text>}
       {hasEps&&<text x={PADL-8} y={epsTop+epsH-2} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>diluted</text>}
       {hasEps&&<line x1={PADL} y1={epsTop+epsH} x2={W-PADR} y2={epsTop+epsH} stroke={C.border} strokeWidth="0.6"/>}
+      {hasEps&&Math.abs(epsZeroY-(epsTop+epsH))>2&&<line x1={PADL} y1={epsZeroY} x2={W-PADR} y2={epsZeroY} stroke={C.txtDim} strokeWidth="0.5" strokeDasharray="2 3"/>}
       {hasEps&&epsInWin.map(function(eq,ei){
         // nearest bar by time for x-position
         var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-eq.ms);if(dd<bd){bd=dd;bi=i;}}
         var cx=PADL+slot*bi+slot/2;
         var col=(eq.yoy==null)?C.txtDim:(eq.yoy>=0?UP:DN);
         var bw2=Math.min(Math.max(slot*0.5,6),22);
-        var yTop=(eq.eps!=null&&eq.eps>0)?Ye(eq.eps):epsTop+epsH;
         var isSel=(epsHover[tf.key]===ei);
+        // bar spans from the zero baseline to the EPS value (up for gains, down for losses)
+        var yVal=(eq.eps!=null)?Ye(eq.eps):null;
+        var yA=(yVal!=null)?Math.min(yVal,epsZeroY):null, yB=(yVal!=null)?Math.max(yVal,epsZeroY):null;
         return <g key={'epsb'+ei} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},epsHover);nh[tf.key]=(nh[tf.key]===ei?undefined:ei);setEpsHover(nh);}} style={{cursor:'pointer'}}>
-          {eq.eps!=null&&eq.eps>0&&<rect x={cx-bw2/2} y={yTop} width={bw2} height={Math.max(epsTop+epsH-yTop,1)} fill={col} opacity={isSel?0.95:0.6} stroke={isSel?C.txtBright:'none'} strokeWidth={isSel?1:0}/>}
+          {eq.eps!=null&&<rect x={cx-bw2/2} y={yA} width={bw2} height={Math.max(yB-yA,1)} fill={col} opacity={isSel?0.95:0.6} stroke={isSel?C.txtBright:'none'} strokeWidth={isSel?1:0}/>}
           {eq.eps==null&&<circle cx={cx} cy={epsTop+epsH-4} r="2.5" fill={C.txtDim}/>}
           <text x={cx} y={epsTop+epsH+9} textAnchor="middle" fontSize="7" fill={C.txtDim} fontFamily={F}>{eq.fp}</text>
         </g>;
