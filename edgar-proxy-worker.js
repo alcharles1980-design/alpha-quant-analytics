@@ -33,17 +33,14 @@ export default {
     const url = 'https://' + secHost + secPath;
 
     try {
-      const resp = await fetch(url, {
-        method: 'GET',
-        headers: {
-          // SEC requires a descriptive UA with contact info per their fair-access policy
-          'User-Agent': 'AlphaQuantAnalytics research alcharles1980@users.noreply.github.com',
-          'Accept': 'application/json',
-          'Accept-Encoding': 'gzip'
-        },
-        // Edge-cache to keep request volume low (facts change at most quarterly)
-        cf: { cacheTtl: 3600, cacheEverything: true }
-      });
+      // SEC fair-access policy requires UA formatted as "Company Name email@domain".
+      // Cloudflare's fetch preserves an explicit User-Agent header; set it verbatim.
+      const req = new Request(url, { method: 'GET' });
+      req.headers.set('User-Agent', 'Alpha Quant Analytics admin@alphaquant.dev');
+      req.headers.set('Accept', 'application/json, text/plain, */*');
+      req.headers.set('Accept-Encoding', 'gzip, deflate');
+      req.headers.set('Host', secHost);
+      const resp = await fetch(req, { cf: { cacheTtl: 3600, cacheEverything: true } });
 
       const body = await resp.text();
       return new Response(body, {
