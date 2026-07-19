@@ -18284,27 +18284,69 @@ function MultiViewChartsPage(p){
         setLivePrice((last!=null&&isFinite(last))?last:null);
       }).catch(function(){setLivePrice(null);});
     })();
-    // Fetch quarterly diluted EPS (~40 quarters) for the EPS panel + YoY growth.
-    // Sort by filing_date: period_of_report_date is null for some issuers (e.g. ORCL), which
-    // scrambles the ordering and can drop recent quarters when combined with the limit.
+    // Fetch quarterly diluted EPS from SEC EDGAR (authoritative, complete) via the edgar-proxy Worker.
+    // Steps: ticker->CIK map -> companyconcept EPS facts -> keep clean single quarters (CYxxxxQx frame)
+    // + annual (FY) facts -> derive any missing fiscal-Q4 as annual-(sum of that FY's 3 quarters) -> YoY.
     (function(){
-      var furl='https://api.polygon.io/vX/reference/financials?ticker='+encodeURIComponent(t)+'&timeframe=quarterly&limit=40&order=desc&sort=filing_date&apiKey='+p.apiKey;
-      fetch(furl).then(function(r){return r.json();}).then(function(j){
-        var rows=(j.results||[]).map(function(r){
-          var inc=(r.financials&&r.financials.income_statement)||{};
-          var d=inc.diluted_earnings_per_share;
-          var eps=(d&&typeof d.value==='number')?d.value:null;
-          var dt=r.end_date||r.period_of_report_date;
-          return {fp:r.fiscal_period,fy:+r.fiscal_year,ms:dt?new Date(dt+'T00:00:00Z').getTime():null,eps:eps};
-        }).filter(function(x){return x.ms!=null&&x.fp&&x.fy;});
-        // YoY: match same fiscal_period one fiscal_year earlier
-        rows.forEach(function(row){
-          var prior=rows.filter(function(o){return o.fp===row.fp&&o.fy===row.fy-1&&o.eps!=null;})[0];
-          row.yoy=(row.eps!=null&&prior&&prior.eps!=null&&prior.eps!==0)?((row.eps-prior.eps)/Math.abs(prior.eps)*100):null;
-          row.label=row.fp+' FY'+String(row.fy).slice(-2);
+      var EDGAR='https://edgar-proxy.alcharles1980.workers.dev';
+      var secGet=function(path,host){return fetch(EDGAR,{headers:{'X-SEC-Path':path,'X-SEC-Host':host||'data.sec.gov'}}).then(function(r){return r.ok?r.json():null;});};
+      secGet('/files/company_tickers.json','www.sec.gov').then(function(map){
+        if(!map)throw new Error('cik map');
+        var cik=null,up=t.toUpperCase();
+        for(var kk in map){if(map[kk]&&map[kk].ticker&&map[kk].ticker.toUpperCase()===up){cik=map[kk].cik_str;break;}}
+        if(cik==null)throw new Error('no cik');
+        var cik10='CIK'+('0000000000'+cik).slice(-10);
+        // try diluted first, then basic-and-diluted fallback
+        var tryTags=function(tags){
+          if(!tags.length)return Promise.resolve(null);
+          return secGet('/api/xbrl/companyconcept/'+cik10+'/us-gaap/'+tags[0]+'.json').then(function(j){
+            if(j&&j.units&&j.units['USD/shares']&&j.units['USD/shares'].length)return j.units['USD/shares'];
+            return tryTags(tags.slice(1));
+          }).catch(function(){return tryTags(tags.slice(1));});
+        };
+        return tryTags(['EarningsPerShareDiluted','EarningsPerShareBasicAndDiluted','EarningsPerShareBasic']).then(function(facts){
+          if(!facts)throw new Error('no eps facts');
+          var dayMs=86400000;
+          var qframe=/^CY(\d{4})Q([1-4])$/;
+          // clean single quarters: has a calendar-quarter frame, ~85-95 days
+          var qs={};
+          facts.forEach(function(f){
+            if(!f.frame||!qframe.test(f.frame))return;
+            var days=(new Date(f.end)-new Date(f.start))/dayMs;
+            if(days<80||days>100)return;
+            qs[f.end]={ms:new Date(f.end+'T00:00:00Z').getTime(),eps:+f.val,end:f.end,fy:+f.fy,fp:f.fp};
+          });
+          // annual facts (~360-370 days) keyed by fiscal-year-end, to derive missing Q4
+          var annuals=[];
+          facts.forEach(function(f){
+            var days=(new Date(f.end)-new Date(f.start))/dayMs;
+            if(days>=350&&days<=380){annuals.push({start:new Date(f.start).getTime(),end:new Date(f.end).getTime(),endStr:f.end,eps:+f.val});}
+          });
+          // derive fiscal-Q4: for each annual period, find the 3 quarters that fall within it; if exactly 3
+          // and the 4th (ending at fiscal year-end) is absent, add annual - sum(those 3).
+          annuals.forEach(function(a){
+            if(qs[a.endStr])return; // a real filed quarter already sits at this date — never overwrite it
+            var within=Object.keys(qs).map(function(k){return qs[k];}).filter(function(q){return q.ms>a.start&&q.ms<=a.end;});
+            var hasYearEnd=within.some(function(q){return Math.abs(q.ms-a.end)<5*dayMs;});
+            if(within.length===3&&!hasYearEnd){
+              var sum3=within.reduce(function(s,q){return s+q.eps;},0);
+              var q4eps=Math.round((a.eps-sum3)*100)/100;
+              qs[a.endStr]={ms:a.end,eps:q4eps,end:a.endStr,derived:true};
+            }
+          });
+          var rows=Object.keys(qs).map(function(k){return qs[k];});
+          rows.sort(function(x,y){return x.ms-y.ms;});
+          // label each quarter as Q1-Q4 by its month, and compute YoY vs the quarter ~1 year earlier
+          rows.forEach(function(row){
+            var d=new Date(row.ms);var mo=d.getUTCMonth();
+            row.qnum=Math.floor(mo/3)+1; // calendar quarter of the period-end
+            var prior=rows.filter(function(o){return o.ms<row.ms-300*dayMs&&o.ms>row.ms-430*dayMs;})[0];
+            row.yoy=(prior&&prior.eps!=null&&prior.eps!==0)?((row.eps-prior.eps)/Math.abs(prior.eps)*100):null;
+            row.label='Q'+row.qnum+" '"+String(d.getUTCFullYear()).slice(-2)+(row.derived?' (der.)':'');
+            row.fp='Q'+row.qnum;
+          });
+          setEpsQ(rows);
         });
-        rows.sort(function(a,b){return a.ms-b.ms;}); // oldest→newest
-        setEpsQ(rows);
       }).catch(function(){setEpsQ([]);});
     })();
     // One long DAILY fetch (10y) drives two per-chart daily stats: 14-period ATR% and the

@@ -1,0 +1,62 @@
+// Cloudflare Worker: SEC EDGAR Proxy (handles CORS + required User-Agent for browser calls)
+// SEC endpoints do not send CORS headers and reject requests without a descriptive User-Agent.
+// Client sends the desired path via X-SEC-Path and (optionally) X-SEC-Host:
+//   - data.sec.gov  (default) for /api/xbrl/companyconcept/... facts
+//   - www.sec.gov            for /files/company_tickers.json (ticker->CIK map)
+// Responses are cached at the edge briefly to stay well under SEC rate limits.
+export default {
+  async fetch(request) {
+    const CORS = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-SEC-Path, X-SEC-Host'
+    };
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: Object.assign({ 'Access-Control-Max-Age': '86400' }, CORS) });
+    }
+
+    const secPath = request.headers.get('X-SEC-Path');
+    let secHost = request.headers.get('X-SEC-Host') || 'data.sec.gov';
+
+    if (!secPath || !secPath.startsWith('/')) {
+      return new Response(JSON.stringify({ error: 'Missing or invalid X-SEC-Path header' }), {
+        status: 400, headers: Object.assign({ 'Content-Type': 'application/json' }, CORS)
+      });
+    }
+    // Only allow the two SEC hosts we use (avoid open-proxy abuse)
+    if (secHost !== 'data.sec.gov' && secHost !== 'www.sec.gov') {
+      return new Response(JSON.stringify({ error: 'Host not allowed' }), {
+        status: 400, headers: Object.assign({ 'Content-Type': 'application/json' }, CORS)
+      });
+    }
+
+    const url = 'https://' + secHost + secPath;
+
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: {
+          // SEC requires a descriptive UA with contact info per their fair-access policy
+          'User-Agent': 'AlphaQuantAnalytics research alcharles1980@users.noreply.github.com',
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip'
+        },
+        // Edge-cache to keep request volume low (facts change at most quarterly)
+        cf: { cacheTtl: 3600, cacheEverything: true }
+      });
+
+      const body = await resp.text();
+      return new Response(body, {
+        status: resp.status,
+        headers: Object.assign({
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=1800'
+        }, CORS)
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 502, headers: Object.assign({ 'Content-Type': 'application/json' }, CORS)
+      });
+    }
+  }
+};
