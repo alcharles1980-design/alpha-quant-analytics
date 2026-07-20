@@ -1,9 +1,9 @@
-// Cloudflare Worker: read-only data proxy (handles CORS for browser calls)
-// Proxies SEC EDGAR (needs a descriptive User-Agent) and Alpha Vantage (no CORS of its own).
+// Cloudflare Worker: SEC EDGAR Proxy (handles CORS + required User-Agent for browser calls)
+// SEC endpoints do not send CORS headers and reject requests without a descriptive User-Agent.
 // Client sends the desired path + host via ?path=...&host=... (or X-SEC-Path / X-SEC-Host):
-//   - data.sec.gov / www.sec.gov  — SEC EDGAR XBRL facts + ticker->CIK map
-//   - www.alphavantage.co         — Alpha Vantage OVERVIEW / EARNINGS (analyst data)
-// Responses are edge-cached briefly to respect upstream rate limits (esp. Alpha Vantage's 25/day).
+//   - data.sec.gov  (default) for /api/xbrl/companyconcept/... facts
+//   - www.sec.gov            for /files/company_tickers.json (ticker->CIK map)
+// Responses are cached at the edge briefly to stay well under SEC rate limits.
 export default {
   async fetch(request) {
     const CORS = {
@@ -24,8 +24,8 @@ export default {
         status: 400, headers: Object.assign({ 'Content-Type': 'application/json' }, CORS)
       });
     }
-    // Allowlist the read-only hosts we proxy (avoid open-proxy abuse): SEC EDGAR + Alpha Vantage
-    var ALLOWED_HOSTS = ['data.sec.gov', 'www.sec.gov', 'www.alphavantage.co'];
+    // Allowlist the read-only SEC hosts we proxy (avoid open-proxy abuse)
+    var ALLOWED_HOSTS = ['data.sec.gov', 'www.sec.gov'];
     if (ALLOWED_HOSTS.indexOf(secHost) === -1) {
       return new Response(JSON.stringify({ error: 'Host not allowed' }), {
         status: 400, headers: Object.assign({ 'Content-Type': 'application/json' }, CORS)
