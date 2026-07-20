@@ -18833,9 +18833,12 @@ function MultiViewChartsPage(p){
       {hasPE&&<line x1={PADL} y1={peTop+peH} x2={W-PADR} y2={peTop+peH} stroke={C.border} strokeWidth="0.6"/>}
       {hasPE&&[peLo,peLo+peSpan/2,peHi].map(function(gv,gi){
         var gy=Ype(gv);
+        // gridline value label sits just INSIDE the plot (left edge), not in the gutter where the
+        // panel name lives. Skip the label if it would sit in the panel-name zone (top ~26px).
+        var showLbl=(gy>peTop+26);
         return <g key={'peg'+gi}>
           <line x1={PADL} y1={gy} x2={W-PADR} y2={gy} stroke={C.border} strokeWidth="0.4" strokeDasharray="2 4" opacity="0.5"/>
-          <text x={PADL-8} y={gy+3} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>{gv.toFixed(0)}x</text>
+          {showLbl&&<text x={PADL+3} y={gy-2} textAnchor="start" fontSize="8" fill={C.txtDim} fontFamily={F}>{gv.toFixed(0)}x</text>}
         </g>;
       })}
       {hasPE&&(function(){
@@ -18862,9 +18865,10 @@ function MultiViewChartsPage(p){
       {hasPEG&&<line x1={PADL} y1={pegTop+pegH} x2={W-PADR} y2={pegTop+pegH} stroke={C.border} strokeWidth="0.6"/>}
       {hasPEG&&[pegLo,pegLo+pegSpan/2,pegHi].map(function(gv,gi){
         var gy=Ypeg(gv);
+        var showLbl=(gy>pegTop+16);   // skip the top label if it sits in the panel-name zone
         return <g key={'pegg'+gi}>
           <line x1={PADL} y1={gy} x2={W-PADR} y2={gy} stroke={C.border} strokeWidth="0.4" strokeDasharray="2 4" opacity="0.5"/>
-          <text x={PADL-8} y={gy+3} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>{gv.toFixed(1)}</text>
+          {showLbl&&<text x={PADL+3} y={gy-2} textAnchor="start" fontSize="8" fill={C.txtDim} fontFamily={F}>{gv.toFixed(1)}</text>}
         </g>;
       })}
       {/* reference line at PEG = 1.0 (fairly valued for growth) */}
