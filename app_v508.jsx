@@ -18245,6 +18245,7 @@ function MultiViewChartsPage(p){
   var s13=useState({}),intervalMap=s13[0],setIntervalMap=s13[1];  // {tfKey: {span,bar,kind}} per-chart interval override
   var s14=useState([]),epsQ=s14[0],setEpsQ=s14[1];  // [{ms,label,eps,yoy}] diluted quarterly EPS with YoY, oldest→newest
   var s15=useState({}),epsHover=s15[0],setEpsHover=s15[1];  // {tfKey: epsIndex} earnings-marker tap
+  var s15b=useState({}),rincHover=s15b[0],setRincHover=s15b[1];  // {tfKey: rincIndex} rev/income bar tap (separate index space from EPS)
   // interval options offered per chart (only where the window is long enough to be meaningful)
   var INTERVAL_OPTS={
     'YTD':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
@@ -18756,8 +18757,8 @@ function MultiViewChartsPage(p){
           var niCol=(q.ni!=null&&q.ni<0)?DN:C.accent;
           var revYA=(q.rev!=null)?Math.min(Yr(q.rev),rincZeroY):null, revYB=(q.rev!=null)?Math.max(Yr(q.rev),rincZeroY):null;
           var niYA=(q.ni!=null)?Math.min(Yr(q.ni),rincZeroY):null, niYB=(q.ni!=null)?Math.max(Yr(q.ni),rincZeroY):null;
-          var isSel=(epsHover[tf.key]===qi);
-          return <g key={'rinc'+qi} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},epsHover);nh[tf.key]=(nh[tf.key]===qi?undefined:qi);setEpsHover(nh);}} style={{cursor:'pointer'}}>
+          var isSel=(rincHover[tf.key]===qi);
+          return <g key={'rinc'+qi} onClick={function(e){if(e&&e.stopPropagation)e.stopPropagation();var nh=Object.assign({},rincHover);nh[tf.key]=(nh[tf.key]===qi?undefined:qi);setRincHover(nh);}} style={{cursor:'pointer'}}>
             {q.rev!=null&&<rect x={revX} y={revYA} width={bw} height={Math.max(revYB-revYA,1)} fill={C.blue} opacity={isSel?1:0.8}/>}
             {q.ni!=null&&<rect x={niX} y={niYA} width={bw} height={Math.max(niYB-niYA,1)} fill={niCol} opacity={isSel?1:0.85}/>}
             {sparse&&q.rev!=null&&<text x={cx} y={Math.max(Math.min(revYA,(niYA!=null?niYA:revYA))-8,rincTop+9)} textAnchor="middle" fontSize="8" fontWeight="700" fill={C.blue} fontFamily={F}>{fmtUSD(q.rev)}</text>}
@@ -18790,7 +18791,7 @@ function MultiViewChartsPage(p){
       })()}
       {/* Rev/income detail tooltip (tap a quarter) */}
       {hasRinc&&(function(){
-        var qi=epsHover[tf.key];if(qi==null||!rincInWin[qi])return null;
+        var qi=rincHover[tf.key];if(qi==null||!rincInWin[qi])return null;
         var q=rincInWin[qi];if(q.rev==null&&q.ni==null)return null;
         var bi=0,bd=Infinity;for(var i=0;i<n;i++){var dd=Math.abs(bars[i].t-q.ms);if(dd<bd){bd=dd;bi=i;}}
         var cx=PADL+slot*bi+slot/2;
