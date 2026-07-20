@@ -18324,7 +18324,7 @@ function MultiViewChartsPage(p){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
     if(!p.apiKey){setErr('Polygon API key not loaded.');return;}
-    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});setLivePrice(null);setEpsQ([]);setEpsHover({});
+    setSym(t);setLoading(true);setErr('');setData({});setDone({});setHover({});setAsof(new Date());setAtrMap({});setC2hMap({});setLivePrice(null);setEpsQ([]);setEpsHover({});setRincHover({});
     // Fetch the single most-recent traded price (freshest 1-min bar over the last few days,
     // includes extended hours) so every chart shows the SAME "last price" tag.
     (function(){
