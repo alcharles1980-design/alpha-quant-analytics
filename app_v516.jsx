@@ -12867,14 +12867,16 @@ function SectorOverviewPage(p){
   var s4=useState({}),openSector=s4[0],setOpenSector=s4[1];   // {sector: true}
   var s5=useState({}),openGroup=s5[0],setOpenGroup=s5[1];     // {sector|sic2: true}
   var s6=useState(null),asof=s6[0],setAsof=s6[1];
+  var s7=useState('index'),src=s7[0],setSrc=s7[1];   // 'index' = curated S&P+R2000 GICS; 'full' = whole market
 
   useEffect(function(){
-    setLoading(true);setErr(null);
+    setLoading(true);setErr(null);setRows(null);setOpenSector({});setOpenGroup({});
+    var tbl=(src==='full')?'market_universe_full':'sector_universe';
     // pull the whole universe (paginate to beat the 1000-row PostgREST cap)
     var all=[],from=0,page=1000;
     var pull=function(){
       var h=Object.assign({},getSbHeaders(),{'Range-Unit':'items','Range':from+'-'+(from+page-1)});
-      return fetch(SB_URL+'/rest/v1/sector_universe?select=ticker,name,gics_sector,sic_code,sic_description,market_cap,updated_at&market_cap=not.is.null&order=market_cap.desc',{headers:h})
+      return fetch(SB_URL+'/rest/v1/'+tbl+'?select=ticker,name,gics_sector,sic_code,sic_description,market_cap,updated_at&market_cap=not.is.null&order=market_cap.desc',{headers:h})
         .then(function(r){return r.json();}).then(function(d){
           if(!Array.isArray(d)){setErr('Load failed');setLoading(false);return;}
           all=all.concat(d);
@@ -12885,7 +12887,7 @@ function SectorOverviewPage(p){
         }).catch(function(){setErr('Load failed');setLoading(false);});
     };
     pull();
-  },[]);
+  },[src]);
 
   // aggregate by sector
   var sectors=[];
@@ -12930,9 +12932,15 @@ function SectorOverviewPage(p){
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:8}}>
       <div>
         <div style={{color:C.accent,fontSize:15,fontFamily:F,fontWeight:700,letterSpacing:1}}>US MARKET SECTOR OVERVIEW</div>
-        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>11 sectors · {rows?rows.length.toLocaleString():'…'} stocks · {fmtCap(totalMcap)} total{asof?(' · '+asof.toLocaleDateString()):''}</div>
+        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>{(src==='full')?'Whole market':'11 sectors'} · {rows?rows.length.toLocaleString():'…'} names · {fmtCap(totalMcap)} total{asof?(' · '+asof.toLocaleDateString()):''}</div>
       </div>
-      <button onClick={function(){p.onBack&&p.onBack();}} style={Object.assign({},iS,{cursor:'pointer'})}>← Back</button>
+      <div style={{display:'flex',gap:6,alignItems:'center'}}>
+        <div style={{display:'flex',border:'1px solid '+C.border,borderRadius:6,overflow:'hidden'}}>
+          <div onClick={function(){setSrc('index');}} style={{padding:'7px 10px',fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer',background:src==='index'?C.accent:C.bgInput,color:src==='index'?'#04121e':C.txtDim}}>Index (2.4k)</div>
+          <div onClick={function(){setSrc('full');}} style={{padding:'7px 10px',fontSize:10,fontFamily:F,fontWeight:700,cursor:'pointer',background:src==='full'?C.accent:C.bgInput,color:src==='full'?'#04121e':C.txtDim}}>Full (12k)</div>
+        </div>
+        <button onClick={function(){p.onBack&&p.onBack();}} style={Object.assign({},iS,{cursor:'pointer'})}>← Back</button>
+      </div>
     </div>
 
     {loading&&<div style={{color:C.txtDim,fontSize:12,fontFamily:F,padding:20,textAlign:'center'}}>Loading market universe…</div>}
@@ -12940,6 +12948,7 @@ function SectorOverviewPage(p){
 
     {!loading&&sectors.map(function(sec){
       var meta=SECTOR_ETFS[sec.sector]||{etf:'',color:C.txtDim};
+      var isSpecial=(sec.sector==='ETFs & Funds'||sec.sector==='Warrants/Rights/Units'||sec.sector==='Unclassified');
       var pctMkt=totalMcap?(sec.mcap/totalMcap*100):0;
       var isOpen=openSector[sec.sector];
       var groups=Object.keys(sec.groups).map(function(k){return sec.groups[k];}).sort(function(a,b){return b.mcap-a.mcap;});
@@ -12963,6 +12972,10 @@ function SectorOverviewPage(p){
         <div style={{height:3,background:C.bgDeep}}><div style={{height:'100%',width:pctMkt+'%',background:meta.color,opacity:0.7}}/></div>
 
         {isOpen&&<div style={{padding:'8px 13px 12px 28px'}}>
+          {isSpecial?
+            /* special buckets (ETFs, warrants, unclassified) have no SIC hierarchy — flat top list */
+            topList(sec.stocks,25,'Top 25 by market cap — '+sec.sector)
+          :<div>
           {/* top 10 stocks in the whole sector */}
           {topList(sec.stocks,10,'Top 10 — '+sec.sector)}
           {/* industry groups */}
@@ -13000,11 +13013,12 @@ function SectorOverviewPage(p){
               </div>}
             </div>;
           })}
+          </div>/* end non-special sector branch */}
         </div>}
       </div>;
     })}
 
-    {!loading&&!err&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>Sectors = GICS classification (from index constituents); industry groups &amp; industries = SIC codes (Polygon reference data). Market caps from Polygon, refreshed nightly. Tap any stock to open its cheat sheet. Coverage: S&amp;P 500 + Russell 2000 constituents.</div>}
+    {!loading&&!err&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>Sector names = GICS (from index constituents where available, else mapped from SIC). Industry groups &amp; industries = SIC codes (Polygon). Market caps from Polygon. {(src==='full')?'Full market: all ~12,000 tradable US tickers incl. ETFs, ADRs, warrants. Foreign ADRs without a Polygon SIC are sector-mapped for the largest names; the rest sit in Unclassified.':'Index view: S&amp;P 500 + Russell 2000 constituents (~2,400 names, clean GICS).'} Tap any stock to open its cheat sheet.</div>}
   </div>;
 }
 
