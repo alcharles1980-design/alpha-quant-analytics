@@ -18240,6 +18240,9 @@ function AnalystCard(props){
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
   var s4=useState(''),err=s4[0],setErr=s4[1];
   var s5=useState(''),loadedFor=s5[0],setLoadedFor=s5[1];
+  // Clear any loaded analyst data when the ticker changes, so a stale ticker's numbers never
+  // render under a newly-searched symbol. User must tap Load again for the new ticker.
+  useEffect(function(){ setOv(null); setEarn(null); setErr(''); setLoadedFor(''); }, [ticker]);
   var PROXY='https://edgar-proxy.alcharles1980.workers.dev';
   var avGet=function(fn){
     var path='/query?function='+fn+'&symbol='+encodeURIComponent(ticker.toUpperCase())+'&apikey='+avKey;
@@ -18252,7 +18255,9 @@ function AnalystCard(props){
     setLoading(true);setErr('');setOv(null);setEarn(null);
     Promise.all([avGet('OVERVIEW'),avGet('EARNINGS')]).then(function(res){
       var o=res[0], e=res[1];
-      if(o&&(o.Note||o.Information)){setErr('Alpha Vantage rate limit reached (25/day). Try again later.');setLoading(false);return;}
+      // AV returns {"Note":...} or {"Information":...} on either endpoint when rate-limited
+      var limited=function(x){return x&&(x.Note||x.Information);};
+      if(limited(o)||limited(e)){setErr('Alpha Vantage rate limit reached (25/day). Try again later.');setLoading(false);return;}
       if(!o||!o.Symbol){setErr('No analyst data for '+ticker.toUpperCase()+'.');setLoading(false);return;}
       setOv(o); setEarn(e&&e.quarterlyEarnings?e.quarterlyEarnings.slice(0,8):[]);
       setLoadedFor(ticker.toUpperCase()); setLoading(false);
