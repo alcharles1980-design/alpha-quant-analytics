@@ -18150,6 +18150,8 @@ function CompanyFundamentalsPage(p){
         {v&&<div style={{padding:'5px 12px',borderRadius:6,fontFamily:F,fontSize:11,fontWeight:700,background:(v.profitable?C.accent:C.red)+'22',border:'1px solid '+(v.profitable?C.accent:C.red),color:(v.profitable?C.accent:C.red)}}>{v.profitable==null?'\u2014':(v.profitable?'PROFITABLE':'UNPROFITABLE')}<span style={{color:C.txtDim,fontWeight:400,fontSize:8}}>{'  ('+v.period+')'}</span></div>}
       </div>
 
+      <AnalystCard avKey={p.avKey} ticker={sym}/>
+
       {/* 1. PROFITABILITY */}
       {v&&<Section title="1 · PROFITABILITY SNAPSHOT" desc="Whether the company earns more than it spends. Net income is the bottom-line profit; EPS is profit per share; net margin is profit as a % of sales. What to look for: positive and rising net income/margin. A single weak quarter is normal — the trailing-twelve-month (TTM) figure smooths that out.">
         <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:8}}>
@@ -18224,6 +18226,85 @@ function CompanyFundamentalsPage(p){
       </Section>
 
       <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center'}}>All data from Polygon financial filings. Quarterly balance-sheet / cash-flow items are sometimes sparse. No adjustments applied.</div>
+    </div>}
+  </div>;
+}
+
+// Reusable analyst-data card (Alpha Vantage): forward P/E, analyst PEG, margins, target price,
+// + recent quarterly earnings surprises (reported vs estimate). On-demand (button) to respect the
+// free 25-requests/day limit. Two API calls per load (OVERVIEW + EARNINGS), via the edgar-proxy.
+function AnalystCard(props){
+  var avKey=props.avKey, ticker=props.ticker;
+  var s1=useState(null),ov=s1[0],setOv=s1[1];
+  var s2=useState(null),earn=s2[0],setEarn=s2[1];
+  var s3=useState(false),loading=s3[0],setLoading=s3[1];
+  var s4=useState(''),err=s4[0],setErr=s4[1];
+  var s5=useState(''),loadedFor=s5[0],setLoadedFor=s5[1];
+  var PROXY='https://edgar-proxy.alcharles1980.workers.dev';
+  var avGet=function(fn){
+    var path='/query?function='+fn+'&symbol='+encodeURIComponent(ticker.toUpperCase())+'&apikey='+avKey;
+    var u=PROXY+'?path='+encodeURIComponent(path)+'&host=www.alphavantage.co';
+    return fetch(u).then(function(r){return r.ok?r.json():null;});
+  };
+  var load=function(){
+    if(!ticker){setErr('Enter a ticker first.');return;}
+    if(!avKey){setErr('Alpha Vantage key not loaded.');return;}
+    setLoading(true);setErr('');setOv(null);setEarn(null);
+    Promise.all([avGet('OVERVIEW'),avGet('EARNINGS')]).then(function(res){
+      var o=res[0], e=res[1];
+      if(o&&(o.Note||o.Information)){setErr('Alpha Vantage rate limit reached (25/day). Try again later.');setLoading(false);return;}
+      if(!o||!o.Symbol){setErr('No analyst data for '+ticker.toUpperCase()+'.');setLoading(false);return;}
+      setOv(o); setEarn(e&&e.quarterlyEarnings?e.quarterlyEarnings.slice(0,8):[]);
+      setLoadedFor(ticker.toUpperCase()); setLoading(false);
+    }).catch(function(){setErr('Fetch failed.');setLoading(false);});
+  };
+  var num=function(v,dp){var x=parseFloat(v);return isFinite(x)?x.toFixed(dp==null?2:dp):'—';};
+  var pct=function(v){var x=parseFloat(v);return isFinite(x)?(x*100).toFixed(1)+'%':'—';};
+  var bn=function(v){var x=parseFloat(v);if(!isFinite(x))return '—';var a=Math.abs(x);if(a>=1e12)return '$'+(x/1e12).toFixed(2)+'T';if(a>=1e9)return '$'+(x/1e9).toFixed(1)+'B';if(a>=1e6)return '$'+(x/1e6).toFixed(0)+'M';return '$'+x.toFixed(0);};
+  var lblCss={color:C.txtDim,fontSize:9,fontFamily:F,letterSpacing:0.5,textTransform:'uppercase'};
+  var valCss={color:C.txtBright,fontSize:15,fontFamily:F,fontWeight:700};
+  var metric=function(label,val,color){return <div style={{minWidth:90}}><div style={lblCss}>{label}</div><div style={Object.assign({},valCss,color?{color:color}:{})}>{val}</div></div>;};
+
+  return <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'14px 16px',margin:'12px 0'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+      <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>ANALYST DATA <span style={{color:C.txtDim,fontWeight:400,fontSize:10}}>· Alpha Vantage · non-GAAP</span></div>
+      <button onClick={load} disabled={loading} style={{background:loading?C.bgInput:C.accent,color:loading?C.txtDim:'#04121e',border:'none',borderRadius:6,padding:'6px 12px',fontSize:11,fontFamily:F,fontWeight:700,cursor:loading?'default':'pointer'}}>
+        {loading?'Loading…':(loadedFor===((ticker||'').toUpperCase())&&ov?'Refresh':'Load analyst data')}
+      </button>
+    </div>
+    {err&&<div style={{color:C.warn,fontSize:11,fontFamily:F,marginTop:8}}>{err}</div>}
+    {!ov&&!err&&!loading&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:8}}>Forward P/E, analyst PEG, margins, price target &amp; earnings-surprise history. Uses 2 of your 25 daily Alpha Vantage calls.</div>}
+    {ov&&<div style={{marginTop:12}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:'14px 22px'}}>
+        {metric('Fwd P/E',num(ov.ForwardPE,2)+'x')}
+        {metric('Trailing P/E',num(ov.TrailingPE,2)+'x')}
+        {metric('PEG (analyst)',num(ov.PEGRatio,2),(parseFloat(ov.PEGRatio)>0&&parseFloat(ov.PEGRatio)<1)?C.accent:(parseFloat(ov.PEGRatio)>2?C.red:C.txtBright))}
+        {metric('Profit margin',pct(ov.ProfitMargin))}
+        {metric('ROE',pct(ov.ReturnOnEquityTTM))}
+        {metric('EPS (TTM)','$'+num(ov.EPS,2))}
+        {metric('Target',ov.AnalystTargetPrice?('$'+num(ov.AnalystTargetPrice,2)):'—',C.gold)}
+        {metric('Mkt cap',bn(ov.MarketCapitalization))}
+        {metric('Div yield',ov.DividendYield&&parseFloat(ov.DividendYield)>0?pct(ov.DividendYield):'—')}
+        {metric('Beta',num(ov.Beta,2))}
+      </div>
+      {earn&&earn.length>0&&<div style={{marginTop:14}}>
+        <div style={Object.assign({},lblCss,{marginBottom:6})}>Earnings surprises (reported vs estimate)</div>
+        <div style={{display:'flex',flexDirection:'column',gap:2}}>
+          <div style={{display:'flex',fontSize:9,color:C.txtDim,fontFamily:F,fontWeight:700,padding:'0 0 3px',borderBottom:'1px solid '+C.border}}>
+            <div style={{flex:'0 0 92px'}}>QUARTER</div><div style={{flex:'0 0 78px',textAlign:'right'}}>REPORTED</div><div style={{flex:'0 0 78px',textAlign:'right'}}>ESTIMATE</div><div style={{flex:1,textAlign:'right'}}>SURPRISE</div>
+          </div>
+          {earn.map(function(q,qi){
+            var beat=parseFloat(q.surprise);var col=(isFinite(beat)?(beat>=0?C.accent:C.red):C.txtDim);
+            return <div key={qi} style={{display:'flex',fontSize:11,color:C.txt,fontFamily:F,padding:'3px 0',borderBottom:qi<earn.length-1?'1px solid '+C.bgDeep:'none'}}>
+              <div style={{flex:'0 0 92px'}}>{q.fiscalDateEnding}</div>
+              <div style={{flex:'0 0 78px',textAlign:'right',fontWeight:700}}>${num(q.reportedEPS,2)}</div>
+              <div style={{flex:'0 0 78px',textAlign:'right',color:C.txtDim}}>${num(q.estimatedEPS,2)}</div>
+              <div style={{flex:1,textAlign:'right',color:col,fontWeight:700}}>{isFinite(beat)?((beat>=0?'+':'')+num(q.surprise,2)+' ('+(parseFloat(q.surprisePercentage)>=0?'+':'')+num(q.surprisePercentage,1)+'%)'):'—'}</div>
+            </div>;
+          })}
+        </div>
+      </div>}
+      <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:10,fontStyle:'italic'}}>Non-GAAP figures &amp; analyst consensus from Alpha Vantage. Differs from the GAAP EPS in the chart panels.</div>
     </div>}
   </div>;
 }
@@ -18959,6 +19040,8 @@ function MultiViewChartsPage(p){
         <div style={{color:C.txtBright,fontSize:16,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{sym}</div>
         <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F}}>{loading?('Loading '+(Object.keys(done).length)+' / '+TFS.length+' timeframes…'):('Loaded '+asof.toLocaleDateString()+' · as of '+etNow)}</div>
       </div>
+
+      <AnalystCard avKey={p.avKey} ticker={sym}/>
 
       {TFS.map(function(tf){
         var ovSel=intervalMap[tf.key];
@@ -32921,6 +33004,7 @@ function App(){
   var s7=useState('Nhwwc_ZmcjbsOpCphwK2tPpsBLCUe02p'),pgKey=s7[0],setPgKey=s7[1];
   var s7a=useState(''),alpKey=s7a[0],setAlpKey=s7a[1];
   var s7b=useState(''),alpSecret=s7b[0],setAlpSecret=s7b[1];
+  var s7c=useState(''),avKey=s7c[0],setAvKey=s7c[1];  // Alpha Vantage key (analyst data)
   var s19=useState(SB_URL_DEFAULT),sbUrl=s19[0],setSbUrl=s19[1];
   var s20=useState(SB_KEY_DEFAULT),sbKey=s20[0],setSbKey=s20[1];
   var GH_TOKEN_DEFAULT='';
@@ -32943,6 +33027,7 @@ function App(){
           if(row.key==='github_pat'){setGhToken(row.value);got.gh=true;}
           else if(row.key==='alpaca_key'){setAlpKey(row.value);got.ak=true;}
           else if(row.key==='alpaca_secret'){setAlpSecret(row.value);got.as=true;}
+          else if(row.key==='alphavantage_key'){setAvKey(row.value);}
         });
       }).catch(function(){});
     };
@@ -33220,8 +33305,8 @@ function App(){
     {page==='oscscreener'&&<OscillationScreenerPage ghToken={ghToken} apiKey={pgKey} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='violentchop'&&<ViolentChopScreenerPage devView={devView} ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage devView={devView} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
-    {page==='companyfundamentals'&&<CompanyFundamentalsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='multiviewcharts'&&<MultiViewChartsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='companyfundamentals'&&<CompanyFundamentalsPage apiKey={pgKey} avKey={avKey} onBack={function(){setPage('home');}}/>}
+    {page==='multiviewcharts'&&<MultiViewChartsPage apiKey={pgKey} avKey={avKey} onBack={function(){setPage('home');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='overnighthourly'&&<OvernightHourlyPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
