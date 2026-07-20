@@ -18540,13 +18540,15 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, macdH=90, epsH=80, rincH=104, peH=90, gap=8, axisH=30, PADT=14;
+    var priceH=380, volH=90, macdH=90, epsH=80, rincH=104, peH=90, pegH=80, gap=8, axisH=30, PADT=14;
     var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
     // revenue/income panel shows whenever EPS does AND at least one quarter in-window has revenue or net income
     var hasRinc=hasEps&&(function(){var t0b=bars[0].t,t1b=bars[bars.length-1].t;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15&&(q.rev!=null||q.ni!=null);});})();
     // P/E panel shows when we have >=4 EPS quarters (needed for a trailing-twelve-month sum)
     var hasPE=hasEps&&epsQ.filter(function(q){return q.eps!=null;}).length>=4;
-    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+6+rincH:0)+(hasPE?gap+peH:0)+axisH;
+    // PEG needs a TTM EPS now AND ~1 year ago -> at least ~8 EPS quarters
+    var hasPEG=hasEps&&epsQ.filter(function(q){return q.eps!=null;}).length>=8;
+    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+6+rincH:0)+(hasPE?gap+peH:0)+(hasPEG?gap+pegH:0)+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
@@ -18622,6 +18624,26 @@ function MultiViewChartsPage(p){
     peLo=Math.max(0,Math.floor(peLo*0.9)); peHi=Math.ceil(peHi*1.05); if(peHi<=peLo)peHi=peLo+1;
     var peSpan=(peHi-peLo)||1;
     var Ype=function(v){return peTop+(1-(v-peLo)/peSpan)*peH;};
+    // ---- PEG panel: trailing PEG = TTM P/E / (TTM EPS YoY growth %), gaps where growth <= 0 ----
+    var pegTop=hasPEG?(hasPE?peTop+peH:(hasRinc?rincTop+rincH:epsTop+epsH))+gap:0;
+    var PEG_CAP=5;   // PEG above ~5 is off-the-charts expensive; clip so the useful 0-3 range is readable
+    var dayY=365*86400000;
+    // per-bar PEG: P/E now / YoY growth of TTM EPS. Uses raw (uncapped) P/E so the ratio is accurate.
+    var pegSeries=hasPEG?bars.map(function(b){
+      var px=(b.c!=null)?b.c:null; if(px==null)return null;
+      var ttmNow=ttmEpsAt(b.t), ttmPrior=ttmEpsAt(b.t-dayY);
+      if(ttmNow==null||ttmNow<=0||ttmPrior==null||ttmPrior<=0)return null;   // need positive TTM both periods
+      var growth=(ttmNow-ttmPrior)/ttmPrior*100;
+      if(growth<=0)return null;                                              // declining/flat earnings -> PEG undefined
+      var pe=px/ttmNow;
+      var peg=pe/growth;
+      return (peg>0&&peg<PEG_CAP*3)?Math.min(peg,PEG_CAP):(peg>0?PEG_CAP:null);
+    }):[];
+    var pegVals=pegSeries.filter(function(v){return v!=null;});
+    var pegHi=pegVals.length?Math.max.apply(null,pegVals):2, pegLo=pegVals.length?Math.min.apply(null,pegVals):0;
+    pegLo=Math.max(0,pegLo*0.9); pegHi=Math.max(pegHi*1.05,1.1); if(pegHi<=pegLo)pegHi=pegLo+1;
+    var pegSpan=(pegHi-pegLo)||1;
+    var Ypeg=function(v){return pegTop+(1-(v-pegLo)/pegSpan)*pegH;};
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
@@ -18835,6 +18857,40 @@ function MultiViewChartsPage(p){
           <tspan fill={C.txtDim}>P/E </tspan><tspan fill={C.gold} fontWeight="700">{(capped?'>':'')+lastPe.toFixed(1)+'x'}</tspan>
         </text>;
       })()}
+      {/* PEG panel — trailing PEG (TTM P/E / TTM EPS YoY growth %); gaps where growth <= 0 */}
+      {hasPEG&&<text x={PADL-8} y={pegTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>PEG</text>}
+      {hasPEG&&<line x1={PADL} y1={pegTop+pegH} x2={W-PADR} y2={pegTop+pegH} stroke={C.border} strokeWidth="0.6"/>}
+      {hasPEG&&[pegLo,pegLo+pegSpan/2,pegHi].map(function(gv,gi){
+        var gy=Ypeg(gv);
+        return <g key={'pegg'+gi}>
+          <line x1={PADL} y1={gy} x2={W-PADR} y2={gy} stroke={C.border} strokeWidth="0.4" strokeDasharray="2 4" opacity="0.5"/>
+          <text x={PADL-8} y={gy+3} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>{gv.toFixed(1)}</text>
+        </g>;
+      })}
+      {/* reference line at PEG = 1.0 (fairly valued for growth) */}
+      {hasPEG&&(1>=pegLo&&1<=pegHi)&&<g>
+        <line x1={PADL} y1={Ypeg(1)} x2={W-PADR} y2={Ypeg(1)} stroke={C.accent} strokeWidth="0.7" strokeDasharray="4 3" opacity="0.6"/>
+        <text x={W-PADR} y={Ypeg(1)-3} textAnchor="end" fontSize="8" fill={C.accent} fontFamily={F} opacity="0.8">PEG 1.0</text>
+      </g>}
+      {hasPEG&&(function(){
+        // polyline segments, breaking at gaps (null PEG)
+        var segs=[],cur=[];
+        pegSeries.forEach(function(v,i){
+          if(v==null){if(cur.length>1)segs.push(cur);cur=[];return;}
+          var cx=PADL+slot*i+slot/2;cur.push(cx+','+Ypeg(v));
+        });
+        if(cur.length>1)segs.push(cur);
+        return segs.map(function(pts,si){return <polyline key={'peg'+si} points={pts.join(' ')} fill="none" stroke={C.purple} strokeWidth="1.5" opacity="0.9"/>;});
+      })()}
+      {/* current PEG readout (top-right) */}
+      {hasPEG&&(function(){
+        var lastPeg=null;for(var i=pegSeries.length-1;i>=0;i--){if(pegSeries[i]!=null){lastPeg=pegSeries[i];break;}}
+        if(lastPeg==null)return null;
+        var capped=(lastPeg>=PEG_CAP);
+        return <text x={W-PADR} y={pegTop+10} textAnchor="end" fontSize="9" fontFamily={F}>
+          <tspan fill={C.txtDim}>PEG </tspan><tspan fill={C.purple} fontWeight="700">{(capped?'>':'')+lastPeg.toFixed(2)}</tspan>
+        </text>;
+      })()}
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
       {/* crosshair + tooltip */}
@@ -18845,7 +18901,7 @@ function MultiViewChartsPage(p){
         var by=PADT+8;
         var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
         return <g>
-          <line x1={cx} y1={PADT} x2={cx} y2={hasPE?peTop+peH:(hasRinc?rincTop+rincH:(hasEps?epsTop+epsH:macdTop+macdH))} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
+          <line x1={cx} y1={PADT} x2={cx} y2={hasPEG?pegTop+pegH:(hasPE?peTop+peH:(hasRinc?rincTop+rincH:(hasEps?epsTop+epsH:macdTop+macdH)))} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
           <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
           <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
           <g onClick={closeHover} onTouchStart={closeHover} style={{cursor:'pointer'}}>
