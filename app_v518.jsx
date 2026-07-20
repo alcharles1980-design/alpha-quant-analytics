@@ -12874,7 +12874,7 @@ function SectorOverviewPage(p){
     var all=[],from=0,page=1000;
     var pull=function(){
       var h=Object.assign({},getSbHeaders(),{'Range-Unit':'items','Range':from+'-'+(from+page-1)});
-      return fetch(SB_URL+'/rest/v1/market_universe_full?select=ticker,name,gics_sector,sic_code,sic_description,market_cap,updated_at&market_cap=not.is.null&order=market_cap.desc',{headers:h})
+      return fetch(SB_URL+'/rest/v1/market_universe_full?select=ticker,name,type,gics_sector,sic_code,sic_description,market_cap,updated_at&order=market_cap.desc.nullslast',{headers:h})
         .then(function(r){return r.json();}).then(function(d){
           if(!Array.isArray(d)){setErr('Load failed');setLoading(false);return;}
           all=all.concat(d);
@@ -12913,8 +12913,8 @@ function SectorOverviewPage(p){
     return <div key={st.ticker} onClick={function(){if(p.onCheatSheet)p.onCheatSheet(st.ticker);}} style={{display:'flex',alignItems:'center',padding:'4px 8px',borderRadius:4,cursor:p.onCheatSheet?'pointer':'default',background:i%2?C.bgDeep:'transparent'}}>
       <div style={{flex:'0 0 22px',color:C.txtDim,fontSize:10,fontFamily:F}}>{i+1}</div>
       <div style={{flex:'0 0 64px',color:C.accent,fontSize:12,fontFamily:F,fontWeight:700}}>{st.ticker}</div>
-      <div style={{flex:1,color:C.txt,fontSize:11,fontFamily:F,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{st.name||''}</div>
-      <div style={{flex:'0 0 72px',textAlign:'right',color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:600}}>{fmtCap(+st.market_cap)}</div>
+      <div style={{flex:1,color:C.txt,fontSize:11,fontFamily:F,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{st.name||''}{st.type&&st.type!=='CS'?<span style={{color:C.txtDim,fontSize:8.5,marginLeft:5}}>{st.type}</span>:''}</div>
+      <div style={{flex:'0 0 72px',textAlign:'right',color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:600}}>{(st.market_cap!=null)?fmtCap(+st.market_cap):'—'}</div>
     </div>;
   };
   var topList=function(stocks,n,label){
@@ -12930,7 +12930,7 @@ function SectorOverviewPage(p){
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:8}}>
       <div>
         <div style={{color:C.accent,fontSize:15,fontFamily:F,fontWeight:700,letterSpacing:1}}>US MARKET SECTOR OVERVIEW</div>
-        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>Whole US market · {rows?rows.length.toLocaleString():'…'} names · {fmtCap(totalMcap)} total{asof?(' · '+asof.toLocaleDateString()):''}</div>
+        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>Whole US market · {rows?rows.length.toLocaleString():'…'} tradable names · {fmtCap(totalMcap)} sized{asof?(' · '+asof.toLocaleDateString()):''}</div>
       </div>
       <button onClick={function(){p.onBack&&p.onBack();}} style={Object.assign({},iS,{cursor:'pointer'})}>← Back</button>
     </div>
@@ -13010,7 +13010,7 @@ function SectorOverviewPage(p){
       </div>;
     })}
 
-    {!loading&&!err&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>Sector names = GICS (from index constituents where available, else mapped from SIC). Industry groups &amp; industries = SIC codes (Polygon). Market caps from Polygon. Full market: all ~12,000 tradable US tickers incl. ETFs, ADRs, warrants. Foreign ADRs without a Polygon SIC are sector-mapped for the largest names; the rest sit in Unclassified. Tap any stock to open its cheat sheet.</div>}
+    {!loading&&!err&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>All ~12,000 tradable US tickers (common stocks, ETFs, ADRs, funds, preferreds, warrants, rights, units). Company size = market cap; ETF/fund size = shares × price (≈AUM), both from Polygon. Preferreds, warrants, rights &amp; some units have no size figure and show "—". Sector = GICS (index constituents where available, else mapped from SIC; largest un-coded foreign ADRs hand-mapped, rest in Unclassified). Industry groups/industries = SIC. Tap any name to open its cheat sheet.</div>}
   </div>;
 }
 
