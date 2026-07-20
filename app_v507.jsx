@@ -18539,11 +18539,13 @@ function MultiViewChartsPage(p){
     var PROFW=96;                                      // volume-profile band width
     var PADL=PROFX+PROFW+8, PADR=12;                   // plot starts after profile (=160)
     var W=760;                                        // fixed width — every chart uniform, full period visible
-    var priceH=380, volH=90, macdH=90, epsH=80, rincH=104, gap=8, axisH=30, PADT=14;
+    var priceH=380, volH=90, macdH=90, epsH=80, rincH=104, peH=90, gap=8, axisH=30, PADT=14;
     var hasEps=(function(){if(!epsQ||!epsQ.length)return false;var t0b=bars[0].t,t1b=bars[bars.length-1].t;if((t1b-t0b)/86400000<20)return false;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15;});})();
     // revenue/income panel shows whenever EPS does AND at least one quarter in-window has revenue or net income
     var hasRinc=hasEps&&(function(){var t0b=bars[0].t,t1b=bars[bars.length-1].t;return epsQ.some(function(q){return q.ms>=t0b-86400000*15&&q.ms<=t1b+86400000*15&&(q.rev!=null||q.ni!=null);});})();
-    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+6+rincH:0)+axisH;
+    // P/E panel shows when we have >=4 EPS quarters (needed for a trailing-twelve-month sum)
+    var hasPE=hasEps&&epsQ.filter(function(q){return q.eps!=null;}).length>=4;
+    var H=PADT+priceH+gap+volH+gap+macdH+(hasEps?gap+epsH:0)+(hasRinc?gap+6+rincH:0)+(hasPE?gap+peH:0)+axisH;
     var his=bars.map(function(b){return b.h;}),los=bars.map(function(b){return b.l;});
     var mx=Math.max.apply(null,his),mn=Math.min.apply(null,los);
     var sv=(mx-mn)||1;var pmx=mx+sv*0.05,pmn=Math.max(0,mn-sv*0.05);var psv=(pmx-pmn)||1;
@@ -18597,6 +18599,28 @@ function MultiViewChartsPage(p){
     var rincLabelPad=12;
     var Yr=function(v){return rincTop+rincLabelPad+(1-(v-rincLo)/rincSpan)*(rincH-rincLabelPad);};
     var rincZeroY=Yr(0);
+    // ---- P/E panel: TTM P/E line over time (price / trailing-4-quarter EPS at each bar's date) ----
+    var peTop=hasPE?(hasRinc?rincTop+rincH:(hasEps?epsTop+epsH:macdTop+macdH))+gap:0;
+    var PE_CAP=100;   // clip spikes so the line stays readable
+    // TTM EPS as of a timestamp = sum of the 4 most recent reported quarters with end <= that date
+    var epsSorted=hasPE?epsQ.filter(function(q){return q.eps!=null;}).slice().sort(function(a,b){return a.ms-b.ms;}):[];
+    var ttmEpsAt=function(ms){
+      var idx=-1;for(var i=0;i<epsSorted.length;i++){if(epsSorted[i].ms<=ms)idx=i;else break;}
+      if(idx<3)return null;                       // need 4 quarters available
+      var s=0;for(var k=idx-3;k<=idx;k++)s+=epsSorted[k].eps;
+      return s;
+    };
+    // per-bar P/E (null where TTM EPS <= 0 -> undefined, shown as a gap)
+    var peSeries=hasPE?bars.map(function(b){
+      var px=(b.c!=null)?b.c:null; var tt=ttmEpsAt(b.t);
+      if(px==null||tt==null||tt<=0)return null;
+      var pe=px/tt; return (pe>0&&pe<PE_CAP*3)?Math.min(pe,PE_CAP):(pe>0?PE_CAP:null);
+    }):[];
+    var peVals=peSeries.filter(function(v){return v!=null;});
+    var peHi=peVals.length?Math.max.apply(null,peVals):30, peLo=peVals.length?Math.min.apply(null,peVals):0;
+    peLo=Math.max(0,Math.floor(peLo*0.9)); peHi=Math.ceil(peHi*1.05); if(peHi<=peLo)peHi=peLo+1;
+    var peSpan=(peHi-peLo)||1;
+    var Ype=function(v){return peTop+(1-(v-peLo)/peSpan)*peH;};
     var n=bars.length;var plotW=W-PADL-PADR;var slot=plotW/n;
     var cw=Math.min(Math.max(slot*0.7,0.3),18);   // never wider than slot; thin but distinct when dense
     var last=bars[n-1].c, first=bars[0].c;
@@ -18780,6 +18804,36 @@ function MultiViewChartsPage(p){
           <text x={bx+10} y={by+66} fontSize="10.5" fill={C.txtDim} fontFamily={F}>Net margin: <tspan fill={C.txtBright} fontWeight="700">{margin!=null?(margin.toFixed(1)+'%'):'n/a'}</tspan></text>
         </g>;
       })()}
+      {/* P/E panel — trailing-twelve-month P/E line (price / TTM EPS), gaps where earnings <= 0 */}
+      {hasPE&&<text x={PADL-8} y={peTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>P/E</text>}
+      {hasPE&&<text x={PADL-8} y={peTop+22} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>TTM</text>}
+      {hasPE&&<line x1={PADL} y1={peTop+peH} x2={W-PADR} y2={peTop+peH} stroke={C.border} strokeWidth="0.6"/>}
+      {hasPE&&[peLo,peLo+peSpan/2,peHi].map(function(gv,gi){
+        var gy=Ype(gv);
+        return <g key={'peg'+gi}>
+          <line x1={PADL} y1={gy} x2={W-PADR} y2={gy} stroke={C.border} strokeWidth="0.4" strokeDasharray="2 4" opacity="0.5"/>
+          <text x={PADL-8} y={gy+3} textAnchor="end" fontSize="8" fill={C.txtDim} fontFamily={F}>{gv.toFixed(0)}x</text>
+        </g>;
+      })}
+      {hasPE&&(function(){
+        // build polyline segments, breaking at gaps (null P/E) and at the PE_CAP ceiling
+        var segs=[],cur=[];
+        peSeries.forEach(function(v,i){
+          if(v==null){if(cur.length>1)segs.push(cur);cur=[];return;}
+          var cx=PADL+slot*i+slot/2;cur.push(cx+','+Ype(v));
+        });
+        if(cur.length>1)segs.push(cur);
+        return segs.map(function(pts,si){return <polyline key={'pe'+si} points={pts.join(' ')} fill="none" stroke={C.gold} strokeWidth="1.5" opacity="0.9"/>;});
+      })()}
+      {/* current P/E readout (top-right) */}
+      {hasPE&&(function(){
+        var lastPe=null;for(var i=peSeries.length-1;i>=0;i--){if(peSeries[i]!=null){lastPe=peSeries[i];break;}}
+        if(lastPe==null)return null;
+        var capped=(lastPe>=PE_CAP);
+        return <text x={W-PADR} y={peTop+10} textAnchor="end" fontSize="9" fontFamily={F}>
+          <tspan fill={C.txtDim}>P/E </tspan><tspan fill={C.gold} fontWeight="700">{(capped?'>':'')+lastPe.toFixed(1)+'x'}</tspan>
+        </text>;
+      })()}
       {/* x-axis labels */}
       {bars.map(function(b,i){if(i%step!==0&&i!==n-1)return null;var cx=PADL+slot*i+slot/2;cx=Math.min(Math.max(cx,PADL+18),W-PADR-18);return <text key={'x'+i} x={cx} y={H-8} textAnchor="middle" fontSize="12" fill={C.txtDim} fontFamily={F}>{axisLabel(b.t,tf.kind)}</text>;})}
       {/* crosshair + tooltip */}
@@ -18790,7 +18844,7 @@ function MultiViewChartsPage(p){
         var by=PADT+8;
         var rows=[['O',fmtPx(hb.o)],['H',fmtPx(hb.h)],['L',fmtPx(hb.l)],['C',fmtPx(hb.c)],['Vol',fmtVol(hb.v)]];
         return <g>
-          <line x1={cx} y1={PADT} x2={cx} y2={hasRinc?rincTop+rincH:(hasEps?epsTop+epsH:macdTop+macdH)} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
+          <line x1={cx} y1={PADT} x2={cx} y2={hasPE?peTop+peH:(hasRinc?rincTop+rincH:(hasEps?epsTop+epsH:macdTop+macdH))} stroke={C.txtDim} strokeWidth="0.9" strokeDasharray="3 3"/>
           <circle cx={cx} cy={cyp} r="4" fill={hb.c>=hb.o?UP:DN} stroke={C.bgDeep} strokeWidth="1.5"/>
           <rect x={bx} y={by} width={boxW} height={boxH} rx="10" fill={C.bgCard} stroke={C.border} strokeWidth="1.5" opacity="0.98"/>
           <g onClick={closeHover} onTouchStart={closeHover} style={{cursor:'pointer'}}>
