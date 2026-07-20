@@ -12905,6 +12905,10 @@ function SectorOverviewPage(p){
     sectors=Object.keys(byS).map(function(k){return byS[k];}).sort(function(a,b){return b.mcap-a.mcap;});
   }
   var totalMcap=sectors.reduce(function(s,x){return s+x.mcap;},0);
+  // split into the 11 GICS sectors (numbered) vs non-sector buckets (ETFs/Funds, Warrants, Unclassified) shown at the bottom
+  var NON_SECTOR={'ETFs & Funds':1,'Warrants/Rights/Units':1,'Unclassified':1};
+  var realSectors=sectors.filter(function(s){return !NON_SECTOR[s.sector];});
+  var otherBuckets=sectors.filter(function(s){return NON_SECTOR[s.sector];});
 
   var topN=function(arr,n){return arr.slice().sort(function(a,b){return (+b.market_cap||0)-(+a.market_cap||0);}).slice(0,n);};
 
@@ -12938,7 +12942,13 @@ function SectorOverviewPage(p){
     {loading&&<div style={{color:C.txtDim,fontSize:12,fontFamily:F,padding:20,textAlign:'center'}}>Loading market universe…</div>}
     {err&&<div style={{color:C.warn,fontSize:12,fontFamily:F,padding:12}}>{err}</div>}
 
-    {!loading&&sectors.map(function(sec){
+    {!loading&&!err&&<div style={{margin:'4px 2px 12px 2px'}}>
+      <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700}}>The 11 US Market Sectors</div>
+      <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>Ranked by total market cap. Non-sector groups (funds, warrants, unclassified) are listed below.</div>
+    </div>}
+
+    {!loading&&realSectors.map(function(sec,secIdx){
+      var rank=secIdx+1;
       var meta=SECTOR_ETFS[sec.sector]||{etf:'',color:C.txtDim};
       var isSpecial=(sec.sector==='ETFs & Funds'||sec.sector==='Warrants/Rights/Units'||sec.sector==='Unclassified');
       var pctMkt=totalMcap?(sec.mcap/totalMcap*100):0;
@@ -12947,6 +12957,7 @@ function SectorOverviewPage(p){
       return <div key={sec.sector} style={{marginBottom:8,border:'1px solid '+C.border,borderRadius:8,overflow:'hidden',background:C.bgCard}}>
         {/* sector header */}
         <div onClick={function(){var n=Object.assign({},openSector);n[sec.sector]=!n[sec.sector];setOpenSector(n);}} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 13px',cursor:'pointer',borderLeft:'3px solid '+meta.color}}>
+          <div style={{color:meta.color,fontSize:13,fontFamily:F,fontWeight:700,width:22,textAlign:'center'}}>{rank}</div>
           <div style={{color:C.txtDim,fontSize:11,fontFamily:F,width:12}}>{isOpen?'▾':'▸'}</div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
@@ -13006,6 +13017,37 @@ function SectorOverviewPage(p){
             </div>;
           })}
           </div>/* end non-special sector branch */}
+        </div>}
+      </div>;
+    })}
+
+    {/* ---- non-sector buckets: ETFs & Funds, Warrants/Rights/Units, Unclassified ---- */}
+    {!loading&&!err&&otherBuckets.length>0&&<div style={{margin:'18px 2px 10px 2px',borderTop:'1px solid '+C.border,paddingTop:14}}>
+      <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700}}>Other Tradable Instruments</div>
+      <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>Not part of the 11 GICS sectors — funds, ETFs, and derivative instruments.</div>
+    </div>}
+
+    {!loading&&otherBuckets.map(function(sec){
+      var meta=SECTOR_ETFS[sec.sector]||{etf:'',color:C.gold};
+      var isOpen=openSector[sec.sector];
+      var pctMkt=totalMcap?(sec.mcap/totalMcap*100):0;
+      return <div key={sec.sector} style={{marginBottom:8,border:'1px solid '+C.border,borderRadius:8,overflow:'hidden',background:C.bgCard}}>
+        <div onClick={function(){var n=Object.assign({},openSector);n[sec.sector]=!n[sec.sector];setOpenSector(n);}} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 13px',cursor:'pointer',borderLeft:'3px solid '+(meta.color||C.gold)}}>
+          <div style={{color:C.txtDim,fontSize:11,fontFamily:F,width:12}}>{isOpen?'▾':'▸'}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+              <span style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700}}>{sec.sector}</span>
+              <span style={{color:C.txtDim,fontSize:10,fontFamily:F}}>{sec.count.toLocaleString()} names</span>
+            </div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700}}>{sec.mcap>0?fmtCap(sec.mcap):'—'}</div>
+            {sec.mcap>0&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F}}>{pctMkt.toFixed(1)}% of total</div>}
+          </div>
+        </div>
+        {isOpen&&<div style={{padding:'8px 13px 12px 28px'}}>
+          {topList(sec.stocks,25,'Top 25 by size — '+sec.sector)}
+          {sec.count>25&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6,textAlign:'center'}}>Showing top 25 of {sec.count.toLocaleString()} by size</div>}
         </div>}
       </div>;
     })}
