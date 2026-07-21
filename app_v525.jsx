@@ -20996,6 +20996,7 @@ function ViolentChopScreenerPage(p){
   var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
   var s52=useState({}),wk52=s52[0],setWk52=s52[1];             // {ticker:{high,low}} 52-week range from cached_oscillation_screener.range_position
   var sAtr14=useState({}),atr14=sAtr14[0],setAtr14=sAtr14[1];     // {ticker:{pct,dollar}} 14-day ATR from cached_oscillation_screener (atr_14d_pct / atr_14d_dollar)
+  var sSec=useState({}),sectorMap=sSec[0],setSectorMap=sSec[1];   // {ticker: gics_sector} from market_universe_full (single source of truth)
   var pollRef=useRef(null);
   var loadGen=useRef(0);
 
@@ -21207,6 +21208,16 @@ function ViolentChopScreenerPage(p){
     var map={};var atrMap={};var off=0;
     while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position,atr_14d_pct,atr_14d_dollar&order=ticker.asc',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp!=null){try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){rp=null;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low,h30:(rp.hl30&&rp.hl30.high!=null?+rp.hl30.high:null),l30:(rp.hl30&&rp.hl30.low!=null?+rp.hl30.low:null),h7:(rp.hl7&&rp.hl7.high!=null?+rp.hl7.high:null),l7:(rp.hl7&&rp.hl7.low!=null?+rp.hl7.low:null)};}if(row.atr_14d_pct!=null||row.atr_14d_dollar!=null)atrMap[row.ticker]={pct:row.atr_14d_pct!=null?+row.atr_14d_pct:null,dollar:row.atr_14d_dollar!=null?+row.atr_14d_dollar:null};});if(batch.length<1000)break;off+=1000;}
     setWk52(map);setAtr14(atrMap);
+  }catch(e){}})();(async function(){try{
+    // Sector per ticker from market_universe_full (single source of truth; kept complete by the
+    // nightly sector-refresh self-heal). Paginate past the 1,000-row PostgREST cap.
+    var smap={};var off=0;
+    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);
+      var r=await fetch(SB_URL+'/rest/v1/market_universe_full?select=ticker,gics_sector&order=ticker.asc',{headers:h});
+      if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;
+      batch.forEach(function(x){if(x.gics_sector)smap[x.ticker]=x.gics_sector;});
+      if(batch.length<1000)break;off+=1000;}
+    setSectorMap(smap);
   }catch(e){}})();},[]);
 
   // Lazy-load per-day arrays only when a 2/3/4-day lookback is first selected.
@@ -21450,11 +21461,19 @@ function ViolentChopScreenerPage(p){
     return true;
   });
 
+  // attach sector (from market_universe_full) so it's sortable + renderable
+  rows.forEach(function(r){r.sector=sectorMap[r.ticker]||null;});
+
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
 
   var doSort=function(k){if(sortKey===k)setSortDesc(!sortDesc);else{setSortKey(k);setSortDesc(true);}};
   var thS=function(k){return{padding:'4px 3px',textAlign:'center',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,lineHeight:1.15,verticalAlign:'bottom'};};
   var th=function(k,label,fzIdx){return <th onClick={function(){doSort(k);}} style={Object.assign({},thS(k),fzIdx!=null?fzTh(fzIdx):{})}>{label}{sortKey===k?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
+  // Abbreviated GICS sector label + color for the compact Sector column (full name on hover).
+  var SEC_ABBR={'Information Technology':'Tech','Health Care':'Health','Financials':'Fin','Consumer Discretionary':'Cons Disc','Consumer Staples':'Staples','Communication':'Comm','Industrials':'Indust','Energy':'Energy','Materials':'Materials','Utilities':'Utils','Real Estate':'RE','ETFs & Funds':'Fund','Warrants/Rights/Units':'Deriv','Unclassified':'—'};
+  var SEC_COLOR={'Information Technology':C.blue,'Health Care':'#4ade80','Financials':C.gold,'Consumer Discretionary':'#f472b6','Consumer Staples':'#a3e635','Communication':C.purple,'Industrials':'#94a3b8','Energy':'#fb923c','Materials':'#22d3ee','Utilities':'#facc15','Real Estate':'#c084fc'};
+  var secShort=function(s){return s?(SEC_ABBR[s]||s):'—';};
+  var secColor=function(s){return (s&&SEC_COLOR[s])||C.txtDim;};
 
   // color scale for composite (chop intensity)
   var chopColor=function(v){if(v>=500)return C.accent;if(v>=300)return C.gold;if(v>=150)return C.blue;if(v>0)return C.txt;return C.txtDim;};
@@ -21719,6 +21738,7 @@ function ViolentChopScreenerPage(p){
             <th onClick={function(){doSort('price');}} style={Object.assign({},thS('price'),{textAlign:'left'},fzTh(2))}>Price{sortKey==='price'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
             <th style={Object.assign({padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,verticalAlign:'bottom'},fzTh(3))}>Links</th>
             <th onClick={function(){doSort('ticker_type');}} style={Object.assign({},thS('ticker_type'),{textAlign:'center'},fzTh(4))}>Type{sortKey==='ticker_type'?(sortDesc?' \u25BC':' \u25B2'):''}</th>
+            {th('sector','Sector')}
             {th('adv',['$ Vol',<br key="b"/>,'/day'])}
             {th('market_cap','MCap')}
             {th('composite',['Chop',<br key="b"/>,'Score'])}
@@ -21769,6 +21789,7 @@ function ViolentChopScreenerPage(p){
                   <a href={'https://www.tipranks.com/stocks/'+r.ticker.toLowerCase()} onClick={function(tk){return function(e){e.preventDefault();var u='https://www.tipranks.com/stocks/'+tk.toLowerCase()+'/forecast?_='+Date.now();window.open(u,'_blank','noopener');};}(r.ticker)} rel="noopener noreferrer" style={{display:'inline-block',padding:'3px 6px',border:'1px solid '+C.accent+'60',borderRadius:3,color:C.accent,fontSize:12,fontFamily:F,fontWeight:700,textDecoration:'none',marginLeft:5,lineHeight:1,cursor:'pointer'}} title="TipRanks">TR</a>
                 </td>
                 <td style={Object.assign({padding:'4px 3px',color:typeColor(r.ticker_type),textAlign:'center',fontSize:7,fontWeight:600},fzTd(4,rowBg))}>{typeLabel(r.ticker_type)}</td>
+                <td style={{padding:'4px 3px',color:secColor(r.sector),textAlign:'center',fontSize:6.5,fontWeight:600}} title={r.sector||'No sector'}>{secShort(r.sector)}</td>
                 <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Avg daily $ volume — works for stocks and ETFs alike">{fmtMcap(r.adv)}</td>
                 <td style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:6}} title="Market cap (stocks only; ETFs show -- as the concept is AUM)">{fmtMcap(r.market_cap)}</td>
                 <td style={{padding:'4px 3px',color:chopColor(r.composite),textAlign:'center',fontWeight:700}}>{r.composite.toFixed(1)}</td>

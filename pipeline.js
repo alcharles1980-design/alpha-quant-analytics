@@ -3617,7 +3617,79 @@ async function runSectorRefresh() {
   if (mcapRows.length) await sbUpsert('market_universe_full', mcapRows, 'ticker');
   console.log('Re-anchored market cap: ' + updated + '/' + companies.length + ' companies.');
 
-  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Sector refresh complete: ' + priceRows.length + ' priced, ' + updated + ' company mcaps re-anchored (as of ' + usedDate + ').' });
+  // ── Step 5: SELF-HEAL — absorb new tickers seen in the market but not yet in the table ──
+  // The grouped-bars call already returned every active ticker; anything priced but not in the
+  // universe is new (recent listing / symbol change). Fetch its detail, classify, and insert.
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 96, message: 'Checking for new tickers...' });
+  var classifier = require('./sector_classify.js');
+  var newTickers = [];
+  for (var p = 0; p < pricedTickers.length; p++) {
+    if (!byTicker[pricedTickers[p]]) newTickers.push(pricedTickers[p]);
+  }
+  console.log('New tickers to absorb: ' + newTickers.length);
+  var absorbed = 0, absErr = 0;
+  var insertRows = [];
+  for (var nt = 0; nt < newTickers.length; nt++) {
+    var ntk = newTickers[nt];
+    try {
+      var dr = await fetch('https://api.polygon.io/v3/reference/tickers/' + encodeURIComponent(ntk) + '?apiKey=' + POLYGON_KEY);
+      if (!dr.ok) { absErr++; continue; }
+      var dd = await dr.json();
+      var rr3 = dd && dd.results;
+      if (!rr3) { absErr++; continue; }
+      var type = rr3.type || 'CS';
+      var sic = rr3.sic_code || null;
+      var sicDesc = rr3.sic_description || null;
+      var cik = rr3.cik || null;
+      var shares = rr3.weighted_shares_outstanding || rr3.share_class_shares_outstanding || null;
+      var px3 = priceMap[ntk];
+
+      // SEC EDGAR SIC fallback (via edgar-proxy) for companies Polygon leaves without a SIC
+      if (!sic && cik && (type === 'CS' || type === 'ADRC')) {
+        try {
+          var cikPad = ('0000000000' + cik).slice(-10);
+          var sr = await fetch('https://edgar-proxy.alcharles1980.workers.dev?path=%2Fsubmissions%2FCIK' + cikPad + '.json&host=data.sec.gov');
+          if (sr.ok) {
+            var sj = await sr.json();
+            if (sj && sj.sic) { sic = String(sj.sic); if (sj.sicDescription) sicDesc = sj.sicDescription; }
+          }
+        } catch (e) {}
+      }
+
+      var cl = classifier.classify(type, sic, sicDesc);
+
+      // market cap: prefer Polygon's; else shares×price (companies), or shares×price for ETFs (≈AUM)
+      var nmc = null;
+      if (rr3.market_cap) nmc = Math.round(rr3.market_cap);
+      else if (shares && px3) nmc = Math.round(shares * px3);
+
+      insertRows.push({
+        ticker: ntk,
+        name: rr3.name || ntk,
+        type: type,
+        primary_exchange: rr3.primary_exchange || null,
+        sic_code: cl.sic_code,
+        sic_description: cl.sic_description,
+        market_cap: nmc,
+        gics_sector: cl.gics_sector,
+        sector_source: cl.sector_source,
+        cik: cik,
+        price: px3 || null,
+        shares_outstanding: shares,
+        updated_at: new Date().toISOString()
+      });
+      absorbed++;
+    } catch (e) { absErr++; }
+    if (nt % 10 === 0) await sleep(120);
+    if (insertRows.length >= 300) { await sbUpsert('market_universe_full', insertRows, 'ticker'); insertRows = []; }
+    if (nt % 100 === 0 && newTickers.length > 0) {
+      await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 96, message: 'Absorbing new tickers: ' + nt + '/' + newTickers.length + ' (' + absorbed + ' added)' });
+    }
+  }
+  if (insertRows.length) await sbUpsert('market_universe_full', insertRows, 'ticker');
+  console.log('Absorbed ' + absorbed + ' new tickers (' + absErr + ' errors/skipped).');
+
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Sector refresh complete: ' + priceRows.length + ' priced, ' + updated + ' mcaps re-anchored, ' + absorbed + ' new tickers absorbed (as of ' + usedDate + ').' });
 }
 
 async function backfillMcap() {
