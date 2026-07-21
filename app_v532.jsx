@@ -13165,6 +13165,17 @@ function MostActivesPage(p){
     try{
       var rawActives=[];
 
+      // Pre-Market (4:00-9:30 AM ET) and After-Market (4:00-8:00 PM ET) tabs exist but their data
+      // source hasn't been wired up yet — show a clear placeholder instead of fetching. (The screener
+      // + BOATS paths below don't cover these windows; sourcing TBD.)
+      if(session==='premarket'||session==='aftermarket'){
+        setActives([]);
+        setLastUpdated((session==='premarket'?'Pre-Market (4:00-9:30 AM ET)':'After-Market (4:00-8:00 PM ET)')+' \u2014 data source not yet configured');
+        setLoading(false);
+        inFlight.current=false;
+        return;
+      }
+
       if(session==='mylists'){
         // ── MY LISTS MODE: fetch tickers from selected list ──
         if(!selectedList){setLoading(false);return;}
@@ -13391,7 +13402,7 @@ function MostActivesPage(p){
     <div style={card}>
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['rth','RTH'],['overnight','Overnight (BOATS)'],['mylists','My Lists']].map(function(s){
+        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['mylists','My Lists']].map(function(s){
           return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
             style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
               border:'1px solid '+(session===s[0]?C.gold:C.border),
@@ -13494,7 +13505,7 @@ function MostActivesPage(p){
     {/* Most Actives Table */}
     {filtered&&filtered.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
+        {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
       <div style={{overflowX:'auto'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:900}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
