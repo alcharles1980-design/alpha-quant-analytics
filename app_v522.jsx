@@ -12868,7 +12868,7 @@ function SectorOverviewPage(p){
   var s6=useState(null),asof=s6[0],setAsof=s6[1];
   var s7=useState(null),data=s7[0],setData=s7[1];             // parsed RPC payload
   var s8=useState({}),indDetail=s8[0],setIndDetail=s8[1];     // {sector|sic2: [industries]} loaded on demand
-  var CACHE_KEY='aqa_sector_overview_v1';
+  var CACHE_KEY='aqa_sector_overview_v2';
 
   // normalize a compact stock {t,n,y,m} -> {ticker,name,type,market_cap}
   var normStock=function(s){return {ticker:s.t,name:s.n,type:s.y,market_cap:s.m};};
@@ -13016,7 +13016,7 @@ function SectorOverviewPage(p){
                   <div style={{color:C.txtDim,fontSize:9,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5,margin:'8px 0 3px 0'}}>Industries</div>
                   {inds.map(function(ind){
                     var iStocks=normList(ind.top);
-                    return <div key={ind.ind} style={{margin:'0 0 6px 0'}}>
+                    return <div key={ind.sic||ind.ind} style={{margin:'0 0 6px 0'}}>
                       <div style={{display:'flex',alignItems:'baseline',gap:8,padding:'3px 0',borderBottom:'1px solid '+C.border}}>
                         <span style={{flex:1,color:C.txt,fontSize:11,fontFamily:F}}>{titleCase(ind.ind)}</span>
                         <span style={{color:C.txtDim,fontSize:10,fontFamily:F}}>{ind.count}</span>
