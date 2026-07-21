@@ -3505,9 +3505,8 @@ async function runScreener() {
 // recent PRIOR stored close (so gaps from non-trading days are handled per ticker).
 // ─────────────────────────────────────────────────────────────────────────────
 async function runCorrPriceRefresh(startDate, endDate) {
-  await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting price-return refresh...' });
-
-  // Concurrent-run guard
+  // Concurrent-run guard FIRST — before writing our own 'running' status, so we don't detect
+  // ourselves. Look for a DIFFERENT run that's still marked running and recent.
   try {
     var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.corr-price-refresh&status=eq.running&select=started_at&order=started_at.desc&limit=3', { headers: sbHeaders() });
     if (lockR.ok) {
@@ -3515,12 +3514,14 @@ async function runCorrPriceRefresh(startDate, endDate) {
       for (var li = 0; li < lockRows.length; li++) {
         var ageSec = (Date.now() - new Date(lockRows[li].started_at).getTime()) / 1000;
         if (ageSec < 3600) {
-          await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Another corr-price-refresh is already running (' + Math.round(ageSec) + 's ago). Aborting.' });
+          console.log('Another corr-price-refresh appears to be running (' + Math.round(ageSec) + 's ago). Aborting.');
           return;
         }
       }
     }
   } catch (e) { console.log('Concurrent-run check failed (continuing): ' + e.message); }
+
+  await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting price-return refresh...' });
 
   // Determine the window. Default: trailing ~260 calendar-day span ending yesterday
   // (enough weekdays for a 252-trading-day lookback). Explicit --start/--end overrides.
@@ -3616,9 +3617,7 @@ async function runCorrPriceRefresh(startDate, endDate) {
 }
 
 async function runSectorRefresh() {
-  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting sector universe refresh...' });
-
-  // Concurrent-run guard (mirror trade-analysis)
+  // Concurrent-run guard FIRST (before writing our own 'running' status, so we don't detect ourselves)
   try {
     var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.sector-refresh&status=eq.running&select=started_at&order=started_at.desc&limit=3', { headers: sbHeaders() });
     if (lockR.ok) {
@@ -3626,12 +3625,14 @@ async function runSectorRefresh() {
       for (var li = 0; li < lockRows.length; li++) {
         var ageSec = (Date.now() - new Date(lockRows[li].started_at).getTime()) / 1000;
         if (ageSec < 3600) {
-          await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Another sector-refresh is already running (' + Math.round(ageSec) + 's ago). Aborting.' });
+          console.log('Another sector-refresh appears to be running (' + Math.round(ageSec) + 's ago). Aborting.');
           return;
         }
       }
     }
   } catch (e) { console.log('Concurrent-run check failed (continuing): ' + e.message); }
+
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting sector universe refresh...' });
 
   // ── Step 1: fresh prices for the whole market via grouped daily bars ────────
   // Try the last few weekdays until one returns results (skips weekends/holidays;
