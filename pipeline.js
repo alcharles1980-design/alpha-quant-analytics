@@ -3494,6 +3494,127 @@ async function runScreener() {
 // per-ETF calls. Reads the app via the get_sector_overview RPC afterward — no app
 // change needed; the page just picks up fresh numbers on next (cache-busted) load.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CORRELATION — PRICE RETURNS (Stage 11, build stage 1). Independent job.
+// Builds the daily_returns table (ticker, trade_date, close, ret) from grouped
+// daily bars — the raw material for the price-return correlation matrix. Does NOT
+// touch any other table. Incremental: only fetches trading days not already
+// stored, so nightly runs are cheap. One-off backfill via --start/--end.
+//
+// Return is close_t / close_(t-1) - 1, where close_(t-1) is that ticker's most
+// recent PRIOR stored close (so gaps from non-trading days are handled per ticker).
+// ─────────────────────────────────────────────────────────────────────────────
+async function runCorrPriceRefresh(startDate, endDate) {
+  await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting price-return refresh...' });
+
+  // Concurrent-run guard
+  try {
+    var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.corr-price-refresh&status=eq.running&select=started_at&order=started_at.desc&limit=3', { headers: sbHeaders() });
+    if (lockR.ok) {
+      var lockRows = await lockR.json();
+      for (var li = 0; li < lockRows.length; li++) {
+        var ageSec = (Date.now() - new Date(lockRows[li].started_at).getTime()) / 1000;
+        if (ageSec < 3600) {
+          await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Another corr-price-refresh is already running (' + Math.round(ageSec) + 's ago). Aborting.' });
+          return;
+        }
+      }
+    }
+  } catch (e) { console.log('Concurrent-run check failed (continuing): ' + e.message); }
+
+  // Determine the window. Default: trailing ~260 calendar-day span ending yesterday
+  // (enough weekdays for a 252-trading-day lookback). Explicit --start/--end overrides.
+  var end = endDate ? new Date(endDate + 'T12:00:00Z') : (function () { var x = new Date(); x.setUTCDate(x.getUTCDate() - 1); return x; })();
+  var start = startDate ? new Date(startDate + 'T12:00:00Z') : (function () { var x = new Date(end); x.setUTCDate(x.getUTCDate() - 380); return x; })();
+  var startStr = start.toISOString().slice(0, 10);
+  var endStr = end.toISOString().slice(0, 10);
+  var wantDays = getTradingDays(startStr, endStr);
+  console.log('Price-return window ' + startStr + ' to ' + endStr + ' (' + wantDays.length + ' weekdays)');
+
+  // Incremental: find which of those dates already have rows, skip them.
+  var haveDates = {};
+  try {
+    var er = await fetch(SB_URL + '/rest/v1/daily_returns?select=trade_date&trade_date=gte.' + startStr + '&trade_date=lte.' + endStr, { headers: Object.assign({}, sbHeaders(), { 'Range': '0-100000' }) });
+    if (er.ok) { var ex = await er.json(); (ex || []).forEach(function (r) { haveDates[r.trade_date] = 1; }); }
+  } catch (e) {}
+  var existingDistinct = Object.keys(haveDates).length;
+  var toFetch = wantDays.filter(function (d) { return !haveDates[d]; });
+  console.log('Already have ' + existingDistinct + ' dates; fetching ' + toFetch.length + ' new dates.');
+
+  // Fetch grouped daily bars per missing day → collect {date: {ticker: close}}
+  var closesByDate = {};   // date -> {ticker: close}
+  var fetched = 0, holidays = 0;
+  for (var di = 0; di < toFetch.length; di++) {
+    var date = toFetch[di];
+    try {
+      var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 30000);
+      var r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r.ok) {
+        var body = await r.json();
+        if (body.results && body.results.length > 100) {
+          var m = {};
+          for (var i = 0; i < body.results.length; i++) { var bar = body.results[i]; if (bar.T && bar.c) m[bar.T] = bar.c; }
+          closesByDate[date] = m;
+          fetched++;
+        } else { holidays++; }
+      } else if (r.status === 403) {
+        console.log('  ' + date + ': 403 (too recent for plan) — skipping');
+      } else { console.log('  ' + date + ': HTTP ' + r.status); }
+    } catch (e) { console.log('  ' + date + ' error: ' + e.message); }
+    if (di % 5 === 0) await sleep(200);
+    if (di % 20 === 0) await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'running', progress_pct: Math.round((di / Math.max(1, toFetch.length)) * 70), message: 'Fetching daily bars: ' + di + '/' + toFetch.length + ' (' + fetched + ' days)' });
+  }
+  console.log('Fetched ' + fetched + ' trading days (' + holidays + ' holidays/empty).');
+
+  if (fetched === 0) {
+    await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Up to date — no new trading days to add (' + existingDistinct + ' dates already stored).' });
+    return;
+  }
+
+  // To compute returns we need each ticker's prior close. Pull the last stored close
+  // per ticker BEFORE the earliest newly-fetched date, then walk forward chronologically.
+  var newDates = Object.keys(closesByDate).sort();
+  var earliestNew = newDates[0];
+  await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'running', progress_pct: 75, message: 'Loading prior closes...' });
+  var prevClose = {};   // ticker -> last known close (chronological)
+  try {
+    // most recent stored close per ticker strictly before earliestNew
+    var pr = await fetch(SB_URL + '/rest/v1/daily_returns?select=ticker,close,trade_date&trade_date=lt.' + earliestNew + '&order=ticker.asc,trade_date.desc', { headers: Object.assign({}, sbHeaders(), { 'Range': '0-2000000' }) });
+    if (pr.ok) {
+      var rows = await pr.json();
+      // rows are ordered ticker asc, date desc → first row per ticker is its latest prior close
+      var seen = {};
+      for (var k = 0; k < rows.length; k++) { var t = rows[k].ticker; if (!seen[t]) { seen[t] = 1; prevClose[t] = rows[k].close; } }
+    }
+  } catch (e) {}
+
+  // Walk the new dates in order, build return rows, upsert in batches.
+  var outRows = [];
+  var written = 0;
+  for (var nd = 0; nd < newDates.length; nd++) {
+    var dt = newDates[nd];
+    var cm = closesByDate[dt];
+    var tickers = Object.keys(cm);
+    for (var ti2 = 0; ti2 < tickers.length; ti2++) {
+      var tk = tickers[ti2];
+      var c = cm[tk];
+      var pc = prevClose[tk];
+      var ret = (pc && pc > 0) ? (c / pc - 1) : null;
+      outRows.push({ ticker: tk, trade_date: dt, close: c, ret: ret });
+      prevClose[tk] = c;   // advance
+    }
+    if (outRows.length >= 5000) { await sbUpsert('daily_returns', outRows, 'ticker,trade_date'); written += outRows.length; outRows = []; }
+    if (nd % 10 === 0) await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'running', progress_pct: 75 + Math.round((nd / newDates.length) * 24), message: 'Writing returns: day ' + (nd + 1) + '/' + newDates.length });
+  }
+  if (outRows.length) { await sbUpsert('daily_returns', outRows, 'ticker,trade_date'); written += outRows.length; }
+
+  await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Price-return refresh complete: ' + fetched + ' new trading days, ' + written + ' rows written.' });
+  console.log('Wrote ' + written + ' daily_returns rows across ' + fetched + ' new days.');
+}
+
 async function runSectorRefresh() {
   await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting sector universe refresh...' });
 
@@ -5618,7 +5739,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--sector-refresh') ? 'sector-refresh' : args.includes('--yahoo-ratings') ? 'yahoo-ratings' : args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
+  var mode = args.includes('--corr-price-refresh') ? 'corr-price-refresh' : args.includes('--sector-refresh') ? 'sector-refresh' : args.includes('--yahoo-ratings') ? 'yahoo-ratings' : args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -5717,6 +5838,11 @@ async function main() {
     try { await runSectorRefresh(); } catch (e) {
       console.error('SECTOR-REFRESH CRASHED:', e.message, e.stack);
       await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
+    }
+  } else if (mode === 'corr-price-refresh') {
+    try { await runCorrPriceRefresh(startDate, endDate); } catch (e) {
+      console.error('CORR-PRICE-REFRESH CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'corr-price-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else {
     try { await runHourly(tickers); } catch (e) {

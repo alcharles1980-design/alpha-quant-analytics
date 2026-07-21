@@ -37,6 +37,7 @@ on:
           - atr-analysis
           - tipranks-sync
           - sector-refresh
+          - corr-price-refresh
       tickers:
         description: 'Comma-separated tickers'
         required: true
