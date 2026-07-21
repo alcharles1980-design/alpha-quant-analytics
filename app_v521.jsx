@@ -12861,50 +12861,60 @@ function titleCase(s){if(!s)return s;return s.toLowerCase().replace(/\b\w/g,func
 function fmtCap(v){if(v==null||!isFinite(v))return '—';var a=Math.abs(v);if(a>=1e12)return '$'+(v/1e12).toFixed(2)+'T';if(a>=1e9)return '$'+(v/1e9).toFixed(1)+'B';if(a>=1e6)return '$'+(v/1e6).toFixed(0)+'M';return '$'+v.toFixed(0);}
 
 function SectorOverviewPage(p){
-  var s1=useState(null),rows=s1[0],setRows=s1[1];       // all sector_universe rows {ticker,name,gics_sector,sic_code,sic_description,market_cap}
   var s2=useState(false),loading=s2[0],setLoading=s2[1];
   var s3=useState(null),err=s3[0],setErr=s3[1];
   var s4=useState({}),openSector=s4[0],setOpenSector=s4[1];   // {sector: true}
   var s5=useState({}),openGroup=s5[0],setOpenGroup=s5[1];     // {sector|sic2: true}
   var s6=useState(null),asof=s6[0],setAsof=s6[1];
+  var s7=useState(null),data=s7[0],setData=s7[1];             // parsed RPC payload
+  var s8=useState({}),indDetail=s8[0],setIndDetail=s8[1];     // {sector|sic2: [industries]} loaded on demand
+  var CACHE_KEY='aqa_sector_overview_v1';
+
+  // normalize a compact stock {t,n,y,m} -> {ticker,name,type,market_cap}
+  var normStock=function(s){return {ticker:s.t,name:s.n,type:s.y,market_cap:s.m};};
+  var normList=function(arr){return (arr||[]).map(normStock);};
 
   useEffect(function(){
-    setLoading(true);setErr(null);setRows(null);setOpenSector({});setOpenGroup({});
-    // pull the whole tradable US market (paginate to beat the 1000-row PostgREST cap)
-    var all=[],from=0,page=1000;
-    var pull=function(){
-      var h=Object.assign({},getSbHeaders(),{'Range-Unit':'items','Range':from+'-'+(from+page-1)});
-      return fetch(SB_URL+'/rest/v1/market_universe_full?select=ticker,name,type,gics_sector,sic_code,sic_description,market_cap,updated_at&order=market_cap.desc.nullslast',{headers:h})
-        .then(function(r){return r.json();}).then(function(d){
-          if(!Array.isArray(d)){setErr('Load failed');setLoading(false);return;}
-          all=all.concat(d);
-          if(d.length===page&&all.length<20000){from+=page;return pull();}
-          setRows(all);
-          if(all.length&&all[0].updated_at)setAsof(new Date(all[0].updated_at));
-          setLoading(false);
-        }).catch(function(){setErr('Load failed');setLoading(false);});
-    };
-    pull();
+    setErr(null);
+    // try sessionStorage cache first (static data — instant re-open)
+    var cached=null;
+    try{var raw=sessionStorage.getItem(CACHE_KEY);if(raw)cached=JSON.parse(raw);}catch(e){}
+    if(cached&&cached.sectors){setData(cached);if(cached.updated_at)setAsof(new Date(cached.updated_at));setLoading(false);return;}
+    setLoading(true);
+    var h=Object.assign({},getSbHeaders(),{'Content-Type':'application/json'});
+    fetch(SB_URL+'/rest/v1/rpc/get_sector_overview',{method:'POST',headers:h,body:'{}'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d||!d.sectors){setErr('Load failed');setLoading(false);return;}
+        setData(d);
+        if(d.updated_at)setAsof(new Date(d.updated_at));
+        try{sessionStorage.setItem(CACHE_KEY,JSON.stringify(d));}catch(e){}
+        setLoading(false);
+      }).catch(function(){setErr('Load failed');setLoading(false);});
   },[]);
 
-  // aggregate by sector
+  // load 3rd-level industries for a group on demand
+  var loadIndDetail=function(sector,sic2){
+    var key=sector+'|'+sic2;
+    if(indDetail[key])return; // already loaded
+    var h=Object.assign({},getSbHeaders(),{'Content-Type':'application/json'});
+    fetch(SB_URL+'/rest/v1/rpc/get_sector_group_detail',{method:'POST',headers:h,body:JSON.stringify({p_sector:sector,p_sic2:sic2})})
+      .then(function(r){return r.json();})
+      .then(function(arr){
+        setIndDetail(function(prev){var n=Object.assign({},prev);n[key]=Array.isArray(arr)?arr:[];return n;});
+      }).catch(function(){setIndDetail(function(prev){var n=Object.assign({},prev);n[key]=[];return n;});});
+  };
+
+  // build sector list from RPC payload (already sorted by mcap desc)
   var sectors=[];
-  if(rows){
-    var byS={};
-    rows.forEach(function(r){
-      var sec=r.gics_sector||'Other';
-      if(!byS[sec])byS[sec]={sector:sec,mcap:0,count:0,stocks:[],groups:{}};
-      byS[sec].mcap+=(+r.market_cap||0);byS[sec].count++;byS[sec].stocks.push(r);
-      var sic2=(r.sic_code||'').slice(0,2)||'99';
-      if(!byS[sec].groups[sic2])byS[sec].groups[sic2]={sic2:sic2,mcap:0,count:0,stocks:[],inds:{}};
-      var g=byS[sec].groups[sic2];g.mcap+=(+r.market_cap||0);g.count++;g.stocks.push(r);
-      var ind=r.sic_description||'Unclassified';
-      if(!g.inds[ind])g.inds[ind]={ind:ind,mcap:0,count:0,stocks:[]};
-      g.inds[ind].mcap+=(+r.market_cap||0);g.inds[ind].count++;g.inds[ind].stocks.push(r);
+  if(data&&data.sectors){
+    sectors=data.sectors.map(function(s){
+      return {sector:s.sector,mcap:+s.mcap||0,count:s.count,stocks:normList(s.top),
+        groups:(s.groups||[]).map(function(g){return {sic2:g.sic2,mcap:+g.mcap||0,count:g.count,stocks:normList(g.top)};})};
     });
-    sectors=Object.keys(byS).map(function(k){return byS[k];}).sort(function(a,b){return b.mcap-a.mcap;});
   }
-  var totalMcap=sectors.reduce(function(s,x){return s+x.mcap;},0);
+  var totalMcap=data?(+data.total_mcap||0):0;
+  var totalNames=data?data.total_names:0;
   // split into the 11 GICS sectors (numbered) vs non-sector buckets (ETFs/Funds, Warrants, Unclassified) shown at the bottom
   var NON_SECTOR={'ETFs & Funds':1,'Warrants/Rights/Units':1,'Unclassified':1};
   var realSectors=sectors.filter(function(s){return !NON_SECTOR[s.sector];});
@@ -12936,7 +12946,7 @@ function SectorOverviewPage(p){
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:8}}>
       <div>
         <div style={{color:C.accent,fontSize:15,fontFamily:F,fontWeight:700,letterSpacing:1}}>US MARKET SECTOR OVERVIEW</div>
-        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>Whole US market · {rows?rows.length.toLocaleString():'…'} tradable names · {fmtCap(totalMcap)} sized{asof?(' · '+asof.toLocaleDateString()):''}</div>
+        <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:2}}>Whole US market · {totalNames?totalNames.toLocaleString():'…'} tradable names · {fmtCap(totalMcap)} sized{asof?(' · '+asof.toLocaleDateString()):''}</div>
       </div>
       <button onClick={function(){p.onBack&&p.onBack();}} style={Object.assign({},iS,{cursor:'pointer'})}>← Back</button>
     </div>
@@ -12989,9 +12999,9 @@ function SectorOverviewPage(p){
             var gkey=sec.sector+'|'+g.sic2;
             var gOpen=openGroup[gkey];
             var gLabel=SIC2_LABELS[g.sic2]||('SIC '+g.sic2);
-            var inds=Object.keys(g.inds).map(function(k){return g.inds[k];}).sort(function(a,b){return b.mcap-a.mcap;});
+            var inds=indDetail[gkey]||null;   // loaded on demand
             return <div key={gkey} style={{marginBottom:4,border:'1px solid '+C.border,borderRadius:6,background:C.bgDeep}}>
-              <div onClick={function(){var n=Object.assign({},openGroup);n[gkey]=!n[gkey];setOpenGroup(n);}} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer'}}>
+              <div onClick={function(){var n=Object.assign({},openGroup);n[gkey]=!n[gkey];setOpenGroup(n);if(n[gkey])loadIndDetail(sec.sector,g.sic2);}} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer'}}>
                 <div style={{color:C.txtDim,fontSize:10,width:10}}>{gOpen?'▾':'▸'}</div>
                 <div style={{flex:1,color:C.txt,fontSize:12,fontFamily:F,fontWeight:600}}>{gLabel}</div>
                 <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginRight:8}}>{g.count}</div>
@@ -13000,18 +13010,20 @@ function SectorOverviewPage(p){
               {gOpen&&<div style={{padding:'2px 10px 8px 22px'}}>
                 {/* top 10 stocks in this group */}
                 {topList(g.stocks,10,null)}
-                {/* industries (sic_description) within the group */}
-                {inds.length>1&&<div>
+                {/* industries (sic_description) within the group — loaded on demand */}
+                {inds===null?<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'4px 0'}}>Loading industries…</div>:
+                 inds.length>1&&<div>
                   <div style={{color:C.txtDim,fontSize:9,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5,margin:'8px 0 3px 0'}}>Industries</div>
                   {inds.map(function(ind){
+                    var iStocks=normList(ind.top);
                     return <div key={ind.ind} style={{margin:'0 0 6px 0'}}>
                       <div style={{display:'flex',alignItems:'baseline',gap:8,padding:'3px 0',borderBottom:'1px solid '+C.border}}>
                         <span style={{flex:1,color:C.txt,fontSize:11,fontFamily:F}}>{titleCase(ind.ind)}</span>
                         <span style={{color:C.txtDim,fontSize:10,fontFamily:F}}>{ind.count}</span>
-                        <span style={{color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:600,minWidth:56,textAlign:'right'}}>{fmtCap(ind.mcap)}</span>
+                        <span style={{color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:600,minWidth:56,textAlign:'right'}}>{fmtCap(+ind.mcap||0)}</span>
                       </div>
-                      {/* top 5 within each industry */}
-                      {ind.count>0&&topN(ind.stocks,Math.min(ind.count,10)).map(StockRow)}
+                      {/* top stocks within each industry */}
+                      {iStocks.length>0&&iStocks.map(StockRow)}
                     </div>;
                   })}
                 </div>}
