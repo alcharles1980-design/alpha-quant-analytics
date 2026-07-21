@@ -13098,7 +13098,8 @@ function MostActivesPage(p){
   var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
-  var s13=useState('overnight'),session=s13[0],setSession=s13[1];
+  // Default session by current Eastern time: RTH during 4AM-8PM ET, Overnight (BOATS) otherwise (8PM-4AM ET).
+  var s13=useState(function(){var eh=getETHourFromMs(Date.now());return (eh>=4&&eh<20)?'rth':'overnight';}),session=s13[0],setSession=s13[1];
   var s14=useState([]),myLists=s14[0],setMyLists=s14[1];
   var s15=useState(null),selectedList=s15[0],setSelectedList=s15[1];
   var s16=useState('rth'),listSession=s16[0],setListSession=s16[1];
