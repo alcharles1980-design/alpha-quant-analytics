@@ -12868,7 +12868,7 @@ function SectorOverviewPage(p){
   var s6=useState(null),asof=s6[0],setAsof=s6[1];
   var s7=useState(null),data=s7[0],setData=s7[1];             // parsed RPC payload
   var s8=useState({}),indDetail=s8[0],setIndDetail=s8[1];     // {sector|sic2: [industries]} loaded on demand
-  var CACHE_KEY='aqa_sector_overview_v2';
+  var CACHE_KEY='aqa_sector_overview_v3';
 
   // normalize a compact stock {t,n,y,m} -> {ticker,name,type,market_cap}
   var normStock=function(s){return {ticker:s.t,name:s.n,type:s.y,market_cap:s.m};};
@@ -12965,7 +12965,7 @@ function SectorOverviewPage(p){
       var isSpecial=(sec.sector==='ETFs & Funds'||sec.sector==='Warrants/Rights/Units'||sec.sector==='Unclassified');
       var pctMkt=totalMcap?(sec.mcap/totalMcap*100):0;
       var isOpen=openSector[sec.sector];
-      var groups=Object.keys(sec.groups).map(function(k){return sec.groups[k];}).sort(function(a,b){return b.mcap-a.mcap;});
+      var groups=sec.groups||[];   // already an array, pre-sorted by mcap desc from the RPC
       return <div key={sec.sector} style={{marginBottom:8,border:'1px solid '+C.border,borderRadius:8,overflow:'hidden',background:C.bgCard}}>
         {/* sector header */}
         <div onClick={function(){var n=Object.assign({},openSector);n[sec.sector]=!n[sec.sector];setOpenSector(n);}} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 13px',cursor:'pointer',borderLeft:'3px solid '+meta.color}}>
@@ -12993,12 +12993,13 @@ function SectorOverviewPage(p){
           :<div>
           {/* top 10 stocks in the whole sector */}
           {topList(sec.stocks,10,'Top 10 — '+sec.sector)}
+          {(sec.count||0)>Math.min(10,sec.stocks.length)&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,margin:'0 0 4px 8px'}}>Sector total: {(sec.count||0).toLocaleString()} names — expand groups below to explore all</div>}
           {/* industry groups */}
           <div style={{color:C.txtDim,fontSize:9,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5,margin:'10px 0 4px 0'}}>Industry Groups</div>
           {groups.map(function(g){
             var gkey=sec.sector+'|'+g.sic2;
             var gOpen=openGroup[gkey];
-            var gLabel=SIC2_LABELS[g.sic2]||('SIC '+g.sic2);
+            var gLabel=(!g.sic2)?'Other / No SIC Code':(SIC2_LABELS[g.sic2]||('SIC '+g.sic2));
             var inds=indDetail[gkey]||null;   // loaded on demand
             return <div key={gkey} style={{marginBottom:4,border:'1px solid '+C.border,borderRadius:6,background:C.bgDeep}}>
               <div onClick={function(){var n=Object.assign({},openGroup);n[gkey]=!n[gkey];setOpenGroup(n);if(n[gkey])loadIndDetail(sec.sector,g.sic2);}} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer'}}>
@@ -13010,10 +13011,13 @@ function SectorOverviewPage(p){
               {gOpen&&<div style={{padding:'2px 10px 8px 22px'}}>
                 {/* top 10 stocks in this group */}
                 {topList(g.stocks,10,null)}
+                {(g.count||0)>g.stocks.length&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,margin:'0 0 4px 8px'}}>Group total: {(g.count||0).toLocaleString()} names — see industries below for more</div>}
                 {/* industries (sic_description) within the group — loaded on demand */}
                 {inds===null?<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'4px 0'}}>Loading industries…</div>:
-                 inds.length>1&&<div>
-                  <div style={{color:C.txtDim,fontSize:9,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5,margin:'8px 0 3px 0'}}>Industries</div>
+                 /* show industry breakdown when it adds detail beyond the group's top-10:
+                    i.e. more than one industry, OR a single industry with more names than are shown */
+                 (inds.length>1||(inds.length===1&&(inds[0].count||0)>10))&&<div>
+                  <div style={{color:C.txtDim,fontSize:9,fontFamily:F,textTransform:'uppercase',letterSpacing:0.5,margin:'8px 0 3px 0'}}>{inds.length>1?'Industries':'Industry'}</div>
                   {inds.map(function(ind){
                     var iStocks=normList(ind.top);
                     return <div key={ind.sic||ind.ind} style={{margin:'0 0 6px 0'}}>
@@ -13024,6 +13028,7 @@ function SectorOverviewPage(p){
                       </div>
                       {/* top stocks within each industry */}
                       {iStocks.length>0&&iStocks.map(StockRow)}
+                      {(ind.count||0)>iStocks.length&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,margin:'2px 0 0 8px'}}>Showing top {iStocks.length} of {(ind.count||0).toLocaleString()}</div>}
                     </div>;
                   })}
                 </div>}
