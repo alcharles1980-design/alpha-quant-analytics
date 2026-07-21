@@ -12876,10 +12876,12 @@ function SectorOverviewPage(p){
 
   useEffect(function(){
     setErr(null);
-    // try sessionStorage cache first (static data — instant re-open)
+    var today=new Date().toISOString().slice(0,10);
+    // try sessionStorage cache first — but only if it was cached today, so the nightly
+    // refresh is picked up on the first load of a new day (data updates ~overnight).
     var cached=null;
     try{var raw=sessionStorage.getItem(CACHE_KEY);if(raw)cached=JSON.parse(raw);}catch(e){}
-    if(cached&&cached.sectors){setData(cached);if(cached.updated_at)setAsof(new Date(cached.updated_at));setLoading(false);return;}
+    if(cached&&cached.sectors&&cached._cachedOn===today){setData(cached);if(cached.updated_at)setAsof(new Date(cached.updated_at));setLoading(false);return;}
     setLoading(true);
     var h=Object.assign({},getSbHeaders(),{'Content-Type':'application/json'});
     fetch(SB_URL+'/rest/v1/rpc/get_sector_overview',{method:'POST',headers:h,body:'{}'})
@@ -12888,7 +12890,7 @@ function SectorOverviewPage(p){
         if(!d||!d.sectors){setErr('Load failed');setLoading(false);return;}
         setData(d);
         if(d.updated_at)setAsof(new Date(d.updated_at));
-        try{sessionStorage.setItem(CACHE_KEY,JSON.stringify(d));}catch(e){}
+        try{d._cachedOn=today;sessionStorage.setItem(CACHE_KEY,JSON.stringify(d));}catch(e){}
         setLoading(false);
       }).catch(function(){setErr('Load failed');setLoading(false);});
   },[]);

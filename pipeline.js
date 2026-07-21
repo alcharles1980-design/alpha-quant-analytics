@@ -3483,6 +3483,143 @@ async function runScreener() {
 }
 
 // ── BACKFILL MARKET CAP for existing screener data ──────
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR REFRESH (nightly): refresh prices for the whole tradable universe in
+// market_universe_full, recompute ETF/fund sizes (shares × fresh price), and
+// re-anchor company market caps from Polygon detail. Universe membership, SIC
+// codes, CIKs and GICS classification are treated as static (rebuilt separately).
+//
+// Cost profile: 1 grouped-bars call for all ~12k prices, then ~9 batches of 600
+// detail calls for the ~5.3k companies (≈5-6 min). ETFs use stored shares, so no
+// per-ETF calls. Reads the app via the get_sector_overview RPC afterward — no app
+// change needed; the page just picks up fresh numbers on next (cache-busted) load.
+// ─────────────────────────────────────────────────────────────────────────────
+async function runSectorRefresh() {
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 0, message: 'Starting sector universe refresh...' });
+
+  // Concurrent-run guard (mirror trade-analysis)
+  try {
+    var lockR = await fetch(SB_URL + '/rest/v1/pipeline_status?mode=eq.sector-refresh&status=eq.running&select=started_at&order=started_at.desc&limit=3', { headers: sbHeaders() });
+    if (lockR.ok) {
+      var lockRows = await lockR.json();
+      for (var li = 0; li < lockRows.length; li++) {
+        var ageSec = (Date.now() - new Date(lockRows[li].started_at).getTime()) / 1000;
+        if (ageSec < 3600) {
+          await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Another sector-refresh is already running (' + Math.round(ageSec) + 's ago). Aborting.' });
+          return;
+        }
+      }
+    }
+  } catch (e) { console.log('Concurrent-run check failed (continuing): ' + e.message); }
+
+  // ── Step 1: fresh prices for the whole market via grouped daily bars ────────
+  // Try the last few weekdays until one returns results (skips weekends/holidays;
+  // Polygon Basic can 403 today's data, so start from yesterday).
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 5, message: 'Fetching grouped daily bars...' });
+  var priceMap = {};        // ticker -> close
+  var usedDate = null;
+  var d = new Date(); d.setDate(d.getDate() - 1);
+  for (var attempt = 0; attempt < 7 && !usedDate; attempt++) {
+    var dow = d.getDay();
+    if (dow === 0 || dow === 6) { d.setDate(d.getDate() - 1); continue; }
+    var date = d.toISOString().slice(0, 10);
+    try {
+      var url = 'https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/' + date + '?adjusted=true&apiKey=' + POLYGON_KEY;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 30000);
+      var r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r.ok) {
+        var body = await r.json();
+        if (body.results && body.results.length > 100) {
+          for (var i = 0; i < body.results.length; i++) {
+            var bar = body.results[i];
+            if (bar.T && bar.c) priceMap[bar.T] = bar.c;
+          }
+          usedDate = date;
+          console.log('Grouped bars ' + date + ': ' + body.results.length + ' tickers priced');
+        }
+      } else {
+        console.log('Grouped bars ' + date + ': HTTP ' + r.status);
+      }
+    } catch (e) { console.log('Grouped bars ' + date + ' error: ' + e.message); }
+    d.setDate(d.getDate() - 1);
+  }
+  if (!usedDate) {
+    await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'No grouped-bars data returned for any recent trading day.' });
+    return;
+  }
+  var pricedTickers = Object.keys(priceMap);
+  console.log('Priced ' + pricedTickers.length + ' tickers as of ' + usedDate);
+
+  // ── Step 2: load the current universe (ticker, type, shares) ────────────────
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 20, message: 'Loading universe...' });
+  var universe = await sbFetchPaginated('market_universe_full?select=ticker,type,shares_outstanding');
+  console.log('Universe rows: ' + universe.length);
+  var byTicker = {};
+  for (var u = 0; u < universe.length; u++) byTicker[universe[u].ticker] = universe[u];
+
+  // ── Step 3: write fresh prices + recompute ETF/fund sizes (shares × price) ──
+  // Companies get price now; their market_cap is re-anchored in Step 4.
+  var ETF_TYPES = { ETF: 1, FUND: 1, ETV: 1, ETN: 1, ETS: 1, SP: 1 };
+  var priceRows = [];
+  for (var t = 0; t < universe.length; t++) {
+    var row = universe[t];
+    var px = priceMap[row.ticker];
+    if (px == null) continue;
+    var patch = { ticker: row.ticker, price: px, updated_at: new Date().toISOString() };
+    if (ETF_TYPES[row.type] && row.shares_outstanding) {
+      patch.market_cap = Math.round(row.shares_outstanding * px);   // ≈ AUM
+    }
+    priceRows.push(patch);
+  }
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: 35, message: 'Writing ' + priceRows.length + ' prices + ETF sizes...' });
+  await sbUpsert('market_universe_full', priceRows, 'ticker');
+  console.log('Updated price for ' + priceRows.length + ' tickers; ETF/fund sizes recomputed.');
+
+  // ── Step 4: re-anchor company (CS/ADRC) market caps from Polygon detail ─────
+  // These change with buybacks/issuance/splits, so re-fetch true market_cap.
+  // Batched, throttled — ~5.3k companies.
+  var companies = universe.filter(function (x) { return x.type === 'CS' || x.type === 'ADRC'; });
+  console.log('Re-anchoring market cap for ' + companies.length + ' companies...');
+  var mcapRows = [];
+  var done = 0, updated = 0;
+  for (var c = 0; c < companies.length; c++) {
+    var tk = companies[c].ticker;
+    try {
+      var pr = await fetch('https://api.polygon.io/v3/reference/tickers/' + encodeURIComponent(tk) + '?apiKey=' + POLYGON_KEY);
+      if (pr.ok) {
+        var pd = await pr.json();
+        var rr = pd && pd.results;
+        if (rr) {
+          var mc = null;
+          if (rr.market_cap) {
+            mc = Math.round(rr.market_cap);
+          } else {
+            // multi-class fallback: shares × fresh price
+            var sh = rr.weighted_shares_outstanding || rr.share_class_shares_outstanding;
+            var px2 = priceMap[tk];
+            if (sh && px2) mc = Math.round(sh * px2);
+          }
+          if (mc != null) { mcapRows.push({ ticker: tk, market_cap: mc, updated_at: new Date().toISOString() }); updated++; }
+        }
+      }
+    } catch (e) {}
+    done++;
+    if (done % 10 === 0) await sleep(120);
+    if (done % 300 === 0) {
+      var pct = 40 + Math.round((done / companies.length) * 55);
+      await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'running', progress_pct: pct, message: 'Market cap: ' + done + '/' + companies.length + ' (' + updated + ' updated)' });
+      // flush periodically so a crash near the end doesn't lose everything
+      if (mcapRows.length >= 600) { await sbUpsert('market_universe_full', mcapRows, 'ticker'); mcapRows = []; }
+    }
+  }
+  if (mcapRows.length) await sbUpsert('market_universe_full', mcapRows, 'ticker');
+  console.log('Re-anchored market cap: ' + updated + '/' + companies.length + ' companies.');
+
+  await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'complete', progress_pct: 100, message: 'Sector refresh complete: ' + priceRows.length + ' priced, ' + updated + ' company mcaps re-anchored (as of ' + usedDate + ').' });
+}
+
 async function backfillMcap() {
   console.log('Backfilling market cap for screener data...');
   // Get latest scan date
@@ -5409,7 +5546,7 @@ async function main() {
   if (!SB_KEY) { console.error('Missing SUPABASE_KEY'); process.exit(1); }
 
   var args = process.argv.slice(2);
-  var mode = args.includes('--yahoo-ratings') ? 'yahoo-ratings' : args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
+  var mode = args.includes('--sector-refresh') ? 'sector-refresh' : args.includes('--yahoo-ratings') ? 'yahoo-ratings' : args.includes('--chop-screener') ? 'chop-screener' : args.includes('--tipranks-sync') ? 'tipranks-sync' : args.includes('--minute-osc') ? 'minute-osc' : args.includes('--build-universe') ? 'build-universe' : args.includes('--extended-volume') ? 'extended-volume' : args.includes('--trade-analysis') ? 'trade-analysis' : args.includes('--atr-analysis') ? 'atr-analysis' : args.includes('--backfill-mcap') ? 'backfill-mcap' : args.includes('--mfe') ? 'mfe' : args.includes('--screener') ? 'screener' : args.includes('--autotune') ? 'autotune' : args.includes('--backfill') ? 'backfill' : args.includes('--hourly') ? 'hourly' : args.includes('--nightly') ? 'nightly' : 'nightly';
   var tickerIdx = args.indexOf('--tickers');
   var tickers = tickerIdx >= 0 && args[tickerIdx + 1] ? args[tickerIdx + 1].split(',') : ['ONON'];
   var startIdx = args.indexOf('--start');
@@ -5503,6 +5640,11 @@ async function main() {
   } else if (mode === 'backfill-mcap') {
     try { await backfillMcap(); } catch (e) {
       console.error('BACKFILL-MCAP CRASHED:', e.message, e.stack);
+    }
+  } else if (mode === 'sector-refresh') {
+    try { await runSectorRefresh(); } catch (e) {
+      console.error('SECTOR-REFRESH CRASHED:', e.message, e.stack);
+      await reportProgress({ mode: 'sector-refresh', ticker: 'ALL', status: 'error', progress_pct: 0, message: 'Crashed: ' + e.message });
     }
   } else {
     try { await runHourly(tickers); } catch (e) {

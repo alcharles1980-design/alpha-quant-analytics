@@ -8,6 +8,9 @@ on:
     - cron: '30 2 * * 2-6'
     # Yahoo ratings: ~11PM ET = 4AM UTC, separate slot after chop completes (every day, 7 days a week)
     - cron: '0 4 * * *'
+    # Sector refresh: ~12:30AM ET = 5:30AM UTC, after yahoo-ratings. Refreshes prices + market
+    # caps for market_universe_full. Tue-Sat UTC (= Mon-Fri ET trading days).
+    - cron: '30 5 * * 2-6'
     # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
     - cron: '5 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0 * * 1-5'
   workflow_dispatch:
@@ -33,6 +36,7 @@ on:
           - trade-analysis
           - atr-analysis
           - tipranks-sync
+          - sector-refresh
       tickers:
         description: 'Comma-separated tickers'
         required: true
@@ -92,6 +96,10 @@ jobs:
                 ;;
               "0 4 * * *")
                 echo "mode=yahoo-ratings" >> $GITHUB_OUTPUT
+                echo "tickers=ALL" >> $GITHUB_OUTPUT
+                ;;
+              "30 5 * * 2-6")
+                echo "mode=sector-refresh" >> $GITHUB_OUTPUT
                 echo "tickers=ALL" >> $GITHUB_OUTPUT
                 ;;
               *)
