@@ -20974,6 +20974,7 @@ function ViolentChopScreenerPage(p){
   var s10up=useState(''),minUpside=s10up[0],setMinUpside=s10up[1];     // optional min % upside vs mean target
   var s10af=useState(false),showMoreFilters=s10af[0],setShowMoreFilters=s10af[1]; // "Additional Filters" collapse toggle
   var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
+  var s11s=useState('all'),sectorFilter=s11s[0],setSectorFilter=s11s[1]; // optional GICS sector filter ('all' = off)
   var s12=useState('capEff'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
@@ -21457,6 +21458,7 @@ function ViolentChopScreenerPage(p){
       if(mktCapMax&&r.market_cap!=null&&r.market_cap>parseFloat(mktCapMax)*1e9)return false;
       if(typeFilter==='stocks'&&r.ticker_type!=='CS'&&r.ticker_type!=='ADRC')return false;
       if(typeFilter==='etfs'&&r.ticker_type!=='ETF'&&r.ticker_type!=='ETV'&&r.ticker_type!=='ETS'&&r.ticker_type!=='ETN')return false;
+      if(sectorFilter!=='all'){var rsec=sectorMap[r.ticker]||null;if(rsec!==sectorFilter)return false;}
     }
     return true;
   });
@@ -21698,6 +21700,14 @@ function ViolentChopScreenerPage(p){
         </div>
       </div>
       <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:3}}>Both optional &amp; analyst-based: % upside = mean target vs current price. Names without analyst data are hidden when either is set.</div>
+      <div style={{marginTop:10}}>
+        <label style={{fontSize:7,color:C.txtDim,fontFamily:F}}>Sector</label>
+        <select value={sectorFilter} onChange={function(e){setSectorFilter(e.target.value);}} style={{width:'100%',padding:'6px 8px',background:C.bg,border:'1px solid '+(sectorFilter!=='all'?C.blue+'66':C.border),borderRadius:5,color:sectorFilter!=='all'?C.blue:C.txt,fontFamily:F,fontSize:9,boxSizing:'border-box',marginTop:2,cursor:'pointer',fontWeight:sectorFilter!=='all'?700:400}}>
+          <option value="all">All sectors</option>
+          {['Information Technology','Health Care','Financials','Consumer Discretionary','Consumer Staples','Communication','Industrials','Energy','Materials','Utilities','Real Estate','ETFs & Funds','Warrants/Rights/Units','Unclassified'].map(function(sn){return <option key={sn} value={sn}>{sn}</option>;})}
+        </select>
+        <div style={{fontSize:7,fontFamily:F,color:C.txtDim,marginTop:3}}>Optional. GICS sector from the market universe. Names not in the universe are hidden when a sector is selected.</div>
+      </div>
         </div>}
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'}}>
