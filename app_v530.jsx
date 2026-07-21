@@ -13273,33 +13273,41 @@ function MostActivesPage(p){
           for(var ai2=0;ai2<rawActives.length;ai2++){var m3=mcMap[rawActives[ai2].symbol];rawActives[ai2].marketCap=m3?m3.mc:null;rawActives[ai2].tickerType=m3?m3.tt:null;}
         }catch(e3){}
         await polygonFillMcap(rawActives);
-        // 20-day avg volume (IEX — SIP 403s for today's data on Basic plan)
+        // 20-day avg volume — feed must MATCH the numerator's tape so RVOL is meaningful:
+        //  • RTH screener mode: current volume comes from the SIP-based most-actives screener → use SIP.
+        //  • My Lists mode: current volume comes from the IEX snapshot dailyBar → use IEX.
+        // SIP only 403s for TODAY's data, and the average uses prior days only, so we bound end= to
+        // yesterday (keeps SIP off today's data; all returned bars are complete prior sessions).
         try{
+          var avgFeed=(session==='mylists')?'iex':'sip';
           var startDate=new Date(Date.now()-40*86400000).toISOString().split('T')[0];
+          var endDateAvg=new Date(Date.now()-86400000).toISOString().split('T')[0]; // yesterday
           for(var vBatch=0;vBatch<rawActives.length;vBatch+=50){
             var vChunk=rawActives.slice(vBatch,vBatch+50).map(function(a3){return a3.symbol;}).join(',');
             var rv=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&limit=10000&feed=iex','X-Alpaca-Base':'data'}});
+              'X-Alpaca-Path':'/v2/stocks/bars?symbols='+encodeURIComponent(vChunk)+'&timeframe=1Day&start='+startDate+'T00:00:00Z&end='+endDateAvg+'T23:59:59Z&limit=10000&feed='+avgFeed,'X-Alpaca-Base':'data'}});
             if(rv.ok){
               var dv2=await rv.json();
               if(dv2.bars){for(var sym2 in dv2.bars){
                 var dayBars=dv2.bars[sym2];
                 if(dayBars&&dayBars.length>0){
                   var lastBar=dayBars[dayBars.length-1];
-                  // Average over prior days only — exclude the most recent (current/partial)
-                  // bar so today's volume isn't both the numerator and part of the average.
-                  var histBars=dayBars.length>1?dayBars.slice(0,-1):dayBars;
+                  // All returned bars are complete prior sessions (end= is bounded to yesterday, so
+                  // there's no partial current-day bar to strip). Average over the trailing 20.
+                  var histBars=dayBars;
                   // Cap at trailing 20 sessions for a true 20-day average
                   if(histBars.length>20)histBars=histBars.slice(histBars.length-20);
                   var totalV=0;for(var vi=0;vi<histBars.length;vi++)totalV+=histBars[vi].v;var avgVol=histBars.length?totalV/histBars.length:0;
                   for(var ai3=0;ai3<rawActives.length;ai3++){
                     if(rawActives[ai3].symbol===sym2){
                       rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgDays=histBars.length;
-                      // For My Lists mode: fill volume/trades from the latest bar (initially 0)
-                      // For RTH screener mode: screener already has accurate values, don't overwrite
+                      // My Lists: today's volume/trades come from the IEX snapshot dailyBar (set
+                      // earlier). Only fall back to the latest historical bar if that was missing —
+                      // don't overwrite a real today value with yesterday's (end= is bounded to
+                      // yesterday, so lastBar is a prior session).
                       if(session==='mylists'){
-                        if(lastBar.v>rawActives[ai3].volume)rawActives[ai3].volume=lastBar.v;
-                        if((lastBar.n||0)>(rawActives[ai3].trade_count||0))rawActives[ai3].trade_count=lastBar.n;
+                        if(!rawActives[ai3].volume&&lastBar.v)rawActives[ai3].volume=lastBar.v;
+                        if(!(rawActives[ai3].trade_count>0)&&(lastBar.n||0))rawActives[ai3].trade_count=lastBar.n;
                       }
                       rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;break;}
                   }
