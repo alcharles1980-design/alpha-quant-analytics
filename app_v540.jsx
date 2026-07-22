@@ -13224,19 +13224,26 @@ function MostActivesPage(p){
           var ovnDate=null;
           if(latestR.ok){var lj=await latestR.json();if(lj&&lj.length)ovnDate=lj[0].session_date;}
           if(ovnDate){
+            // Fetch the WHOLE session (bounded: only ~1,200 stocks trade overnight, <1MB) rather
+            // than the top-N by trades/volume. Previously we fetched limit=max(50,topN) ordered
+            // server-side and THEN filtered client-side by price/mcap/type — so with the default
+            // filters a "Top 100" request yielded ~47 visible rows while ~480 qualifying names sat
+            // below the fetch cutoff, permanently invisible. Ordering is also done client-side now,
+            // so toggling By Volume / By Trades reorders in memory instead of refetching (and can no
+            // longer return a different set of stocks for each sort).
             var ovnUrl=SB_URL+'/rest/v1/overnight_actives?session_date=eq.'+ovnDate
               +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial'
-              +'&order='+(sortBy==='trades'?'trades':'volume')+'.desc&limit='+Math.max(50,topN);
+              +'&order=trades.desc&limit=5000';
             var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
             if(ovnR.ok)ovnRows=await ovnR.json();
           }
           var overnightActives=[];
+          // PostgREST serialises Postgres `numeric` columns as STRINGS (int columns come back as
+          // numbers). Coerce so sorting, BAR scaling and the formatters all operate on real numbers
+          // — string comparison would otherwise order "9" above "100". Declared once, not per row.
+          var num=function(x){var n=Number(x);return (x==null||x===''||!isFinite(n))?null:n;};
           for(var oi=0;oi<ovnRows.length;oi++){
             var o=ovnRows[oi];
-            // PostgREST serialises Postgres `numeric` columns as STRINGS (int columns come back as
-            // numbers). Coerce here so sorting, the BAR scaling and the formatters all operate on
-            // real numbers — string comparison would otherwise order "9" above "100".
-            var num=function(x){var n=Number(x);return (x==null||x===''||!isFinite(n))?null:n;};
             var oOpen=num(o.open),oClose=num(o.close);
             overnightActives.push({
               symbol:o.ticker,volume:num(o.volume),trade_count:num(o.trades),
@@ -13398,27 +13405,43 @@ function MostActivesPage(p){
         if(session==='mylists')rawActives.sort(function(a,b){return(b.volume||0)-(a.volume||0);});
         setActives(rawActives);
       }
-      // Movers (both modes)
-      var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-        'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top=10','X-Alpaca-Base':'data'}});
-      if(!r2.ok)throw new Error('Movers: '+r2.status);
-      var d2=await r2.json();
-      setMovers(d2);
+      // Movers — needs Alpaca credentials. Overnight reads entirely from Supabase, so skip this
+      // when keys are absent rather than throwing: previously this ran unconditionally at the end
+      // of every fetch and threw on failure, so the Overnight tab surfaced an error even though its
+      // own data had loaded fine (defeating the point of exempting it from the key guard).
+      if(p.alpKey&&p.alpSecret){
+        try{
+          var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':'/v1beta1/screener/stocks/movers?top=10','X-Alpaca-Base':'data'}});
+          if(r2.ok){var d2=await r2.json();setMovers(d2);}
+        }catch(eMv){/* movers are supplementary — never fail the whole fetch over them */}
+      }
     }catch(e){setErr(e.message);}
     finally{setLoading(false);inFlight.current=false;}
   };
 
-  useEffect(function(){if((autoRefresh||refreshTrigger>0)&&p.alpKey&&p.alpSecret)fetchData();},[sortBy,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
+  // Overnight reads from Supabase and needs no Alpaca credentials; every other session does.
+  // sortBy is passed to Alpaca's screener for RTH/My Lists, so those must refetch when it changes —
+  // but Overnight now fetches the whole session and orders client-side, so it shouldn't. Feeding a
+  // constant into the dep array for overnight keeps it from refetching (and re-running the whole
+  // market-cap enrichment) just to reorder rows already in memory.
+  var needsAlpaca=(session!=='overnight');
+  var sortDep=needsAlpaca?sortBy:'';
+  useEffect(function(){if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
 
   // Keep a ref to the latest fetchData so the interval always calls current state.
   var fetchRef=useRef(fetchData);fetchRef.current=fetchData;
   // Real periodic auto-refresh: re-fetch every 30s while the toggle is on and
   // keys are present. (Previously the toggle gated fetches but never ran a timer.)
   useEffect(function(){
-    if(!autoRefresh||!p.alpKey||!p.alpSecret)return;
-    var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},30000);
+    if(!autoRefresh)return;
+    if(needsAlpaca&&(!p.alpKey||!p.alpSecret))return;
+    // Overnight is rebuilt hourly by pg_cron, so polling it every 30s is ~120 pointless round trips
+    // an hour (each re-running market-cap enrichment). Poll it every 5 minutes instead.
+    var everyMs=(session==='overnight')?300000:30000;
+    var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},everyMs);
     return function(){clearInterval(iv);};
-  },[autoRefresh,p.alpKey,p.alpSecret]);
+  },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
 
   var isOvernightView=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
@@ -13450,6 +13473,11 @@ function MostActivesPage(p){
     if(typeof av==='string'&&typeof bv==='string')return tblDesc?bv.localeCompare(av):av.localeCompare(bv);
     return tblDesc?(+bv||0)-(+av||0):(+av||0)-(+bv||0);
   }):[];
+  // Overnight fetches the whole session and filters client-side, so Top N is applied here as a
+  // display cap. (For the other sessions topN is passed to Alpaca and already limits the fetch.)
+  // Applying it AFTER filtering is the point of the fix: Top 100 now means 100 rows that actually
+  // pass your filters, rather than 100 fetched and ~47 surviving.
+  var filteredCapped=(session==='overnight'&&filtered.length>topN)?filtered.slice(0,topN):filtered;
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
   var tblTh=function(col,label,align,fzIdx){return <th onClick={function(){doTblSort(col);}} style={Object.assign({padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400},fzIdx!=null?fzTh(fzIdx):{})}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
 
@@ -13463,7 +13491,7 @@ function MostActivesPage(p){
   var barCol=BAR_NUMERIC[tblSort]?tblSort:'volume';
   var barAbs=(barCol==='changePct');
   var barVal=function(r){var v=r[barCol];v=(typeof v==='number'&&isFinite(v))?v:0;return barAbs?Math.abs(v):Math.max(0,v);};
-  var maxBar=1;if(filtered.length>0){for(var mbi=0;mbi<filtered.length;mbi++){if(barVal(filtered[mbi])>maxBar)maxBar=barVal(filtered[mbi]);}}
+  var maxBar=1;if(filteredCapped.length>0){for(var mbi=0;mbi<filteredCapped.length;mbi++){if(barVal(filteredCapped[mbi])>maxBar)maxBar=barVal(filteredCapped[mbi]);}}
   var BAR_LABELS={volume:'VOL',trade_count:'TRD',avgVol:isOvernightView?'AVG OVN':'AVG VOL',avgTrades:'AVG TRD',relVol:'RVOL',relTrades:'RTRD',price:'PRICE',marketCap:'MCAP',changePct:'|CHG|'};
   var barLabel=BAR_LABELS[barCol]||'VOL';
 
@@ -13517,7 +13545,11 @@ function MostActivesPage(p){
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <div style={{display:'flex',gap:4}}>
           {['volume','trades'].map(function(m){
-            return <button key={m} onClick={function(){setSortBy(m);}}
+            return <button key={m} onClick={function(){setSortBy(m);
+                // Overnight orders client-side (the whole session is already loaded), so drive the
+                // table sort directly instead of relying on a refetch to reorder.
+                if(session==='overnight'){setTblSort(m==='trades'?'trade_count':'volume');setTblDesc(true);}
+              }}
               style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
                 border:'1px solid '+(sortBy===m?C.gold+'66':C.border),
                 background:sortBy===m?C.gold+'10':'transparent',
@@ -13587,9 +13619,9 @@ function MostActivesPage(p){
     </div>
 
     {/* Most Actives Table */}
-    {filtered&&filtered.length>0&&<div style={card}>
+    {filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filtered.length}{actives&&filtered.length<actives.length?' of '+actives.length:''})</div>
+        {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
       <div style={{overflowX:'auto'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:900}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
@@ -13609,7 +13641,7 @@ function MostActivesPage(p){
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
           </tr></thead>
           <tbody>
-            {filtered.map(function(a,i){
+            {filteredCapped.map(function(a,i){
               var pct=maxBar>0?barVal(a)/maxBar*100:0;
               var rowBg=C.bgCard; // opaque bg for sticky frozen cells (no zebra on this table)
               return <tr key={a.symbol} style={{borderBottom:'1px solid '+C.border+'20'}}>
