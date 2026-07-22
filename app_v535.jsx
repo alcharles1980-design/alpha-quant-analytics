@@ -13434,7 +13434,10 @@ function MostActivesPage(p){
     }
     return true;
   }).sort(function(a,b){
-    var av=a[tblSort],bv=b[tblSort];
+    // relTrades only exists on overnight rows; if the user sorted by it and then switched to a
+    // session without that column, fall back to trade count rather than sorting on all-nulls.
+    var sortKey=(tblSort==='relTrades'&&!isOvernightView)?'trade_count':tblSort;
+    var av=a[sortKey],bv=b[sortKey];
     if(av==null)av=tblDesc?-Infinity:Infinity;if(bv==null)bv=tblDesc?-Infinity:Infinity;
     if(typeof av==='string'&&typeof bv==='string')return tblDesc?bv.localeCompare(av):av.localeCompare(bv);
     return tblDesc?(+bv||0)-(+av||0):(+av||0)-(+bv||0);
@@ -13577,6 +13580,7 @@ function MostActivesPage(p){
             {tblTh("trade_count","TRADES")}
             {tblTh("avgVol",isOvernightView?"AVG OVN":"AVG VOL")}
             {tblTh("relVol","RVOL")}
+            {isOvernightView&&tblTh("relTrades","RTRD")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>BAR</th>
           </tr></thead>
           <tbody>
@@ -13602,6 +13606,7 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgVol?fmtVol(a.avgVol):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
+                {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
                     <div style={{width:50,height:5,background:C.border+'40',borderRadius:3,overflow:'hidden'}}>
