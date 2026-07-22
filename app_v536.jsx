@@ -13094,9 +13094,12 @@ function MostActivesPage(p){
   var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
   var s8=useState('2'),minPrice=s8[0],setMinPrice=s8[1];
   var s9=useState(''),maxPrice=s9[0],setMaxPrice=s9[1];
-  var s10=useState(''),minCap=s10[0],setMinCap=s10[1];
+  // Default filters: min $0.1B market cap and stocks-only. The page opens on the Overnight tab,
+  // where the full-universe BOATS scan otherwise surfaces a lot of sub-$1 micro-caps and leveraged
+  // ETFs at the top of the relative-volume ranking. User can clear/change these freely.
+  var s10=useState('0.1'),minCap=s10[0],setMinCap=s10[1];
   var s10b=useState(''),maxCap=s10b[0],setMaxCap=s10b[1];
-  var s11=useState('all'),assetType=s11[0],setAssetType=s11[1];
+  var s11=useState('stocks'),assetType=s11[0],setAssetType=s11[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
   // Default session: Overnight (BOATS). Time-aware auto-select (RTH during 4AM-8PM ET) is paused
