@@ -13173,7 +13173,9 @@ function MostActivesPage(p){
   var fetchData=async function(manual){
     // Overnight reads the pre-ranked overnight_actives table from Supabase and needs no Alpaca
     // credentials; every other session still calls Alpaca directly.
-    if(session!=='overnight'&&(!p.alpKey||!p.alpSecret)){if(manual)setErr('Set Alpaca API keys in Settings');return;}
+    // Overnight and pre-market read pre-ranked tables from Supabase and need no Alpaca credentials;
+    // every other session still calls Alpaca directly.
+    if(session!=='overnight'&&session!=='premarket'&&(!p.alpKey||!p.alpSecret)){if(manual)setErr('Set Alpaca API keys in Settings');return;}
     if(inFlight.current)return; // skip if a fetch is already running (avoid overlap on interval)
     inFlight.current=true;
     setLoading(true);setErr(null);
@@ -13446,7 +13448,9 @@ function MostActivesPage(p){
   // but Overnight now fetches the whole session and orders client-side, so it shouldn't. Feeding a
   // constant into the dep array for overnight keeps it from refetching (and re-running the whole
   // market-cap enrichment) just to reorder rows already in memory.
-  var needsAlpaca=(session!=='overnight');
+  // Overnight and pre-market both read pre-ranked tables from Supabase and need no Alpaca
+  // credentials; RTH and My Lists call Alpaca directly.
+  var needsAlpaca=(session!=='overnight'&&session!=='premarket');
   var sortDep=needsAlpaca?sortBy:'';
   useEffect(function(){if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
 
@@ -13516,7 +13520,11 @@ function MostActivesPage(p){
   // display cap. (For the other sessions topN is passed to Alpaca and already limits the fetch.)
   // Applying it AFTER filtering is the point of the fix: Top 100 now means 100 rows that actually
   // pass your filters, rather than 100 fetched and ~47 surviving.
-  var filteredCapped=(session==='overnight'&&filtered.length>topN)?filtered.slice(0,topN):filtered;
+  // Overnight AND pre-market fetch the whole session and filter client-side, so Top N is applied
+  // here as a display cap. (For RTH/My Lists topN is passed to Alpaca and already limits the fetch.)
+  // Applying it AFTER filtering is the point: Top 100 means 100 rows that actually pass the filters.
+  var fetchesWholeSession=(session==='overnight'||session==='premarket');
+  var filteredCapped=(fetchesWholeSession&&filtered.length>topN)?filtered.slice(0,topN):filtered;
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
   // Two-line sortable header: main label on top, plain-language qualifier beneath, plus a title
   // tooltip spelling out exactly what the column measures. The overnight table carries several
@@ -13591,7 +13599,7 @@ function MostActivesPage(p){
             return <button key={m} onClick={function(){setSortBy(m);
                 // Overnight orders client-side (the whole session is already loaded), so drive the
                 // table sort directly instead of relying on a refetch to reorder.
-                if(session==='overnight'){setTblSort(m==='trades'?'trade_count':'volume');setTblDesc(true);}
+                if(session==='overnight'||session==='premarket'){setTblSort(m==='trades'?'trade_count':'volume');setTblDesc(true);}
               }}
               style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
                 border:'1px solid '+(sortBy===m?C.gold+'66':C.border),
