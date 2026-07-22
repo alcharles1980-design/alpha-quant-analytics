@@ -13241,7 +13241,7 @@ function MostActivesPage(p){
             // so toggling By Volume / By Trades reorders in memory instead of refetching (and can no
             // longer return a different set of stocks for each sort).
             var ovnUrl=SB_URL+'/rest/v1/overnight_actives?session_date=eq.'+ovnDate
-              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial'
+              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct'
               +'&order=trades.desc&limit=5000';
             var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
             if(ovnR.ok)ovnRows=await ovnR.json();
@@ -13259,6 +13259,7 @@ function MostActivesPage(p){
               boatsOpen:oOpen,boatsClose:oClose,boatsHigh:num(o.high),boatsLow:num(o.low),boatsVwap:num(o.vwap),
               boatsChange:(oClose!=null&&oOpen!=null)?(oClose-oOpen):0,
               boatsChangePct:num(o.pct_move)||0,
+              gapPct:num(o.gap_pct),prevRthClose:num(o.prev_rth_close),
               avgVol:num(o.avg_volume),avgDays:num(o.avg_sessions),
               avgTrades:num(o.avg_trades),relTrades:num(o.rel_trades),
               relVol:num(o.rel_volume)||0,
@@ -13489,7 +13490,8 @@ function MostActivesPage(p){
   }).sort(function(a,b){
     // relTrades/avgTrades only exist on overnight rows; if the user sorted by one and then switched
     // to a session without that column, fall back to trade count rather than sorting on all-nulls.
-    var sortKey=((tblSort==='relTrades'||tblSort==='avgTrades')&&!isOvernightView)?'trade_count':tblSort;
+    var OVN_ONLY_COLS={relTrades:1,avgTrades:1,gapPct:1,avgDays:1};
+    var sortKey=(OVN_ONLY_COLS[tblSort]&&!isOvernightView)?'trade_count':tblSort;
     var av=a[sortKey],bv=b[sortKey];
     if(av==null)av=tblDesc?-Infinity:Infinity;if(bv==null)bv=tblDesc?-Infinity:Infinity;
     if(typeof av==='string'&&typeof bv==='string')return tblDesc?bv.localeCompare(av):av.localeCompare(bv);
@@ -13501,7 +13503,11 @@ function MostActivesPage(p){
   // pass your filters, rather than 100 fetched and ~47 surviving.
   var filteredCapped=(session==='overnight'&&filtered.length>topN)?filtered.slice(0,topN):filtered;
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
-  var tblTh=function(col,label,align,fzIdx){return <th onClick={function(){doTblSort(col);}} style={Object.assign({padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400},fzIdx!=null?fzTh(fzIdx):{})}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
+  // Two-line sortable header: main label on top, plain-language qualifier beneath, plus a title
+  // tooltip spelling out exactly what the column measures. The overnight table carries several
+  // similar-sounding metrics (session move vs gap, volume vs trades, each with an average and a
+  // ratio), so bare abbreviations were genuinely ambiguous to anyone not already familiar.
+  var tblTh=function(col,label,align,fzIdx,sub,tip){return <th onClick={function(){doTblSort(col);}} title={tip||''} style={Object.assign({padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400,lineHeight:1.15,verticalAlign:'bottom'},fzIdx!=null?fzTh(fzIdx):{})}><div>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</div>{sub?<div style={{fontSize:6,fontWeight:400,color:C.border,letterSpacing:0.2}}>{sub}</div>:null}</th>;};
 
   // BAR column: visualise whatever column is currently sorted, so the bar always relates to the
   // ordering. Previously it only ever showed trade_count (when sorting by TRADES) or volume (for
@@ -13509,12 +13515,12 @@ function MostActivesPage(p){
   // volume, i.e. unrelated to the visible order.
   // SYMBOL is non-numeric so it falls back to volume. CHG % can be negative, so magnitude is taken
   // as an absolute value (a -5% move reads as prominent as +5%).
-  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,price:1,marketCap:1,changePct:1};
+  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,price:1,marketCap:1,changePct:1,gapPct:1,avgDays:1};
   var barCol=BAR_NUMERIC[tblSort]?tblSort:'volume';
-  var barAbs=(barCol==='changePct');
+  var barAbs=(barCol==='changePct'||barCol==='gapPct');
   var barVal=function(r){var v=r[barCol];v=(typeof v==='number'&&isFinite(v))?v:0;return barAbs?Math.abs(v):Math.max(0,v);};
   var maxBar=1;if(filteredCapped.length>0){for(var mbi=0;mbi<filteredCapped.length;mbi++){if(barVal(filteredCapped[mbi])>maxBar)maxBar=barVal(filteredCapped[mbi]);}}
-  var BAR_LABELS={volume:'VOL',trade_count:'TRD',avgVol:isOvernightView?'AVG OVN':'AVG VOL',avgTrades:'AVG TRD',relVol:'RVOL',relTrades:'RTRD',price:'PRICE',marketCap:'MCAP',changePct:'|CHG|'};
+  var BAR_LABELS={volume:'VOL',trade_count:'TRD',avgVol:'AVG VOL',avgTrades:'AVG TRADES',relVol:isOvernightView?'VOL x AVG':'RVOL',relTrades:'TRD x AVG',price:'PRICE',marketCap:'MKT CAP',changePct:'|MOVE|',gapPct:'|GAP|',avgDays:'BASIS'};
   var barLabel=BAR_LABELS[barCol]||'VOL';
 
   // Sub-1000 values are rounded to whole numbers: these columns are counts (volume, trades,
@@ -13662,15 +13668,17 @@ function MostActivesPage(p){
             {tblTh("symbol","SYMBOL","left",1)}
             <th style={Object.assign({padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6},fzTh(2))}></th>
             <th style={Object.assign({padding:"4px 3px",textAlign:"left",color:C.txtDim},fzTh(3))}>TYPE</th>
-            {tblTh("price","PRICE",null,4)}
-            {tblTh("changePct","CHG %")}
-            {tblTh("marketCap","MCAP")}
-            {tblTh("volume","VOLUME")}
-            {tblTh("trade_count","TRADES")}
-            {tblTh("avgVol",isOvernightView?"AVG OVN":"AVG VOL")}
-            {isOvernightView&&tblTh("avgTrades","AVG TRD")}
-            {tblTh("relVol","RVOL")}
-            {isOvernightView&&tblTh("relTrades","RTRD")}
+            {tblTh("price","PRICE",null,4,isOvernightView?"latest o/n":"latest",isOvernightView?"Latest overnight traded price (the most recent print in the 8PM-4AM ET session).":"Latest traded price.")}
+            {tblTh("changePct","MOVE %",null,null,isOvernightView?"within session":"vs prev close",isOvernightView?"Move WITHIN the overnight session: from the session's first print (~8PM ET) to the latest print. Shows how the price has drifted overnight, not how far it has gapped.":"Change versus the previous close.")}
+            {isOvernightView&&tblTh("gapPct","GAP %",null,null,"vs 4PM close","Gap versus the PRIOR REGULAR-SESSION CLOSE (4PM ET). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
+            {tblTh("marketCap","MKT CAP",null,null,"company size","Market capitalisation \u2014 total value of the company's shares.")}
+            {tblTh("volume","VOLUME",null,null,isOvernightView?"shares o/n":"shares","Number of SHARES traded this session.")}
+            {tblTh("trade_count","TRADES",null,null,isOvernightView?"count o/n":"count","Number of individual TRADES (executions) this session. High trades with low volume means many small orders.")}
+            {tblTh("avgVol",isOvernightView?"AVG VOL":"AVG VOL",null,null,isOvernightView?"typical o/n":"typical 20d",isOvernightView?"This stock's TYPICAL overnight share volume, averaged over previous overnight sessions (excluding tonight). The baseline that VOL x AVG compares against.":"Typical daily volume over the trailing 20 sessions.")}
+            {isOvernightView&&tblTh("avgTrades","AVG TRADES",null,null,"typical o/n","This stock's TYPICAL overnight trade count, averaged over previous overnight sessions (excluding tonight). The baseline that TRD x AVG compares against.")}
+            {tblTh("relVol",isOvernightView?"VOL x AVG":"RVOL",null,null,isOvernightView?"% of typical":"% of typical","Tonight's volume as a PERCENTAGE of this stock's typical overnight volume. 100% = normal. 300% = three times its usual overnight activity by share count.")}
+            {isOvernightView&&tblTh("relTrades","TRD x AVG",null,null,"% of typical","Tonight's trade count as a PERCENTAGE of this stock's typical overnight trade count. 100% = normal. Diverges from VOL x AVG when order sizes are unusual: high here but low there means many small trades.")}
+            {isOvernightView&&tblTh("avgDays","BASIS",null,null,"sessions avg'd","How many previous overnight sessions the averages are based on. Low numbers mean the VOL x AVG and TRD x AVG percentages are built on thin history and should be treated with caution.")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
           </tr></thead>
           <tbody>
@@ -13691,6 +13699,7 @@ function MostActivesPage(p){
                 <td style={Object.assign({padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7},fzTd(3,rowBg))}>{a.tickerType||'STK'}</td>
                 <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
+                {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.gapPct>0?C.accent:a.gapPct<0?C.warn:C.txtDim,fontWeight:600}}>{(a.gapPct!=null&&isFinite(a.gapPct))?((a.gapPct>=0?'+':'')+a.gapPct.toFixed(1)+'%'):'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
@@ -13698,6 +13707,7 @@ function MostActivesPage(p){
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgTrades?fmtVol(a.avgTrades):'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>}
+                {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:(a.avgDays!=null&&a.avgDays<5)?C.warn:C.txtDim,fontWeight:(a.avgDays!=null&&a.avgDays<5)?700:400}} title={(a.avgDays!=null&&a.avgDays<5)?'Thin history \u2014 treat the x AVG percentages with caution':''}>{a.avgDays!=null?a.avgDays:'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
                     <div style={{width:50,height:5,background:C.border+'40',borderRadius:3,overflow:'hidden'}}>
