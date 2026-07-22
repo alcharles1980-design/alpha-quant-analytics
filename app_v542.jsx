@@ -13100,6 +13100,11 @@ function MostActivesPage(p){
   var s10=useState('0.1'),minCap=s10[0],setMinCap=s10[1];
   var s10b=useState(''),maxCap=s10b[0],setMaxCap=s10b[1];
   var s11=useState('stocks'),assetType=s11[0],setAssetType=s11[1];
+  // Trade-count filter. Useful on Overnight in particular: the full-universe BOATS scan surfaces
+  // names that printed only a handful of trades all session, where the price action isn't
+  // meaningfully tradeable. Left empty by default so nothing is hidden unless asked for.
+  var s11b=useState(''),minTrades=s11b[0],setMinTrades=s11b[1];
+  var s11c=useState(''),maxTrades=s11c[0],setMaxTrades=s11c[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
   // Default session: Overnight (BOATS). Time-aware auto-select (RTH during 4AM-8PM ET) is paused
@@ -13457,6 +13462,18 @@ function MostActivesPage(p){
     var isStock=a.tickerType==='CS'||a.tickerType==='ADRC';
     if(assetType==='stocks'&&!isStock)return false;
     if(assetType==='etf'&&!isETF)return false;
+    // Trade count filter. Parsed defensively: an empty box means "no bound", and a value of 0 for
+    // the minimum is honoured rather than treated as absent (parseFloat('')||0 would conflate them).
+    // A null trade_count is excluded whenever either bound is set — relying on JS coercion would
+    // otherwise let nulls through on min=0, since null>=0 is true.
+    var mnT=(minTrades===''||minTrades==null)?null:parseFloat(minTrades);
+    var mxT=(maxTrades===''||maxTrades==null)?null:parseFloat(maxTrades);
+    if((mnT!=null&&isFinite(mnT))||(mxT!=null&&isFinite(mxT))){
+      var tc=(typeof a.trade_count==='number'&&isFinite(a.trade_count))?a.trade_count:null;
+      if(tc===null)return false;
+      if(mnT!=null&&isFinite(mnT)&&tc<mnT)return false;
+      if(mxT!=null&&isFinite(mxT)&&tc>mxT)return false;
+    }
     // Market cap filter (input in billions, data in raw)
     var mnC=(parseFloat(minCap)||0)*1e9;
     var mxC=maxCap?(parseFloat(maxCap)*1e9):Infinity;
@@ -13616,6 +13633,17 @@ function MostActivesPage(p){
         <input value={maxCap} onChange={function(e){setMaxCap(e.target.value);}} placeholder="Max (B)" type="number" step="0.1"
           style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{fontSize:7,fontFamily:F,color:C.border}}>in billions</span>
+      </div>
+
+      {/* Trade count filter */}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Trades:</span>
+        <input value={minTrades} onChange={function(e){setMinTrades(e.target.value);}} placeholder="Min" type="number" step="1"
+          style={{width:65,background:C.bgInput,border:'1px solid '+((minTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
+        <input value={maxTrades} onChange={function(e){setMaxTrades(e.target.value);}} placeholder="Max" type="number" step="1"
+          style={{width:65,background:C.bgInput,border:'1px solid '+((maxTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{fontSize:7,fontFamily:F,color:C.border}}>this session</span>
       </div>
     </div>
 
