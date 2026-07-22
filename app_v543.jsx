@@ -13102,8 +13102,10 @@ function MostActivesPage(p){
   var s11=useState('stocks'),assetType=s11[0],setAssetType=s11[1];
   // Trade-count filter. Useful on Overnight in particular: the full-universe BOATS scan surfaces
   // names that printed only a handful of trades all session, where the price action isn't
-  // meaningfully tradeable. Left empty by default so nothing is hidden unless asked for.
-  var s11b=useState(''),minTrades=s11b[0],setMinTrades=s11b[1];
+  // meaningfully tradeable. Defaults to a 500 minimum — note that's an absolute threshold against a
+  // metric that accumulates through the session, so early in the evening it filters harder than it
+  // does after the 4AM close. Clearable like any other filter.
+  var s11b=useState('500'),minTrades=s11b[0],setMinTrades=s11b[1];
   var s11c=useState(''),maxTrades=s11c[0],setMaxTrades=s11c[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
