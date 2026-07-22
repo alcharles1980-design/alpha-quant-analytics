@@ -13507,7 +13507,7 @@ function MostActivesPage(p){
   // tooltip spelling out exactly what the column measures. The overnight table carries several
   // similar-sounding metrics (session move vs gap, volume vs trades, each with an average and a
   // ratio), so bare abbreviations were genuinely ambiguous to anyone not already familiar.
-  var tblTh=function(col,label,align,fzIdx,sub,tip){return <th onClick={function(){doTblSort(col);}} title={tip||''} style={Object.assign({padding:'4px 2px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400,lineHeight:1.1,verticalAlign:'bottom',whiteSpace:'nowrap'},fzIdx!=null?fzTh(fzIdx):{})}><div>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</div>{sub?<div style={{fontSize:6,fontWeight:400,color:C.border,letterSpacing:0,whiteSpace:'nowrap'}}>{sub}</div>:null}</th>;};
+  var tblTh=function(col,label,align,fzIdx,sub,tip){return <th onClick={function(){doTblSort(col);}} title={tip||''} style={Object.assign({padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400,lineHeight:1.15,verticalAlign:'bottom',whiteSpace:'nowrap',fontSize:8},fzIdx!=null?fzTh(fzIdx):{})}><div>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</div>{sub?<div style={{fontSize:6.5,fontWeight:400,color:C.txtDim,opacity:0.75,letterSpacing:0,whiteSpace:'nowrap'}}>{sub}</div>:null}</th>;};
 
   // BAR column: visualise whatever column is currently sorted, so the bar always relates to the
   // ordering. Previously it only ever showed trade_count (when sorting by TRADES) or volume (for
@@ -13668,17 +13668,17 @@ function MostActivesPage(p){
             {tblTh("symbol","SYMBOL","left",1)}
             <th style={Object.assign({padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6},fzTh(2))}></th>
             <th style={Object.assign({padding:"4px 3px",textAlign:"left",color:C.txtDim},fzTh(3))}>TYPE</th>
-            {tblTh("price","PRICE",null,4,isOvernightView?"o/n last":"last",isOvernightView?"Latest overnight traded price (the most recent print in the 8PM-4AM ET session).":"Latest traded price.")}
-            {tblTh("changePct","MOVE",null,null,isOvernightView?"in sess":"vs prev",isOvernightView?"Move WITHIN the overnight session: from the session's first print (~8PM ET) to the latest print. Shows how the price has drifted overnight, not how far it has gapped.":"Change versus the previous close.")}
-            {isOvernightView&&tblTh("gapPct","GAP",null,null,"vs 4pm","Gap versus the PRIOR REGULAR-SESSION CLOSE (4PM ET). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
-            {tblTh("marketCap","MKT",null,null,"cap","Market capitalisation \u2014 total value of the company's shares.")}
-            {tblTh("volume","VOL",null,null,"shares","Number of SHARES traded this session.")}
-            {tblTh("trade_count","TRD",null,null,"count","Number of individual TRADES (executions) this session. High trades with low volume means many small orders.")}
-            {tblTh("avgVol","AVG",null,null,isOvernightView?"vol":"vol 20d",isOvernightView?"This stock's TYPICAL overnight share volume, averaged over previous overnight sessions (excluding tonight). The baseline that VOL x AVG compares against.":"Typical daily volume over the trailing 20 sessions.")}
-            {isOvernightView&&tblTh("avgTrades","AVG",null,null,"trd","This stock's TYPICAL overnight trade count, averaged over previous overnight sessions (excluding tonight). The baseline that TRD x AVG compares against.")}
-            {tblTh("relVol","VOL",null,null,"x avg","Tonight's volume as a PERCENTAGE of this stock's typical overnight volume. 100% = normal. 300% = three times its usual overnight activity by share count.")}
-            {isOvernightView&&tblTh("relTrades","TRD",null,null,"x avg","Tonight's trade count as a PERCENTAGE of this stock's typical overnight trade count. 100% = normal. Diverges from VOL x AVG when order sizes are unusual: high here but low there means many small trades.")}
-            {isOvernightView&&tblTh("avgDays","BASIS",null,null,"sess","How many previous overnight sessions the averages are based on. Low numbers mean the VOL x AVG and TRD x AVG percentages are built on thin history and should be treated with caution.")}
+            {tblTh("price","PRICE",null,4,isOvernightView?"OVERNIGHT":"LATEST",isOvernightView?"Latest overnight traded price (the most recent print in the 8PM-4AM ET session).":"Latest traded price.")}
+            {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN the overnight session: from the session's first print (~8PM ET) to the latest print. Shows how the price has drifted overnight, not how far it has gapped.":"Change versus the previous close.")}
+            {isOvernightView&&tblTh("gapPct","GAP %",null,null,"SINCE 4PM","Gap versus the PRIOR REGULAR-SESSION CLOSE (4PM ET). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
+            {tblTh("marketCap","MARKET",null,null,"CAP","Market capitalisation \u2014 total value of the company's shares.")}
+            {tblTh("volume","SHARES",null,null,"TRADED","Number of SHARES traded this session.")}
+            {tblTh("trade_count","TRADES",null,null,"COUNT","Number of individual TRADES (executions) this session. High trades with low volume means many small orders.")}
+            {tblTh("avgVol","AVERAGE",null,null,isOvernightView?"SHARES":"SHARES 20D",isOvernightView?"This stock's TYPICAL overnight share volume, averaged over previous overnight sessions (excluding tonight). The baseline that VOL x AVG compares against.":"Typical daily volume over the trailing 20 sessions.")}
+            {isOvernightView&&tblTh("avgTrades","AVERAGE",null,null,"TRADES","This stock's TYPICAL overnight trade count, averaged over previous overnight sessions (excluding tonight). The baseline that TRD x AVG compares against.")}
+            {tblTh("relVol","SHARES",null,null,"VS AVERAGE","Tonight's volume as a PERCENTAGE of this stock's typical overnight volume. 100% = normal. 300% = three times its usual overnight activity by share count.")}
+            {isOvernightView&&tblTh("relTrades","TRADES",null,null,"VS AVERAGE","Tonight's trade count as a PERCENTAGE of this stock's typical overnight trade count. 100% = normal. Diverges from VOL x AVG when order sizes are unusual: high here but low there means many small trades.")}
+            {isOvernightView&&tblTh("avgDays","SESSIONS",null,null,"IN AVERAGE","How many previous overnight sessions the averages are based on. Low numbers mean the VOL x AVG and TRD x AVG percentages are built on thin history and should be treated with caution.")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
           </tr></thead>
           <tbody>
