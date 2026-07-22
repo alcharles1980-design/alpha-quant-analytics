@@ -13183,9 +13183,9 @@ function MostActivesPage(p){
       // Pre-Market (4:00-9:30 AM ET) and After-Market (4:00-8:00 PM ET) tabs exist but their data
       // source hasn't been wired up yet — show a clear placeholder instead of fetching. (The screener
       // + BOATS paths below don't cover these windows; sourcing TBD.)
-      if(session==='premarket'||session==='aftermarket'){
+      if(session==='aftermarket'){
         setActives([]);
-        setLastUpdated((session==='premarket'?'Pre-Market (4:00-9:30 AM ET)':'After-Market (4:00-8:00 PM ET)')+' \u2014 data source not yet configured');
+        setLastUpdated('After-Market (4:00-8:00 PM ET) \u2014 data source not yet configured');
         setLoading(false);
         inFlight.current=false;
         return;
@@ -13220,8 +13220,13 @@ function MostActivesPage(p){
       // Determine data mode: overnight vs RTH
       var isOvernight=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
-      if(session==='overnight'){
-        // ── OVERNIGHT MODE: read the pre-ranked scan from overnight_actives ──
+      if(session==='overnight'||session==='premarket'){
+        // ── OVERNIGHT / PRE-MARKET: read the pre-ranked scan from the matching table ──
+        // premarket_actives mirrors overnight_actives column-for-column (plus minutes_traded), so
+        // one code path serves both. Overnight aggregates BOATS daily bars; pre-market aggregates
+        // SIP minute bars over 4:00-9:30 ET, because a SIP daily bar covers the whole session.
+        var pmMode=(session==='premarket');
+        var ovnTable=pmMode?'premarket_actives':'overnight_actives';
         // Built by the overnight-actives Edge Function (pg_cron, hourly through the session): it
         // scans the FULL ~11k universe against BOATS and ranks by trades/volume, with relative
         // metrics computed from trailing sessions EXCLUDING the current one. Previously this tab
@@ -13229,7 +13234,7 @@ function MostActivesPage(p){
         // overnight never appeared at all.
         var ovnRows=[];
         try{
-          var latestR=await fetch(SB_URL+'/rest/v1/overnight_actives?select=session_date&order=session_date.desc&limit=1',{headers:getSbHeaders()});
+          var latestR=await fetch(SB_URL+'/rest/v1/'+ovnTable+'?select=session_date&order=session_date.desc&limit=1',{headers:getSbHeaders()});
           var ovnDate=null;
           if(latestR.ok){var lj=await latestR.json();if(lj&&lj.length)ovnDate=lj[0].session_date;}
           if(ovnDate){
@@ -13240,7 +13245,7 @@ function MostActivesPage(p){
             // below the fetch cutoff, permanently invisible. Ordering is also done client-side now,
             // so toggling By Volume / By Trades reorders in memory instead of refetching (and can no
             // longer return a different set of stocks for each sort).
-            var ovnUrl=SB_URL+'/rest/v1/overnight_actives?session_date=eq.'+ovnDate
+            var ovnUrl=SB_URL+'/rest/v1/'+ovnTable+'?session_date=eq.'+ovnDate
               +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct,market_cap,ticker_type'
               +'&order=trades.desc&limit=5000';
             var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
@@ -13277,10 +13282,10 @@ function MostActivesPage(p){
           // "loading market data" came from. Most of that work was thrown away by the filters.
           setActives(overnightActives);
           var partialNote=(ovnRows.length&&ovnRows[0].is_partial)?' \u2014 session in progress':'';
-          setLastUpdated('Overnight (BOATS) '+(ovnDate||'')+partialNote+' \u2014 '+overnightActives.length+' names \u2014 refreshed '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false})+' ET');
+          setLastUpdated((pmMode?'Pre-Market (4:00-9:30 AM ET) ':'Overnight (BOATS) ')+(ovnDate||'')+partialNote+' \u2014 '+overnightActives.length+' names \u2014 refreshed '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false})+' ET');
         }catch(eOvn){
           setActives([]);
-          setLastUpdated('Overnight scan unavailable: '+(eOvn&&eOvn.message?eOvn.message:'error'));
+          setLastUpdated((pmMode?'Pre-market':'Overnight')+' scan unavailable: '+(eOvn&&eOvn.message?eOvn.message:'error'));
         }
       }else if(isOvernight){
         // ── MY LISTS (overnight): look up BOATS bars for the list's own tickers ──
@@ -13453,7 +13458,9 @@ function MostActivesPage(p){
     return function(){clearInterval(iv);};
   },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
 
-  var isOvernightView=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
+  // Governs the extended session columns (GAP %, the two x-AVERAGE ratios, SESSIONS/BASIS). Both
+  // the overnight and pre-market tables carry these, so both views show them; RTH does not.
+  var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='mylists'&&listSession==='overnight');
 
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
@@ -13659,7 +13666,7 @@ function MostActivesPage(p){
     {/* Most Actives Table */}
     {filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
+        {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
       <div style={{overflowX:'auto'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:900}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
@@ -13667,8 +13674,8 @@ function MostActivesPage(p){
             {tblTh("symbol","SYMBOL","left",1)}
             <th style={Object.assign({padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6},fzTh(2))}></th>
             <th style={Object.assign({padding:"4px 3px",textAlign:"left",color:C.txtDim},fzTh(3))}>TYPE</th>
-            {tblTh("price","PRICE",null,4,isOvernightView?"OVERNIGHT":"LATEST",isOvernightView?"Latest overnight traded price (the most recent print in the 8PM-4AM ET session).":"Latest traded price.")}
-            {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN the overnight session: from the session's first print (~8PM ET) to the latest print. Shows how the price has drifted overnight, not how far it has gapped.":"Change versus the previous close.")}
+            {tblTh("price","PRICE",null,4,isOvernightView?"IN SESSION":"LATEST",isOvernightView?"Latest traded price within this session (the most recent print in the session window).":"Latest traded price.")}
+            {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN this session: from the session's first print to the latest print. Shows how the price has drifted during the session, not how far it has gapped.":"Change versus the previous close.")}
             {isOvernightView&&tblTh("gapPct","GAP %",null,null,"SINCE 4PM","Gap versus the PRIOR REGULAR-SESSION CLOSE (4PM ET). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
             {tblTh("marketCap","MARKET",null,null,"CAP","Market capitalisation \u2014 total value of the company's shares.")}
             {tblTh("volume","SHARES",null,null,"TRADED","Number of SHARES traded this session.")}
