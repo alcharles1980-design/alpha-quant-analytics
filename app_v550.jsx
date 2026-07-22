@@ -13450,10 +13450,10 @@ function MostActivesPage(p){
   useEffect(function(){
     if(!autoRefresh)return;
     if(needsAlpaca&&(!p.alpKey||!p.alpSecret))return;
-    // The overnight scan (pg_cron -> overnight-actives) runs every 10 minutes through the session,
-    // so poll a little under that: fresh rankings surface within ~3 minutes of each scan without
-    // hammering Supabase and re-running market-cap enrichment on unchanged data.
-    var everyMs=(session==='overnight')?180000:30000;
+    // Poll a little under each scanner's cadence so new rankings surface promptly without
+    // hammering Supabase: overnight-actives runs every 10 min, premarket-actives every 3 min
+    // (its scan is ~2s now that prior closes are cached, so it can afford to be tight).
+    var everyMs=(session==='overnight')?180000:(session==='premarket')?90000:30000;
     var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},everyMs);
     return function(){clearInterval(iv);};
   },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
