@@ -13233,17 +13233,22 @@ function MostActivesPage(p){
           var overnightActives=[];
           for(var oi=0;oi<ovnRows.length;oi++){
             var o=ovnRows[oi];
+            // PostgREST serialises Postgres `numeric` columns as STRINGS (int columns come back as
+            // numbers). Coerce here so sorting, the BAR scaling and the formatters all operate on
+            // real numbers — string comparison would otherwise order "9" above "100".
+            var num=function(x){var n=Number(x);return (x==null||x===''||!isFinite(n))?null:n;};
+            var oOpen=num(o.open),oClose=num(o.close);
             overnightActives.push({
-              symbol:o.ticker,volume:o.volume,trade_count:o.trades,
-              boatsOpen:o.open,boatsClose:o.close,boatsHigh:o.high,boatsLow:o.low,boatsVwap:o.vwap,
-              boatsChange:(o.close!=null&&o.open!=null)?(o.close-o.open):0,
-              boatsChangePct:o.pct_move||0,
-              avgVol:o.avg_volume,avgDays:o.avg_sessions,
-              avgTrades:o.avg_trades,relTrades:o.rel_trades,
-              relVol:o.rel_volume||0,
-              price:o.close,prevClose:o.open,
-              change:(o.close!=null&&o.open!=null)?(o.close-o.open):0,
-              changePct:o.pct_move||0
+              symbol:o.ticker,volume:num(o.volume),trade_count:num(o.trades),
+              boatsOpen:oOpen,boatsClose:oClose,boatsHigh:num(o.high),boatsLow:num(o.low),boatsVwap:num(o.vwap),
+              boatsChange:(oClose!=null&&oOpen!=null)?(oClose-oOpen):0,
+              boatsChangePct:num(o.pct_move)||0,
+              avgVol:num(o.avg_volume),avgDays:num(o.avg_sessions),
+              avgTrades:num(o.avg_trades),relTrades:num(o.rel_trades),
+              relVol:num(o.rel_volume)||0,
+              price:oClose,prevClose:oOpen,
+              change:(oClose!=null&&oOpen!=null)?(oClose-oOpen):0,
+              changePct:num(o.pct_move)||0
             });
           }
           try{
@@ -13462,7 +13467,12 @@ function MostActivesPage(p){
   var BAR_LABELS={volume:'VOL',trade_count:'TRD',avgVol:isOvernightView?'AVG OVN':'AVG VOL',avgTrades:'AVG TRD',relVol:'RVOL',relTrades:'RTRD',price:'PRICE',marketCap:'MCAP',changePct:'|CHG|'};
   var barLabel=BAR_LABELS[barCol]||'VOL';
 
-  var fmtVol=function(v){if(v>=1e12)return(v/1e12).toFixed(1)+'T';if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
+  // Sub-1000 values are rounded to whole numbers: these columns are counts (volume, trades,
+  // avg trades/volume) and dollar amounts, where fractions are division artifacts rather than
+  // information — Postgres numeric returns e.g. 833.2727272727272727, which was printed raw and
+  // broke the column width. Input is coerced with Number() because PostgREST serialises numeric
+  // columns as STRINGS; every branch returns a string, and non-finite input renders an em-dash.
+  var fmtVol=function(v){var n=(typeof v==='number')?v:Number(v);if(v==null||v===''||!isFinite(n))return '\u2014';if(n>=1e12)return(n/1e12).toFixed(1)+'T';if(n>=1e9)return(n/1e9).toFixed(1)+'B';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return Math.round(n).toString();};
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
   var sml={fontSize:7,color:C.txtDim,fontFamily:F};
 
