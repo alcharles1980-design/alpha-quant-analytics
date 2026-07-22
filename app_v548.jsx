@@ -13241,7 +13241,7 @@ function MostActivesPage(p){
             // so toggling By Volume / By Trades reorders in memory instead of refetching (and can no
             // longer return a different set of stocks for each sort).
             var ovnUrl=SB_URL+'/rest/v1/overnight_actives?session_date=eq.'+ovnDate
-              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct'
+              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct,market_cap,ticker_type'
               +'&order=trades.desc&limit=5000';
             var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
             if(ovnR.ok)ovnRows=await ovnR.json();
@@ -13260,6 +13260,7 @@ function MostActivesPage(p){
               boatsChange:(oClose!=null&&oOpen!=null)?(oClose-oOpen):0,
               boatsChangePct:num(o.pct_move)||0,
               gapPct:num(o.gap_pct),prevRthClose:num(o.prev_rth_close),
+              marketCap:num(o.market_cap),tickerType:o.ticker_type||null,
               avgVol:num(o.avg_volume),avgDays:num(o.avg_sessions),
               avgTrades:num(o.avg_trades),relTrades:num(o.rel_trades),
               relVol:num(o.rel_volume)||0,
@@ -13268,14 +13269,12 @@ function MostActivesPage(p){
               changePct:num(o.pct_move)||0
             });
           }
-          try{
-            var symListO=overnightActives.map(function(a2){return a2.symbol;});
-            if(symListO.length>0){
-              var mcMapO=await fetchScreenerMcap(symListO);
-              for(var aiO=0;aiO<overnightActives.length;aiO++){var mO=mcMapO[overnightActives[aiO].symbol];overnightActives[aiO].marketCap=mO?mO.mc:null;overnightActives[aiO].tickerType=mO?mO.tt:null;}
-            }
-          }catch(e5b){}
-          await polygonFillMcap(overnightActives);
+          // No client-side enrichment: market_cap and ticker_type are joined into overnight_actives
+          // by the scan, so they arrive with the rows. Previously this ran fetchScreenerMcap (1,400
+          // symbols in chunks of 80 = 16 sequential calls) then polygonFillMcap (687 names missing
+          // from the screener cache, one call each in sequential batches of 10 = ~69 rounds) —
+          // roughly 85 sequential round trips before anything rendered, which is where the 8-10s
+          // "loading market data" came from. Most of that work was thrown away by the filters.
           setActives(overnightActives);
           var partialNote=(ovnRows.length&&ovnRows[0].is_partial)?' \u2014 session in progress':'';
           setLastUpdated('Overnight (BOATS) '+(ovnDate||'')+partialNote+' \u2014 '+overnightActives.length+' names \u2014 refreshed '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false})+' ET');
