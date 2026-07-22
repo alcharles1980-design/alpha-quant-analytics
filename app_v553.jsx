@@ -13109,6 +13109,14 @@ function MostActivesPage(p){
   // does after the 4AM close. Clearable like any other filter.
   var s11b=useState('500'),minTrades=s11b[0],setMinTrades=s11b[1];
   var s11c=useState(''),maxTrades=s11c[0],setMaxTrades=s11c[1];
+  // Average-trades filter — the stock's TYPICAL trade count per session (the AVERAGE TRADES column),
+  // as distinct from the Trades filter above which measures THIS session. Screens out names that
+  // spike on one-off news but are normally illiquid: 800 trades tonight against a 50-trade average
+  // passes the Trades filter but fails this one. Note the underlying number is a 20-day DAILY
+  // average on RTH but a per-session average on overnight/pre-market, so the same threshold is far
+  // more restrictive on the session tabs.
+  var s11d=useState('100'),minAvgTrades=s11d[0],setMinAvgTrades=s11d[1];
+  var s11e=useState(''),maxAvgTrades=s11e[0],setMaxAvgTrades=s11e[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
   // Default session: Overnight (BOATS). Time-aware auto-select (RTH during 4AM-8PM ET) is paused
@@ -13496,6 +13504,18 @@ function MostActivesPage(p){
       if(mnT!=null&&isFinite(mnT)&&tc<mnT)return false;
       if(mxT!=null&&isFinite(mxT)&&tc>mxT)return false;
     }
+    // Average-trades filter (typical trade count per session). Parsed the same defensive way as
+    // the Trades filter above. A null avgTrades means the stock has no prior sessions on record —
+    // it's excluded when a bound is set, since "no history" can't satisfy "typically trades N+".
+    // Those names are visible with the filter cleared, and the SESSIONS column shows the basis.
+    var mnA=(minAvgTrades===''||minAvgTrades==null)?null:parseFloat(minAvgTrades);
+    var mxA=(maxAvgTrades===''||maxAvgTrades==null)?null:parseFloat(maxAvgTrades);
+    if((mnA!=null&&isFinite(mnA))||(mxA!=null&&isFinite(mxA))){
+      var at=(typeof a.avgTrades==='number'&&isFinite(a.avgTrades))?a.avgTrades:null;
+      if(at===null)return false;
+      if(mnA!=null&&isFinite(mnA)&&at<mnA)return false;
+      if(mxA!=null&&isFinite(mxA)&&at>mxA)return false;
+    }
     // Market cap filter (input in billions, data in raw)
     var mnC=(parseFloat(minCap)||0)*1e9;
     var mxC=maxCap?(parseFloat(maxCap)*1e9):Infinity;
@@ -13677,6 +13697,17 @@ function MostActivesPage(p){
         <input value={maxTrades} onChange={function(e){setMaxTrades(e.target.value);}} placeholder="Max" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((maxTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{fontSize:7,fontFamily:F,color:C.border}}>this session</span>
+      </div>
+
+      {/* Average trade count filter (typical per session, not this session) */}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Avg Trades:</span>
+        <input value={minAvgTrades} onChange={function(e){setMinAvgTrades(e.target.value);}} placeholder="Min" type="number" step="1"
+          style={{width:65,background:C.bgInput,border:'1px solid '+((minAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
+        <input value={maxAvgTrades} onChange={function(e){setMaxAvgTrades(e.target.value);}} placeholder="Max" type="number" step="1"
+          style={{width:65,background:C.bgInput,border:'1px solid '+((maxAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+        <span style={{fontSize:7,fontFamily:F,color:C.border}}>typical per session</span>
       </div>
     </div>
 
