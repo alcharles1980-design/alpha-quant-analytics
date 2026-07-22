@@ -13448,8 +13448,19 @@ function MostActivesPage(p){
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
   var tblTh=function(col,label,align,fzIdx){return <th onClick={function(){doTblSort(col);}} style={Object.assign({padding:'4px 3px',textAlign:align||'right',color:tblSort===col?C.gold:C.txtDim,cursor:'pointer',fontWeight:tblSort===col?700:400},fzIdx!=null?fzTh(fzIdx):{})}>{label}{tblSort===col?(tblDesc?' \u25BC':' \u25B2'):''}</th>;};
 
-  var barCol=tblSort==='trade_count'?'trade_count':'volume';
-  var maxBar=1;if(filtered.length>0){for(var mbi=0;mbi<filtered.length;mbi++){if((filtered[mbi][barCol]||0)>maxBar)maxBar=filtered[mbi][barCol];}}
+  // BAR column: visualise whatever column is currently sorted, so the bar always relates to the
+  // ordering. Previously it only ever showed trade_count (when sorting by TRADES) or volume (for
+  // everything else) — so sorting by RVOL/RTRD/AVG TRD/CHG %/MCAP/PRICE left the bars showing
+  // volume, i.e. unrelated to the visible order.
+  // SYMBOL is non-numeric so it falls back to volume. CHG % can be negative, so magnitude is taken
+  // as an absolute value (a -5% move reads as prominent as +5%).
+  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,price:1,marketCap:1,changePct:1};
+  var barCol=BAR_NUMERIC[tblSort]?tblSort:'volume';
+  var barAbs=(barCol==='changePct');
+  var barVal=function(r){var v=r[barCol];v=(typeof v==='number'&&isFinite(v))?v:0;return barAbs?Math.abs(v):Math.max(0,v);};
+  var maxBar=1;if(filtered.length>0){for(var mbi=0;mbi<filtered.length;mbi++){if(barVal(filtered[mbi])>maxBar)maxBar=barVal(filtered[mbi]);}}
+  var BAR_LABELS={volume:'VOL',trade_count:'TRD',avgVol:isOvernightView?'AVG OVN':'AVG VOL',avgTrades:'AVG TRD',relVol:'RVOL',relTrades:'RTRD',price:'PRICE',marketCap:'MCAP',changePct:'|CHG|'};
+  var barLabel=BAR_LABELS[barCol]||'VOL';
 
   var fmtVol=function(v){if(v>=1e12)return(v/1e12).toFixed(1)+'T';if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return v;};
   var card={background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,padding:'16px 18px',marginBottom:14};
@@ -13585,11 +13596,11 @@ function MostActivesPage(p){
             {isOvernightView&&tblTh("avgTrades","AVG TRD")}
             {tblTh("relVol","RVOL")}
             {isOvernightView&&tblTh("relTrades","RTRD")}
-            <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>BAR</th>
+            <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
           </tr></thead>
           <tbody>
             {filtered.map(function(a,i){
-              var pct=maxBar>0?(a[barCol]||0)/maxBar*100:0;
+              var pct=maxBar>0?barVal(a)/maxBar*100:0;
               var rowBg=C.bgCard; // opaque bg for sticky frozen cells (no zebra on this table)
               return <tr key={a.symbol} style={{borderBottom:'1px solid '+C.border+'20'}}>
                 <td style={Object.assign({padding:'4px 3px',color:C.txtDim,fontSize:7},fzTd(0,rowBg))}>{i+1}</td>
