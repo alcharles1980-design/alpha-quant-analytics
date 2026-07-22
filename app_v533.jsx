@@ -1,4 +1,5 @@
 const{useState,useEffect,useRef}=React;
+// Deploy pipeline verified under private repo visibility (v533).
 var RC=typeof Recharts!=="undefined"?Recharts:{};
 var THEMES={
   dark:{bg:"#0a1628",bgCard:"#0f1d35",bgInput:"#0c1830",bgDeep:"#081020",border:"#1a2d5a",accent:"#00e5a0",accentDim:"#00e5a020",warn:"#ff5c3a",warnDim:"#ff5c3a20",red:"#ff3b47",redDim:"#ff3b4720",blue:"#3d9eff",blueDim:"#3d9eff20",purple:"#9d5cff",gold:"#ffb020",goldDim:"#ffb02020",txt:"#e0eaf4",txtDim:"#a0b8d0",txtBright:"#f4f8fc",grid:"#14203a",code:"#8ec07c",codeBg:"#0a0e14",codeDim:"#a0b4c8",codeBright:"#e8f0f8"},
