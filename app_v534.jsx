@@ -13159,7 +13159,9 @@ function MostActivesPage(p){
   },[]);
 
   var fetchData=async function(manual){
-    if(!p.alpKey||!p.alpSecret){if(manual)setErr('Set Alpaca API keys in Settings');return;}
+    // Overnight reads the pre-ranked overnight_actives table from Supabase and needs no Alpaca
+    // credentials; every other session still calls Alpaca directly.
+    if(session!=='overnight'&&(!p.alpKey||!p.alpSecret)){if(manual)setErr('Set Alpaca API keys in Settings');return;}
     if(inFlight.current)return; // skip if a fetch is already running (avoid overlap on interval)
     inFlight.current=true;
     setLoading(true);setErr(null);
@@ -13188,8 +13190,10 @@ function MostActivesPage(p){
         for(var li2=0;li2<listSymbols.length;li2++)rawActives.push({symbol:listSymbols[li2],volume:0,trade_count:0});
         var listName=(myLists.find(function(l2){return l2.id===selectedList;})||{}).name||'';
         setLastUpdated('List: '+listName+(listSession==='overnight'?' (Overnight)':' (RTH)')+' \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
-      }else{
-        // ── RTH + OVERNIGHT: get universe from screener ──
+      }else if(session!=='overnight'){
+        // ── RTH: get universe from Alpaca's most-actives screener ──
+        // (Overnight no longer needs this: it reads the pre-ranked overnight_actives table, which is
+        // built by scanning the full universe against BOATS rather than filtering the RTH list.)
         var r1=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by='+sortBy+'&top='+topN,'X-Alpaca-Base':'data'}});
         if(!r1.ok)throw new Error('Most actives: '+r1.status);
@@ -13204,8 +13208,60 @@ function MostActivesPage(p){
       // Determine data mode: overnight vs RTH
       var isOvernight=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
-      if(isOvernight){
-        // ── OVERNIGHT MODE: fetch overnight bars for the universe ──
+      if(session==='overnight'){
+        // ── OVERNIGHT MODE: read the pre-ranked scan from overnight_actives ──
+        // Built by the overnight-actives Edge Function (pg_cron, hourly through the session): it
+        // scans the FULL ~11k universe against BOATS and ranks by trades/volume, with relative
+        // metrics computed from trailing sessions EXCLUDING the current one. Previously this tab
+        // filtered Alpaca's REGULAR-session most-actives screener, so names quiet in RTH but busy
+        // overnight never appeared at all.
+        var ovnRows=[];
+        try{
+          var latestR=await fetch(SB_URL+'/rest/v1/overnight_actives?select=session_date&order=session_date.desc&limit=1',{headers:getSbHeaders()});
+          var ovnDate=null;
+          if(latestR.ok){var lj=await latestR.json();if(lj&&lj.length)ovnDate=lj[0].session_date;}
+          if(ovnDate){
+            var ovnUrl=SB_URL+'/rest/v1/overnight_actives?session_date=eq.'+ovnDate
+              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial'
+              +'&order='+(sortBy==='trades'?'trades':'volume')+'.desc&limit='+Math.max(50,topN);
+            var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
+            if(ovnR.ok)ovnRows=await ovnR.json();
+          }
+          var overnightActives=[];
+          for(var oi=0;oi<ovnRows.length;oi++){
+            var o=ovnRows[oi];
+            overnightActives.push({
+              symbol:o.ticker,volume:o.volume,trade_count:o.trades,
+              boatsOpen:o.open,boatsClose:o.close,boatsHigh:o.high,boatsLow:o.low,boatsVwap:o.vwap,
+              boatsChange:(o.close!=null&&o.open!=null)?(o.close-o.open):0,
+              boatsChangePct:o.pct_move||0,
+              avgVol:o.avg_volume,avgDays:o.avg_sessions,
+              avgTrades:o.avg_trades,relTrades:o.rel_trades,
+              relVol:o.rel_volume||0,
+              price:o.close,prevClose:o.open,
+              change:(o.close!=null&&o.open!=null)?(o.close-o.open):0,
+              changePct:o.pct_move||0
+            });
+          }
+          try{
+            var symListO=overnightActives.map(function(a2){return a2.symbol;});
+            if(symListO.length>0){
+              var mcMapO=await fetchScreenerMcap(symListO);
+              for(var aiO=0;aiO<overnightActives.length;aiO++){var mO=mcMapO[overnightActives[aiO].symbol];overnightActives[aiO].marketCap=mO?mO.mc:null;overnightActives[aiO].tickerType=mO?mO.tt:null;}
+            }
+          }catch(e5b){}
+          await polygonFillMcap(overnightActives);
+          setActives(overnightActives);
+          var partialNote=(ovnRows.length&&ovnRows[0].is_partial)?' \u2014 session in progress':'';
+          setLastUpdated('Overnight (BOATS) '+(ovnDate||'')+partialNote+' \u2014 '+overnightActives.length+' names \u2014 refreshed '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false})+' ET');
+        }catch(eOvn){
+          setActives([]);
+          setLastUpdated('Overnight scan unavailable: '+(eOvn&&eOvn.message?eOvn.message:'error'));
+        }
+      }else if(isOvernight){
+        // ── MY LISTS (overnight): look up BOATS bars for the list's own tickers ──
+        // The pre-ranked table can't serve arbitrary user lists, so this path keeps the direct
+        // per-symbol BOATS lookup.
         var boatsMap={};
         var boatsEnd=new Date();boatsEnd.setDate(boatsEnd.getDate()-1);
         var startBoats=new Date(Date.now()-5*86400000).toISOString().split('T')[0];
