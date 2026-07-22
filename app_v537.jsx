@@ -13437,9 +13437,9 @@ function MostActivesPage(p){
     }
     return true;
   }).sort(function(a,b){
-    // relTrades only exists on overnight rows; if the user sorted by it and then switched to a
-    // session without that column, fall back to trade count rather than sorting on all-nulls.
-    var sortKey=(tblSort==='relTrades'&&!isOvernightView)?'trade_count':tblSort;
+    // relTrades/avgTrades only exist on overnight rows; if the user sorted by one and then switched
+    // to a session without that column, fall back to trade count rather than sorting on all-nulls.
+    var sortKey=((tblSort==='relTrades'||tblSort==='avgTrades')&&!isOvernightView)?'trade_count':tblSort;
     var av=a[sortKey],bv=b[sortKey];
     if(av==null)av=tblDesc?-Infinity:Infinity;if(bv==null)bv=tblDesc?-Infinity:Infinity;
     if(typeof av==='string'&&typeof bv==='string')return tblDesc?bv.localeCompare(av):av.localeCompare(bv);
@@ -13582,6 +13582,7 @@ function MostActivesPage(p){
             {tblTh("volume","VOLUME")}
             {tblTh("trade_count","TRADES")}
             {tblTh("avgVol",isOvernightView?"AVG OVN":"AVG VOL")}
+            {isOvernightView&&tblTh("avgTrades","AVG TRD")}
             {tblTh("relVol","RVOL")}
             {isOvernightView&&tblTh("relTrades","RTRD")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>BAR</th>
@@ -13608,6 +13609,7 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.accent,fontWeight:600}}>{fmtVol(a.volume)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{fmtVol(a.trade_count)}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgVol?fmtVol(a.avgVol):'\u2014'}</td>
+                {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgTrades?fmtVol(a.avgTrades):'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
