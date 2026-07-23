@@ -76,45 +76,148 @@ Ask for a **fresh short-lived PAT** and tell the user to revoke it after the ses
 
 ---
 
-## 5. Standing rules (hard-won — violating these has broken production)
+## 5. Learnings, mistakes and recurring failure modes
 
-**Storage budget before ANY bulk write.** Free plan, 512 MB. A `daily_returns`
-backfill (3.08M rows / 436 MB) blew the quota, Supabase **refused connections**, and
-the app hung on "Waiting for Alpaca API keys…" because it loads `app_config` at
-startup. Feature was truncated and dropped. So: estimate rows × bytes × 1.5–2 for
-indexes → state the estimate to the user → backfill a 5–10 day sample → measure →
-extrapolate → only then decide. Scope down by default. Prefer `TRUNCATE` over
-`DELETE`. `net._http_response` accumulates silently — prune it. Generalise this:
-raise resource limits (storage, rate limits, Actions minutes, Edge timeouts, the 3s
-anon statement timeout) **before** building, not after breaking.
+Every entry below cost real debugging time or broke production. They are grouped by
+failure *class*, because the specific bug recurs in new forms but the class stays the
+same. **The unifying theme: almost every serious bug here was SILENT** — no error, no
+exception, correct-looking UI, wrong data underneath. Assume silence is the danger.
 
-**PostgREST 1,000-row silent cap** — #1 recurring bug. EVERY REST query needs an
-explicit `&limit=N`. No error, just silently missing data. Multi-ticker ×
-multi-date multiplies fast.
+### 5.1 Silent data truncation (the #1 recurring class)
 
-**Silent API truncation** — #2. Set `limit=` high, follow `next_page_token`, verify
-`end=` behaviour client-side.
+- **PostgREST 1,000-row cap.** Default limit is 1,000 and it does *not* error — it
+  just returns the first 1,000. `optimal_tp_hourly` had 38,400 rows for one ticker;
+  a naive fetch got 1,000, so Correlation Finder ran on **10 data points instead of
+  379** and reported correlations of ±1.000 (meaningless at n=10). Fix: explicit
+  `&limit=`, and paginate.
+- **Batch size must be ≤ 1000 when paginating.** Requesting `limit=10000` silently
+  returns 1,000; the loop then sees `1000 < 10000`, concludes "last partial page",
+  and stops. You lose everything past row 1,000 *while believing you paginated*.
+- **Polygon `next_url` silently drops pre-market trades** on later pages of a
+  full-day fetch. Fix: 3 overlapping windows (2–3h overlap), concat, sort by ts,
+  dedup on exact nanosecond. Never trust a single-window fetch.
+- **Generic API truncation.** Follow `next_page_token`, set `limit=` high enough,
+  verify `end=` behaviour client-side. v486 had hourly charts cut off from exactly
+  this (`limit=5000` truncation).
 
-**PostgREST serialises `numeric` as STRINGS** (ints come back as numbers). Coerce
-with `Number()` or `"9" > "100"` sorts wrong and bar scaling breaks.
+### 5.2 Resource limits — think BEFORE building (Jul 22 2026: took the DB down)
 
-**Timezone:** always `Intl.DateTimeFormat('en-US',{timeZone:'America/New_York'})`.
-Never hardcode UTC-4/-5 — it breaks twice a year.
+A `daily_returns` backfill (3.08M rows, 14,454 tickers × 261 days) grew to **436 MB
+= 65% of the 512 MB free-plan cap**, blew the quota, grace period expired, and
+**Supabase refused connections**. The app hung on "Waiting for Alpaca API keys…"
+because it loads `app_config` at startup. Everything had to be truncated and the
+feature dropped entirely.
 
-**Alpaca quirks:** SIP 403s on *today's* data via **historical** REST → bound
-`end=` to yesterday. **Snapshots are live and NOT subject to that** (this is why
-v555 could move snapshots to SIP). Trade `.c` conditions field can be a string —
-always `Array.isArray` guard. Options `/v1beta1/options/trades` needs `start=`, no
-`end=`, no `feed=`. Exchange codes are letters.
+- **Estimate first, out loud.** rows × bytes/row × 1.5–2 (indexes), checked against
+  `pg_database_size()`. State the estimate to the user *before* running it.
+- **Sample, measure, extrapolate.** 5–10 days first. Never go straight to a
+  full-universe multi-year load.
+- **Scope down by default** — restrict universe, shorten window, store only needed
+  columns.
+- **Watch pace, not just size.** Repeated 12k-row test batches and 40s queries
+  against a 3M-row table caused 69–270s checkpoints, a deadlock, and connection-pool
+  exhaustion. Don't hammer prod; test against small samples.
+- **`TRUNCATE` over `DELETE`** — DELETE leaves dead tuples needing VACUUM FULL,
+  which needs *more* temp space exactly when you have none.
+- **`net._http_response` accumulates silently** (hit 72 MB) — prune periodically.
+- **Generalise:** before ANY task think through storage quotas, API rate limits,
+  Actions minutes, Edge Function timeouts (150s), CF Worker limits (300s CPU /
+  128 MB), statement timeouts (anon = 3s via PostgREST) — and raise them with the
+  user *before* building.
 
-**Feed matching:** RVOL numerator and denominator must come from the SAME tape.
-Mixing IEX current volume with a SIP 20-day average inflated RVOL ~30x (v530). As of
-v555 Most Actives is SIP end-to-end so the mismatch is structurally impossible there.
+### 5.3 Timezone / DST
 
-**Test APIs before claiming success.** Use `pg_net` (fire `net.http_get`, then read
-`net._http_response`). Measure; don't assume.
+- **Never use manual UTC offsets.** Hardcoded UTC-4 assigned trades to the wrong
+  hour for months, silently, and corrupted everything downstream. Always
+  `Intl.DateTimeFormat` with `America/New_York`.
+- **UTC fetch windows must be EST/EDT-aware.** `T13:00Z` is 9 AM EDT but 8 AM EST —
+  the 4 AM ET hour vanished entirely during EST months.
+- **Test with both EST and EDT dates** (e.g. January *and* June). Summer-only tests
+  never catch DST bugs.
+- **Centralise timezone logic.** The fix had to be applied in 12 separate
+  locations because the offset math was scattered.
+- Anchor "Today"/"Yesterday" to the ET *trading* day, not local/UTC midnight (v482).
 
-**GitHub Actions:** `actions/checkout@v6`, `actions/setup-node@v6`, Node 24.
+### 5.4 Silent write failures
+
+- **Supabase writes can fail silently under rapid sequential load.** 11 of 22 days
+  saved; days 12–22 vanished. The UI showed all 22 (computed in memory). Fix:
+  inter-day delays + **read back after writing** (`verifySaveIntegrity`).
+- **PostgREST PATCH returns 200 OK and does nothing** on wide tables (VIX backfill
+  wrote NULLs). Use **DELETE + POST**, never PATCH.
+- **PostgREST server-side filters are unreliable** for integrity checks — returned
+  empty when matching rows existed. Fetch and filter in JS.
+
+### 5.5 JavaScript footguns
+
+- **`var` is function-scoped — single-letter names shadow props.** `var p` inside an
+  entropy loop overwrote the component's `p` (props) for the *entire function*.
+  Day 1 worked; day 2+ failed because `p.apiKey` was now a number. **Never use
+  `p, r, h, d, e, s` inside components** — use `ep`, `r2`, `hh`. v401 was a hotfix
+  for exactly this class (`s10d` reused).
+- **NaN breaks `Array.sort()` entirely.** A NaN comparator return puts sort into
+  undefined behaviour — *nothing* reorders. Guard every comparator; Pearson on a
+  constant feature gives 0/0.
+- **PostgREST serialises `numeric` as STRINGS** (ints as numbers). Without `Number()`
+  coercion, `"9" > "100"` and bar scaling breaks (v539).
+
+### 5.6 Ordering and scoping bugs
+
+- **Filter *then* cap, not cap then filter.** Most Actives fetched Top-100
+  server-side then filtered client-side → ~47 visible rows while ~480 qualifying
+  names sat below the cutoff, permanently invisible (v540).
+- **Feed matching: numerator and denominator must share a tape.** IEX current volume
+  ÷ SIP 20-day average inflated RVOL **~30x** (v530). v555 made Most Actives SIP
+  end-to-end so the mismatch is now structurally impossible.
+- **Stale state on selection change** — clear derived state when the ticker/list
+  changes or you render the previous symbol's data (v423, v511).
+- **Parity audits find real bugs.** When a feature is extended to a new mode
+  (overnight → pre-market), audit *every* branch: v552 found four places where
+  overnight-only logic silently missed pre-market.
+
+### 5.7 Server limits → always have a browser fallback
+
+CF Workers: 300s CPU / 128 MB. Supabase Edge Functions: 150s. Heavy stocks (SOXL
+254K+ ticks) exceed both, returning 546/500/502/504. **Every server-side computation
+needs a browser Web Worker fallback**; browsers have no CPU cap and GBs of memory.
+Set a `serverFailed` flag so subsequent days skip the doomed server attempt.
+
+### 5.8 Process lessons
+
+- **Build integrity checks BEFORE features.** The DST bug corrupted months of data
+  silently; an hourly coverage check would have caught it on the first import.
+  Post-fetch (`verifyFetchIntegrity`) and post-save (`verifySaveIntegrity`) checks
+  exist because silent corruption is catastrophic for everything downstream.
+- **Test APIs before claiming success.** Use `pg_net` (`net.http_get` → read
+  `net._http_response`). Measure and show the number.
+- **Never skip the version bump**, and remember `build.js` hardcodes the banner —
+  miss it and you ship N+1 displaying N.
+- **The container has no git identity.** Commits silently no-op; a following `push`
+  reports success having sent nothing. Set `user.email`/`user.name` first, then
+  verify HEAD moved.
+- **Docs that assert facts go stale.** This file's predecessor sat at v261 while the
+  app hit v554. Docs must teach verification (§1), and §9/§10 must be updated as
+  part of the change, never afterwards.
+- **Rate limits:** 200ms between Polygon fetch windows, 500ms between days.
+- **Log progress on long operations** so "still loading" is distinguishable from
+  "stuck".
+
+### 5.9 Platform quirks worth memorising
+
+- **Alpaca:** SIP 403s on *today's* data via **historical** REST → bound `end=` to
+  yesterday. **Snapshots are live and exempt** (this is what let v555 move snapshots
+  to SIP). Trade `.c` conditions can be a string → always `Array.isArray` guard.
+  Options `/v1beta1/options/trades` requires `start=`, no `end=`, no `feed=`.
+  Exchange codes are letters. IEX ≈ 2.5% of volume, stops printing when its book is
+  quiet (observed ~4h stale), and can return `ap:0`.
+- **SEC EDGAR** 429s aggressively → use the `edgar-proxy` Worker; User-Agent must be
+  `Company email` format.
+- **CORS preflight**: custom headers trigger it — use query params instead (v500).
+- **GitHub Actions:** `checkout@v6`, `setup-node@v6`, Node 24. `node_modules` isn't
+  committed — `npm install` before building in a fresh clone.
+- **GitHub's scheduled cron is unreliable** in peak UTC windows → dispatch from
+  Supabase pg_cron via `workflow_dispatch` instead.
+
 
 ---
 
