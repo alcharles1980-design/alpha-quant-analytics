@@ -13123,9 +13123,6 @@ function MostActivesPage(p){
   // for now — pre-market data is too thin/unavailable on the current feeds to make an early-RTH
   // default useful, so it defaulted to yesterday's close during the 4AM-9:30AM dead window.
   var s13=useState('overnight'),session=s13[0],setSession=s13[1];
-  var s14=useState([]),myLists=s14[0],setMyLists=s14[1];
-  var s15=useState(null),selectedList=s15[0],setSelectedList=s15[1];
-  var s16=useState('rth'),listSession=s16[0],setListSession=s16[1];
   var s17=useState('trade_count'),tblSort=s17[0],setTblSort=s17[1];
   var s18=useState(true),tblDesc=s18[0],setTblDesc=s18[1];
   // Shortlist: cross-session carry-over signal (after-market -> overnight -> pre-market -> RTH).
@@ -13179,12 +13176,6 @@ function MostActivesPage(p){
     }
   };
 
-  // Fetch saved lists on mount
-  useEffect(function(){
-    fetch(SB_URL+'/rest/v1/stock_lists?select=id,name&order=name&limit=1000',{headers:getSbHeaders()})
-      .then(function(r){return r.json();}).then(function(d){setMyLists(d||[]);}).catch(function(){});
-  },[]);
-
   var fetchData=async function(manual){
     // Overnight reads the pre-ranked overnight_actives table from Supabase and needs no Alpaca
     // credentials; every other session still calls Alpaca directly.
@@ -13197,21 +13188,7 @@ function MostActivesPage(p){
     try{
       var rawActives=[];
 
-      // Pre-Market (4:00-9:30 AM ET) and After-Market (4:00-8:00 PM ET) tabs exist but their data
-      // source hasn't been wired up yet — show a clear placeholder instead of fetching. (The screener
-      // + BOATS paths below don't cover these windows; sourcing TBD.)
-      if(session==='mylists'){
-        // ── MY LISTS MODE: fetch tickers from selected list ──
-        if(!selectedList){setLoading(false);return;}
-        var lr=await fetch(SB_URL+'/rest/v1/stocks_watchlist?list_id=eq.'+selectedList+'&select=ticker&order=ticker&limit=10000',{headers:getSbHeaders()});
-        if(!lr.ok)throw new Error('Failed to load list');
-        var ld=await lr.json();
-        var listSymbols=ld.map(function(r){return r.ticker;});
-        if(listSymbols.length===0){setActives([]);setLoading(false);return;}
-        for(var li2=0;li2<listSymbols.length;li2++)rawActives.push({symbol:listSymbols[li2],volume:0,trade_count:0});
-        var listName=(myLists.find(function(l2){return l2.id===selectedList;})||{}).name||'';
-        setLastUpdated('List: '+listName+(listSession==='overnight'?' (Overnight)':' (RTH)')+' \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
-      }else if(session!=='overnight'){
+      if(session!=='overnight'){
         // ── RTH: get universe from Alpaca's most-actives screener ──
         // (Overnight no longer needs this: it reads the pre-ranked overnight_actives table, which is
         // built by scanning the full universe against BOATS rather than filtering the RTH list.)
@@ -13225,9 +13202,6 @@ function MostActivesPage(p){
           setLastUpdated(lu.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET (fetched '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+')');
         }
       }
-
-      // Determine data mode: overnight vs RTH
-      var isOvernight=(session==='overnight')||(session==='mylists'&&listSession==='overnight');
 
       if(session==='overnight'||session==='premarket'||session==='aftermarket'){
         // ── OVERNIGHT / PRE-MARKET: read the pre-ranked scan from the matching table ──
@@ -13297,63 +13271,8 @@ function MostActivesPage(p){
           setActives([]);
           setLastUpdated((amMode?'After-market':pmMode?'Pre-market':'Overnight')+' scan unavailable: '+(eOvn&&eOvn.message?eOvn.message:'error'));
         }
-      }else if(isOvernight){
-        // ── MY LISTS (overnight): look up BOATS bars for the list's own tickers ──
-        // The pre-ranked table can't serve arbitrary user lists, so this path keeps the direct
-        // per-symbol BOATS lookup.
-        var boatsMap={};
-        var boatsEnd=new Date();boatsEnd.setDate(boatsEnd.getDate()-1);
-        var startBoats=new Date(Date.now()-5*86400000).toISOString().split('T')[0];
-        var endBoats=boatsEnd.toISOString().split('T')[0];
-        for(var bBatch=0;bBatch<rawActives.length;bBatch+=50){
-          var bChunk=rawActives.slice(bBatch,bBatch+50).map(function(a){return a.symbol;}).join(',');
-          try{
-            var boatsToken=null;
-            do{
-              var boatsPath='/v2/stocks/bars?symbols='+encodeURIComponent(bChunk)+'&timeframe=1Day&start='+startBoats+'T00:00:00Z&end='+endBoats+'T23:59:59Z&limit=10000&feed=boats';
-              if(boatsToken)boatsPath+='&page_token='+boatsToken;
-              var rb=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-                'X-Alpaca-Path':boatsPath,'X-Alpaca-Base':'data'}});
-              if(rb.ok){
-                var db=await rb.json();
-                if(db.bars){for(var bSym in db.bars){if(!boatsMap[bSym])boatsMap[bSym]=[];boatsMap[bSym]=boatsMap[bSym].concat(db.bars[bSym]);}}
-                boatsToken=db.next_page_token||null;
-              }else{boatsToken=null;}
-            }while(boatsToken);
-          }catch(e2){}
-        }
-        // Build overnight actives from BOATS data
-        var overnightActives=[];
-        for(var sym in boatsMap){
-          var bars=boatsMap[sym];
-          if(!bars||bars.length===0)continue;
-          var latest=bars[bars.length-1]; // most recent overnight session (may be in-progress)
-          var priorBar=bars.length>1?bars[bars.length-2]:null; // prior overnight session
-          var ovPrevClose=priorBar?priorBar.c:latest.o; // true prior close; fall back to this session's open
-          var avgOvVol=0;for(var bi=0;bi<bars.length;bi++)avgOvVol+=bars[bi].v;avgOvVol=avgOvVol/bars.length;
-          overnightActives.push({
-            symbol:sym,volume:latest.v,trade_count:latest.n,
-            boatsOpen:latest.o,boatsClose:latest.c,boatsHigh:latest.h,boatsLow:latest.l,boatsVwap:latest.vw,
-            boatsChange:latest.c-latest.o,boatsChangePct:latest.o?(latest.c-latest.o)/latest.o*100:0,
-            avgVol:avgOvVol,avgDays:bars.length,
-            relVol:avgOvVol>0?(latest.v/avgOvVol*100):0,
-            price:latest.c,prevClose:ovPrevClose,change:latest.c-ovPrevClose,changePct:ovPrevClose?(latest.c-ovPrevClose)/ovPrevClose*100:0
-          });
-        }
-        overnightActives.sort(function(a,b){return b.volume-a.volume;});
-        // Enrich with market cap (chunked to avoid URL-length truncation)
-        try{
-          var symList2=overnightActives.map(function(a2){return a2.symbol;});
-          if(symList2.length>0){
-            var mcMap2=await fetchScreenerMcap(symList2);
-            for(var ai4=0;ai4<overnightActives.length;ai4++){var m2=mcMap2[overnightActives[ai4].symbol];overnightActives[ai4].marketCap=m2?m2.mc:null;overnightActives[ai4].tickerType=m2?m2.tt:null;}
-          }
-        }catch(e5){}
-        await polygonFillMcap(overnightActives);
-        setActives(overnightActives);
-        setLastUpdated('Overnight (BOATS) \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }else{
-        // ── RTH + MY LISTS MODE ──
+        // ── RTH MODE ──
         // Fetch snapshots for prices.
         // Feed is SIP (full consolidated tape) under Algo Trader Plus. Snapshots are a LIVE endpoint,
         // so the "SIP 403s on today's data" rule does not apply here — that restriction is specific to
@@ -13379,7 +13298,6 @@ function MostActivesPage(p){
             rawActives[ai].prevClose=snap.prevDailyBar?snap.prevDailyBar.c:0;
             rawActives[ai].change=rawActives[ai].price&&rawActives[ai].prevClose?(rawActives[ai].price-rawActives[ai].prevClose):0;
             rawActives[ai].changePct=rawActives[ai].prevClose?(rawActives[ai].change/rawActives[ai].prevClose*100):0;
-            // For mylists: pull volume + trades from today's dailyBar
             if(!rawActives[ai].volume&&snap.dailyBar){rawActives[ai].volume=snap.dailyBar.v||0;rawActives[ai].trade_count=snap.dailyBar.n||0;}
           }else{rawActives[ai].price=0;rawActives[ai].prevClose=0;rawActives[ai].change=0;rawActives[ai].changePct=0;}
         }
@@ -13428,14 +13346,6 @@ function MostActivesPage(p){
                   for(var ai3=0;ai3<rawActives.length;ai3++){
                     if(rawActives[ai3].symbol===sym2){
                       rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgTrades=avgTrd;rawActives[ai3].avgDays=histBars.length;
-                      // My Lists: today's volume/trades come from the IEX snapshot dailyBar (set
-                      // earlier). Only fall back to the latest historical bar if that was missing —
-                      // don't overwrite a real today value with yesterday's (end= is bounded to
-                      // yesterday, so lastBar is a prior session).
-                      if(session==='mylists'){
-                        if(!rawActives[ai3].volume&&lastBar.v)rawActives[ai3].volume=lastBar.v;
-                        if(!(rawActives[ai3].trade_count>0)&&(lastBar.n||0))rawActives[ai3].trade_count=lastBar.n;
-                      }
                       rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;
                       rawActives[ai3].relTrades=rawActives[ai3].trade_count>0&&avgTrd>0?(rawActives[ai3].trade_count/avgTrd*100):0;break;}
                   }
@@ -13444,8 +13354,6 @@ function MostActivesPage(p){
             }
           }
         }catch(e4){}
-        // Sort by volume for mylists mode
-        if(session==='mylists')rawActives.sort(function(a,b){return(b.volume||0)-(a.volume||0);});
         setActives(rawActives);
       }
       // Movers — needs Alpaca credentials. Overnight reads entirely from Supabase, so skip this
@@ -13472,7 +13380,7 @@ function MostActivesPage(p){
   // credentials; RTH and My Lists call Alpaca directly.
   var needsAlpaca=(session!=='overnight'&&session!=='premarket'&&session!=='aftermarket'&&session!=='shortlist');
   var sortDep=needsAlpaca?sortBy:'';
-  useEffect(function(){if(session==='shortlist')return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
+  useEffect(function(){if(session==='shortlist')return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,refreshTrigger]);
 
   // Keep a ref to the latest fetchData so the interval always calls current state.
   var fetchRef=useRef(fetchData);fetchRef.current=fetchData;
@@ -13527,7 +13435,7 @@ function MostActivesPage(p){
 
   // Governs the extended session columns (GAP %, the two x-AVERAGE ratios, SESSIONS/BASIS). Both
   // the overnight and pre-market tables carry these, so both views show them; RTH does not.
-  var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='aftermarket')||(session==='mylists'&&listSession==='overnight');
+  var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='aftermarket');
 
   // Does THIS session have any usable per-ticker baseline yet? The avg_* columns are built from a
   // stock's OWN prior sessions in the same table, so a newly-created session table (or one whose
@@ -13651,7 +13559,7 @@ function MostActivesPage(p){
     <div style={card}>
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['mylists','My Lists'],['shortlist','\u2605 Shortlist']].map(function(s){
+        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['shortlist','\u2605 Shortlist']].map(function(s){
           return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
             style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
               border:'1px solid '+(session===s[0]?C.gold:C.border),
@@ -13659,26 +13567,6 @@ function MostActivesPage(p){
               color:session===s[0]?C.gold:C.txtDim}}>{s[1]}</button>;
         })}
       </div>
-      {/* List selector (only in mylists mode) */}
-      {session==='mylists'&&<div style={{display:'flex',gap:4,marginBottom:8,flexWrap:'wrap'}}>
-        {myLists.map(function(lst){
-          return <button key={lst.id} onClick={function(){setSelectedList(lst.id);setActives(null);}}
-            style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
-              border:'1px solid '+(selectedList===lst.id?(C.purple||'#a855f7')+'66':C.border),
-              background:selectedList===lst.id?(C.purple||'#a855f7')+'15':'transparent',
-              color:selectedList===lst.id?(C.purple||'#a855f7'):C.txtDim}}>{lst.name}</button>;
-        })}
-        {myLists.length===0&&<span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>No lists found. Create lists in Stocks At Glance.</span>}
-      </div>}
-      {session==='mylists'&&selectedList&&<div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['rth','RTH Data'],['overnight','Overnight (BOATS)']].map(function(ls){
-          return <button key={ls[0]} onClick={function(){setListSession(ls[0]);setActives(null);}}
-            style={{padding:'5px 14px',borderRadius:5,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
-              border:'1px solid '+(listSession===ls[0]?C.blue+'66':C.border),
-              background:listSession===ls[0]?C.blue+'10':'transparent',
-              color:listSession===ls[0]?C.blue:C.txtDim}}>{ls[1]}</button>;
-        })}
-      </div>}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {['volume','trades'].map(function(m){
@@ -13796,7 +13684,6 @@ function MostActivesPage(p){
         <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} Carry-Over Shortlist</div>
         <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
           Ranks names whose after-market activity carried into the overnight session {'\u2014'} the pattern that preceded elevated pre-market and regular-session activity in testing. Both legs matter: after-market alone, or overnight alone, performed near baseline. Volume is scored alongside trades because high trade counts without matching volume is churn (in testing that cohort had a <b>smaller</b> intraday range than doing nothing).
-          <div style={{marginTop:6,color:C.warn,opacity:0.85}}>Signal measured over 6 sessions in July 2026 earnings season, n=10 in the top cohort. Treat as a hypothesis, not a validated edge.</div>
         </div>
         <div style={{marginTop:8,display:'flex',gap:10,flexWrap:'wrap',fontSize:8,fontFamily:F}}>
           <span style={{color:C.accent}}>{'\u25CF'} CONFIRMED {'\u2014'} both legs settled &amp; above threshold</span>
@@ -13871,7 +13758,7 @@ function MostActivesPage(p){
     {/* Most Actives Table */}
     {session!=='shortlist'&&filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
+        {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
       <div style={{overflowX:'auto'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:900}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
