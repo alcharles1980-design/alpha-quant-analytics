@@ -13348,10 +13348,32 @@ function MostActivesPage(p){
   var s11e=useState(''),maxAvgTrades=s11e[0],setMaxAvgTrades=s11e[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
-  // Default session: Overnight (BOATS). Time-aware auto-select (RTH during 4AM-8PM ET) is paused
-  // for now — pre-market data is too thin/unavailable on the current feeds to make an early-RTH
-  // default useful, so it defaulted to yesterday's close during the 4AM-9:30AM dead window.
-  var s13=useState('overnight'),session=s13[0],setSession=s13[1];
+  // Default session: whichever is LIVE right now, by ET clock. Only the initial value — once the
+  // user picks a tab, their choice stands for the rest of the visit.
+  //
+  // Time-aware selection was tried and paused previously because pre-market data was too thin to
+  // land on usefully. That no longer holds: pre-market now has 10 sessions of history, full
+  // baselines and its own calibrated pace curve, same as the others.
+  //
+  // Windows (ET), matching the scanner crons exactly:
+  //   04:00-09:29  pre-market
+  //   09:30-15:59  RTH
+  //   16:00-19:59  after-market
+  //   20:00-03:59  overnight
+  // DST is handled by Intl rather than a hardcoded offset.
+  var s13=useState(function(){
+    try{
+      var p=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+      var hh=0,mm=0;
+      for(var i=0;i<p.length;i++){if(p[i].type==='hour')hh=parseInt(p[i].value,10);if(p[i].type==='minute')mm=parseInt(p[i].value,10);}
+      if(hh===24)hh=0;
+      var mins=hh*60+mm;
+      if(mins>=240&&mins<570)return 'premarket';    // 04:00-09:29
+      if(mins>=570&&mins<960)return 'rth';          // 09:30-15:59
+      if(mins>=960&&mins<1200)return 'aftermarket'; // 16:00-19:59
+      return 'overnight';                           // 20:00-03:59
+    }catch(e){return 'overnight';}
+  }),session=s13[0],setSession=s13[1];
   // Default table sort: TRADES VS AVERAGE (relTrades), not raw trade count. Raw counts just rank
   // the perpetually-liquid names in the same order every session — on 2026-07-22 pre-market the
   // top of the raw list was SOXL/MU/SNDK running at 80-98% of their OWN normal, i.e. quieter than
