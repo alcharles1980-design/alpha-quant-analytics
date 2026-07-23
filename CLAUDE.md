@@ -525,10 +525,15 @@ capped, so no single leg can carry the score alone. Sample sizes are small enoug
 - **Pace curves rest on 1–2 sessions each.** Guarded and monotonic, but thin. Re-run
   `rebuild_pace_curve()` as sessions accumulate; after-market currently WARNs on a
   46.7-pt spread and its first hour is deliberately muted.
-- **Pre-market pace curve deliberately absent.** 77% of its activity lands in the
-  final 30 min, so an 8 AM projection multiplies by ~4.4x against a 45-pt spread. If
-  wanted, treat 9:00–9:30 as its own session rather than projecting across the dead
-  hours.
+- **Pre-market pace curve NOW CALIBRATED** (was previously ruled out). The original
+  refusal rested on a bad measurement: at hourly resolution on 10 tickers it looked like
+  77% of pre-market activity landed in the final 30 minutes. Re-measured at 5-min
+  resolution on 20 tickers, only ~12% falls after 9:00 — the earlier figure was an
+  artifact of a tiny first bucket. Curve health OK: 66 buckets, monotonic, max spread
+  29.6 pts (tighter than overnight's 30.5). Note pre-market starts at 25.17% complete at
+  4:00 AM, so unlike overnight it clears the 15% floor immediately and projects from the
+  first scan. **Lesson: when a measurement rules something out, re-check it at finer
+  resolution before treating the conclusion as settled.**
 - **AI Predictor tuning is in-sample.** Weights and the plain-sum form were fitted on
   the same 6 days they were measured on. `signal_chains` + `test_weights3` exist to
   re-run it properly once more sessions land.
