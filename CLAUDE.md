@@ -389,6 +389,25 @@ Edge Function survives as an orphan.
 
 ---
 
+**Data integrity framework** (backend-only). `select * from data_integrity_check();` returns 13
+checks across six classes, each targeting a failure that produces **no error** — anything that
+already throws needs no check. Logged to `integrity_log` (non-OK rows only) by pg_cron job 38
+hourly at :07; job 39 prunes the log at 30 days.
+
+| Class | Catches | Threshold |
+|---|---|---|
+| Freshness | a scanner stopped writing mid-session | >12 min WARN, >20 FAIL (session-aware: silent when closed) |
+| Coverage | a scan returned a fraction of its universe | <70% of median WARN, <50% FAIL |
+| Arithmetic | a derived column stopped matching its inputs | any mismatch = FAIL |
+| Baseline drift | write-time averages gone stale after out-of-order writes | any mismatch = FAIL |
+| Pace curve | truncated/incomplete calibration source | via `pace_curve_health()` |
+| Storage | the Jul 22 quota class | >70% WARN, >85% FAIL |
+
+Coverage thresholds are calibrated, not guessed: observed day-over-day row variation is
++10.7%/−17.8%, so an alarm inside that band would fire constantly. **Both detectors were verified
+by deliberately corrupting data** — a bad `pct_move` and a bad `avg_sessions` — confirming each
+returned FAIL, then repaired and re-verified clean. An untested alarm is worthless.
+
 **Pace-curve integrity guards.** `session_pace_curve` / `session_pace_ratio` (backend-only)
 correct the partial-vs-full-session bias in `rel_trades`. Two verification functions exist because
 **Alpaca does not error on truncation** — it returns HTTP 200 with fewer symbols and a
