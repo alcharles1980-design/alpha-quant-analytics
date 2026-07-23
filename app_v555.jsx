@@ -13347,13 +13347,21 @@ function MostActivesPage(p){
         setLastUpdated('Overnight (BOATS) \u2014 '+new Date().toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
       }else{
         // ── RTH + MY LISTS MODE ──
-        // Fetch snapshots for prices
+        // Fetch snapshots for prices.
+        // Feed is SIP (full consolidated tape) under Algo Trader Plus. Snapshots are a LIVE endpoint,
+        // so the "SIP 403s on today's data" rule does not apply here — that restriction is specific to
+        // the historical bars endpoint, which is still bounded to yesterday further down.
+        // Previously feed=iex, which covers only ~2.5% of volume: measured on NVDA, IEX reported
+        // 5.8M shares / 57k trades against SIP's 138.7M / 2.36M (24x volume, 41x trades). Worse, IEX
+        // stops printing when its own book goes quiet, so latestTrade could be HOURS stale during
+        // extended hours, and latestQuote could come back with ap:0. SIP fixes price, volume and
+        // trade count in one move, and lets the 20-day average below use one feed unconditionally.
         var snapMap={};
         for(var batch=0;batch<rawActives.length;batch+=50){
           var chunk=rawActives.slice(batch,batch+50).map(function(a){return a.symbol;}).join(',');
           try{
             var rs=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-              'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=iex','X-Alpaca-Base':'data'}});
+              'X-Alpaca-Path':'/v2/stocks/snapshots?symbols='+encodeURIComponent(chunk)+'&feed=sip','X-Alpaca-Base':'data'}});
             if(rs.ok){var ds=await rs.json();Object.assign(snapMap,ds);}
           }catch(e2){}
         }
@@ -13375,13 +13383,17 @@ function MostActivesPage(p){
           for(var ai2=0;ai2<rawActives.length;ai2++){var m3=mcMap[rawActives[ai2].symbol];rawActives[ai2].marketCap=m3?m3.mc:null;rawActives[ai2].tickerType=m3?m3.tt:null;}
         }catch(e3){}
         await polygonFillMcap(rawActives);
-        // 20-day avg volume — feed must MATCH the numerator's tape so RVOL is meaningful:
-        //  • RTH screener mode: current volume comes from the SIP-based most-actives screener → use SIP.
-        //  • My Lists mode: current volume comes from the IEX snapshot dailyBar → use IEX.
-        // SIP only 403s for TODAY's data, and the average uses prior days only, so we bound end= to
-        // yesterday (keeps SIP off today's data; all returned bars are complete prior sessions).
+        // 20-day avg volume — the feed must MATCH the numerator's tape or RVOL is meaningless.
+        // Both numerators are now SIP (RTH screener mode reads the SIP-based most-actives screener;
+        // My Lists reads the SIP snapshot dailyBar), so the average is SIP unconditionally. This
+        // previously branched to IEX for My Lists to match its IEX snapshot — mixing an IEX numerator
+        // with a SIP denominator was the ~30x RVOL inflation bug, and the branch was the guard against
+        // it. With one feed end-to-end that whole class of mismatch is now impossible rather than
+        // defended against, so the branch is gone.
+        // SIP still 403s for TODAY's data on this historical endpoint, and the average needs prior
+        // days only, so end= stays bounded to yesterday (all returned bars are complete sessions).
         try{
-          var avgFeed=(session==='mylists')?'iex':'sip';
+          var avgFeed='sip';
           var startDate=new Date(Date.now()-40*86400000).toISOString().split('T')[0];
           var endDateAvg=new Date(Date.now()-86400000).toISOString().split('T')[0]; // yesterday
           for(var vBatch=0;vBatch<rawActives.length;vBatch+=50){
