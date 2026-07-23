@@ -13581,22 +13581,24 @@ function MostActivesPage(p){
               color:session===s[0]?C.gold:C.txtDim}}>{s[1]}</button>;
         })}
       </div>
-      {/* One compact control row: Top N + Type + Refresh + Auto-refresh. These were previously two
-          rows, but removing the By Volume / By Trades toggle in v569 left both half empty and the
-          Refresh button wrapping onto a line of its own. Refresh sits directly after the controls
-          it re-runs; Auto-refresh stays pushed right via marginLeft:auto. */}
+      {/* One compact control row: Top N + Type + Refresh + Auto-refresh, all inline and allowed to
+          wrap naturally. Auto-refresh is NOT pinned right — marginLeft:auto consumed all the slack
+          in the flex row, which forced it onto a line of its own on narrow screens and wasted a
+          full row. Everything now packs left and wraps only when genuinely out of width. */}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {[10,20,50,100].map(function(n){
             return <button key={n} onClick={function(){setTopN(n);}}
-              style={{padding:'6px 10px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
+              style={{padding:'5px 8px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
                 border:'1px solid '+(topN===n?C.accent+'66':C.border),
                 background:topN===n?C.accent+'10':'transparent',
                 color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
           })}
         </div>}
-        {session!=='shortlist'&&<span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>}
-        {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
+        {/* Label + buttons wrapped together so "Type:" can never wrap away from the buttons it
+            labels, which is what left it orphaned at the end of the Top-N row. */}
+        {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
           {[['all','All'],['stocks','Stocks'],['etf','ETFs']].map(function(t){
             return <button key={t[0]} onClick={function(){setAssetType(t[0]);}}
               style={{padding:'4px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
@@ -13606,11 +13608,11 @@ function MostActivesPage(p){
           })}
         </div>}
         <button onClick={function(){if(!loading)setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
-          style={{padding:'6px 14px',minWidth:78,textAlign:'center',border:'none',borderRadius:6,background:'linear-gradient(135deg,#ffb020,#e09000)',
-            color:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer',opacity:loading?0.7:1,transition:'opacity 0.2s'}}>
+          style={{padding:'5px 12px',minWidth:66,textAlign:'center',border:'none',borderRadius:6,background:'linear-gradient(135deg,#ffb020,#e09000)',
+            color:'#000',fontFamily:F,fontSize:9,fontWeight:700,cursor:loading?'default':'pointer',opacity:loading?0.7:1,transition:'opacity 0.2s'}}>
           {loading?'\u21BB Refresh':'Refresh'}
         </button>
-        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:4}}>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>Auto-refresh</span>
           <div onClick={function(){setAutoRefresh(!autoRefresh);}}
             style={{width:32,height:16,borderRadius:8,cursor:'pointer',position:'relative',transition:'background 0.2s',
@@ -13641,7 +13643,7 @@ function MostActivesPage(p){
         <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
         <input value={maxCap} onChange={function(e){setMaxCap(e.target.value);}} placeholder="Max (B)" type="number" step="0.1"
           style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
-        <span style={{fontSize:7,fontFamily:F,color:C.border}}>in billions</span>
+        <span style={{fontSize:7.5,fontFamily:F,color:C.txtDim,opacity:0.9}}>in billions</span>
       </div>}
 
       {/* Trade count filter */}
@@ -13652,7 +13654,7 @@ function MostActivesPage(p){
         <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
         <input value={maxTrades} onChange={function(e){setMaxTrades(e.target.value);}} placeholder="Max" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((maxTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
-        <span style={{fontSize:7,fontFamily:F,color:C.border}}>this session</span>
+        <span style={{fontSize:7.5,fontFamily:F,color:C.txtDim,opacity:0.9}}>this session</span>
       </div>}
 
       {/* Average trade count filter (typical per session, not this session) */}
@@ -13663,7 +13665,7 @@ function MostActivesPage(p){
         <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
         <input value={maxAvgTrades} onChange={function(e){setMaxAvgTrades(e.target.value);}} placeholder="Max" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((maxAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
-        <span style={{fontSize:7,fontFamily:F,color:C.border}}>typical per session</span>
+        <span style={{fontSize:7.5,fontFamily:F,color:C.txtDim,opacity:0.9}}>typical per session</span>
       </div>}
     </div>
 
