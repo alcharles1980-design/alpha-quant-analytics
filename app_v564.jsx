@@ -13125,7 +13125,12 @@ function MostActivesPage(p){
   // for now — pre-market data is too thin/unavailable on the current feeds to make an early-RTH
   // default useful, so it defaulted to yesterday's close during the 4AM-9:30AM dead window.
   var s13=useState('overnight'),session=s13[0],setSession=s13[1];
-  var s17=useState('trade_count'),tblSort=s17[0],setTblSort=s17[1];
+  // Default table sort: TRADES VS AVERAGE (relTrades), not raw trade count. Raw counts just rank
+  // the perpetually-liquid names in the same order every session — on 2026-07-22 pre-market the
+  // top of the raw list was SOXL/MU/SNDK running at 80-98% of their OWN normal, i.e. quieter than
+  // usual, while SMCI at 1,027% sat 6th. Ranking by the ratio surfaces what is UNUSUAL, which is
+  // the question every one of these tabs exists to answer.
+  var s17=useState('relTrades'),tblSort=s17[0],setTblSort=s17[1];
   var s18=useState(true),tblDesc=s18[0],setTblDesc=s18[1];
   // Shortlist: cross-session carry-over signal (after-market -> overnight -> pre-market -> RTH).
   // Held separately from `actives` because its rows have a different shape entirely (one row per
@@ -13577,7 +13582,9 @@ function MostActivesPage(p){
             return <button key={m} onClick={function(){setSortBy(m);
                 // Overnight orders client-side (the whole session is already loaded), so drive the
                 // table sort directly instead of relying on a refetch to reorder.
-                if(session==='overnight'||session==='premarket'||session==='aftermarket'){setTblSort(m==='trades'?'trade_count':'volume');setTblDesc(true);}
+                // Drive the RATIO columns, matching the default sort: these tabs are about unusual
+                // activity, so By Trades/By Volume mean "vs that stock's own average", not raw counts.
+                if(session==='overnight'||session==='premarket'||session==='aftermarket'){setTblSort(m==='trades'?'relTrades':'relVol');setTblDesc(true);}
               }}
               style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
                 border:'1px solid '+(sortBy===m?C.gold+'66':C.border),
