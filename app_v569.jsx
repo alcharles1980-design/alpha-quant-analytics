@@ -13089,7 +13089,14 @@ function MostActivesPage(p){
   var s2=useState(null),movers=s2[0],setMovers=s2[1];
   var s3=useState(false),loading=s3[0],setLoading=s3[1];
   var s4=useState(null),err=s4[0],setErr=s4[1];
-  var s5=useState('trades'),sortBy=s5[0],setSortBy=s5[1];
+  // Alpaca's most-actives screener universe selector. On RTH this is NOT a sort — 'by' decides
+  // WHICH ~100 stocks the screener returns, so it is a universe choice. Fixed at 'trades' rather
+  // than exposed as a toggle: trades out-predicted volume in every session tested (AM .248 vs .150,
+  // OVN .274 vs .236, PM .306 vs .288), and it matches the table's relTrades default sort. The two
+  // universes overlap ~73%, so a handful of volume-only names are traded away for consistency.
+  // The session tabs (overnight/pre/after-market) ignore this entirely — they load the whole
+  // session from Supabase and order client-side.
+  var sortBy='trades';
   var s6=useState(100),topN=s6[0],setTopN=s6[1];
   var s7=useState(null),lastUpdated=s7[0],setLastUpdated=s7[1];
   var s8=useState('2'),minPrice=s8[0],setMinPrice=s8[1];
@@ -13235,8 +13242,8 @@ function MostActivesPage(p){
             // server-side and THEN filtered client-side by price/mcap/type — so with the default
             // filters a "Top 100" request yielded ~47 visible rows while ~480 qualifying names sat
             // below the fetch cutoff, permanently invisible. Ordering is also done client-side now,
-            // so toggling By Volume / By Trades reorders in memory instead of refetching (and can no
-            // longer return a different set of stocks for each sort).
+            // so sorting reorders in memory instead of refetching (and can no longer return a
+            // different set of stocks for each sort). Column headers are the sort control here.
             var ovnUrl=SB_URL+'/rest/v1/'+ovnTable+'?session_date=eq.'+ovnDate
               +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct,market_cap,ticker_type'
               +'&order=trades.desc&limit=5000';
@@ -13380,15 +13387,13 @@ function MostActivesPage(p){
   };
 
   // Overnight reads from Supabase and needs no Alpaca credentials; every other session does.
-  // sortBy is passed to Alpaca's screener for RTH/My Lists, so those must refetch when it changes —
-  // but Overnight now fetches the whole session and orders client-side, so it shouldn't. Feeding a
-  // constant into the dep array for overnight keeps it from refetching (and re-running the whole
-  // market-cap enrichment) just to reorder rows already in memory.
-  // Overnight and pre-market both read pre-ranked tables from Supabase and need no Alpaca
-  // credentials; RTH and My Lists call Alpaca directly.
+  // Only RTH calls Alpaca directly; the session tabs read pre-ranked tables from Supabase and the
+  // AI Predictor uses its own RPC, so none of those need credentials.
+  // sortBy is a constant now (the By Volume / By Trades toggle was removed), so it is no longer a
+  // refetch trigger — dropping it from the dep array keeps RTH from re-running the whole
+  // market-cap enrichment for no reason.
   var needsAlpaca=(session!=='overnight'&&session!=='premarket'&&session!=='aftermarket'&&session!=='shortlist');
-  var sortDep=needsAlpaca?sortBy:'';
-  useEffect(function(){if(session==='shortlist')return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,refreshTrigger]);
+  useEffect(function(){if(session==='shortlist')return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[topN,autoRefresh,p.alpKey,p.alpSecret,session,refreshTrigger]);
 
   // Keep a ref to the latest fetchData so the interval always calls current state.
   var fetchRef=useRef(fetchData);fetchRef.current=fetchData;
@@ -13578,21 +13583,6 @@ function MostActivesPage(p){
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
-          {['volume','trades'].map(function(m){
-            return <button key={m} onClick={function(){setSortBy(m);
-                // Overnight orders client-side (the whole session is already loaded), so drive the
-                // table sort directly instead of relying on a refetch to reorder.
-                // Drive the RATIO columns, matching the default sort: these tabs are about unusual
-                // activity, so By Trades/By Volume mean "vs that stock's own average", not raw counts.
-                if(session==='overnight'||session==='premarket'||session==='aftermarket'){setTblSort(m==='trades'?'relTrades':'relVol');setTblDesc(true);}
-              }}
-              style={{padding:'6px 12px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
-                border:'1px solid '+(sortBy===m?C.gold+'66':C.border),
-                background:sortBy===m?C.gold+'10':'transparent',
-                color:sortBy===m?C.gold:C.txtDim}}>{m==='volume'?'By Volume':'By Trades'}</button>;
-          })}
-        </div>}
-        {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {[10,20,50,100].map(function(n){
             return <button key={n} onClick={function(){setTopN(n);}}
               style={{padding:'6px 10px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
@@ -13779,7 +13769,7 @@ function MostActivesPage(p){
     {/* Most Actives Table */}
     {session!=='shortlist'&&filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
-        {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
+        {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':'Most Active Stocks'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
       <div style={{overflowX:'auto'}}>
         <table style={Object.assign({width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'},freeze?{minWidth:900}:{})}>
           <thead><tr style={{borderBottom:'2px solid '+C.border}}>
