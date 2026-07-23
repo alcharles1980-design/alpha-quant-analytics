@@ -18544,15 +18544,6 @@ function CompanyFundamentalsPage(p){
     return rows;
   };
 
-  // Auto-load when arriving via a '#multiviewcharts:TICKER' deep link, so the quick link lands on
-  // rendered charts rather than a pre-filled box the user still has to submit. Guarded by a ref so
-  // it fires once per mount and never re-triggers on later state changes.
-  var deepRan=useRef(false);
-  useEffect(function(){
-    if(deepRan.current)return;
-    if(p.initialTicker&&p.apiKey){deepRan.current=true;run(p.initialTicker);}
-  },[p.initialTicker,p.apiKey]);
-
   var run=function(tkArg){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
@@ -18887,6 +18878,15 @@ function MultiViewChartsPage(p){
     });};
     return step(url).then(function(){return all;});
   };
+
+  // Auto-load when arriving via a '#multiviewcharts:TICKER' deep link (the Most Actives quick
+  // link), so it lands on rendered charts rather than a pre-filled box awaiting submission.
+  // Ref-guarded to fire once per mount; waits for the Polygon key because run() bails without one.
+  var deepRan=useRef(false);
+  useEffect(function(){
+    if(deepRan.current)return;
+    if(p.initialTicker&&p.apiKey){deepRan.current=true;run(p.initialTicker);}
+  },[p.initialTicker,p.apiKey]);
 
   var run=function(tkArg){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
