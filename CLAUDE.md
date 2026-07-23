@@ -389,6 +389,26 @@ Edge Function survives as an orphan.
 
 ---
 
+**Weight-tuning dataset** (backend-only): `signal_chains` — one row per ticker-day with the
+full four-session chain plus RTH outcomes (3,279 rows, 887 tickers, 6 days). Rebuild with
+`select rebuild_signal_chains();`. Source RTH bars live in `signal_rth_bars` (38k rows, SIP
+daily, trailing-20-**session** baselines, not calendar days). Test weight sets with
+`test_weights3(am_trd, am_vol, ovn_trd, ovn_vol, pm_trd, pm_vol, gap, hit_rth, top_n, min_avg)`.
+Combined ~6 MB.
+
+Measured against **RTH trades ≥120% of trailing-20-session average** (base rate 12.2%):
+standalone log-log correlations are pm_trd .306 > ovn_trd .274 > am_trd .248 > gap .203, with
+am_vol weakest at .150. Cross-session correlations are low (.30–.35) so the legs are
+independent, but *within* a session trades and volume are collinear (pm .857, ovn .752,
+am .317) — after-market is the only place volume adds much. Best set found was
+**PM 45 / OVN 30 / AM 25** (80% top-5, 70% top-10) versus 63%/60% for the AM+OVN-only weights
+actually in production. Every one of the 6 days beat its own base rate. The exact split
+matters little — variants cluster within a few points — what matters is including pre-market
+and requiring corroboration across sessions. **Note the target choice dominates the headline
+number**: the same model scores 65% at ≥120%, 50% at ≥150%, 33% at ≥200%. Also note this
+optimises for *activity*, not range or tradability — `avg_range_pct` barely moves across
+targets, so it is not what the ranking selects for.
+
 **AI Predictor scoring weights** (`shortlist_signal` RPC, backend-only — not in the repo):
 after-market 40 (28 trades + 12 volume), overnight 55 (38 trades + 17 volume), gap kicker 5.
 Overnight intentionally outweighs after-market: measured standalone discrimination was
