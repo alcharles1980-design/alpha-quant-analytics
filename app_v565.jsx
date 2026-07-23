@@ -13703,7 +13703,11 @@ function MostActivesPage(p){
           <span style={{color:C.gold}}>{'\u25CF'} BUILDING {'\u2014'} overnight still in progress, can only rise</span>
           <span style={{color:C.blue}}>{'\u25CF'} WATCH {'\u2014'} after-market fired, overnight not confirming</span>
         </div>
-        {slUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {slUpdated}{shortlist?' \u2014 '+shortlist.length+' names':''}{slPhase?<span style={{color:slPhase==='PREMARKET'?C.accent:C.gold,fontWeight:600}}>{' \u2014 '}{slPhase==='PREMARKET'?'PRE-MARKET weighting (all three sessions)':'OVERNIGHT weighting (pre-market not yet open)'}</span>:null}</div>}
+        {/* Phase label describes which SESSIONS ARE COUNTING, not a weighting scheme. The three
+            legs are summed with equal weight — there are no per-session multipliers. What changes
+            with the clock is only whether pre-market exists yet, since it contributes 0 before 4 AM
+            and scores therefore rise once it opens. */}
+        {slUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {slUpdated}{shortlist?' \u2014 '+shortlist.length+' names':''}{slPhase?<span style={{color:slPhase==='PREMARKET'?C.accent:C.gold,fontWeight:600}}>{' \u2014 '}{slPhase==='PREMARKET'?'counting all 3 sessions (after-market + overnight + pre-market)':'counting 2 of 3 sessions (after-market + overnight) \u2014 pre-market opens 4:00 AM ET'}</span>:null}</div>}
         {slErr&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>AI Predictor unavailable: {slErr}</div>}
       </div>
 
