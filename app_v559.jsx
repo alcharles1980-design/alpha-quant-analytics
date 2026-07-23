@@ -13559,7 +13559,7 @@ function MostActivesPage(p){
     <div style={card}>
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['shortlist','\u2605 Shortlist']].map(function(s){
+        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['shortlist','\u2605 AI Predictor']].map(function(s){
           return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
             style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
               border:'1px solid '+(session===s[0]?C.gold:C.border),
@@ -13681,7 +13681,7 @@ function MostActivesPage(p){
         cutoff would imply more precision than the sample supports. */}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
-        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} Carry-Over Shortlist</div>
+        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} AI Predictor</div>
         <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
           Ranks names whose after-market activity carried into the overnight session {'\u2014'} the pattern that preceded elevated pre-market and regular-session activity in testing. Both legs matter: after-market alone, or overnight alone, performed near baseline. Volume is scored alongside trades because high trade counts without matching volume is churn (in testing that cohort had a <b>smaller</b> intraday range than doing nothing).
         </div>
@@ -13691,7 +13691,7 @@ function MostActivesPage(p){
           <span style={{color:C.blue}}>{'\u25CF'} WATCH {'\u2014'} after-market fired, overnight not confirming</span>
         </div>
         {slUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {slUpdated}{shortlist?' \u2014 '+shortlist.length+' names':''}</div>}
-        {slErr&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>Shortlist unavailable: {slErr}</div>}
+        {slErr&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>AI Predictor unavailable: {slErr}</div>}
       </div>
 
       {slLoading&&!shortlist&&<div style={card}><div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Scoring sessions...</div></div>}
