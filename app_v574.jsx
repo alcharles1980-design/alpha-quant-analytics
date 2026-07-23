@@ -13288,6 +13288,13 @@ function MostActivesPage(p){
           // can never break the main table. Overnight only for now; the other session types are
           // not calibrated in session_pace_curve yet.
           if(ovnDate){
+            // NOTE: no client-side limit is possible here — PostgREST hard-caps RPC delivery at
+            // 1,000 rows and neither ?limit= nor a Range header raises it (server replied
+            // `content-range: 0-999/1305`). The bound is enforced INSIDE the RPC instead: it now
+            // returns only rows that carry a real projection, ordered by trades, capped at 900.
+            // Previously it returned all ~1,305 including baseline-less rows, so ~305 were silently
+            // dropped and their ON PACE cell showed a dash that looked like the suppression rules
+            // firing rather than missing data — and which tickers got cut shifted between calls.
             fetch(SB_URL+'/rest/v1/rpc/session_pace_ratio',{method:'POST',
               headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
               body:JSON.stringify({stype:(amMode?'aftermarket':pmMode?'premarket':'overnight'),sdate:ovnDate})})
