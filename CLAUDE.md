@@ -536,6 +536,24 @@ capped, so no single leg can carry the score alone. Sample sizes are small enoug
   selects for *activity*. If it is meant to feed grid deployment, retargeting on
   range is the honest next step.
 
+**Universe asymmetry between the session scanners — measured, and deliberately left alone.**
+Overnight scans the full `market_universe_full` (~11,000 names); pre-market and after-market
+share `premarket_scan_universe()` (~2,664 = chop screener ∪ last overnight session). So a name
+quiet in the chop screener that also did not trade overnight is invisible to both, and nothing
+measures how often that matters. Overnight surfaced 195 names on 2026-07-23 that pre-market
+could not see, 14 of them with 500+ trades.
+
+Checked whether after-market activity was being lost this way: across all 10 held sessions,
+**zero** names with 500+ after-market trades were absent from the pre-market universe, and the
+busiest ever excluded did 210 trades. But that result is partly circular — `aftermarket_actives`
+is itself built from the same universe function, so a name outside it is never scanned
+after-market either and cannot show up as a miss. The zeros prove nothing is *wrongly* excluded
+among names we can see; they do not bound what we cannot see.
+
+Fix if ever wanted: widen pre/after-market to the full universe, matching overnight. Cost is
+~4x the API calls per scan, and pre-market runs every 3 minutes. **Reviewed Jul 23 2026 and
+left as is** — do not re-investigate without a specific reason.
+
 ### Older, still open
 
 - **Change B (queued):** High/Low Levels historical bars still `feed=iex`
