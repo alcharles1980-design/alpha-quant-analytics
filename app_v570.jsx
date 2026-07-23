@@ -13581,6 +13581,10 @@ function MostActivesPage(p){
               color:session===s[0]?C.gold:C.txtDim}}>{s[1]}</button>;
         })}
       </div>
+      {/* One compact control row: Top N + Type + Refresh + Auto-refresh. These were previously two
+          rows, but removing the By Volume / By Trades toggle in v569 left both half empty and the
+          Refresh button wrapping onto a line of its own. Refresh sits directly after the controls
+          it re-runs; Auto-refresh stays pushed right via marginLeft:auto. */}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {[10,20,50,100].map(function(n){
@@ -13591,14 +13595,6 @@ function MostActivesPage(p){
                 color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
           })}
         </div>}
-        <button onClick={function(){if(!loading)setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
-          style={{padding:'6px 14px',minWidth:78,textAlign:'center',border:'none',borderRadius:6,background:'linear-gradient(135deg,#ffb020,#e09000)',
-            color:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer',opacity:loading?0.7:1,transition:'opacity 0.2s'}}>
-          {loading?'\u21BB Refresh':'Refresh'}
-        </button>
-      </div>
-      {/* Asset type + Auto-refresh row */}
-      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,flexWrap:'wrap'}}>
         {session!=='shortlist'&&<span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>}
         {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {[['all','All'],['stocks','Stocks'],['etf','ETFs']].map(function(t){
@@ -13609,6 +13605,11 @@ function MostActivesPage(p){
                 color:assetType===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;
           })}
         </div>}
+        <button onClick={function(){if(!loading)setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
+          style={{padding:'6px 14px',minWidth:78,textAlign:'center',border:'none',borderRadius:6,background:'linear-gradient(135deg,#ffb020,#e09000)',
+            color:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer',opacity:loading?0.7:1,transition:'opacity 0.2s'}}>
+          {loading?'\u21BB Refresh':'Refresh'}
+        </button>
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>Auto-refresh</span>
           <div onClick={function(){setAutoRefresh(!autoRefresh);}}
