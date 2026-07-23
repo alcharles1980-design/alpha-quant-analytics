@@ -13716,6 +13716,7 @@ function MostActivesPage(p){
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>OVERNIGHT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>OVERNIGHT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>SHARES vs AVG</div></th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRE-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRE-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>SHARES vs AVG</div></th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MARKET<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>CAP</div></th>
             </tr></thead>
             <tbody>
@@ -13746,6 +13747,7 @@ function MostActivesPage(p){
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.ovnTrd>=200?C.accent:C.txt,fontWeight:r.ovnTrd>=200?700:400}}>{pct(r.ovnTrd)}{r.ovnPartial?<span title="Overnight session still in progress" style={{color:C.gold,fontSize:7}}> {'\u25CB'}</span>:null}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.ovnVol>=200?C.accent:C.txtDim}}>{pct(r.ovnVol)}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.pmTrd>=200?C.accent:C.txtDim}}>{pct(r.pmTrd)}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.pmVol>=200?C.accent:C.txtDim}}>{pct(r.pmVol)}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{r.marketCap?fmtVol(r.marketCap):'\u2014'}</td>
                 </tr>;
               })}
