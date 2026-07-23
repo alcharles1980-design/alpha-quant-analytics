@@ -13486,6 +13486,20 @@ function MostActivesPage(p){
   // the overnight and pre-market tables carry these, so both views show them; RTH does not.
   var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='aftermarket')||(session==='mylists'&&listSession==='overnight');
 
+  // Does THIS session have any usable per-ticker baseline yet? The avg_* columns are built from a
+  // stock's OWN prior sessions in the same table, so a newly-created session table (or one whose
+  // retention window has just been cleared) legitimately has avgTrades null on every single row.
+  // Detected once per render rather than per row.
+  //
+  // This matters because the Avg Trades filter below excludes null avgTrades whenever a bound is
+  // set — correct when SOME rows have history ("no history" can't satisfy "typically trades 100+"),
+  // but catastrophic when NO row does: the default min of 100 then rejects 100% of the table and
+  // the page reads "No stocks match the current filters" while sitting on a full session. That is
+  // exactly what the After-Market tab did on launch (2,673 names, every avg_trades null, zero rows
+  // shown). When no baseline exists anywhere, the filter is skipped instead and a notice is shown.
+  var hasAnyBaseline=false;
+  if(actives){for(var hb=0;hb<actives.length;hb++){var hbv=actives[hb].avgTrades;if(typeof hbv==='number'&&isFinite(hbv)&&hbv>0){hasAnyBaseline=true;break;}}}
+
   // Filter actives by price, market cap, and asset type
   var filtered=actives?actives.filter(function(a){
     var pr=a.price||0;
@@ -13513,9 +13527,13 @@ function MostActivesPage(p){
     // the Trades filter above. A null avgTrades means the stock has no prior sessions on record —
     // it's excluded when a bound is set, since "no history" can't satisfy "typically trades N+".
     // Those names are visible with the filter cleared, and the SESSIONS column shows the basis.
+    // EXCEPTION: if NO row in this session has a baseline yet (hasAnyBaseline false — new session
+    // table still accumulating history), the whole filter is skipped. Applying it would reject
+    // every row and render an empty page over a full session, which reads as a broken scanner
+    // rather than as missing history.
     var mnA=(minAvgTrades===''||minAvgTrades==null)?null:parseFloat(minAvgTrades);
     var mxA=(maxAvgTrades===''||maxAvgTrades==null)?null:parseFloat(maxAvgTrades);
-    if((mnA!=null&&isFinite(mnA))||(mxA!=null&&isFinite(mxA))){
+    if(hasAnyBaseline&&((mnA!=null&&isFinite(mnA))||(mxA!=null&&isFinite(mxA)))){
       var at=(typeof a.avgTrades==='number'&&isFinite(a.avgTrades))?a.avgTrades:null;
       if(at===null)return false;
       if(mnA!=null&&isFinite(mnA)&&at<mnA)return false;
@@ -13716,6 +13734,13 @@ function MostActivesPage(p){
       </div>
     </div>
 
+    {/* Baseline-building notice: explains empty AVERAGE / VS AVERAGE columns on a session table
+        that hasn't accumulated prior sessions yet, and states that the Avg Trades filter is
+        inactive so the row count isn't mistaken for a filter result. */}
+    {actives&&actives.length>0&&!hasAnyBaseline&&<div style={{marginBottom:14,padding:'8px 12px',background:C.blue+'12',border:'1px solid '+C.blue+'35',borderRadius:8,color:C.blue,fontSize:8.5,fontFamily:F,lineHeight:1.5}}>
+      Baseline still building for this session. The AVERAGE and VS AVERAGE columns compare each stock against its own prior sessions, and none are on record yet, so they show {'\u2014'}. The Avg Trades filter is inactive until a baseline exists (otherwise it would hide every row). Averages appear from the next session onward.
+    </div>}
+
     {/* Most Actives Table */}
     {filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
@@ -13818,7 +13843,10 @@ function MostActivesPage(p){
     </div>}
 
     {!loading&&actives&&filtered.length===0&&<div style={card}>
-      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>No stocks match the current filters. Try adjusting price range or tier.</div>
+      <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
+        No stocks match the current filters{actives.length?' ('+actives.length+' in this session)':''}.
+        <div style={{marginTop:6,fontSize:8.5,opacity:0.8}}>Try clearing Avg Trades, Trades, or Mkt Cap {'\u2014'} the defaults (min 500 trades, min 100 avg trades, min $0.5B cap, stocks only) are tuned for the Overnight tab and can be restrictive on other sessions.</div>
+      </div>
     </div>}
 
     {loading&&(!actives||actives.length===0)&&<div style={card}>
