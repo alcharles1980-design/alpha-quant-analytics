@@ -13393,6 +13393,10 @@ function MostActivesPage(p){
   // session is live — the RPC returns null once a session completes (rel_trades is already the
   // right answer then) and when under 15% elapsed (the projection multiplier gets too large).
   var s24=useState({}),paceMap=s24[0],setPaceMap=s24[1];
+  // Both explainer sections start COLLAPSED — the table is the point of the page, and the
+  // methodology in particular is reference material rather than something to read every visit.
+  var s25=useState(false),slAboutOpen=s25[0],setSlAboutOpen=s25[1];
+  var s26=useState(false),slMathOpen=s26[0],setSlMathOpen=s26[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var inFlight=useRef(false); // guards against overlapping fetches
@@ -13955,12 +13959,74 @@ function MostActivesPage(p){
         cutoff would imply more precision than the sample supports. */}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
-        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} AI Predictor</div>
-        <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
+        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:8}}>{'\u2605'} AI Predictor</div>
+
+        {/* HOW IT WORKS — plain-language, collapsed by default */}
+        <div onClick={function(){setSlAboutOpen(!slAboutOpen);}}
+          style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',userSelect:'none',padding:'3px 0'}}>
+          <span style={{color:C.accent,fontSize:10,lineHeight:1,transition:'transform 0.15s',
+            transform:slAboutOpen?'rotate(90deg)':'none',display:'inline-block'}}>{'\u25B6'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.6}}>HOW IT WORKS</span>
+        </div>
+        {slAboutOpen&&<div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6,marginTop:6,paddingLeft:16}}>
           Ranks stocks on how far their <b>trade counts</b> across the after-market, overnight and pre-market sessions run above each stock's own normal for that session. Those three percentages are added together, then weighted by the <b>weakest</b> of the three {'\u2014'} so a stock busy across several sessions outranks one that spiked in a single session and went quiet. Names topping this list went on to trade well above their usual regular-session activity in testing.
           <div style={{marginTop:6}}>Three details worth knowing. <b>Trade counts, not share volume</b> {'\u2014'} trades predicted better in every session tested, and the mix of order sizes carried no information at all, so volume is shown for context but not scored. <b>Breadth beats a single spike</b> {'\u2014'} the sessions carry independent information, so the score is deliberately dragged down by whichever session is weakest. A huge after-market reading on its own will not carry a name to the top. <b>Before 4 AM there is no pre-market leg</b>, so scores are built from after-market and overnight alone and will rise once pre-market opens.</div>
-          <div style={{marginTop:6,opacity:0.8}}>This measures <b>activity</b>, not price movement. A high score says a stock is likely to be busy, not that it will move or oscillate {'\u2014'} intraday range showed no relationship to any of these inputs.</div>
+          <div style={{marginTop:6,opacity:0.85}}>This measures <b>activity</b>, not price movement. A high score says a stock is likely to be busy, not that it will move or oscillate {'\u2014'} intraday range showed no relationship to any of these inputs.</div>
+        </div>}
+
+        {/* METHODOLOGY & MATH — the full derivation, collapsed by default */}
+        <div onClick={function(){setSlMathOpen(!slMathOpen);}}
+          style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',userSelect:'none',padding:'3px 0',marginTop:4}}>
+          <span style={{color:C.accent,fontSize:10,lineHeight:1,transition:'transform 0.15s',
+            transform:slMathOpen?'rotate(90deg)':'none',display:'inline-block'}}>{'\u25B6'}</span>
+          <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.6}}>METHODOLOGY &amp; MATH</span>
         </div>
+        {slMathOpen&&<div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.65,marginTop:6,paddingLeft:16}}>
+
+          <div style={{color:C.gold,fontWeight:700,marginBottom:3}}>1. The inputs</div>
+          Each session stores a raw trade count and a trailing average of that stock's own prior sessions of the same type. The relative figure is:
+          <div style={{margin:'4px 0 6px 0',padding:'6px 8px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:5,color:C.txtBright,fontSize:8.5}}>
+            rel = trades_this_session / avg_trades_prior_sessions {'\u00D7'} 100
+          </div>
+          So 100% is normal for that stock, 500% is five times its own typical activity. Normalising this way matters: raw trade counts correlate only 0.09{'\u2013'}0.17 with next-session activity, while the relative figures reach 0.27{'\u2013'}0.35. Baseline liquidity on its own correlates {'\u2212'}0.06 {'\u2014'} being a big stock predicts nothing.
+
+          <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>2. The score</div>
+          <div style={{margin:'4px 0 6px 0',padding:'6px 8px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:5,color:C.txtBright,fontSize:8.5}}>
+            sum = am + ovn + pm<br/>
+            rank = sum {'\u00D7'} {'\u221A'}min(am, ovn, pm)
+          </div>
+          Legs are floored at 1 before the minimum is taken, so a session with no data yields {'\u221A'}1 = 1 rather than zeroing the score. The SUM column shows the plain sum; ranking uses the breadth-weighted value.
+
+          <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>3. Why multiply by the weakest leg</div>
+          A plain sum let one enormous reading carry a name. Measured on live data, after-market supplied <b>77{'\u2013'}100%</b> of the score for nearly every top-ten name, and one stock ranked 3rd on a 5,647% after-market figure with no overnight activity at all. Multiplying by the weakest leg forces activity to be broad.
+          <div style={{marginTop:4}}>The square root rather than the raw minimum is deliberate: plain min pushed that same stock to 41st, which is harsher than the evidence supports. {'\u221A'}min demotes it to 13th instead.</div>
+
+          <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>4. What was tested</div>
+          Backtested over six completed sessions, taking the top ten each day, against the target of <b>regular-hours trades reaching {'\u2265'}120%</b> of that stock's trailing 20-session average. Base rate 12.2%.
+          <table style={{width:'100%',borderCollapse:'collapse',marginTop:5,fontSize:8}}>
+            <tbody>
+              <tr style={{borderBottom:'1px solid '+C.border+'30'}}><td style={{padding:'2px 3px'}}>sum {'\u00D7'} {'\u221A'}min <span style={{color:C.accent}}>(in use)</span></td><td style={{padding:'2px 3px',textAlign:'right',color:C.accent,fontWeight:700}}>76.7%</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.border+'20'}}><td style={{padding:'2px 3px'}}>sum {'\u00D7'} min</td><td style={{padding:'2px 3px',textAlign:'right'}}>75.0%</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.border+'20'}}><td style={{padding:'2px 3px'}}>geometric mean of legs</td><td style={{padding:'2px 3px',textAlign:'right'}}>73.3%</td></tr>
+              <tr style={{borderBottom:'1px solid '+C.border+'20'}}><td style={{padding:'2px 3px'}}>plain sum</td><td style={{padding:'2px 3px',textAlign:'right'}}>70.0%</td></tr>
+              <tr><td style={{padding:'2px 3px'}}>percentile average</td><td style={{padding:'2px 3px',textAlign:'right'}}>66.7%</td></tr>
+            </tbody>
+          </table>
+
+          <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>5. Why trades and not volume</div>
+          Trade counts beat share volume in every session tested (after-market .25 vs .15, overnight .27 vs .24, pre-market .31 vs .29), against both trade-based and volume-based targets. The <i>ratio</i> between them {'\u2014'} average order size {'\u2014'} carries nothing at all ({'\u2212'}0.01). Only the level of participation matters, not its composition.
+
+          <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>6. Eligibility filters</div>
+          A name must have traded at least 500 times in the prior after-market session, hold a baseline of at least 100 average trades, carry a market cap above $0.5B, and be a common share or ADR. Rows whose three-session sum falls at or below 200 are dropped entirely.
+
+          <div style={{color:C.warn,fontWeight:700,margin:'8px 0 3px 0'}}>7. Limits worth knowing</div>
+          <div style={{opacity:0.9}}>
+            {'\u2022'} Tuned on six sessions during earnings season, in-sample. The 76.7% figure is optimistic.<br/>
+            {'\u2022'} Day by day the edge over a plain sum is +2, +3, 0, 0, 0, {'\u2212'}1 {'\u2014'} it comes from two sessions. On sixty observations that sits inside noise, and around eight formulas were tried, so some winner was likely by chance. The reason to prefer this one is the mechanism, not the margin.<br/>
+            {'\u2022'} The target is <b>activity</b>. Nothing tested predicts intraday range or choppiness {'\u2014'} every feature examined scored between {'\u2212'}0.03 and +0.03 against a choppiness measure. Active days are bigger in both range <i>and</i> net direction, not more oscillatory.<br/>
+            {'\u2022'} Pre-market and after-market scan a pre-qualified universe of roughly 2,600 names, not the full market. Overnight scans about 11,000.
+          </div>
+        </div>}
         <div style={{marginTop:8,display:'flex',gap:10,flexWrap:'wrap',fontSize:8,fontFamily:F}}>
           <span style={{color:C.accent}}>{'\u25CF'} CONFIRMED {'\u2014'} both legs settled &amp; above threshold</span>
           <span style={{color:C.gold}}>{'\u25CF'} BUILDING {'\u2014'} overnight still in progress, can only rise</span>
