@@ -389,6 +389,29 @@ Edge Function survives as an orphan.
 
 ---
 
+**Alpaca's real response cap is ~2,000 rows, NOT the 10,000 the `limit` parameter implies.**
+Evidence: a 5-min RTH request returned exactly 2000 bars across 26 tickers with a
+`next_page_token`; an after-market request truncated at 58 tickers / 2,555 bars. Both were far
+under the assumed 10,000. A 60-ticker overnight request succeeded only because BOATS is a thin
+tape — do not generalise from it. Practical limits at 5-min bars: **~30 tickers per request, ~20
+for RTH** (longest session). Always verify `next_page_token is null` — every one of these
+truncations returned **HTTP 200**.
+
+**Cross-source verification** (`verify_vs_alpaca_fetch` → wait → `verify_vs_alpaca_compare`) is
+the only check that tests against Alpaca rather than internal consistency. Three traps, all hit
+during the first audit run:
+1. **BOATS date stamping** — the daily bar for the session beginning 8PM ET is stamped the NEXT
+   calendar date at 00:00Z. Requesting `07-22T00:00Z..23:59Z` returns the bar for **session_date
+   07-23**. Getting this wrong made a healthy pipeline show 10/10 mismatches.
+2. **Minute bars ≠ daily bars.** Summing 1-min bars gives a systematically lower total than the
+   daily aggregate (observed −19% on SNDK) because minute bars exclude trade conditions the daily
+   bar includes. Compare like with like: overnight against `1Day`, pre/after-market against `1Min`
+   (they are sub-windows of the SIP day, so no daily bar can isolate them).
+3. **Daily bars do not exist for a session still in progress** — the endpoint returns
+   `{"bars":{}}`. Daily-bar verification only works on **completed** sessions.
+Verified result on completed data: all 10 tickers within **0.1–0.7%** of Alpaca, all differences
+positive and consistent with our snapshot being ~3 min older than the API call — latency, not error.
+
 **Data integrity framework** (backend-only). `select * from data_integrity_check();` returns 13
 checks across six classes, each targeting a failure that produces **no error** — anything that
 already throws needs no check. Logged to `integrity_log` (non-OK rows only) by pg_cron job 38
