@@ -13128,6 +13128,13 @@ function MostActivesPage(p){
   var s16=useState('rth'),listSession=s16[0],setListSession=s16[1];
   var s17=useState('trade_count'),tblSort=s17[0],setTblSort=s17[1];
   var s18=useState(true),tblDesc=s18[0],setTblDesc=s18[1];
+  // Shortlist: cross-session carry-over signal (after-market -> overnight -> pre-market -> RTH).
+  // Held separately from `actives` because its rows have a different shape entirely (one row per
+  // ticker spanning FOUR sessions, not one session), so it renders its own table.
+  var s19=useState(null),shortlist=s19[0],setShortlist=s19[1];
+  var s20=useState(false),slLoading=s20[0],setSlLoading=s20[1];
+  var s21=useState(null),slErr=s21[0],setSlErr=s21[1];
+  var s22=useState(null),slUpdated=s22[0],setSlUpdated=s22[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var inFlight=useRef(false); // guards against overlapping fetches
@@ -13463,9 +13470,9 @@ function MostActivesPage(p){
   // market-cap enrichment) just to reorder rows already in memory.
   // Overnight and pre-market both read pre-ranked tables from Supabase and need no Alpaca
   // credentials; RTH and My Lists call Alpaca directly.
-  var needsAlpaca=(session!=='overnight'&&session!=='premarket'&&session!=='aftermarket');
+  var needsAlpaca=(session!=='overnight'&&session!=='premarket'&&session!=='aftermarket'&&session!=='shortlist');
   var sortDep=needsAlpaca?sortBy:'';
-  useEffect(function(){if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
+  useEffect(function(){if(session==='shortlist')return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[sortDep,topN,autoRefresh,p.alpKey,p.alpSecret,session,selectedList,listSession,refreshTrigger]);
 
   // Keep a ref to the latest fetchData so the interval always calls current state.
   var fetchRef=useRef(fetchData);fetchRef.current=fetchData;
@@ -13473,6 +13480,7 @@ function MostActivesPage(p){
   // keys are present. (Previously the toggle gated fetches but never ran a timer.)
   useEffect(function(){
     if(!autoRefresh)return;
+    if(session==='shortlist')return; // shortlist has its own poller above
     if(needsAlpaca&&(!p.alpKey||!p.alpSecret))return;
     // Poll a little under each scanner's cadence so new rankings surface promptly without
     // hammering Supabase: overnight-actives runs every 10 min, premarket-actives every 3 min
@@ -13481,6 +13489,41 @@ function MostActivesPage(p){
     var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},everyMs);
     return function(){clearInterval(iv);};
   },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
+
+  // ── SHORTLIST fetch ──────────────────────────────────────────────────────────
+  // Calls the shortlist_signal RPC, which joins after-market (prior day) + overnight + pre-market
+  // server-side and returns a 0-100 score. Done in Postgres rather than the browser because it
+  // spans three tables; shipping the raw rows would be several thousand records for ~15 useful ones.
+  var fetchShortlist=async function(){
+    setSlLoading(true);setSlErr(null);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/rpc/shortlist_signal',{
+        method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
+        body:JSON.stringify({})});
+      if(!r.ok)throw new Error('RPC '+r.status);
+      var d=await r.json();
+      var num=function(x){var n=Number(x);return (x==null||x===''||!isFinite(n))?null:n;};
+      setShortlist((d||[]).map(function(row){
+        return {ticker:row.ticker,sessionDate:row.session_date,
+          amTrd:num(row.am_trd),amVol:num(row.am_vol),amGap:num(row.am_gap),
+          ovnTrd:num(row.ovn_trd),ovnVol:num(row.ovn_vol),
+          pmTrd:num(row.pm_trd),pmVol:num(row.pm_vol),
+          score:num(row.score),confidence:row.confidence,
+          ovnPartial:!!row.ovn_partial,pmPartial:!!row.pm_partial,
+          price:num(row.price),marketCap:num(row.market_cap),tickerType:row.ticker_type};
+      }));
+      setSlUpdated(new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
+    }catch(e){setSlErr(e&&e.message?e.message:'failed');setShortlist([]);}
+    setSlLoading(false);
+  };
+  useEffect(function(){if(session==='shortlist')fetchShortlist();},[session,refreshTrigger]);
+  // Poll while the tab is open. 90s matches the pre/after-market scanner cadence — the underlying
+  // tables refresh every 3 min, so anything tighter just re-reads the same rows.
+  useEffect(function(){
+    if(session!=='shortlist'||!autoRefresh)return;
+    var iv=setInterval(function(){if(!document.hidden)fetchShortlist();},90000);
+    return function(){clearInterval(iv);};
+  },[session,autoRefresh]);
 
   // Governs the extended session columns (GAP %, the two x-AVERAGE ratios, SESSIONS/BASIS). Both
   // the overnight and pre-market tables carry these, so both views show them; RTH does not.
@@ -13608,7 +13651,7 @@ function MostActivesPage(p){
     <div style={card}>
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['mylists','My Lists']].map(function(s){
+        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['mylists','My Lists'],['shortlist','\u2605 Shortlist']].map(function(s){
           return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
             style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
               border:'1px solid '+(session===s[0]?C.gold:C.border),
@@ -13637,7 +13680,7 @@ function MostActivesPage(p){
         })}
       </div>}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        <div style={{display:'flex',gap:4}}>
+        {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {['volume','trades'].map(function(m){
             return <button key={m} onClick={function(){setSortBy(m);
                 // Overnight orders client-side (the whole session is already loaded), so drive the
@@ -13649,8 +13692,8 @@ function MostActivesPage(p){
                 background:sortBy===m?C.gold+'10':'transparent',
                 color:sortBy===m?C.gold:C.txtDim}}>{m==='volume'?'By Volume':'By Trades'}</button>;
           })}
-        </div>
-        <div style={{display:'flex',gap:4}}>
+        </div>}
+        {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {[10,20,50,100].map(function(n){
             return <button key={n} onClick={function(){setTopN(n);}}
               style={{padding:'6px 10px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
@@ -13658,7 +13701,7 @@ function MostActivesPage(p){
                 background:topN===n?C.accent+'10':'transparent',
                 color:topN===n?C.accent:C.txtDim}}>Top {n}</button>;
           })}
-        </div>
+        </div>}
         <button onClick={function(){if(!loading)setRefreshTrigger(refreshTrigger+1);}} disabled={loading}
           style={{padding:'6px 14px',minWidth:78,textAlign:'center',border:'none',borderRadius:6,background:'linear-gradient(135deg,#ffb020,#e09000)',
             color:'#000',fontFamily:F,fontSize:10,fontWeight:700,cursor:loading?'default':'pointer',opacity:loading?0.7:1,transition:'opacity 0.2s'}}>
@@ -13667,8 +13710,8 @@ function MostActivesPage(p){
       </div>
       {/* Asset type + Auto-refresh row */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,flexWrap:'wrap'}}>
-        <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
-        <div style={{display:'flex',gap:4}}>
+        {session!=='shortlist'&&<span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>}
+        {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
           {[['all','All'],['stocks','Stocks'],['etf','ETFs']].map(function(t){
             return <button key={t[0]} onClick={function(){setAssetType(t[0]);}}
               style={{padding:'4px 10px',borderRadius:4,fontSize:8,fontFamily:F,fontWeight:600,cursor:'pointer',
@@ -13676,7 +13719,7 @@ function MostActivesPage(p){
                 background:assetType===t[0]?C.blue+'10':'transparent',
                 color:assetType===t[0]?C.blue:C.txtDim}}>{t[1]}</button>;
           })}
-        </div>
+        </div>}
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>Auto-refresh</span>
           <div onClick={function(){setAutoRefresh(!autoRefresh);}}
@@ -13691,17 +13734,17 @@ function MostActivesPage(p){
       {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
 
       {/* Price filter */}
-      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
+      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Price:</span>
         <input value={minPrice} onChange={function(e){setMinPrice(e.target.value);}} placeholder="Min" type="number" step="0.01"
           style={{width:60,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
         <input value={maxPrice} onChange={function(e){setMaxPrice(e.target.value);}} placeholder="Max" type="number" step="0.01"
           style={{width:60,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
-      </div>
+      </div>}
 
       {/* Market Cap filter */}
-      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Mkt Cap:</span>
         <input value={minCap} onChange={function(e){setMinCap(e.target.value);}} placeholder="Min (B)" type="number" step="0.1"
           style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -13709,10 +13752,10 @@ function MostActivesPage(p){
         <input value={maxCap} onChange={function(e){setMaxCap(e.target.value);}} placeholder="Max (B)" type="number" step="0.1"
           style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{fontSize:7,fontFamily:F,color:C.border}}>in billions</span>
-      </div>
+      </div>}
 
       {/* Trade count filter */}
-      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Trades:</span>
         <input value={minTrades} onChange={function(e){setMinTrades(e.target.value);}} placeholder="Min" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((minTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -13720,10 +13763,10 @@ function MostActivesPage(p){
         <input value={maxTrades} onChange={function(e){setMaxTrades(e.target.value);}} placeholder="Max" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((maxTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{fontSize:7,fontFamily:F,color:C.border}}>this session</span>
-      </div>
+      </div>}
 
       {/* Average trade count filter (typical per session, not this session) */}
-      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Avg Trades:</span>
         <input value={minAvgTrades} onChange={function(e){setMinAvgTrades(e.target.value);}} placeholder="Min" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((minAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -13731,18 +13774,102 @@ function MostActivesPage(p){
         <input value={maxAvgTrades} onChange={function(e){setMaxAvgTrades(e.target.value);}} placeholder="Max" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((maxAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{fontSize:7,fontFamily:F,color:C.border}}>typical per session</span>
-      </div>
+      </div>}
     </div>
 
     {/* Baseline-building notice: explains empty AVERAGE / VS AVERAGE columns on a session table
         that hasn't accumulated prior sessions yet, and states that the Avg Trades filter is
         inactive so the row count isn't mistaken for a filter result. */}
-    {actives&&actives.length>0&&!hasAnyBaseline&&<div style={{marginBottom:14,padding:'8px 12px',background:C.blue+'12',border:'1px solid '+C.blue+'35',borderRadius:8,color:C.blue,fontSize:8.5,fontFamily:F,lineHeight:1.5}}>
+    {session!=='shortlist'&&actives&&actives.length>0&&!hasAnyBaseline&&<div style={{marginBottom:14,padding:'8px 12px',background:C.blue+'12',border:'1px solid '+C.blue+'35',borderRadius:8,color:C.blue,fontSize:8.5,fontFamily:F,lineHeight:1.5}}>
       Baseline still building for this session. The AVERAGE and VS AVERAGE columns compare each stock against its own prior sessions, and none are on record yet, so they show {'\u2014'}. The Avg Trades filter is inactive until a baseline exists (otherwise it would hide every row). Averages appear from the next session onward.
     </div>}
 
+    {/* ── SHORTLIST ────────────────────────────────────────────────────────────
+        Cross-session carry-over signal. Measured over 592 chains (157 tickers, 6 days):
+        after-market >=500% AND overnight >=200% of normal trades -> RTH ran 250% of normal
+        with a 14.2% average range (70% hit rate), vs 83% / 6.5% / 4% for everything else.
+        Either leg ALONE is near baseline (27-36%), which is why both are scored.
+        Scored 0-100 rather than hard-filtered: the winning cohort was only n=10, so a hard
+        cutoff would imply more precision than the sample supports. */}
+    {session==='shortlist'&&<div>
+      <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
+        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} Carry-Over Shortlist</div>
+        <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
+          Ranks names whose after-market activity carried into the overnight session {'\u2014'} the pattern that preceded elevated pre-market and regular-session activity in testing. Both legs matter: after-market alone, or overnight alone, performed near baseline. Volume is scored alongside trades because high trade counts without matching volume is churn (in testing that cohort had a <b>smaller</b> intraday range than doing nothing).
+          <div style={{marginTop:6,color:C.warn,opacity:0.85}}>Signal measured over 6 sessions in July 2026 earnings season, n=10 in the top cohort. Treat as a hypothesis, not a validated edge.</div>
+        </div>
+        <div style={{marginTop:8,display:'flex',gap:10,flexWrap:'wrap',fontSize:8,fontFamily:F}}>
+          <span style={{color:C.accent}}>{'\u25CF'} CONFIRMED {'\u2014'} both legs settled &amp; above threshold</span>
+          <span style={{color:C.gold}}>{'\u25CF'} BUILDING {'\u2014'} overnight still in progress, can only rise</span>
+          <span style={{color:C.blue}}>{'\u25CF'} WATCH {'\u2014'} after-market fired, overnight not confirming</span>
+        </div>
+        {slUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {slUpdated}{shortlist?' \u2014 '+shortlist.length+' names':''}</div>}
+        {slErr&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>Shortlist unavailable: {slErr}</div>}
+      </div>
+
+      {slLoading&&!shortlist&&<div style={card}><div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Scoring sessions...</div></div>}
+
+      {shortlist&&shortlist.length===0&&!slLoading&&<div style={card}>
+        <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>No carry-over candidates for this session. Quiet after-market means nothing to carry forward {'\u2014'} this is the normal state on most days.</div>
+      </div>}
+
+      {shortlist&&shortlist.length>0&&<div style={card}>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
+            <thead><tr style={{borderBottom:'2px solid '+C.border}}>
+              <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim,width:24}}>#</th>
+              <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
+              <th style={{padding:'4px 3px',textAlign:'center',color:C.txtDim,fontSize:6}}></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>SCORE<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>0-100</div></th>
+              <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>STATUS</th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AFTER-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AFTER-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>SHARES vs AVG</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>GAP %<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>SINCE 4PM</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>OVERNIGHT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>OVERNIGHT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>SHARES vs AVG</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRE-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MARKET<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>CAP</div></th>
+            </tr></thead>
+            <tbody>
+              {shortlist.map(function(r,i){
+                var stCol=r.confidence==='CONFIRMED'?C.accent:r.confidence==='BUILDING'?C.gold:r.confidence==='WATCH'?C.blue:C.txtDim;
+                var pct=function(v){return (v!=null&&isFinite(v))?Math.round(v)+'%':'\u2014';};
+                // Escalation marker: pre-market running hotter than overnight means the chain is
+                // still building rather than fading. In testing, escalating names hit 57% vs 29%.
+                var esc=(r.pmTrd!=null&&r.ovnTrd!=null&&r.pmTrd>r.ovnTrd);
+                return <tr key={r.ticker} style={{borderBottom:'1px solid '+C.border+'20'}}>
+                  <td style={{padding:'4px 3px',color:C.txtDim,fontSize:7}}>{i+1}</td>
+                  <td style={{padding:'4px 3px',color:C.gold,fontWeight:700}}>{r.ticker}</td>
+                  <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
+                    <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
+                      style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:10,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
+                    <a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer"
+                      style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:10,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
+                  </td>
+                  <td style={{padding:'4px 3px',textAlign:'right'}}>
+                    <span style={{color:r.score>=70?C.accent:r.score>=45?C.gold:C.txtDim,fontWeight:700,fontSize:10}}>{r.score!=null?r.score.toFixed(0):'\u2014'}</span>
+                    {esc&&<span title="Pre-market running hotter than overnight — chain still building" style={{color:C.accent,fontSize:8,marginLeft:3}}>{'\u2191'}</span>}
+                  </td>
+                  <td style={{padding:'4px 3px',color:stCol,fontWeight:600,fontSize:7}}>{r.confidence}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{r.price?'$'+r.price.toFixed(2):'\u2014'}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.amTrd>=500?C.accent:C.txt,fontWeight:r.amTrd>=500?700:400}}>{pct(r.amTrd)}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.amVol>=200?C.accent:C.txtDim}}>{pct(r.amVol)}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.amGap>0?C.accent:r.amGap<0?C.warn:C.txtDim}}>{(r.amGap!=null&&isFinite(r.amGap))?((r.amGap>=0?'+':'')+r.amGap.toFixed(1)+'%'):'\u2014'}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.ovnTrd>=200?C.accent:C.txt,fontWeight:r.ovnTrd>=200?700:400}}>{pct(r.ovnTrd)}{r.ovnPartial?<span title="Overnight session still in progress" style={{color:C.gold,fontSize:7}}> {'\u25CB'}</span>:null}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.ovnVol>=200?C.accent:C.txtDim}}>{pct(r.ovnVol)}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:r.pmTrd>=200?C.accent:C.txtDim}}>{pct(r.pmTrd)}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{r.marketCap?fmtVol(r.marketCap):'\u2014'}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>}
+    </div>}
+
     {/* Most Actives Table */}
-    {filteredCapped&&filteredCapped.length>0&&<div style={card}>
+    {session!=='shortlist'&&filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
         {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':session==='mylists'?'My List Activity':'Most Active Stocks'} {'\u2014'} {sortBy==='volume'?'by Volume':'by Trade Count'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
       <div style={{overflowX:'auto'}}>
@@ -13842,18 +13969,18 @@ function MostActivesPage(p){
       </div>
     </div>}
 
-    {!loading&&actives&&filtered.length===0&&<div style={card}>
+    {session!=='shortlist'&&!loading&&actives&&filtered.length===0&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
         No stocks match the current filters{actives.length?' ('+actives.length+' in this session)':''}.
         <div style={{marginTop:6,fontSize:8.5,opacity:0.8}}>Try clearing Avg Trades, Trades, or Mkt Cap {'\u2014'} the defaults (min 500 trades, min 100 avg trades, min $0.5B cap, stocks only) are tuned for the Overnight tab and can be restrictive on other sessions.</div>
       </div>
     </div>}
 
-    {loading&&(!actives||actives.length===0)&&<div style={card}>
+    {session!=='shortlist'&&loading&&(!actives||actives.length===0)&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Loading market data...</div>
     </div>}
 
-    {!loading&&!actives&&!err&&<div style={card}>
+    {session!=='shortlist'&&!loading&&!actives&&!err&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
         {!p.alpKey?'Waiting for Alpaca API keys...':'Tap Refresh to load data.'}
       </div>
