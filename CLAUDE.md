@@ -323,7 +323,7 @@ change all eight.
 
 ## 8. Backend shape (verify, don't trust)
 
-**Supabase `haeqzegdlwryvaecanrn`** — ~155 MB / 30% of cap; ~60 tables; ~35 pg_cron
+**Supabase `haeqzegdlwryvaecanrn`** — ~193 MB / 38% of cap; ~60 tables; ~35 pg_cron
 jobs (4 session-actives scanners, chop scan + price refresh, regime-classify, IV
 logger, staggered 3:30–3:41 AM cleanups, Sunday 4 AM vacuums, `db_size_guard` every
 6h); ~18 Edge Functions (`batch-analyze`, `chop-price-refresh`, `regime-classify`,
@@ -335,6 +335,19 @@ not a bug to "fix".
 
 Several tables show 0 rows but hold disk (dead-tuple bloat, ~40 MB reclaimable via
 `VACUUM FULL`). Full Stage 1–4 pipeline tables are empty (only ever NVDA/ONON).
+
+**Session scanner cadences** (all ET; the AI Predictor tab polls every 90s on top):
+- overnight `*/5 0-8 UTC` = every 5 min, 8 PM–4 AM · settle 4:05 AM
+- pre-market `*/3 8-13 UTC` = every 3 min, 4–10 AM weekdays · settle 9:35 AM
+- after-market `*/3 20-23 UTC` = every 3 min, 4–8 PM weekdays · settle 8:05 PM
+
+Overnight was every 10 min with a 4:30 AM settle until v559-era tuning. The settle
+moved to 4:05 AM to close a 30-minute window where the overnight leg had stopped
+updating at 3:59 but was still flagged `is_partial` while pre-market had already
+begun — so the AI Predictor showed a stale, uncommitted overnight leg at ~4:15 AM.
+The settle must stay within the same UTC date as the session stamp (its body uses
+`(now() at time zone 'UTC')::date`) and at/after 08:00 UTC so the function's
+`hUtc < 8` partial test evaluates false and clears the flag.
 
 **Pipeline modes** (`pipeline.js`, via Actions `workflow_dispatch` from Settings
 using a PAT in `app_config`): `nightly`, `hourly`, `backfill`, `autotune`,
