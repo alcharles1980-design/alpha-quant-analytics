@@ -33510,11 +33510,18 @@ function App(){
     if(h&&h.indexOf('cheatsheet:')===0)return h.split(':')[1]||'';
     return '';
   }),csTarget=cst[0],setCsTarget=cst[1];
-  // Deep-link ticker for the embedded-popup pages (Volume Profile / GEX / 24H) when opened
-  // in a new tab via '#<page>:<ticker>'. Parsed on first load so the page preselects the ticker.
+  // Deep-link ticker for the pages that accept one (Volume Profile / GEX / 24H / Multi View
+  // Charts) when opened in a new tab via '#<page>:<ticker>'. Parsed on first load so the page
+  // preselects the ticker.
+  //
+  // NOTE: there are THREE places this pattern appears — the hashchange handler, the initial `page`
+  // resolver, and this initial `deepTk` resolver. All three must list the same pages. Adding a
+  // page to only the first two routes correctly but arrives with an EMPTY ticker, which is exactly
+  // how the Multi View Charts quick link shipped broken in v566/v567: the page opened, nothing was
+  // prefilled, nothing loaded.
   var dlt=useState(function(){
     var h=window.location.hash.slice(1);
-    var m=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
+    var m=h.match(/^(volumeprofile|gexprofile|alpaca24atr|multiviewcharts):(.+)$/);
     return m?m[2]:'';
   }),deepTk=dlt[0],setDeepTk=dlt[1];
   var s2=useState('SOXL'),ticker=s2[0],setTicker=s2[1];
