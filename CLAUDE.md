@@ -370,7 +370,10 @@ Convention: `cached_*` tables have **RLS off**, anon-key readable, `SECURITY DEF
 RPCs. Advisors will flag ~55 `rls_disabled_in_public` — that is the intended design,
 not a bug to "fix".
 
-**But SECURITY DEFINER *writers* must not be anon-executable.** Postgres grants EXECUTE
+**But SECURITY DEFINER *writers* must not be anon-executable.** This includes functions that
+write only incidentally — `data_integrity_check(true)` inserts into `integrity_log`, so it was
+locked to `service_role` too. The cron job still works because it runs as the job owner, not anon.
+ Postgres grants EXECUTE
 to PUBLIC by default on every new function, so a writer RPC is reachable with the anon
 key — which ships in the client bundle and is public by design — unless it is explicitly
 revoked. Found this on `upsert_overnight_actives` / `upsert_premarket_actives` /
