@@ -30,6 +30,13 @@ select jobid, schedule, active, jobname from cron.job order by jobid;
 Also: `list_edge_functions`, and check the menu/route parity (§6) if the change
 touches navigation. **The DB is on the FREE plan — 512 MB hard cap. See §8.**
 
+> **Two hard prohibitions, both learned by taking the database down:**
+> 1. **Never `pg_sleep` inside a query to wait for async results** (§5.2b) — it holds
+>    a pooler connection and starves the small free-plan pool. Poll in a separate
+>    call; wait client-side.
+> 2. **Never run a bulk write without estimating its size first** (§5.2) — a 436 MB
+>    backfill blew the quota and Supabase refused connections.
+
 ---
 
 ## 2. What this app is
@@ -125,6 +132,49 @@ feature dropped entirely.
   128 MB), statement timeouts (anon = 3s via PostgREST) — and raise them with the
   user *before* building.
 
+### 5.2b NEVER use `pg_sleep` to wait for async results — took the DB down Jul 23 2026
+
+**The mistake:** `net.http_get`/`net.http_post` are asynchronous — results land in
+`net._http_response` later. The obvious-looking way to wait is `select pg_sleep(30);
+select ... from net._http_response`. **Do not do this.** `pg_sleep` holds a pooler
+connection open doing nothing for its whole duration.
+
+Over one session I ran sleeps of 45s, 40s, 35s, 30s, 25s, 20s, plus six 12s sleeps
+inside a `DO` block. On the free plan the connection pool is small and pg_cron jobs
+keep firing on schedule (job 24 every 10 min, plus 18/20/21/26). Stacking held
+connections against that starved the pool: `canceling statement due to statement
+timeout` errors, checkpoints ballooning to 211s and 235s (normal is ~13-20s), then
+the database refused connections entirely — MCP queries, *and* scheduled cron work
+stopped appearing in the logs.
+
+**Correct pattern:** fire the request, END the statement, then poll in a SEPARATE
+call later. Each call is short and returns the connection immediately:
+```sql
+-- call 1
+select net.http_get(url:='...') as req_id;
+-- call 2, issued later as its own statement
+select status_code, content from net._http_response where id = <req_id>;
+```
+If real elapsed time is needed between calls, wait OUTSIDE the database (in the
+agent/client), never inside a SQL statement.
+
+**Note this is not a storage problem** and has no billing/grace-period component —
+unlike the Jul 22 quota incident. DB was at 180 MB / 35% of cap throughout. It is
+purely connection availability. Idle connections time out and the pooler recovers on
+its own; if it does not, restart the project from the Supabase dashboard
+(Settings → General → Restart project), which force-closes every connection.
+
+**Diagnosis note:** my first explanation was wrong — I blamed six concurrent
+full-universe scans. The logs disproved it: those six `net.http_post` calls never
+dispatched at all (pg_net was already backed up), and the last real outbound request
+was a cron job 20 minutes earlier. Read the logs before naming a cause. Also: each
+`get_logs` call is itself a connection, so stop probing a saturated pool — every
+check makes it marginally worse.
+
+**Generalise:** anything that holds a DB connection while not doing DB work is a
+liability on a small pool — `pg_sleep`, long transactions, waiting on external I/O
+inside a statement. Do the waiting in the client.
+
 ### 5.3 Timezone / DST
 
 - **Never use manual UTC offsets.** Hardcoded UTC-4 assigned trades to the wrong
@@ -198,8 +248,10 @@ Set a `serverFailed` flag so subsequent days skip the doomed server attempt.
   recompute is paid only during a backfill. Generalise: **any cached aggregate over
   "everything before me" needs a plan for late-arriving earlier rows.**
 - **`net.http_post` is asynchronous** — firing a loop of them does NOT execute in
-  order, even with `pg_sleep` between. Sessions landed scrambled during backfill.
-  Don't rely on dispatch order for correctness; make the target self-correcting.
+  order. Sessions landed scrambled during backfill. Don't rely on dispatch order for
+  correctness; make the target self-correcting. And do NOT space them with
+  `pg_sleep` — see §5.2b, that starves the connection pool. Space them from the
+  client, or fire them and let the forward-recompute fix the ordering.
 - **Build integrity checks BEFORE features.** The DST bug corrupted months of data
   silently; an hourly coverage check would have caught it on the first import.
   Post-fetch (`verifyFetchIntegrity`) and post-save (`verifySaveIntegrity`) checks
