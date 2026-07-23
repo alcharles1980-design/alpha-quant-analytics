@@ -13096,6 +13096,8 @@ function AlertingSystemPage(p){
   var s13=useState(''),twSid=s13[0],setTwSid=s13[1];
   var s14=useState(''),twTok=s14[0],setTwTok=s14[1];
   var s15=useState(''),twFrom=s15[0],setTwFrom=s15[1];
+  var s16=useState(''),twSmsFrom=s16[0],setTwSmsFrom=s16[1];
+  var s17=useState('whatsapp'),newChan=s17[0],setNewChan=s17[1];
 
   var load=function(){
     fetch(SB_URL+'/rest/v1/alert_recipients?select=*&order=added_at.desc&limit=1000',{headers:getSbHeaders()})
@@ -13116,17 +13118,22 @@ function AlertingSystemPage(p){
   var addRecipient=function(){
     if(!newPhone.trim())return;
     setBusy(true);setMsg('');
-    rpc('alert_recipient_upsert',{p_phone:newPhone.trim(),p_label:newLabel.trim()||null,p_active:true})
+    rpc('alert_recipient_upsert',{p_phone:newPhone.trim(),p_label:newLabel.trim()||null,p_active:true,p_channel:newChan})
       .then(function(res){
         setMsg(typeof res==='string'?res:'saved');
         if(typeof res==='string'&&res.indexOf('OK')===0){setNewPhone('');setNewLabel('');}
         load();setBusy(false);
       }).catch(function(){setMsg('failed');setBusy(false);});
   };
-  var delRecipient=function(ph){
+  var delRecipient=function(ph,ch){
     setBusy(true);
-    rpc('alert_recipient_delete',{p_phone:ph}).then(function(){load();setBusy(false);})
+    rpc('alert_recipient_delete',{p_phone:ph,p_channel:ch}).then(function(){load();setBusy(false);})
       .catch(function(){setBusy(false);});
+  };
+  var toggleOptin=function(ph,ch,cur){
+    setBusy(true);
+    rpc('alert_recipient_set_optin',{p_phone:ph,p_channel:ch,p_optin:!cur})
+      .then(function(){load();setBusy(false);}).catch(function(){setBusy(false);});
   };
   var doPreview=function(){
     setBusy(true);setPreview(null);
@@ -13148,7 +13155,8 @@ function AlertingSystemPage(p){
     Promise.all([
       twSid.trim()?put('twilio_sid',twSid.trim()):Promise.resolve(),
       twTok.trim()?put('twilio_token',twTok.trim()):Promise.resolve(),
-      twFrom.trim()?put('twilio_from',twFrom.trim()):Promise.resolve()
+      twFrom.trim()?put('twilio_from',twFrom.trim()):Promise.resolve(),
+      twSmsFrom.trim()?put('twilio_sms_from',twSmsFrom.trim()):Promise.resolve()
     ]).then(function(){setMsg('Twilio credentials saved');setTwSid('');setTwTok('');setBusy(false);})
      .catch(function(){setMsg('failed');setBusy(false);});
   };
@@ -13166,7 +13174,7 @@ function AlertingSystemPage(p){
     <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
       <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>Before you start</div>
       <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
-        WhatsApp requires every recipient to <b>opt in</b> before a business can message them. Adding a number here is not enough on its own.
+        <b>SMS needs no opt-in</b> — add a number and it is sendable immediately. <b>WhatsApp does</b>: Meta enforces consent at the platform level, so adding a number here is not enough on its own.
         <div style={{marginTop:5}}>Using Twilio&apos;s sandbox, each person sends the join code to Twilio&apos;s sandbox number once from their own WhatsApp. In production, each must have messaged your business number within the last 24 hours, or the alert has to use a template Meta has pre-approved.</div>
         <div style={{marginTop:5,color:C.warn,opacity:0.9}}>Numbers that are active but not opted in are skipped at send time and counted separately, so a silent failure is visible rather than mysterious.</div>
       </div>
@@ -13178,7 +13186,8 @@ function AlertingSystemPage(p){
       <div style={{display:'flex',flexDirection:'column',gap:6}}>
         <input value={twSid} onChange={function(e){setTwSid(e.target.value);}} placeholder="Account SID (ACxxxxxxxx...)" style={inp}/>
         <input value={twTok} onChange={function(e){setTwTok(e.target.value);}} placeholder="Auth Token" type="password" style={inp}/>
-        <input value={twFrom} onChange={function(e){setTwFrom(e.target.value);}} placeholder="From number, e.g. +14155238886" style={inp}/>
+        <input value={twFrom} onChange={function(e){setTwFrom(e.target.value);}} placeholder="WhatsApp from-number, e.g. +14155238886" style={inp}/>
+        <input value={twSmsFrom} onChange={function(e){setTwSmsFrom(e.target.value);}} placeholder="SMS from-number (your Twilio number)" style={inp}/>
         <button onClick={saveTwilio} disabled={busy} style={Object.assign({},btn,{background:C.accent,color:'#000',alignSelf:'flex-start'})}>Save credentials</button>
       </div>
       <div style={{marginTop:6,fontSize:7.5,fontFamily:F,color:C.txtDim,opacity:0.8}}>Stored in app_config. The token is write-only from here — it is never read back into the browser.</div>
@@ -13190,6 +13199,10 @@ function AlertingSystemPage(p){
       <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:8}}>
         <input value={newPhone} onChange={function(e){setNewPhone(e.target.value);}} placeholder="+447700900123" style={Object.assign({},inp,{width:160})}/>
         <input value={newLabel} onChange={function(e){setNewLabel(e.target.value);}} placeholder="Label (optional)" style={Object.assign({},inp,{width:150})}/>
+        <select value={newChan} onChange={function(e){setNewChan(e.target.value);}} style={Object.assign({},inp,{width:110})}>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="sms">SMS</option>
+        </select>
         <button onClick={addRecipient} disabled={busy} style={Object.assign({},btn,{background:C.blue,color:'#fff'})}>Add</button>
       </div>
       {msg&&<div style={{fontSize:8.5,fontFamily:F,color:msg.indexOf('INVALID')===0?C.warn:C.accent,marginBottom:6}}>{msg}</div>}
@@ -13198,16 +13211,27 @@ function AlertingSystemPage(p){
         <thead><tr style={{borderBottom:'1px solid '+C.border}}>
           <th style={{textAlign:'left',padding:'4px 3px',color:C.txtDim,fontSize:8}}>PHONE</th>
           <th style={{textAlign:'left',padding:'4px 3px',color:C.txtDim,fontSize:8}}>LABEL</th>
-          <th style={{textAlign:'center',padding:'4px 3px',color:C.txtDim,fontSize:8}}>OPTED IN</th>
+          <th style={{textAlign:'center',padding:'4px 3px',color:C.txtDim,fontSize:8}}>CHANNEL</th>
+          <th style={{textAlign:'center',padding:'4px 3px',color:C.txtDim,fontSize:8}}>READY</th>
           <th style={{textAlign:'right',padding:'4px 3px',color:C.txtDim,fontSize:8}}></th>
         </tr></thead>
         <tbody>{recips.map(function(r){
-          return <tr key={r.phone} style={{borderBottom:'1px solid '+C.border+'20'}}>
+          var isSms=(r.channel==='sms');
+          return <tr key={r.phone+r.channel} style={{borderBottom:'1px solid '+C.border+'20'}}>
             <td style={{padding:'4px 3px',color:C.txtBright}}>{r.phone}</td>
             <td style={{padding:'4px 3px',color:C.txtDim}}>{r.label||'\u2014'}</td>
-            <td style={{padding:'4px 3px',textAlign:'center',color:r.opted_in?C.accent:C.warn,fontWeight:700}}>{r.opted_in?'yes':'NOT YET'}</td>
+            <td style={{padding:'4px 3px',textAlign:'center',color:isSms?C.blue:C.accent,fontWeight:600}}>{isSms?'SMS':'WhatsApp'}</td>
+            <td style={{padding:'4px 3px',textAlign:'center'}}>
+              {isSms
+                ? <span style={{color:C.accent,fontWeight:700}} title="SMS needs no opt-in">yes</span>
+                : <button onClick={function(){toggleOptin(r.phone,r.channel,r.opted_in);}}
+                    title={r.opted_in?'Opted in — click to unset':'Not opted in. Click once they have sent the join code to your Twilio sandbox number.'}
+                    style={{background:'transparent',border:'1px solid '+(r.opted_in?C.accent:C.warn)+'50',borderRadius:4,
+                      color:r.opted_in?C.accent:C.warn,fontFamily:F,fontSize:8,fontWeight:700,padding:'2px 7px',cursor:'pointer'}}>
+                    {r.opted_in?'yes':'NOT YET'}</button>}
+            </td>
             <td style={{padding:'4px 3px',textAlign:'right'}}>
-              <button onClick={function(){delRecipient(r.phone);}} style={{background:'transparent',border:'1px solid '+C.warn+'50',borderRadius:4,color:C.warn,fontFamily:F,fontSize:8,padding:'2px 7px',cursor:'pointer'}}>remove</button>
+              <button onClick={function(){delRecipient(r.phone,r.channel);}} style={{background:'transparent',border:'1px solid '+C.warn+'50',borderRadius:4,color:C.warn,fontFamily:F,fontSize:8,padding:'2px 7px',cursor:'pointer'}}>remove</button>
             </td>
           </tr>;
         })}</tbody>
@@ -13250,8 +13274,10 @@ function AlertingSystemPage(p){
       </table>}
       {preview&&<div style={{marginTop:10,padding:10,background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8}}>
         <div style={{fontSize:8,fontFamily:F,color:C.txtDim,marginBottom:6}}>
-          Preview {'\u2014'} <span style={{color:C.accent}}>{preview.opted_in_count} opted in</span>
-          {preview.not_opted_in_count>0?<span style={{color:C.warn}}>, {preview.not_opted_in_count} not opted in (would be skipped)</span>:null}
+          Would send to <span style={{color:C.accent}}>{preview.wa_ready} WhatsApp</span>
+          {preview.wa_pending>0?<span style={{color:C.warn}}> ({preview.wa_pending} awaiting opt-in, skipped)</span>:null}
+          {' + '}<span style={{color:C.blue}}>{preview.sms_ready} SMS</span>
+          <span style={{opacity:0.75}}>{' \u2014 '}{preview.sms_segments} SMS segment{preview.sms_segments===1?'':'s'} each</span>
         </div>
         <pre style={{margin:0,fontFamily:F,fontSize:9,color:C.txtBright,whiteSpace:'pre-wrap'}}>{preview.preview}</pre>
       </div>}
