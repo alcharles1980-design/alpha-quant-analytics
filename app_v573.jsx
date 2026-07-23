@@ -13287,10 +13287,10 @@ function MostActivesPage(p){
           // Pace ratio is a SEPARATE, additive metric — fetched independently so a failure here
           // can never break the main table. Overnight only for now; the other session types are
           // not calibrated in session_pace_curve yet.
-          if(session==='overnight'&&ovnDate){
+          if(ovnDate){
             fetch(SB_URL+'/rest/v1/rpc/session_pace_ratio',{method:'POST',
               headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
-              body:JSON.stringify({stype:'overnight',sdate:ovnDate})})
+              body:JSON.stringify({stype:(amMode?'aftermarket':pmMode?'premarket':'overnight'),sdate:ovnDate})})
               .then(function(pr){return pr.ok?pr.json():[];})
               .then(function(pd){
                 var mp={};
@@ -13811,7 +13811,7 @@ function MostActivesPage(p){
             {tblTh("avgTrades","AVERAGE",null,null,isOvernightView?"TRADES":"TRADES 20D",isOvernightView?"This stock's TYPICAL trade count for this session type, averaged over previous sessions (excluding the current one). The baseline that TRADES VS AVERAGE compares against.":"This stock's TYPICAL daily trade count over the trailing 20 sessions. The baseline that TRADES VS AVERAGE compares against.")}
             {tblTh("relVol","SHARES",null,null,"VS AVERAGE","Tonight's volume as a PERCENTAGE of this stock's typical overnight volume. 100% = normal. 300% = three times its usual overnight activity by share count.")}
             {tblTh("relTrades","TRADES",null,null,"VS AVERAGE","This session's trade count as a PERCENTAGE of this stock's typical trade count. 100% = normal. Diverges from SHARES VS AVERAGE when order sizes are unusual: high here but low there means many small trades.")}
-            {session==='overnight'&&<th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim,lineHeight:1.15,verticalAlign:'bottom',whiteSpace:'nowrap',fontSize:8}} title="ON PACE FOR: this session's trade count projected to the session close, as a percentage of the stock's own full-session average. TRADES VS AVERAGE compares a PARTIAL count against a FULL-session average, so it reads low until the session ends; this divides out how much of the session has typically elapsed by this point. Blank when the session has finished (the plain ratio is then already correct) or before ~15% elapsed, where the projection would be dominated by a single print."><div>ON PACE</div><div style={{fontSize:6.5,fontWeight:400,color:C.txtDim,opacity:0.75,letterSpacing:0,whiteSpace:'nowrap'}}>FOR SESSION</div></th>}
+            {isOvernightView&&<th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim,lineHeight:1.15,verticalAlign:'bottom',whiteSpace:'nowrap',fontSize:8}} title="ON PACE FOR: this session's trade count projected to the session close, as a percentage of the stock's own full-session average. TRADES VS AVERAGE compares a PARTIAL count against a FULL-session average, so it reads low until the session ends; this divides out how much of the session has typically elapsed by this point. Blank when the session has finished (the plain ratio is then already correct) or before ~15% elapsed, where the projection would be dominated by a single print."><div>ON PACE</div><div style={{fontSize:6.5,fontWeight:400,color:C.txtDim,opacity:0.75,letterSpacing:0,whiteSpace:'nowrap'}}>FOR SESSION</div></th>}
             {tblTh("avgDays","SESSIONS",null,null,"IN AVERAGE","How many previous sessions the averages are based on. Low numbers mean the VS AVERAGE percentages are built on thin history and should be treated with caution.")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
           </tr></thead>
@@ -13841,7 +13841,7 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgTrades?fmtVol(a.avgTrades):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>
-                {session==='overnight'&&<td style={{padding:'4px 3px',textAlign:'right',color:(paceMap[a.symbol]>200?C.warn:paceMap[a.symbol]>120?C.gold:C.txtDim),fontWeight:(paceMap[a.symbol]>150?700:400),fontStyle:'italic'}}>{(paceMap[a.symbol]!=null&&isFinite(paceMap[a.symbol]))?Math.round(paceMap[a.symbol])+'%':'\u2014'}</td>}
+                {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:(paceMap[a.symbol]>200?C.warn:paceMap[a.symbol]>120?C.gold:C.txtDim),fontWeight:(paceMap[a.symbol]>150?700:400),fontStyle:'italic'}}>{(paceMap[a.symbol]!=null&&isFinite(paceMap[a.symbol]))?Math.round(paceMap[a.symbol])+'%':'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:(a.avgDays!=null&&a.avgDays<5)?C.warn:C.txtDim,fontWeight:(a.avgDays!=null&&a.avgDays<5)?700:400}} title={(a.avgDays!=null&&a.avgDays<5)?'Thin history \u2014 treat the x AVG percentages with caution':''}>{a.avgDays!=null?a.avgDays:'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
