@@ -107,6 +107,43 @@ exception, correct-looking UI, wrong data underneath. Assume silence is the dang
   verify `end=` behaviour client-side. v486 had hourly charts cut off from exactly
   this (`limit=5000` truncation).
 
+### 5.1b The three truncation traps — all return HTTP 200
+
+Hit all three in one session. Each produces plausible output with missing data.
+
+| Source | Real cap | Can the client raise it? | How to detect |
+|---|---|---|---|
+| Alpaca bars | **~2,000 rows** (not the 10,000 `limit` accepts) | no — send fewer symbols | `next_page_token is null` |
+| PostgREST **RPC** | **1,000 rows, hard** | **NO** — `?limit=`, `Range:` both ignored | `content-range` total vs delivered |
+| PostgREST **REST read** | 1,000 rows | yes — explicit `&limit=N` | row count vs expectation |
+
+The PostgREST **RPC** case is the nasty one: it is the documented 1,000-row rule in the
+single form where the documented fix does not work. Verified directly — `?limit=10000`
+returned 1000, `Range: 0-4999` returned 1000, and the server replied
+`content-range: 0-999/1305`. **Fix inside the function**: filter to rows the caller can
+actually use, return zero rows early when a global gate fails (rather than emitting 1,300
+nulls), `order by` significance, `limit ~900` for headroom.
+
+Alpaca practical limits at 5-min bars: **~30 tickers per request, ~20 for RTH**. A
+60-ticker overnight request succeeds only because BOATS is a thin tape — never generalise
+from the easiest case.
+
+**Universal rule: after any bulk fetch, verify DELIVERED == EXPECTED before consuming.** A
+count that merely looks reasonable is not evidence.
+
+### 5.1c Prove the comparison before declaring a data fault
+
+My first cross-source audit reported 10/10 mismatches on a healthy pipeline. Three traps:
+- **BOATS date stamping** — the daily bar for a session *beginning* 8PM ET is stamped the
+  NEXT calendar date at 00:00Z. Off-by-one session ⇒ everything mismatches.
+- **Minute bars ≠ daily bars** — summing 1-min bars undercounts vs the daily aggregate
+  (−19% observed) because minute bars exclude conditions the daily bar includes.
+- **Daily bars don't exist mid-session** — endpoint returns `{"bars":{}}`.
+
+Done right, expect small **positive** diffs: all 10 tickers within 0.1–0.7%, every diff
+positive, because the stored snapshot is minutes older than the verification call. That is
+latency, not error.
+
 ### 5.2 Resource limits — think BEFORE building (Jul 22 2026: took the DB down)
 
 A `daily_returns` backfill (3.08M rows, 14,454 tickers × 261 days) grew to **436 MB
