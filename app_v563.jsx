@@ -13419,7 +13419,7 @@ function MostActivesPage(p){
           amTrd:num(row.am_trd),amVol:num(row.am_vol),amGap:num(row.am_gap),
           ovnTrd:num(row.ovn_trd),ovnVol:num(row.ovn_vol),
           pmTrd:num(row.pm_trd),pmVol:num(row.pm_vol),
-          score:num(row.score),confidence:row.confidence,phase:row.phase,
+          score:num(row.score),sumTrades:num(row.sum_trades),confidence:row.confidence,phase:row.phase,
           ovnPartial:!!row.ovn_partial,pmPartial:!!row.pm_partial,
           price:num(row.price),marketCap:num(row.market_cap),tickerType:row.ticker_type};
       }));
@@ -13687,7 +13687,9 @@ function MostActivesPage(p){
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
         <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} AI Predictor</div>
         <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6}}>
-          Ranks names whose after-market activity carried into the overnight session {'\u2014'} the pattern that preceded elevated pre-market and regular-session activity in testing. Both legs matter: after-market alone, or overnight alone, performed near baseline. Volume is scored alongside trades because high trade counts without matching volume is churn (in testing that cohort had a <b>smaller</b> intraday range than doing nothing).
+          Ranks stocks on how far their <b>trade counts</b> across the after-market, overnight and pre-market sessions run above each stock's own normal for that session. The score is simply those three percentages added together {'\u2014'} no weighting, no adjustments. Names topping this list went on to trade well above their usual regular-session activity in testing.
+          <div style={{marginTop:6}}>Three details worth knowing. <b>Trade counts, not share volume</b> {'\u2014'} trades predicted better in every session tested, and the mix of order sizes carried no information at all, so volume is shown for context but not scored. <b>The sessions add up</b> {'\u2014'} each one contributes something the others miss, so a name active across all three ranks far above one that spiked in a single session. <b>Before 4 AM there is no pre-market leg</b>, so scores are built from after-market and overnight alone and will rise once pre-market opens.</div>
+          <div style={{marginTop:6,opacity:0.8}}>This measures <b>activity</b>, not price movement. A high score says a stock is likely to be busy, not that it will move or oscillate {'\u2014'} intraday range showed no relationship to any of these inputs.</div>
         </div>
         <div style={{marginTop:8,display:'flex',gap:10,flexWrap:'wrap',fontSize:8,fontFamily:F}}>
           <span style={{color:C.accent}}>{'\u25CF'} CONFIRMED {'\u2014'} both legs settled &amp; above threshold</span>
@@ -13712,6 +13714,7 @@ function MostActivesPage(p){
               <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>SYMBOL</th>
               <th style={{padding:'4px 3px',textAlign:'center',color:C.txtDim,fontSize:6}}></th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.gold}}>SCORE<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>0-100</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>SUM<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>3 SESSIONS %</div></th>
               <th style={{padding:'4px 3px',textAlign:'left',color:C.txtDim}}>STATUS</th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRICE</th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>AFTER-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
@@ -13743,6 +13746,7 @@ function MostActivesPage(p){
                     <span style={{color:r.score>=70?C.accent:r.score>=45?C.gold:C.txtDim,fontWeight:700,fontSize:10}}>{r.score!=null?r.score.toFixed(0):'\u2014'}</span>
                     {esc&&<span title="Pre-market running hotter than overnight — chain still building" style={{color:C.accent,fontSize:8,marginLeft:3}}>{'\u2191'}</span>}
                   </td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt,fontWeight:600}} title="After-market + overnight + pre-market relative trade counts, added together. This is what the ranking uses.">{r.sumTrades!=null?Math.round(r.sumTrades).toLocaleString()+'%':'\u2014'}</td>
                   <td style={{padding:'4px 3px',color:stCol,fontWeight:600,fontSize:7}}>{r.confidence}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{r.price?'$'+r.price.toFixed(2):'\u2014'}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.amTrd>=500?C.accent:C.txt,fontWeight:r.amTrd>=500?700:400}}>{pct(r.amTrd)}</td>
