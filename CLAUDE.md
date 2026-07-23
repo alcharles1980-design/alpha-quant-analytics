@@ -333,6 +333,19 @@ Convention: `cached_*` tables have **RLS off**, anon-key readable, `SECURITY DEF
 RPCs. Advisors will flag ~55 `rls_disabled_in_public` — that is the intended design,
 not a bug to "fix".
 
+**But SECURITY DEFINER *writers* must not be anon-executable.** Postgres grants EXECUTE
+to PUBLIC by default on every new function, so a writer RPC is reachable with the anon
+key — which ships in the client bundle and is public by design — unless it is explicitly
+revoked. Found this on `upsert_overnight_actives` / `upsert_premarket_actives` /
+`upsert_aftermarket_actives`: an anon POST returned HTTP 200, meaning anyone could
+overwrite the session tables (and, since the forward-recompute change, rewrite every
+later session's averages too). Fixed by revoking from `anon`, `authenticated` **and
+`public`** — revoking from anon alone leaves the PUBLIC grant in place — then granting
+to `service_role`, which is what the scanner Edge Functions authenticate with.
+Verified after: writes 401, `shortlist_signal` and table reads still 200, and a
+scheduled scan wrote successfully post-revoke. **When adding any writer RPC, revoke
+from public/anon and grant only to service_role.**
+
 Several tables show 0 rows but hold disk (dead-tuple bloat, ~40 MB reclaimable via
 `VACUUM FULL`). Full Stage 1–4 pipeline tables are empty (only ever NVDA/ONON).
 
