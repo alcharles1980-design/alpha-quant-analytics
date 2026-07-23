@@ -13114,8 +13114,10 @@ function MostActivesPage(p){
   // spike on one-off news but are normally illiquid: 800 trades tonight against a 50-trade average
   // passes the Trades filter but fails this one. Note the underlying number is a 20-day DAILY
   // average on RTH but a per-session average on overnight/pre-market, so the same threshold is far
-  // more restrictive on the session tabs.
-  var s11d=useState('100'),minAvgTrades=s11d[0],setMinAvgTrades=s11d[1];
+  // more restrictive on the session tabs. Default 1000: on 2026-07-22 that kept 68% of otherwise-
+  // qualifying names on overnight and pre-market, 46% on after-market (whose per-session averages
+  // are structurally smaller). Clearable like any other filter.
+  var s11d=useState('1000'),minAvgTrades=s11d[0],setMinAvgTrades=s11d[1];
   var s11e=useState(''),maxAvgTrades=s11e[0],setMaxAvgTrades=s11e[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
