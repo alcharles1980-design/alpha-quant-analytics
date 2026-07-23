@@ -184,6 +184,22 @@ Set a `serverFailed` flag so subsequent days skip the doomed server attempt.
 
 ### 5.8 Process lessons
 
+- **Derived data computed at write time goes stale when writes arrive out of order.**
+  The session-actives RPCs computed `avg_trades`/`avg_volume`/`rel_*` from
+  `session_date < target_date` at insert time. Correct only if no *later* session
+  already exists — so any backfill, settle re-run, or async dispatch completing out
+  of sequence left every following session frozen against a baseline that excluded
+  the new one. Silent: columns populated, just wrong, with only `avg_sessions`
+  betraying it. Hit twice in one session (after-market and pre-market backfills).
+  **Fixed** by a forward recompute inside `upsert_premarket_actives` /
+  `upsert_aftermarket_actives`: after writing, rebuild `avg_*`/`rel_*` for sessions
+  strictly *after* `target_date`. Guarded by an `exists` check so the live path
+  (always writing the newest session) matches nothing and costs ~0.5ms; the ~150ms
+  recompute is paid only during a backfill. Generalise: **any cached aggregate over
+  "everything before me" needs a plan for late-arriving earlier rows.**
+- **`net.http_post` is asynchronous** — firing a loop of them does NOT execute in
+  order, even with `pg_sleep` between. Sessions landed scrambled during backfill.
+  Don't rely on dispatch order for correctness; make the target self-correcting.
 - **Build integrity checks BEFORE features.** The DST bug corrupted months of data
   silently; an hourly coverage check would have caught it on the first import.
   Post-fetch (`verifyFetchIntegrity`) and post-save (`verifySaveIntegrity`) checks
