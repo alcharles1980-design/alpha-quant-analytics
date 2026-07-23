@@ -389,6 +389,16 @@ Edge Function survives as an orphan.
 
 ---
 
+**AI Predictor scoring weights** (`shortlist_signal` RPC, backend-only — not in the repo):
+after-market 40 (28 trades + 12 volume), overnight 55 (38 trades + 17 volume), gap kicker 5.
+Overnight intentionally outweighs after-market: measured standalone discrimination was
+27% (AM hot / OVN quiet, n=11) vs 36% (AM quiet / OVN hot, n=14), with 70% when both
+fire (n=10). The original split was the reverse (AM 55 / OVN 40) because after-market
+has more usable sample — that conflated *measurement confidence* with *predictive
+strength*. Each leg is scored on a log scale from a floor (AM 200%, OVN 100%) and
+capped, so no single leg can carry the score alone. Sample sizes are small enough
+(n=10–14) that the exact split is a judgment call; revisit once more sessions accumulate.
+
 ## 10. Known open items
 
 - **Change B (queued):** High/Low Levels historical bars still `feed=iex`
