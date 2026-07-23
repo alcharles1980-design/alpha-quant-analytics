@@ -13750,7 +13750,7 @@ function MostActivesPage(p){
                   <td style={{padding:'1px 2px',whiteSpace:'nowrap'}}>
                     <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer"
                       style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,color:C.purple||'#a855f7',fontSize:10,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
-                    <a href={'#cheatsheet:'+r.ticker} target="_blank" rel="noopener noreferrer"
+                    <a href={'#multiviewcharts:'+r.ticker} target="_blank" rel="noopener noreferrer" title="Multi View Charts"
                       style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,color:C.blue,fontSize:10,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
                   </td>
                   <td style={{padding:'4px 3px',textAlign:'right'}}>
@@ -13811,7 +13811,7 @@ function MostActivesPage(p){
                   <a href={'https://finance.yahoo.com/quote/'+a.symbol} target="_blank" rel="noopener noreferrer"
                     style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
                       color:C.purple||'#a855f7',fontSize:10,fontFamily:F,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
-                  <a href={'#cheatsheet:'+a.symbol} target="_blank" rel="noopener noreferrer"
+                  <a href={'#multiviewcharts:'+a.symbol} target="_blank" rel="noopener noreferrer" title="Multi View Charts"
                     style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,
                       color:C.blue,fontSize:10,fontFamily:F,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
                 </td>
@@ -18544,6 +18544,15 @@ function CompanyFundamentalsPage(p){
     return rows;
   };
 
+  // Auto-load when arriving via a '#multiviewcharts:TICKER' deep link, so the quick link lands on
+  // rendered charts rather than a pre-filled box the user still has to submit. Guarded by a ref so
+  // it fires once per mount and never re-triggers on later state changes.
+  var deepRan=useRef(false);
+  useEffect(function(){
+    if(deepRan.current)return;
+    if(p.initialTicker&&p.apiKey){deepRan.current=true;run(p.initialTicker);}
+  },[p.initialTicker,p.apiKey]);
+
   var run=function(tkArg){
     var t=(typeof tkArg==='string'&&tkArg)?tkArg.toUpperCase().trim():tk.toUpperCase().trim();
     if(!t){setErr('Enter a ticker.');return;}
@@ -18787,7 +18796,8 @@ function CompanyFundamentalsPage(p){
 }
 
 function MultiViewChartsPage(p){
-  var s1=useState(''),tk=s1[0],setTk=s1[1];
+  // initialTicker arrives from a '#multiviewcharts:TICKER' deep link (the Most Actives quick link).
+  var s1=useState(p.initialTicker||''),tk=s1[0],setTk=s1[1];
   var s2=useState(''),sym=s2[0],setSym=s2[1];
   var s3=useState({}),data=s3[0],setData=s3[1];        // {key: bars[]} — filled progressively
   var s3b=useState({}),done=s3b[0],setDone=s3b[1];     // {key: true} when that tf finished
@@ -33452,11 +33462,11 @@ function App(){
     var parseHash=function(){
       var h=window.location.hash.slice(1);
       if(h&&h.indexOf('cheatsheet:')===0){var tk=h.split(':')[1];setCsTarget(tk||'');return 'cheatsheet';}
-      var dm=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
+      var dm=h.match(/^(volumeprofile|gexprofile|alpaca24atr|multiviewcharts):(.+)$/);
       if(dm){setDeepTk(dm[2]);return dm[1];}
       // Bare page nav (e.g. from the menu) to a deep-link page: clear any stale deep-link
       // ticker so it doesn't wrongly pre-load the previously deep-linked symbol.
-      if(h==='volumeprofile'||h==='gexprofile'||h==='alpaca24atr')setDeepTk('');
+      if(h==='volumeprofile'||h==='gexprofile'||h==='alpaca24atr'||h==='multiviewcharts')setDeepTk('');
       return h||'home';
     };
     var onPop=function(){setPageRaw(parseHash());};
@@ -33490,7 +33500,7 @@ function App(){
   var ps=useState(function(){
     var h=window.location.hash.slice(1);
     if(h&&h.indexOf('cheatsheet:')===0)return 'cheatsheet';
-    var m=h.match(/^(volumeprofile|gexprofile|alpaca24atr):(.+)$/);
+    var m=h.match(/^(volumeprofile|gexprofile|alpaca24atr|multiviewcharts):(.+)$/);
     if(m)return m[1];
     return h||'home';
   }),page=ps[0],setPageRaw=ps[1];
@@ -33814,7 +33824,7 @@ function App(){
     {page==='violentchop'&&<ViolentChopScreenerPage devView={devView} ghToken={ghToken} apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='atrscreener'&&<ATRScreenerPage devView={devView} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='companyfundamentals'&&<CompanyFundamentalsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
-    {page==='multiviewcharts'&&<MultiViewChartsPage apiKey={pgKey} onBack={function(){setPage('home');}}/>}
+    {page==='multiviewcharts'&&<MultiViewChartsPage apiKey={pgKey} initialTicker={deepTk} onBack={function(){setPage('home');}}/>}
     {page==='swingscreener'&&<SwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='minuteswingscreener'&&<MinuteSwingScreenerPage devView={devView} pgKey={pgKey} ghToken={ghToken} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
     {page==='overnighthourly'&&<OvernightHourlyPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}} onCheatSheet={function(tk){setCsTarget(tk);setPage('cheatsheet');}}/>}
