@@ -13134,6 +13134,7 @@ function MostActivesPage(p){
   var s20=useState(false),slLoading=s20[0],setSlLoading=s20[1];
   var s21=useState(null),slErr=s21[0],setSlErr=s21[1];
   var s22=useState(null),slUpdated=s22[0],setSlUpdated=s22[1];
+  var s23=useState(null),slPhase=s23[0],setSlPhase=s23[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var inFlight=useRef(false); // guards against overlapping fetches
@@ -13418,10 +13419,11 @@ function MostActivesPage(p){
           amTrd:num(row.am_trd),amVol:num(row.am_vol),amGap:num(row.am_gap),
           ovnTrd:num(row.ovn_trd),ovnVol:num(row.ovn_vol),
           pmTrd:num(row.pm_trd),pmVol:num(row.pm_vol),
-          score:num(row.score),confidence:row.confidence,
+          score:num(row.score),confidence:row.confidence,phase:row.phase,
           ovnPartial:!!row.ovn_partial,pmPartial:!!row.pm_partial,
           price:num(row.price),marketCap:num(row.market_cap),tickerType:row.ticker_type};
       }));
+      setSlPhase((d&&d.length)?d[0].phase:null);
       setSlUpdated(new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' ET');
     }catch(e){setSlErr(e&&e.message?e.message:'failed');setShortlist([]);}
     setSlLoading(false);
@@ -13692,7 +13694,7 @@ function MostActivesPage(p){
           <span style={{color:C.gold}}>{'\u25CF'} BUILDING {'\u2014'} overnight still in progress, can only rise</span>
           <span style={{color:C.blue}}>{'\u25CF'} WATCH {'\u2014'} after-market fired, overnight not confirming</span>
         </div>
-        {slUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {slUpdated}{shortlist?' \u2014 '+shortlist.length+' names':''}</div>}
+        {slUpdated&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.txtDim}}>Last updated: {slUpdated}{shortlist?' \u2014 '+shortlist.length+' names':''}{slPhase?<span style={{color:slPhase==='PREMARKET'?C.accent:C.gold,fontWeight:600}}>{' \u2014 '}{slPhase==='PREMARKET'?'PRE-MARKET weighting (all three sessions)':'OVERNIGHT weighting (pre-market not yet open)'}</span>:null}</div>}
         {slErr&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>AI Predictor unavailable: {slErr}</div>}
       </div>
 
