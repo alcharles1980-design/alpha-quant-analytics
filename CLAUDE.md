@@ -389,6 +389,19 @@ Edge Function survives as an orphan.
 
 ---
 
+**Pace-curve integrity guards.** `session_pace_curve` / `session_pace_ratio` (backend-only)
+correct the partial-vs-full-session bias in `rel_trades`. Two verification functions exist because
+**Alpaca does not error on truncation** — it returns HTTP 200 with fewer symbols and a
+`next_page_token`, so checking `status_code` proves nothing:
+- `pace_fetch_check(req_id)` — per-response verdict: status, ticker count, bar count, truncation.
+- `pace_curve_health()` — curve-level: bucket count, thin buckets, monotonicity, and whether the
+  curve actually reaches ~100% (a curve peaking short means incomplete source data).
+`rebuild_pace_curve()` now **hard-refuses** to build if any response is truncated or non-200, and
+aborts if a resulting curve peaks below 95%. It deletes only the session types being rebuilt, so a
+partial recalibration cannot wipe the others. Verified by feeding it the real truncated response
+(120 tickers × 96 five-min bars = 11,520 rows vs a 10,000 cap): it raised and the existing 96-row
+curve survived intact. **5-min bars: 60 tickers max per request.**
+
 **Weight-tuning dataset** (backend-only): `signal_chains` — one row per ticker-day with the
 full four-session chain plus RTH outcomes (3,279 rows, 887 tickers, 6 days). Rebuild with
 `select rebuild_signal_chains();`. Source RTH bars live in `signal_rth_bars` (38k rows, SIP
