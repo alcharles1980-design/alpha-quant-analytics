@@ -452,6 +452,19 @@ during the first audit run:
 Verified result on completed data: all 10 tickers within **0.1–0.7%** of Alpaca, all differences
 positive and consistent with our snapshot being ~3 min older than the API call — latency, not error.
 
+**Two integrity-check lessons learned the hard way (Jul 23):**
+1. **Coverage checks must exclude live partial sessions.** The check compared a session in
+   progress against medians of *completed* ones — pre-market at 04:35 held 1,275 of an eventual
+   ~2,100 rows and raised a 61% WARN that would have fired every single morning. Now gated on
+   `is_partial` and reported as "session LIVE — still building, not judged". Re-verified the alarm
+   still fires on a genuine shortfall (deleted down to 500 rows on a settled session → FAIL 20%).
+2. **Temp tables do not survive between MCP calls.** Each call is its own session, so
+   `create temp table _bk as select ...` in one call and `insert ... from _bk` in the next fails
+   with "relation does not exist" — after the destructive step has already run. Use a permanent
+   table for any cross-call backup, or better, re-derive from source. Recovered by re-running the
+   scanner for that session date, which is the real lesson: **destructive tests need a restore
+   path that does not depend on session state.**
+
 **Data integrity framework** (backend-only). `select * from data_integrity_check();` returns 13
 checks across six classes, each targeting a failure that produces **no error** — anything that
 already throws needs no check. Logged to `integrity_log` (non-OK rows only) by pg_cron job 38
