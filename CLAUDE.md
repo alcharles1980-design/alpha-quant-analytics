@@ -476,20 +476,48 @@ capped, so no single leg can carry the score alone. Sample sizes are small enoug
 
 ## 10. Known open items
 
+### Raised in the Jul 23 audit — not yet done
+
+- **Cross-source verification is not scheduled.** `verify_vs_alpaca_fetch` →
+  `verify_vs_alpaca_compare` is the only check that tests against Alpaca rather than
+  internal consistency, but it must be invoked by hand. It needs a *completed*
+  session and an async wait, so it does not fit the `data_integrity_check` pattern.
+  Best home: a daily job shortly after each settle run, writing to `integrity_log`.
+- **Integrity results have no notification path.** They land in `integrity_log` and
+  nothing surfaces them. Cheapest fix: show recent non-OK rows on the Settings page.
+- **Pace curves rest on 1–2 sessions each.** Guarded and monotonic, but thin. Re-run
+  `rebuild_pace_curve()` as sessions accumulate; after-market currently WARNs on a
+  46.7-pt spread and its first hour is deliberately muted.
+- **Pre-market pace curve deliberately absent.** 77% of its activity lands in the
+  final 30 min, so an 8 AM projection multiplies by ~4.4x against a 45-pt spread. If
+  wanted, treat 9:00–9:30 as its own session rather than projecting across the dead
+  hours.
+- **AI Predictor tuning is in-sample.** Weights and the plain-sum form were fitted on
+  the same 6 days they were measured on. `signal_chains` + `test_weights3` exist to
+  re-run it properly once more sessions land.
+- **Nothing predicts intraday range** (r .002–.068 across every feature). The model
+  selects for *activity*. If it is meant to feed grid deployment, retargeting on
+  range is the honest next step.
+
+### Older, still open
+
 - **Change B (queued):** High/Low Levels historical bars still `feed=iex`
   (~line 15571). IEX samples ~2.5% of volume so it can miss a session's true
   high/low — material for a *levels* tool. Changes computed values → verify on a
   familiar symbol before shipping.
 - Options Chain spot price has a `feed=iex` fallback — **correct as-is**, it only
   fires after an unqualified (SIP) `/trades/latest` call.
-- Most Actives has a dead **Market Movers** block (`movers` state is never set).
-- Stale comment ~line 13193 claims pre/after-market "not wired up yet" — they are.
+- Most Actives has a dead **Market Movers** block (`movers` state is never set) —
+  confirmed still present as of v573.
 - Unused Algo Trader Plus entitlements: **WebSocket stream** (halts/LULD/imbalances
   — needs a persistent process, fights the stateless backend) and **OPRA options
   greeks** (would light up already-built-but-dark greeks/GEX UI).
 - `get_app_client_keys()` / `set_app_client_key()` are anon-executable SECURITY
   DEFINER — confirm intended if they touch credentials.
-- Stray empty file named `:` in repo root; README pinned at v261.
+- README pinned at v261.
+
+*(Resolved since last edit: the stale "pre/after-market not wired up" comment was
+fixed in v558; the stray `:` file is gone.)*
 
 ---
 
