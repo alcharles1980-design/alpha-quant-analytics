@@ -13555,6 +13555,16 @@ function MostActivesPage(p){
                   if(isFinite(pv))mp[pd[pi].ticker]=pv;
                 }
                 setPaceMap(mp);
+                // Also stamp the value onto each row. The table's sort comparator reads
+                // row[sortKey]; a value that lives only in a side map is invisible to it, so the
+                // column could be displayed but never sorted.
+                setActives(function(prev){
+                  if(!prev)return prev;
+                  return prev.map(function(row){
+                    var pv=mp[row.symbol];
+                    return Object.assign({},row,{paceRatio:(pv!=null&&isFinite(pv))?pv:null});
+                  });
+                });
               }).catch(function(){setPaceMap({});});
           }else{setPaceMap({});}
           var partialNote=(ovnRows.length&&ovnRows[0].is_partial)?' \u2014 session in progress':'';
@@ -13839,7 +13849,7 @@ function MostActivesPage(p){
   // volume, i.e. unrelated to the visible order.
   // SYMBOL is non-numeric so it falls back to volume. CHG % can be negative, so magnitude is taken
   // as an absolute value (a -5% move reads as prominent as +5%).
-  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,relTradesMed:1,price:1,marketCap:1,changePct:1,gapPct:1,avgDays:1};
+  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,relTradesMed:1,paceRatio:1,price:1,marketCap:1,changePct:1,gapPct:1,avgDays:1};
   var barCol=BAR_NUMERIC[tblSort]?tblSort:'volume';
   var barAbs=(barCol==='changePct'||barCol==='gapPct');
   var barVal=function(r){var v=r[barCol];v=(typeof v==='number'&&isFinite(v))?v:0;return barAbs?Math.abs(v):Math.max(0,v);};
@@ -14146,7 +14156,7 @@ function MostActivesPage(p){
             {tblTh("relVol","SHARES",null,null,"VS AVERAGE","Tonight's volume as a PERCENTAGE of this stock's typical overnight volume. 100% = normal. 300% = three times its usual overnight activity by share count.")}
             {tblTh("relTrades","TRADES",null,null,"VS AVERAGE","This session's trade count as a PERCENTAGE of this stock's typical trade count. 100% = normal. Diverges from SHARES VS AVERAGE when order sizes are unusual: high here but low there means many small trades.")}
             {tblTh("relTradesMed","TRADES",null,null,"VS MEDIAN","Same ratio, but against the MEDIAN of prior sessions rather than the mean. A mean is dragged up by a stock's own spikes: after one huge earnings session a stock's baseline can jump several-fold, so the next day it reads as below-average while still trading at multiples of its calm norm. The median ignores outliers until they exceed half the window. Where the two disagree sharply, this one is usually closer to the truth.")}
-            {isOvernightView&&<th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim,lineHeight:1.15,verticalAlign:'bottom',whiteSpace:'nowrap',fontSize:8}} title="ON PACE FOR: this session's trade count projected to the session close, as a percentage of the stock's own full-session average. TRADES VS AVERAGE compares a PARTIAL count against a FULL-session average, so it reads low until the session ends; this divides out how much of the session has typically elapsed by this point. Blank when the session has finished (the plain ratio is then already correct) or before ~15% elapsed, where the projection would be dominated by a single print."><div>ON PACE</div><div style={{fontSize:6.5,fontWeight:400,color:C.txtDim,opacity:0.75,letterSpacing:0,whiteSpace:'nowrap'}}>FOR SESSION</div></th>}
+            {isOvernightView&&tblTh("paceRatio","ON PACE",null,null,"FOR SESSION","ON PACE FOR: this session's trade count projected to the session close, as a percentage of the stock's own full-session average. TRADES VS AVERAGE compares a PARTIAL count against a FULL-session average, so it reads low until the session ends; this divides out how much of the session has typically elapsed by this point. Blank when the session has finished (the plain ratio is then already correct) or before ~15% elapsed, where the projection would be dominated by a single print.")}
             {tblTh("avgDays","SESSIONS",null,null,"IN AVERAGE","How many previous sessions the averages are based on. Low numbers mean the VS AVERAGE percentages are built on thin history and should be treated with caution.")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
           </tr></thead>
@@ -14177,7 +14187,8 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relTradesMed>200?C.warn:a.relTradesMed>120?C.gold:C.txtDim,fontWeight:a.relTradesMed>150?700:400}}>{(a.relTradesMed!=null&&isFinite(a.relTradesMed))?Math.round(a.relTradesMed)+'%':'\u2014'}</td>
-                {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:(paceMap[a.symbol]>200?C.warn:paceMap[a.symbol]>120?C.gold:C.txtDim),fontWeight:(paceMap[a.symbol]>150?700:400),fontStyle:'italic'}}>{(paceMap[a.symbol]!=null&&isFinite(paceMap[a.symbol]))?Math.round(paceMap[a.symbol])+'%':'\u2014'}</td>}
+                {isOvernightView&&(function(){var pv=(a.paceRatio!=null)?a.paceRatio:paceMap[a.symbol];
+                  return <td style={{padding:'4px 3px',textAlign:'right',color:(pv>200?C.warn:pv>120?C.gold:C.txtDim),fontWeight:(pv>150?700:400),fontStyle:'italic'}}>{(pv!=null&&isFinite(pv))?Math.round(pv)+'%':'\u2014'}</td>;})()}
                 <td style={{padding:'4px 3px',textAlign:'right',color:(a.avgDays!=null&&a.avgDays<5)?C.warn:C.txtDim,fontWeight:(a.avgDays!=null&&a.avgDays<5)?700:400}} title={(a.avgDays!=null&&a.avgDays<5)?'Thin history \u2014 treat the x AVG percentages with caution':''}>{a.avgDays!=null?a.avgDays:'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>
