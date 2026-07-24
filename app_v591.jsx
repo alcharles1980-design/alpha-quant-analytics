@@ -13439,6 +13439,11 @@ function MostActivesPage(p){
   // "N of M shown" counter makes the exclusion visible rather than silent.
   var s27=useState('100000'),slMinRthTrades=s27[0],setSlMinRthTrades=s27[1];
   var s28=useState(''),slMinRthVol=s28[0],setSlMinRthVol=s28[1];
+  // Date selector: null = live/latest session. Any other value pins the RPC to that chain date.
+  var s29=useState(null),slDate=s29[0],setSlDate=s29[1];
+  var s30=useState([]),slDates=s30[0],setSlDates=s30[1];
+  var s31=useState([]),slCard=s31[0],setSlCard=s31[1];
+  var s32=useState(false),slCardOpen=s32[0],setSlCardOpen=s32[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var inFlight=useRef(false); // guards against overlapping fetches
@@ -13786,7 +13791,7 @@ function MostActivesPage(p){
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/shortlist_signal',{
         method:'POST',headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
-        body:JSON.stringify({})});
+        body:JSON.stringify(slDate?{target_date:slDate}:{})});
       if(!r.ok)throw new Error('RPC '+r.status);
       var d=await r.json();
       var num=function(x){var n=Number(x);return (x==null||x===''||!isFinite(n))?null:n;};
@@ -13805,7 +13810,23 @@ function MostActivesPage(p){
     }catch(e){setSlErr(e&&e.message?e.message:'failed');setShortlist([]);}
     setSlLoading(false);
   };
-  useEffect(function(){if(session==='shortlist')fetchShortlist();},[session,refreshTrigger]);
+  useEffect(function(){if(session==='shortlist')fetchShortlist();},[session,refreshTrigger,slDate]);
+  // Available chain dates + the outcome scorecard. Loaded once when the tab opens.
+  useEffect(function(){
+    if(session!=='shortlist')return;
+    fetch(SB_URL+'/rest/v1/predictor_snapshots?select=session_date&order=session_date.desc&limit=1000',{headers:getSbHeaders()})
+      .then(function(r){return r.ok?r.json():[];})
+      .then(function(d){
+        var seen={},out=[];
+        (d||[]).forEach(function(x){if(!seen[x.session_date]){seen[x.session_date]=1;out.push(x.session_date);}});
+        setSlDates(out);
+      }).catch(function(){});
+    fetch(SB_URL+'/rest/v1/rpc/predictor_scorecard',{method:'POST',
+      headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
+      body:JSON.stringify({p_days:30})})
+      .then(function(r){return r.ok?r.json():[];})
+      .then(function(d){setSlCard(d||[]);}).catch(function(){});
+  },[session,refreshTrigger]);
   // Poll while the tab is open. 90s matches the pre/after-market scanner cadence — the underlying
   // tables refresh every 3 min, so anything tighter just re-reads the same rows.
   useEffect(function(){
@@ -14165,6 +14186,65 @@ function MostActivesPage(p){
         });
         return null;
       })()}
+
+      {/* Date selector. The RPC computes from live tables, so without this the tab can only ever
+          show the newest session — there was no way to look back at what it said on a past day. */}
+      <div style={Object.assign({},card,{paddingTop:10,paddingBottom:10})}>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Session:</span>
+          <button onClick={function(){setSlDate(null);}}
+            style={{padding:'4px 10px',borderRadius:4,fontSize:8.5,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+(slDate===null?C.accent+'66':C.border),
+              background:slDate===null?C.accent+'10':'transparent',
+              color:slDate===null?C.accent:C.txtDim}}>Live</button>
+          {slDates.slice(0,8).map(function(d){
+            return <button key={d} onClick={function(){setSlDate(d);}}
+              style={{padding:'4px 8px',borderRadius:4,fontSize:8.5,fontFamily:F,fontWeight:600,cursor:'pointer',
+                border:'1px solid '+(slDate===d?C.gold+'66':C.border),
+                background:slDate===d?C.gold+'10':'transparent',
+                color:slDate===d?C.gold:C.txtDim}}>{d.slice(5)}</button>;
+          })}
+          <button onClick={function(){setSlCardOpen(!slCardOpen);}}
+            style={{marginLeft:'auto',padding:'4px 10px',borderRadius:4,fontSize:8.5,fontFamily:F,fontWeight:600,cursor:'pointer',
+              border:'1px solid '+C.blue+'55',background:'transparent',color:C.blue}}>
+            {slCardOpen?'\u25BC':'\u25B6'} Track record
+          </button>
+        </div>
+        {slDate&&<div style={{marginTop:6,fontSize:8,fontFamily:F,color:C.gold}}>
+          Showing the ranking for {slDate} {'\u2014'} historical, not live.
+        </div>}
+
+        {/* TRACK RECORD — what the predictor actually said, and what happened. This is the only
+            honest test of the model: the backtest was fitted on the same data it reports. */}
+        {slCardOpen&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border}}>
+          <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.5,marginBottom:8}}>
+            Top 20 captured each day, scored against whether the stock went on to trade {'\u2265'}120% of its 20-session average in the regular session. Base rate for any stock is about 12%.
+            <div style={{marginTop:3,opacity:0.8}}>Rows marked <b>reconstructed</b> were rebuilt from stored history rather than captured live, so they show what the model <i>would</i> have said. Genuine forward captures begin from the next session.</div>
+          </div>
+          {slCard.length===0&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim}}>No scorecard data yet.</div>}
+          {slCard.length>0&&<table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8.5}}>
+            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
+              <th style={{textAlign:'left',padding:'3px',color:C.txtDim,fontSize:7.5}}>DATE</th>
+              <th style={{textAlign:'left',padding:'3px',color:C.txtDim,fontSize:7.5}}>CAPTURE</th>
+              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>HITS</th>
+              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>RATE</th>
+              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>AVG RTH</th>
+              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>AVG RANGE</th>
+            </tr></thead>
+            <tbody>{slCard.map(function(c,ci){
+              var hr=Number(c.hit_rate);
+              return <tr key={ci} style={{borderBottom:'1px solid '+C.border+'20'}}>
+                <td style={{padding:'3px',color:C.txtBright}}>{c.session_date}</td>
+                <td style={{padding:'3px',color:C.txtDim,fontSize:7.5}}>{c.label}</td>
+                <td style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{c.hits}/{c.n_with_outcome}</td>
+                <td style={{padding:'3px',textAlign:'right',fontWeight:700,color:hr>=50?C.accent:hr>=25?C.gold:C.txtDim}}>{hr!=null?hr+'%':'\u2014'}</td>
+                <td style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{c.avg_rth_rel!=null?Math.round(c.avg_rth_rel)+'%':'\u2014'}</td>
+                <td style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{c.avg_range!=null?Number(c.avg_range).toFixed(2)+'%':'\u2014'}</td>
+              </tr>;
+            })}</tbody>
+          </table>}
+        </div>}
+      </div>
 
       {/* Liquidity filters — only meaningful on this tab, so they live here rather than in the
           shared Most Actives filter panel. */}
