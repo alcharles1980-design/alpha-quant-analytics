@@ -13442,12 +13442,11 @@ function MostActivesPage(p){
   // Date selector: null = live/latest session. Any other value pins the RPC to that chain date.
   var s29=useState(null),slDate=s29[0],setSlDate=s29[1];
   var s30=useState([]),slDates=s30[0],setSlDates=s30[1];
-  var s31=useState([]),slCard=s31[0],setSlCard=s31[1];
   var s32=useState(false),slCardOpen=s32[0],setSlCardOpen=s32[1];
-  // Rolling pooled accuracy (predictor_rolling RPC). Kept separate from slCard: that one is
-  // per-day, this one pools across the window. Pooling is not the same as averaging the daily
-  // rates — days have unequal resolved counts, so mean-of-rates reads 79.5% where the correct
-  // pooled top-5 figure is 77.6%.
+  // Rolling pooled accuracy (predictor_rolling RPC). Pooling is not the same as averaging the
+  // daily rates — days have unequal resolved counts, so mean-of-rates reads 79.5% where the
+  // correct pooled top-5 figure is 77.6%. The per-day scorecard table this sat alongside was
+  // removed in v593; predictor_scorecard still exists in the DB but nothing in the app calls it.
   var s33=useState([]),slRoll=s33[0],setSlRoll=s33[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
@@ -13816,7 +13815,7 @@ function MostActivesPage(p){
     setSlLoading(false);
   };
   useEffect(function(){if(session==='shortlist')fetchShortlist();},[session,refreshTrigger,slDate]);
-  // Available chain dates + the outcome scorecard. Loaded once when the tab opens.
+  // Available chain dates + the rolling accuracy summary. Loaded once when the tab opens.
   useEffect(function(){
     if(session!=='shortlist')return;
     fetch(SB_URL+'/rest/v1/predictor_snapshots?select=session_date&order=session_date.desc&limit=1000',{headers:getSbHeaders()})
@@ -13826,11 +13825,6 @@ function MostActivesPage(p){
         (d||[]).forEach(function(x){if(!seen[x.session_date]){seen[x.session_date]=1;out.push(x.session_date);}});
         setSlDates(out);
       }).catch(function(){});
-    fetch(SB_URL+'/rest/v1/rpc/predictor_scorecard',{method:'POST',
-      headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
-      body:JSON.stringify({p_days:30})})
-      .then(function(r){return r.ok?r.json():[];})
-      .then(function(d){setSlCard(d||[]);}).catch(function(){});
     // Rolling pooled hit rates over the last 10 trading days, split by capture label.
     // The RPC returns one row per (label, bucket) — at most a handful — so the PostgREST
     // 1,000-row RPC cap (which cannot be raised from the client) is structurally unreachable.
@@ -14227,12 +14221,12 @@ function MostActivesPage(p){
           Showing the ranking for {slDate} {'\u2014'} historical, not live.
         </div>}
 
-        {/* TRACK RECORD — what the predictor actually said, and what happened. This is the only
-            honest test of the model: the backtest was fitted on the same data it reports. */}
+        {/* TRACK RECORD — pooled hit rate per bucket. The per-day breakdown was removed in v593;
+            the summary is the number that matters and the daily rows were noisy at n=1 per day. */}
         {slCardOpen&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border}}>
           <div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.5,marginBottom:8}}>
             Top 20 captured each day, scored against whether the stock went on to trade {'\u2265'}120% of its 20-session average in the regular session. Base rate for any stock is about 12%.
-            <div style={{marginTop:3,opacity:0.8}}>Rows marked <b>reconstructed</b> were rebuilt from stored history rather than captured live, so they show what the model <i>would</i> have said. Genuine forward captures begin from the next session.</div>
+            <div style={{marginTop:3,opacity:0.8}}>Figures marked <b>reconstructed</b> were rebuilt from stored history rather than captured live, so they show what the model <i>would</i> have said. Genuine forward captures begin from the next session.</div>
           </div>
             {/* ROLLING ACCURACY — pooled hit rate per bucket over the window, one block per capture
               label. Reconstructed and live are never pooled together: the reconstructed rows were
@@ -14289,28 +14283,6 @@ function MostActivesPage(p){
             </div>
           </div>}
           {slRoll.length===0&&<div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,marginBottom:10}}>Rolling accuracy unavailable.</div>}
-        {slCard.length===0&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim}}>No scorecard data yet.</div>}
-          {slCard.length>0&&<table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8.5}}>
-            <thead><tr style={{borderBottom:'1px solid '+C.border}}>
-              <th style={{textAlign:'left',padding:'3px',color:C.txtDim,fontSize:7.5}}>DATE</th>
-              <th style={{textAlign:'left',padding:'3px',color:C.txtDim,fontSize:7.5}}>CAPTURE</th>
-              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>HITS</th>
-              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>RATE</th>
-              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>AVG RTH</th>
-              <th style={{textAlign:'right',padding:'3px',color:C.txtDim,fontSize:7.5}}>AVG RANGE</th>
-            </tr></thead>
-            <tbody>{slCard.map(function(c,ci){
-              var hr=Number(c.hit_rate);
-              return <tr key={ci} style={{borderBottom:'1px solid '+C.border+'20'}}>
-                <td style={{padding:'3px',color:C.txtBright}}>{c.session_date}</td>
-                <td style={{padding:'3px',color:C.txtDim,fontSize:7.5}}>{c.label}</td>
-                <td style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{c.hits}/{c.n_with_outcome}</td>
-                <td style={{padding:'3px',textAlign:'right',fontWeight:700,color:hr>=50?C.accent:hr>=25?C.gold:C.txtDim}}>{hr!=null?hr+'%':'\u2014'}</td>
-                <td style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{c.avg_rth_rel!=null?Math.round(c.avg_rth_rel)+'%':'\u2014'}</td>
-                <td style={{padding:'3px',textAlign:'right',color:C.txtDim}}>{c.avg_range!=null?Number(c.avg_range).toFixed(2)+'%':'\u2014'}</td>
-              </tr>;
-            })}</tbody>
-          </table>}
         </div>}
       </div>
 
