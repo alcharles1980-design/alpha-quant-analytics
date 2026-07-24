@@ -13495,7 +13495,7 @@ function MostActivesPage(p){
             // so sorting reorders in memory instead of refetching (and can no longer return a
             // different set of stocks for each sort). Column headers are the sort control here.
             var ovnUrl=SB_URL+'/rest/v1/'+ovnTable+'?session_date=eq.'+ovnDate
-              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct,market_cap,ticker_type'
+              +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct,market_cap,ticker_type,med_trades,med_volume,rel_trades_med,rel_volume_med'
               +'&order=trades.desc&limit=5000';
             var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
             if(ovnR.ok)ovnRows=await ovnR.json();
@@ -13518,6 +13518,9 @@ function MostActivesPage(p){
               avgVol:num(o.avg_volume),avgDays:num(o.avg_sessions),
               avgTrades:num(o.avg_trades),relTrades:num(o.rel_trades),
               relVol:num(o.rel_volume)||0,
+              // Median baselines, computed server-side on every scan alongside the mean.
+              medTrades:num(o.med_trades),relTradesMed:num(o.rel_trades_med),
+              medVol:num(o.med_volume),relVolMed:num(o.rel_volume_med),
               price:oClose,prevClose:oOpen,
               change:(oClose!=null&&oOpen!=null)?(oClose-oOpen):0,
               changePct:num(o.pct_move)||0
@@ -13632,11 +13635,27 @@ function MostActivesPage(p){
                   for(var vi=0;vi<histBars.length;vi++){totalV+=(histBars[vi].v||0);totalN+=(histBars[vi].n||0);}
                   var avgVol=histBars.length?totalV/histBars.length:0;
                   var avgTrd=histBars.length?totalN/histBars.length:0;
+                  // MEDIAN baseline alongside the mean. A mean is contaminated by its own outliers:
+                  // one earnings session can lift a stock's baseline several-fold, so the NEXT day it
+                  // reads as below-average while still trading at multiples of its calm norm. The
+                  // median is unaffected until elevated sessions exceed half the window.
+                  // Computed here from the same bars already in memory — no extra fetch.
+                  var medOf=function(arr,key){
+                    var xs=[];for(var q=0;q<arr.length;q++){var val=arr[q][key];if(typeof val==='number'&&isFinite(val))xs.push(val);}
+                    if(!xs.length)return 0;
+                    xs.sort(function(a,b){return a-b;});
+                    var mid=Math.floor(xs.length/2);
+                    return xs.length%2?xs[mid]:(xs[mid-1]+xs[mid])/2;
+                  };
+                  var medVol=medOf(histBars,'v'),medTrd=medOf(histBars,'n');
                   for(var ai3=0;ai3<rawActives.length;ai3++){
                     if(rawActives[ai3].symbol===sym2){
                       rawActives[ai3].avgVol=avgVol;rawActives[ai3].avgTrades=avgTrd;rawActives[ai3].avgDays=histBars.length;
+                      rawActives[ai3].medVol=medVol;rawActives[ai3].medTrades=medTrd;
                       rawActives[ai3].relVol=rawActives[ai3].volume>0&&avgVol>0?(rawActives[ai3].volume/avgVol*100):0;
-                      rawActives[ai3].relTrades=rawActives[ai3].trade_count>0&&avgTrd>0?(rawActives[ai3].trade_count/avgTrd*100):0;break;}
+                      rawActives[ai3].relTrades=rawActives[ai3].trade_count>0&&avgTrd>0?(rawActives[ai3].trade_count/avgTrd*100):0;
+                      rawActives[ai3].relTradesMed=rawActives[ai3].trade_count>0&&medTrd>0?(rawActives[ai3].trade_count/medTrd*100):null;
+                      rawActives[ai3].relVolMed=rawActives[ai3].volume>0&&medVol>0?(rawActives[ai3].volume/medVol*100):null;break;}
                   }
                 }
               }}
@@ -13820,7 +13839,7 @@ function MostActivesPage(p){
   // volume, i.e. unrelated to the visible order.
   // SYMBOL is non-numeric so it falls back to volume. CHG % can be negative, so magnitude is taken
   // as an absolute value (a -5% move reads as prominent as +5%).
-  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,price:1,marketCap:1,changePct:1,gapPct:1,avgDays:1};
+  var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,relTradesMed:1,price:1,marketCap:1,changePct:1,gapPct:1,avgDays:1};
   var barCol=BAR_NUMERIC[tblSort]?tblSort:'volume';
   var barAbs=(barCol==='changePct'||barCol==='gapPct');
   var barVal=function(r){var v=r[barCol];v=(typeof v==='number'&&isFinite(v))?v:0;return barAbs?Math.abs(v):Math.max(0,v);};
@@ -14126,6 +14145,7 @@ function MostActivesPage(p){
             {tblTh("avgTrades","AVERAGE",null,null,isOvernightView?"TRADES":"TRADES 20D",isOvernightView?"This stock's TYPICAL trade count for this session type, averaged over previous sessions (excluding the current one). The baseline that TRADES VS AVERAGE compares against.":"This stock's TYPICAL daily trade count over the trailing 20 sessions. The baseline that TRADES VS AVERAGE compares against.")}
             {tblTh("relVol","SHARES",null,null,"VS AVERAGE","Tonight's volume as a PERCENTAGE of this stock's typical overnight volume. 100% = normal. 300% = three times its usual overnight activity by share count.")}
             {tblTh("relTrades","TRADES",null,null,"VS AVERAGE","This session's trade count as a PERCENTAGE of this stock's typical trade count. 100% = normal. Diverges from SHARES VS AVERAGE when order sizes are unusual: high here but low there means many small trades.")}
+            {tblTh("relTradesMed","TRADES",null,null,"VS MEDIAN","Same ratio, but against the MEDIAN of prior sessions rather than the mean. A mean is dragged up by a stock's own spikes: after one huge earnings session a stock's baseline can jump several-fold, so the next day it reads as below-average while still trading at multiples of its calm norm. The median ignores outliers until they exceed half the window. Where the two disagree sharply, this one is usually closer to the truth.")}
             {isOvernightView&&<th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim,lineHeight:1.15,verticalAlign:'bottom',whiteSpace:'nowrap',fontSize:8}} title="ON PACE FOR: this session's trade count projected to the session close, as a percentage of the stock's own full-session average. TRADES VS AVERAGE compares a PARTIAL count against a FULL-session average, so it reads low until the session ends; this divides out how much of the session has typically elapsed by this point. Blank when the session has finished (the plain ratio is then already correct) or before ~15% elapsed, where the projection would be dominated by a single print."><div>ON PACE</div><div style={{fontSize:6.5,fontWeight:400,color:C.txtDim,opacity:0.75,letterSpacing:0,whiteSpace:'nowrap'}}>FOR SESSION</div></th>}
             {tblTh("avgDays","SESSIONS",null,null,"IN AVERAGE","How many previous sessions the averages are based on. Low numbers mean the VS AVERAGE percentages are built on thin history and should be treated with caution.")}
             <th style={{padding:"4px 3px",textAlign:"right",color:C.txtDim}}>{barLabel}</th>
@@ -14156,6 +14176,7 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.avgTrades?fmtVol(a.avgTrades):'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>
+                <td style={{padding:'4px 3px',textAlign:'right',color:a.relTradesMed>200?C.warn:a.relTradesMed>120?C.gold:C.txtDim,fontWeight:a.relTradesMed>150?700:400}}>{(a.relTradesMed!=null&&isFinite(a.relTradesMed))?Math.round(a.relTradesMed)+'%':'\u2014'}</td>
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:(paceMap[a.symbol]>200?C.warn:paceMap[a.symbol]>120?C.gold:C.txtDim),fontWeight:(paceMap[a.symbol]>150?700:400),fontStyle:'italic'}}>{(paceMap[a.symbol]!=null&&isFinite(paceMap[a.symbol]))?Math.round(paceMap[a.symbol])+'%':'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:(a.avgDays!=null&&a.avgDays<5)?C.warn:C.txtDim,fontWeight:(a.avgDays!=null&&a.avgDays<5)?700:400}} title={(a.avgDays!=null&&a.avgDays<5)?'Thin history \u2014 treat the x AVG percentages with caution':''}>{a.avgDays!=null?a.avgDays:'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
