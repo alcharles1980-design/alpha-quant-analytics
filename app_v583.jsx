@@ -13344,7 +13344,29 @@ function MostActivesPage(p){
   // more restrictive on the session tabs. Default 1000: on 2026-07-22 that kept 68% of otherwise-
   // qualifying names on overnight and pre-market, 46% on after-market (whose per-session averages
   // are structurally smaller). Clearable like any other filter.
-  var s11d=useState('1000'),minAvgTrades=s11d[0],setMinAvgTrades=s11d[1];
+  // Avg Trades floor. The right default differs by SESSION because the baselines are on
+  // completely different scales: RTH's avgTrades is a full-day count (mean ~75,500 on 2026-07-23)
+  // while the extended-hours sessions are per-session counts (overnight mean ~657, pre-market
+  // ~1,484). A single shared default cannot suit both — 1,000 is a sensible floor overnight but
+  // filters out essentially nothing on RTH.
+  var AVG_TRADES_DEFAULT=function(sess){return sess==='rth'?'100000':'1000';};
+  var s11d=useState(function(){
+    try{
+      var p2=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+      var hh=0,mm=0;
+      for(var i=0;i<p2.length;i++){if(p2[i].type==='hour')hh=parseInt(p2[i].value,10);if(p2[i].type==='minute')mm=parseInt(p2[i].value,10);}
+      if(hh===24)hh=0;
+      var mins=hh*60+mm;
+      return (mins>=570&&mins<960)?'100000':'1000';
+    }catch(e){return '1000';}
+  }),minAvgTrades=s11d[0],setMinAvgTrades=s11d[1];
+  // Track whether the user has typed their own value. Once they have, never auto-change it —
+  // silently overwriting a deliberate entry on tab switch would be worse than a wrong default.
+  var s11f=useState(false),avgTouched=s11f[0],setAvgTouched=s11f[1];
+  useEffect(function(){
+    if(avgTouched)return;
+    setMinAvgTrades(AVG_TRADES_DEFAULT(session));
+  },[session]);
   var s11e=useState(''),maxAvgTrades=s11e[0],setMaxAvgTrades=s11e[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
@@ -13967,7 +13989,7 @@ function MostActivesPage(p){
       {/* Average trade count filter (typical per session, not this session) */}
       {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Avg Trades:</span>
-        <input value={minAvgTrades} onChange={function(e){setMinAvgTrades(e.target.value);}} placeholder="Min" type="number" step="1"
+        <input value={minAvgTrades} onChange={function(e){setAvgTouched(true);setMinAvgTrades(e.target.value);}} placeholder="Min" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((minAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
         <span style={{color:C.txtDim,fontSize:8}}>{'\u2013'}</span>
         <input value={maxAvgTrades} onChange={function(e){setMaxAvgTrades(e.target.value);}} placeholder="Max" type="number" step="1"
