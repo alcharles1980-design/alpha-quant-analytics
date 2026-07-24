@@ -13363,10 +13363,6 @@ function MostActivesPage(p){
   // Track whether the user has typed their own value. Once they have, never auto-change it —
   // silently overwriting a deliberate entry on tab switch would be worse than a wrong default.
   var s11f=useState(false),avgTouched=s11f[0],setAvgTouched=s11f[1];
-  useEffect(function(){
-    if(avgTouched)return;
-    setMinAvgTrades(AVG_TRADES_DEFAULT(session));
-  },[session]);
   var s11e=useState(''),maxAvgTrades=s11e[0],setMaxAvgTrades=s11e[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
@@ -13396,6 +13392,14 @@ function MostActivesPage(p){
       return 'overnight';                           // 20:00-03:59
     }catch(e){return 'overnight';}
   }),session=s13[0],setSession=s13[1];
+  // Switch the Avg Trades floor when the tab changes. MUST live below the `session` declaration:
+  // placed above it, `session` is still undefined when the effect first runs, so it resolved to
+  // the non-RTH default and the dependency array never observed the change. That is exactly how
+  // this shipped broken in v583 — the RTH default silently never applied.
+  useEffect(function(){
+    if(avgTouched)return;
+    setMinAvgTrades(AVG_TRADES_DEFAULT(session));
+  },[session]);
   // Default table sort: TRADES VS AVERAGE (relTrades), not raw trade count. Raw counts just rank
   // the perpetually-liquid names in the same order every session — on 2026-07-22 pre-market the
   // top of the raw list was SOXL/MU/SNDK running at 80-98% of their OWN normal, i.e. quieter than
