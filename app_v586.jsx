@@ -13400,12 +13400,19 @@ function MostActivesPage(p){
     if(avgTouched)return;
     setMinAvgTrades(AVG_TRADES_DEFAULT(session));
   },[session]);
-  // Default table sort: TRADES VS AVERAGE (relTrades), not raw trade count. Raw counts just rank
-  // the perpetually-liquid names in the same order every session — on 2026-07-22 pre-market the
-  // top of the raw list was SOXL/MU/SNDK running at 80-98% of their OWN normal, i.e. quieter than
-  // usual, while SMCI at 1,027% sat 6th. Ranking by the ratio surfaces what is UNUSUAL, which is
-  // the question every one of these tabs exists to answer.
-  var s17=useState('relTrades'),tblSort=s17[0],setTblSort=s17[1];
+  // Default table sort: TRADES VS MEDIAN (relTradesMed).
+  //
+  // Not raw trade count: that just ranks the perpetually-liquid names in the same order every
+  // session. On 2026-07-22 pre-market the top of the raw list was SOXL/MU/SNDK running at 80-98%
+  // of their OWN normal — i.e. quieter than usual — while SMCI at 1,027% sat 6th. Ranking by a
+  // ratio surfaces what is UNUSUAL, which is the question every one of these tabs exists to answer.
+  //
+  // And not the MEAN-based ratio: a mean baseline is inflated by the stock's own spikes. After one
+  // huge session it can jump several-fold, so the next day the stock reads as below-average while
+  // still trading at multiples of its calm norm — SMCI read 54% while running ~5x normal. The
+  // median ignores outliers until they exceed half the window. Populated on all four tabs:
+  // server-side for the three session tables, client-side from the trailing-20 bars for RTH.
+  var s17=useState('relTradesMed'),tblSort=s17[0],setTblSort=s17[1];
   var s18=useState(true),tblDesc=s18[0],setTblDesc=s18[1];
   // Shortlist: cross-session carry-over signal (after-market -> overnight -> pre-market -> RTH).
   // Held separately from `actives` because its rows have a different shape entirely (one row per
