@@ -13786,7 +13786,7 @@ function MostActivesPage(p){
           amTrd:num(row.am_trd),amVol:num(row.am_vol),amGap:num(row.am_gap),
           ovnTrd:num(row.ovn_trd),ovnVol:num(row.ovn_vol),
           pmTrd:num(row.pm_trd),pmVol:num(row.pm_vol),
-          score:num(row.score),sumTrades:num(row.sum_trades),breadthScore:num(row.breadth_score),confidence:row.confidence,phase:row.phase,
+          score:num(row.score),sumTrades:num(row.sum_trades),breadthScore:num(row.breadth_score),legsPresent:num(row.legs_present),confidence:row.confidence,phase:row.phase,
           ovnPartial:!!row.ovn_partial,pmPartial:!!row.pm_partial,
           price:num(row.price),marketCap:num(row.market_cap),tickerType:row.ticker_type};
       }));
@@ -14042,7 +14042,16 @@ function MostActivesPage(p){
         cutoff would imply more precision than the sample supports. */}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
-        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:8}}>{'\u2605'} AI Predictor</div>
+        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} AI Predictor</div>
+        {/* Stated up front because the previous wording read as present-tense and was taken to mean
+            "what is active right now". It is a FORECAST of the coming regular session, and before
+            pre-market opens it is dominated by the settled after-market leg — so a name can top
+            this list while trading BELOW its own normal in the live session. */}
+        <div style={{fontSize:8.5,fontFamily:F,color:C.txtBright,lineHeight:1.55,marginBottom:8,
+          padding:'6px 8px',background:C.gold+'10',border:'1px solid '+C.gold+'30',borderRadius:6}}>
+          This forecasts <b>the coming regular session</b> {'\u2014'} it is not a list of what is busiest right now.
+          <div style={{marginTop:4,color:C.txtDim}}>Before pre-market opens the score is mostly the previous evening&apos;s <b>after-market</b>, which is settled history. A stock can rank at the top here while currently trading <i>below</i> its own normal. For live activity, sort the session tabs by TRADES VS MEDIAN.</div>
+        </div>
 
         {/* HOW IT WORKS — plain-language, collapsed by default */}
         <div onClick={function(){setSlAboutOpen(!slAboutOpen);}}
@@ -14052,7 +14061,7 @@ function MostActivesPage(p){
           <span style={{color:C.txtBright,fontSize:9,fontWeight:700,fontFamily:F,letterSpacing:0.6}}>HOW IT WORKS</span>
         </div>
         {slAboutOpen&&<div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,lineHeight:1.6,marginTop:6,paddingLeft:16}}>
-          Ranks stocks on how far their <b>trade counts</b> across the after-market, overnight and pre-market sessions run above each stock's own normal for that session. Those three percentages are added together, then weighted by the <b>weakest</b> of the three {'\u2014'} so a stock busy across several sessions outranks one that spiked in a single session and went quiet. Names topping this list went on to trade well above their usual regular-session activity in testing.
+          Ranks stocks on how far their <b>trade counts</b> across the after-market, overnight and pre-market sessions ran above each stock's own normal for that session, and uses that to predict which names will be unusually busy when the regular session opens. Those three percentages are added together, then weighted by the <b>weakest</b> of the three {'\u2014'} so a stock busy across several sessions outranks one that spiked in a single session and went quiet. Names topping this list went on to trade well above their usual regular-session activity in testing.
           <div style={{marginTop:6}}>Three details worth knowing. <b>Trade counts, not share volume</b> {'\u2014'} trades predicted better in every session tested, and the mix of order sizes carried no information at all, so volume is shown for context but not scored. <b>Breadth beats a single spike</b> {'\u2014'} the sessions carry independent information, so the score is deliberately dragged down by whichever session is weakest. A huge after-market reading on its own will not carry a name to the top. <b>Before 4 AM there is no pre-market leg</b>, so scores are built from after-market and overnight alone and will rise once pre-market opens.</div>
           <div style={{marginTop:6,opacity:0.85}}>This measures <b>activity</b>, not price movement. A high score says a stock is likely to be busy, not that it will move or oscillate {'\u2014'} intraday range showed no relationship to any of these inputs.</div>
         </div>}
@@ -14076,9 +14085,9 @@ function MostActivesPage(p){
           <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>2. The score</div>
           <div style={{margin:'4px 0 6px 0',padding:'6px 8px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:5,color:C.txtBright,fontSize:8.5}}>
             sum = am + ovn + pm<br/>
-            rank = sum {'\u00D7'} {'\u221A'}min(am, ovn, pm)
+            rank = sum {'\u00D7'} {'\u221A'}min(legs that exist)
           </div>
-          Legs are floored at 1 before the minimum is taken, so a session with no data yields {'\u221A'}1 = 1 rather than zeroing the score. The SUM column shows the plain sum; ranking uses the breadth-weighted value.
+          The minimum is taken over sessions that have actually happened. A session still in the future is skipped rather than counted as zero {'\u2014'} otherwise, before pre-market opens, every stock's minimum would be the same missing leg and the breadth weighting would do nothing at all. At least two sessions must be present to earn the weighting; a name with only one is not showing breadth. The SUM column shows the plain sum, so you can see when the two disagree.
 
           <div style={{color:C.gold,fontWeight:700,margin:'8px 0 3px 0'}}>3. Why multiply by the weakest leg</div>
           A plain sum let one enormous reading carry a name. Measured on live data, after-market supplied <b>77{'\u2013'}100%</b> of the score for nearly every top-ten name, and one stock ranked 3rd on a 5,647% after-market figure with no overnight activity at all. Multiplying by the weakest leg forces activity to be broad.
