@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v555 · Jul 22 2026
+**Status at last update:** v593 · Jul 24 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -30,12 +30,16 @@ select jobid, schedule, active, jobname from cron.job order by jobid;
 Also: `list_edge_functions`, and check the menu/route parity (§6) if the change
 touches navigation. **The DB is on the FREE plan — 512 MB hard cap. See §8.**
 
-> **Two hard prohibitions, both learned by taking the database down:**
+> **Three hard prohibitions, all learned by taking the database down:**
 > 1. **Never `pg_sleep` inside a query to wait for async results** (§5.2b) — it holds
 >    a pooler connection and starves the small free-plan pool. Poll in a separate
 >    call; wait client-side.
 > 2. **Never run a bulk write without estimating its size first** (§5.2) — a 436 MB
 >    backfill blew the quota and Supabase refused connections.
+> 3. **Never fire Edge Functions / bulk writers concurrently** (§5.2a) — one at a
+>    time, wait for each to return, verify, then the next. Firing several in one
+>    statement, or looping them, saturates the pool (each is a heavy writer). Do NOT
+>    generalise a safe concurrency limit from lightweight external-API fetches.
 
 ---
 
@@ -171,6 +175,45 @@ My first cross-source audit reported 10/10 mismatches on a healthy pipeline. Thr
 Done right, expect small **positive** diffs: all 10 tickers within 0.1–0.7%, every diff
 positive, because the stored snapshot is minutes older than the verification call. That is
 latency, not error.
+
+### 5.1d A column in ON CONFLICT but missing from the INSERT list writes NULL — silently (Jul 24 2026)
+
+**`excluded.<col>` resolves to NULL for any column not named in the INSERT column list.** An
+upsert that computes a value, references it in `on conflict ... do update set col=excluded.col`,
+but forgets to list `col` in the `insert into tbl (...)` header, writes NULL on **both** the
+insert path *and* the update path. No error. The column just stays blank.
+
+Found in the Most Actives session upserts. `upsert_premarket_actives` and
+`upsert_aftermarket_actives` each computed `med_trades`/`med_volume` in their `_avg` CTE and
+referenced `excluded.med_trades` in ON CONFLICT — but the four median columns (`med_trades`,
+`med_volume`, `rel_trades_med`, `rel_volume_med`) were never in the INSERT list, so all four
+wrote NULL and the two `rel_*_med` ratios were never computed at all. `upsert_overnight_actives`
+had them wired correctly and was the reference. **2 of 3 had the bug.** In the UI the MED TRADES /
+MED VOL / median-relative columns rendered blank.
+
+**Why it hid for weeks:** a one-off backfill on Jul 23 populated the historical rows via a
+different code path, so every day *looked* fine — only the current day (written solely by the
+live scan) was blank, which reads as "today's data hasn't settled yet" rather than a bug. The
+masking backfill is the trap: **a broken live writer looks healthy for as long as something else
+backfills behind it.**
+
+**How to catch this class — none of it is structural:**
+- **Run the writer, read what it wrote.** The only reliable test was calling the real RPC on a
+  ticker *with prior history* inside a `begin; … rollback;` and checking the target columns are
+  non-null. A ticker with no history has legitimately-null baselines and does not discriminate —
+  use NVDA or similar.
+- **Compare the count of the derived column against the count of a sibling that shares its
+  baseline.** `count(med_trades)` should equal `count(avg_trades)` (both come from the same
+  prior-session history); a gap is the tell. Ran this per session_date across all three tables;
+  `gap = 0` everywhere is the pass condition.
+- **When a value is present, still hand-recompute the ratio.** `trades / med_trades * 100` must
+  equal the stored `rel_trades_med` to the decimal. Non-null is not correct.
+
+Same fix pattern each time: add the columns to the INSERT list, compute the ratios in the
+SELECT, add `coalesce(excluded.x, tbl.x)` on the conflict path so a baseline-less re-run cannot
+blank a good value, and — because these tables also carry the write-time-aggregate hazard of
+§5.8 — extend the forward-recompute block to rebuild the medians too, or a backfill leaves
+forward sessions' medians stale exactly the way it did for the means.
 
 ### 5.2 Resource limits — think BEFORE building (Jul 22 2026: took the DB down)
 
@@ -326,6 +369,18 @@ inside a statement. Do the waiting in the client.
 - **Parity audits find real bugs.** When a feature is extended to a new mode
   (overnight → pre-market), audit *every* branch: v552 found four places where
   overnight-only logic silently missed pre-market.
+- **Do not diagnose a function by grepping its source text — run it.** Chasing the §5.1d
+  median bug, a regex over `pg_get_functiondef` reported the median columns *were* in the
+  INSERT list; a second regex reported they were *not*. Both were parsing artifacts — the
+  columns appear in the text (in the `_avg` CTE and the ON CONFLICT clause) whether or not
+  they are wired into the INSERT, so text-presence proves nothing about behaviour. The two
+  contradictory results were the only reason I noticed. What settled every question reliably
+  was the empirical test: `begin;` → call the real RPC → select the columns → `rollback;`.
+  For "does this function actually produce X", the source is evidence; its execution is proof.
+- **When one variant of a repeated pattern is correct, use it as the oracle.** Three
+  near-identical upserts, one right (overnight) and two wrong. Diffing the broken ones against
+  the working one localised the fix faster than reading any of them cold, and confirmed the
+  correct shape rather than inventing it.
 
 ### 5.7 Server limits → always have a browser fallback
 
@@ -348,7 +403,10 @@ Set a `serverFailed` flag so subsequent days skip the doomed server attempt.
   strictly *after* `target_date`. Guarded by an `exists` check so the live path
   (always writing the newest session) matches nothing and costs ~0.5ms; the ~150ms
   recompute is paid only during a backfill. Generalise: **any cached aggregate over
-  "everything before me" needs a plan for late-arriving earlier rows.**
+  "everything before me" needs a plan for late-arriving earlier rows.** (Jul 24: this block
+  now also rebuilds `med_trades`/`med_volume`/`rel_*_med` — see §5.1d. When you add a new
+  cached aggregate to one of these tables, it must be added to the forward-recompute too, or
+  it silently reintroduces this exact staleness for that column.)
 - **`net.http_post` is asynchronous** — firing a loop of them does NOT execute in
   order. Sessions landed scrambled during backfill. Don't rely on dispatch order for
   correctness; make the target self-correcting. And do NOT space them with
@@ -579,11 +637,21 @@ partial recalibration cannot wipe the others. Verified by feeding it the real tr
 curve survived intact. **5-min bars: 60 tickers max per request.**
 
 **Weight-tuning dataset** (backend-only): `signal_chains` — one row per ticker-day with the
-full four-session chain plus RTH outcomes (3,279 rows, 887 tickers, 6 days). Rebuild with
-`select rebuild_signal_chains();`. Source RTH bars live in `signal_rth_bars` (38k rows, SIP
-daily, trailing-20-**session** baselines, not calendar days). Test weight sets with
+full four-session chain plus RTH outcomes (**5,672 rows, 887 tickers, 12 sessions** as of Jul 24
+2026 — was 6 days; it grows as sessions land). Rebuild with `select rebuild_signal_chains();`.
+Source RTH bars live in `signal_rth_bars` (~39k rows, SIP daily, trailing-20-**session**
+baselines, not calendar days). Test weight sets with
 `test_weights3(am_trd, am_vol, ovn_trd, ovn_vol, pm_trd, pm_vol, gap, hit_rth, top_n, min_avg)`.
 Combined ~6 MB.
+
+**IMPORTANT — the chain columns are already normalised, not raw counts.** `rth_trd`, `am_trd`,
+`ovn_trd`, `pm_trd` etc. are each expressed as **% of that leg's own trailing-average** (NVDA on
+an ordinary day reads ~90–105, not ~2.4M). So the hit target is simply `rth_trd >= 120` — there
+is **no baseline to construct**. Building one and dividing is a real trap: doing exactly that
+returned 0 hits / 5,672 against an expected ~10% base rate (the absurd result is what exposed the
+error — a *plausible* wrong number would have shipped). Measured base rate on the current
+12-session universe is **10.5%** (the older 12.2% figure predates the universe expansion; the
+early Jul 8–10 days carry only ~233–276 rows vs ~460–630 later, so the mix shifted).
 
 Measured against **RTH trades ≥120% of trailing-20-session average** (base rate 12.2%):
 standalone log-log correlations are pm_trd .306 > ovn_trd .274 > am_trd .248 > gap .203, with
@@ -610,6 +678,33 @@ capped, so no single leg can carry the score alone. Sample sizes are small enoug
 
 ## 10. Known open items
 
+### Resolved Jul 24 2026
+- **Most Actives median columns were blank** (MED TRADES / MED VOL / `rel_*_med`). Root cause
+  and fix in §5.1d — the median columns were computed but never listed in the INSERT of
+  `upsert_premarket_actives` / `upsert_aftermarket_actives`, so `excluded.med_*` wrote NULL.
+  Overnight was already correct. Both fixed, ratios computed, forward-recompute extended to
+  carry medians, and existing NULL rows backfilled. Verified: `count(med_trades)` now equals
+  `count(avg_trades)` on the latest session of all three tables (`gap = 0`), and hand-recomputed
+  ratios match stored to the decimal. **No app change was needed** — the fetch already selected
+  the columns and the render already mapped them; the entire bug was database-side.
+- **v592/v593 shipped** — rolling top-1/3/5 predictor accuracy box (pooled, split by capture
+  label), and the noisy per-day reconstructed table was removed. `predictor_rolling` RPC added
+  with anon EXECUTE. `predictor_accuracy` and `predictor_scorecard` still exist in the DB but
+  nothing calls them.
+
+### Predictor live-capture cron — VERIFIED ACTIVE (Jul 24 2026)
+Earlier sessions worried the live snapshot might never run, leaving the new accuracy box showing
+only reconstructed data forever. **It runs.** Three active `cron.job` entries:
+`predictor-snap-0915` (13:15 UTC = 09:15 ET), `predictor-snap-0925` (13:25 UTC), both
+`predictor_snapshot_take(..., 20)`; and `predictor-outcomes` (21:30 UTC) `predictor_outcomes_fill()`.
+First forward captures landed Jul 24 — `predictor_snapshots` now holds `premarket_0915` (20 rows)
+and `premarket_0925` (20 rows) for 2026-07-24 alongside the 200 reconstructed rows.
+**Two consequences for the v592 accuracy box:** (1) live labels are `premarket_0915` /
+`premarket_0925`, *not* a bare `live` — the box groups by whatever labels exist, so it now renders
+three blocks, and the two 09:15/09:25 captures are separate series (a 10-min-apart re-snapshot,
+not duplicates). (2) Today's live rows have **no outcome until 21:30 ET tonight**, so their hit
+rate reads as unresolved/em-dash until `predictor_outcomes_fill()` runs — expected, not a bug.
+
 ### Raised in the Jul 23 audit — not yet done
 
 - **Cross-source verification is not scheduled.** `verify_vs_alpaca_fetch` →
@@ -631,9 +726,21 @@ capped, so no single leg can carry the score alone. Sample sizes are small enoug
   4:00 AM, so unlike overnight it clears the 15% floor immediately and projects from the
   first scan. **Lesson: when a measurement rules something out, re-check it at finer
   resolution before treating the conclusion as settled.**
-- **AI Predictor tuning is in-sample.** Weights and the plain-sum form were fitted on
-  the same 6 days they were measured on. `signal_chains` + `test_weights3` exist to
-  re-run it properly once more sessions land.
+- **AI Predictor: session-combination research is parked, partially done (Jul 24 2026).**
+  The original "fitted in-sample on the same 6 days" problem is now improvable — 12 sessions
+  exist, enough for a train/test split (first 8 train, last 4 test). Finding that held up under
+  scrutiny: **after-market + pre-market is the pair that carries the signal.** Leave-one-day-out
+  over all 12 days (more trustworthy here than the single split): `am+pm` 83.3%, `pm` alone
+  76.7%, `am` alone 58.3% — the combination genuinely beats its parts, so the two legs carry
+  partly independent information. Overnight adds nothing on top (`am+ovn+pm` < `am+pm`) and gap
+  is noise (1.11× univariate lift ≈ base rate). Fewer legs beat more — every 4-leg combo
+  underperformed the 2-leg `am+pm`, echoing the plain-sum-beats-weighted result. **Caveat that
+  blocks a firm ranking:** the test set is 4 days × 5 picks = 20 observations, and 65 of 98
+  tested combos scored ≥90% on it, so "`am+pm` vs everything else" is solid but
+  "`am+pm` vs `am+amv+gap+pm`" is not resolvable at this sample size. A random-selection baseline
+  on the same test days averaged 10.4% and never exceeded 35% in 2,000 trials, so the signal
+  itself is real. **Re-run at ~22 sessions.** Next build step if wanted: wire an `am+pm`
+  scoring variant to run in parallel with the live predictor for a genuine forward comparison.
 - **Nothing predicts intraday range** (r .002–.068 across every feature). The model
   selects for *activity*. If it is meant to feed grid deployment, retargeting on
   range is the honest next step.
