@@ -19421,6 +19421,10 @@ function MultiViewChartsPage(p){
   // {d:'YYYY-MM-DD', n:trades, v:shares, dollars:vw*v}.
   var s16=useState([]),vtRows=s16[0],setVtRows=s16[1];
   var s17=useState({c:-1,b:-1}),vtHover=s17[0],setVtHover=s17[1];  // {chartIndex, barIndex} for tap-to-inspect
+  // Lookback window for the Volume & Trades charts. Applied by DATE (calendar months/weeks),
+  // filtering the full daily series at render — the bars are trading days, so bar count varies
+  // with holidays. '1m' ~ the prior 30-session default.
+  var s18=useState('1m'),vtPeriod=s18[0],setVtPeriod=s18[1];
   // interval options offered per chart (only where the window is long enough to be meaningful)
   var INTERVAL_OPTS={
     'YTD':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
@@ -19615,13 +19619,15 @@ function MultiViewChartsPage(p){
           cm[tf.key]=closeToHighPct(series);
         });
         setAtrMap(am);setC2hMap(cm);
-        // Volume & Trades Comparison: last 30 sessions from the same daily series.
-        // Polygon daily aggs carry v (share volume), n (trade count), vw (VWAP).
-        // Notional = vw*v (dollars actually transacted), falling back to c*v if vw missing.
-        var vt=acc.slice(-30).map(function(b){
+        // Volume & Trades Comparison: the FULL daily series (up to 10y), kept so the
+        // lookback dropdown can re-slice by date without re-fetching. Each row keeps t
+        // (ms) for date filtering. Polygon daily aggs carry v (shares), n (trades),
+        // vw (VWAP). Notional = vw*v, falling back to c*v if vw missing.
+        var vt=acc.map(function(b){
           var shares=(typeof b.v==='number')?b.v:null;
           var vwap=(typeof b.vw==='number'&&b.vw>0)?b.vw:((typeof b.c==='number')?b.c:null);
           return {
+            t: b.t,
             d: iso(new Date(b.t)).slice(0,10),
             n: (typeof b.n==='number')?b.n:null,
             v: shares,
@@ -20122,13 +20128,37 @@ function MultiViewChartsPage(p){
 
   // Self-contained daily bar chart for the Volume & Trades block. rows come from vtRows;
   // field selects which measure to plot; fmt formats the axis + tooltip value.
+  // Date-based lookback: keep bars whose timestamp is within the selected window of the
+  // most recent bar. Anchored to the last bar (not now()) so a stale/weekend load still
+  // shows a full window. Returns the visible subset of vtRows, oldest->newest.
+  var VT_PERIODS=[{k:'12m',label:'12 months',months:12},{k:'6m',label:'6 months',months:6},{k:'3m',label:'3 months',months:3},{k:'1m',label:'1 month',months:1},{k:'1w',label:'1 week',days:7}];
+  var vtVisible=function(){
+    if(!vtRows.length)return [];
+    var lastMs=vtRows[vtRows.length-1].t;
+    var def=null;VT_PERIODS.forEach(function(p){if(p.k===vtPeriod)def=p;});
+    if(!def)def=VT_PERIODS[3];
+    var cut=new Date(lastMs);
+    if(def.days!=null){cut.setUTCDate(cut.getUTCDate()-def.days);}
+    else{
+      // setUTCMonth overflows on day-31 dates (e.g. Mar 31 minus 1mo -> Mar 3, since Feb 31
+      // rolls forward). Clamp: if the day-of-month jumped forward, snap to the target month's
+      // last day. Without this, "1 month" on a late-month bar returns only a few days.
+      var dom=cut.getUTCDate();
+      cut.setUTCMonth(cut.getUTCMonth()-def.months);
+      if(cut.getUTCDate()!==dom)cut.setUTCDate(0); // day 0 = last day of the previous (target) month
+    }
+    var cutMs=cut.getTime();
+    return vtRows.filter(function(r){return r.t>=cutMs;});
+  };
+
   var vtChart=function(chartIdx,field,color,label,fmt){
+    var rows=vtVisible();
     var W=900,H=380,padL=64,padR=10,padT=18,padB=34;
-    var vals=vtRows.map(function(r){return r[field];});
+    var vals=rows.map(function(r){return r[field];});
     var have=vals.filter(function(v){return v!=null&&isFinite(v);});
     if(!have.length)return <div style={{height:240,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No {label} data.</div>;
     var mx=Math.max.apply(null,have);
-    var n=vtRows.length;
+    var n=rows.length;
     var innerW=W-padL-padR, innerH=H-padT-padB;
     var bw=innerW/n, gap=Math.min(2,bw*0.15);
     var hv=(vtHover.c===chartIdx)?vtHover.b:-1;
@@ -20143,7 +20173,7 @@ function MultiViewChartsPage(p){
           <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="12" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmt(t.val)}</text>
         </g>;
       })}
-      {vtRows.map(function(r,i){
+      {rows.map(function(r,i){
         var v=r[field];
         var x=padL+i*bw;
         if(v==null||!isFinite(v))return null;
@@ -20155,15 +20185,15 @@ function MultiViewChartsPage(p){
           onMouseEnter={function(){setVtHover({c:chartIdx,b:i});}}
           onClick={function(){setVtHover({c:chartIdx,b:i});}}/>;
       })}
-      {/* date ticks: first, middle, last */}
+      {/* date ticks: first, middle, last of the visible window */}
       {[0,Math.floor(n/2),n-1].map(function(i){
-        if(!vtRows[i])return null;
+        if(!rows[i])return null;
         var x=padL+i*bw+bw/2;
-        return <text key={'t'+i} x={x} y={H-9} textAnchor="middle" fontSize="13" fontWeight="700" fill={C.txtDim} fontFamily={F}>{vtRows[i].d.slice(5)}</text>;
+        return <text key={'t'+i} x={x} y={H-9} textAnchor="middle" fontSize="13" fontWeight="700" fill={C.txtDim} fontFamily={F}>{rows[i].d.slice(5)}</text>;
       })}
       {/* tooltip */}
-      {hv>=0&&vtRows[hv]&&(function(){
-        var r=vtRows[hv];var v=r[field];
+      {hv>=0&&rows[hv]&&(function(){
+        var r=rows[hv];var v=r[field];
         var x=padL+hv*bw+bw/2;
         var tw=170,th=40;
         var tx=Math.max(padL,Math.min(W-padR-tw,x-tw/2));
@@ -20273,10 +20303,18 @@ function MultiViewChartsPage(p){
       })}
       <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume, MACD (12/26/9) and EPS shown in panels below each chart. Prices split-adjusted; intraday includes pre / post-market. In the EPS panel, each bar is a quarter's diluted EPS at its report date — green = up year-over-year, red = down, gray dot = no prior-year quarter; tap a bar for the value and YoY change.</div>
 
-      {/* ===== VOLUME & TRADES COMPARISON — three daily bar charts, last 30 sessions ===== */}
+      {/* ===== VOLUME & TRADES COMPARISON — three daily bar charts, date-filtered lookback ===== */}
       <div style={{marginTop:22,paddingTop:16,borderTop:'2px solid '+C.accent+'44'}}>
-        <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Volume &amp; Trades Comparison</div>
-        <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Daily activity over the last {vtRows.length} sessions{vtRows.length?(' ('+vtRows[0].d+' → '+vtRows[vtRows.length-1].d+')'):''}. Tap any bar to inspect a session.</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+          <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Volume &amp; Trades Comparison</div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Lookback</span>
+            <select value={vtPeriod} onChange={function(e){setVtHover({c:-1,b:-1});setVtPeriod(e.target.value);}} style={{background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:700,border:'1px solid '+C.accent+'88',borderRadius:5,padding:'4px 8px',cursor:'pointer'}}>
+              {VT_PERIODS.map(function(p){return <option key={p.k} value={p.k}>{p.label}</option>;})}
+            </select>
+          </div>
+        </div>
+        {(function(){var vis=vtVisible();return <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Daily activity over {vis.length} session{vis.length===1?'':'s'}{vis.length?(' ('+vis[0].d+' → '+vis[vis.length-1].d+')'):''}. Tap any bar to inspect a session.</div>;})()}
         {[{f:'n',c:C.blue,t:'Daily Trade Count',u:'number of individual trades executed',fmt:fmtVol},
           {f:'v',c:C.accent,t:'Daily Share Volume',u:'total shares traded',fmt:fmtVol},
           {f:'dollars',c:C.gold,t:'Daily Notional Value',u:'dollars transacted (VWAP × shares)',fmt:fmtUSD}
