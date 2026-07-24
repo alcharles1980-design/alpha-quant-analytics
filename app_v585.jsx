@@ -13522,9 +13522,26 @@ function MostActivesPage(p){
             // different set of stocks for each sort). Column headers are the sort control here.
             var ovnUrl=SB_URL+'/rest/v1/'+ovnTable+'?session_date=eq.'+ovnDate
               +'&select=ticker,trades,volume,open,high,low,close,vwap,pct_move,avg_trades,avg_volume,avg_sessions,rel_trades,rel_volume,is_partial,prev_rth_close,gap_pct,market_cap,ticker_type,med_trades,med_volume,rel_trades_med,rel_volume_med'
-              +'&order=trades.desc&limit=5000';
-            var ovnR=await fetch(ovnUrl,{headers:getSbHeaders()});
-            if(ovnR.ok)ovnRows=await ovnR.json();
+              +'&order=trades.desc';
+            // PAGINATE. PostgREST hard-caps a response at 1,000 rows and `limit=5000` does NOT
+            // raise it — the server replies `content-range: 0-999/2289` and silently returns 1,000.
+            // Pre-market and after-market hold ~2,300-2,700 rows per session, so more than half the
+            // table was never reaching the browser. It went unnoticed because the fetch orders by
+            // trades.desc and the default Trades>=500 filter would have rejected the dropped rows
+            // anyway — but clearing that filter made 907 real names silently vanish.
+            // Range headers ARE honoured for table reads (unlike RPC calls, where nothing lifts the
+            // cap), so page through in 1,000-row windows until a short page arrives.
+            var pageSize=1000,offset=0;
+            for(var pg=0;pg<10;pg++){
+              var pr=await fetch(ovnUrl,{headers:Object.assign({},getSbHeaders(),
+                {'Range-Unit':'items','Range':offset+'-'+(offset+pageSize-1)})});
+              if(!pr.ok)break;
+              var chunk=await pr.json();
+              if(!chunk||!chunk.length)break;
+              ovnRows=ovnRows.concat(chunk);
+              if(chunk.length<pageSize)break;
+              offset+=pageSize;
+            }
           }
           var overnightActives=[];
           // PostgREST serialises Postgres `numeric` columns as STRINGS (int columns come back as
