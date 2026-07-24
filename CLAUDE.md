@@ -502,6 +502,22 @@ positive and consistent with our snapshot being ~3 min older than the API call �
    scanner for that session date, which is the real lesson: **destructive tests need a restore
    path that does not depend on session state.**
 
+**Median baselines: which source writes them.** The three `upsert_*_actives` scanners compute
+mean *and* median in the same `SELECT` over the same `hist` CTE, so both see identical data —
+table rows UNION the API payload. For **overnight** that payload carries ~27 sessions of BOATS
+history, far more than the ~13 rows retained, so the scanner's median is the better-sourced one.
+
+`rebuild_median_baselines(stype, date)` recomputes from **table rows only** and writes just the
+four median columns (verified: it does not touch `avg_trades`, `avg_sessions` or `rel_trades`).
+It is the *only* source for pre-market and after-market, whose tables have no API-side history —
+so pg_cron jobs 42 and 43 must stay. **Job 41 (overnight) was removed**: it ran ten minutes after
+the settle and replaced the scanner's ~27-session median with a ~13-row one. Impact was small
+(median sat at 74.1% of mean before, 74.4% after) but it was strictly worse-sourced.
+
+Note that historical `avg_sessions` values are *snapshots of what the API served on the day that
+session was scanned* — 07-17 shows 11.4 while the live session shows 26.5. That is normal
+accumulation, not corruption; do not "fix" it.
+
 **Data integrity framework** (backend-only). `select * from data_integrity_check();` returns 13
 checks across six classes, each targeting a failure that produces **no error** — anything that
 already throws needs no check. Logged to `integrity_log` (non-OK rows only) by pg_cron job 38
