@@ -107,6 +107,34 @@ exception, correct-looking UI, wrong data underneath. Assume silence is the dang
   verify `end=` behaviour client-side. v486 had hourly charts cut off from exactly
   this (`limit=5000` truncation).
 
+### 5.1a Structural checks do not catch behavioural bugs
+
+**The build passing means nothing about whether a feature works.** Three bugs shipped in one
+session with the identical signature — code present, build clean, route parity green, and the
+failure producing a *plausible value* rather than an error:
+
+| Version | What broke | Why it looked fine |
+|---|---|---|
+| v574 | ~305 tickers' pace values never reached the browser (PostgREST 1,000-row cap) | cells showed an em-dash, indistinguishable from the deliberate suppression rules |
+| v581 | ON PACE header was sortable but values lived only in a side map | comparator reads `row[sortKey]`, found nothing, sorted by null |
+| v584 | `useEffect` placed 30 lines *above* the `session` declaration | `var` hoists, its value does not → closed over `undefined` → fell through to the wrong default |
+
+**The worst part:** after shipping v583 I ran a full "check everything" pass — fresh clone,
+byte-for-byte build match, route parity 86/86, integrity 15/16 OK, cross-source verification
+10/10 exact — and reported it all clean. The feature was already broken. Every check passed
+because they verify **structure**, not **behaviour**.
+
+**After any UI change, do this instead:**
+1. **Trace one value end to end** — computation → fetch `select=` list → row mapping → render.
+   Confirm the number that appears is the number expected. Field presence is not evidence.
+2. **Check declaration order** for any `useEffect` reading a state variable — the effect must
+   appear *after* the variable is assigned. Grep the line numbers.
+3. **New sortable column?** Confirm the value is on the **row object**, not only a side lookup.
+4. **Named `select=` list?** Confirm new columns were added to it — omitted fields return null
+   silently.
+5. **Simulate the logic in node with the failure inputs** (`undefined`, `null`, empty), not just
+   the happy path.
+
 ### 5.1b The three truncation traps — all return HTTP 200
 
 Hit all three in one session. Each produces plausible output with missing data.
