@@ -19416,6 +19416,11 @@ function MultiViewChartsPage(p){
   var s14=useState([]),epsQ=s14[0],setEpsQ=s14[1];  // [{ms,label,eps,yoy}] diluted quarterly EPS with YoY, oldest→newest
   var s15=useState({}),epsHover=s15[0],setEpsHover=s15[1];  // {tfKey: epsIndex} earnings-marker tap
   var s15b=useState({}),rincHover=s15b[0],setRincHover=s15b[1];  // {tfKey: rincIndex} rev/income bar tap (separate index space from EPS)
+  // Last-30-session daily bars for the Volume & Trades Comparison block at the bottom.
+  // Populated from the 10y daily fetch already run below (acc) — no extra network. Each row:
+  // {d:'YYYY-MM-DD', n:trades, v:shares, dollars:vw*v}.
+  var s16=useState([]),vtRows=s16[0],setVtRows=s16[1];
+  var s17=useState({c:-1,b:-1}),vtHover=s17[0],setVtHover=s17[1];  // {chartIndex, barIndex} for tap-to-inspect
   // interval options offered per chart (only where the window is long enough to be meaningful)
   var INTERVAL_OPTS={
     'YTD':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
@@ -19610,7 +19615,21 @@ function MultiViewChartsPage(p){
           cm[tf.key]=closeToHighPct(series);
         });
         setAtrMap(am);setC2hMap(cm);
-      }).catch(function(){setAtrMap({});setC2hMap({});});
+        // Volume & Trades Comparison: last 30 sessions from the same daily series.
+        // Polygon daily aggs carry v (share volume), n (trade count), vw (VWAP).
+        // Notional = vw*v (dollars actually transacted), falling back to c*v if vw missing.
+        var vt=acc.slice(-30).map(function(b){
+          var shares=(typeof b.v==='number')?b.v:null;
+          var vwap=(typeof b.vw==='number'&&b.vw>0)?b.vw:((typeof b.c==='number')?b.c:null);
+          return {
+            d: iso(new Date(b.t)).slice(0,10),
+            n: (typeof b.n==='number')?b.n:null,
+            v: shares,
+            dollars: (shares!=null&&vwap!=null)?vwap*shares:null
+          };
+        });
+        setVtRows(vt);
+      }).catch(function(){setAtrMap({});setC2hMap({});setVtRows([]);});
     })();
     var out={},dn={},i=0;
     var next=function(){
@@ -20101,6 +20120,58 @@ function MultiViewChartsPage(p){
 
   var winStat=function(bars){if(!bars||bars.length<2)return null;var a=bars[0].c,b=bars[bars.length-1].c;if(!a)return null;return {pct:(b-a)/a*100,last:b,hi:Math.max.apply(null,bars.map(function(x){return x.h;})),lo:Math.min.apply(null,bars.map(function(x){return x.l;}))};};
 
+  // Self-contained daily bar chart for the Volume & Trades block. rows come from vtRows;
+  // field selects which measure to plot; fmt formats the axis + tooltip value.
+  var vtChart=function(chartIdx,field,color,label,fmt){
+    var W=900,H=190,padL=8,padR=8,padT=14,padB=26;
+    var vals=vtRows.map(function(r){return r[field];});
+    var have=vals.filter(function(v){return v!=null&&isFinite(v);});
+    if(!have.length)return <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>No {label} data.</div>;
+    var mx=Math.max.apply(null,have);
+    var n=vtRows.length;
+    var innerW=W-padL-padR, innerH=H-padT-padB;
+    var bw=innerW/n, gap=Math.min(2,bw*0.15);
+    var hv=(vtHover.c===chartIdx)?vtHover.b:-1;
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block',touchAction:'pan-y'}}
+      onMouseLeave={function(){setVtHover({c:-1,b:-1});}}>
+      {/* baseline */}
+      <line x1={padL} y1={padT+innerH} x2={W-padR} y2={padT+innerH} stroke={C.border} strokeWidth="1"/>
+      {vtRows.map(function(r,i){
+        var v=r[field];
+        var x=padL+i*bw;
+        if(v==null||!isFinite(v))return null;
+        var bh=mx>0?(v/mx)*innerH:0;
+        var y=padT+innerH-bh;
+        var on=(hv===i);
+        return <rect key={i} x={x+gap/2} y={y} width={Math.max(1,bw-gap)} height={Math.max(0,bh)}
+          fill={color} opacity={on?1:0.72}
+          onMouseEnter={function(){setVtHover({c:chartIdx,b:i});}}
+          onClick={function(){setVtHover({c:chartIdx,b:i});}}/>;
+      })}
+      {/* max-value tag, top-left */}
+      <text x={padL} y={padT-3} fontSize="9" fontWeight="700" fill={C.txtDim} fontFamily={F}>peak {fmt(mx)}</text>
+      {/* date ticks: first, middle, last */}
+      {[0,Math.floor(n/2),n-1].map(function(i){
+        if(!vtRows[i])return null;
+        var x=padL+i*bw+bw/2;
+        return <text key={'t'+i} x={x} y={H-8} textAnchor="middle" fontSize="8" fill={C.txtDim} fontFamily={F}>{vtRows[i].d.slice(5)}</text>;
+      })}
+      {/* tooltip */}
+      {hv>=0&&vtRows[hv]&&(function(){
+        var r=vtRows[hv];var v=r[field];
+        var x=padL+hv*bw+bw/2;
+        var tw=150,th=34;
+        var tx=Math.max(padL,Math.min(W-padR-tw,x-tw/2));
+        return <g>
+          <line x1={x} y1={padT} x2={x} y2={padT+innerH} stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.6"/>
+          <rect x={tx} y={2} width={tw} height={th} rx="4" fill={C.bgDeep} stroke={color} strokeWidth="1"/>
+          <text x={tx+8} y={16} fontSize="10" fontWeight="700" fill={C.txtBright} fontFamily={F}>{r.d}</text>
+          <text x={tx+8} y={29} fontSize="10" fontWeight="700" fill={color} fontFamily={F}>{v==null?'—':fmt(v)}</text>
+        </g>;
+      })()}
+    </svg>;
+  };
+
   var started=sym!=='';
   var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
 
@@ -20196,6 +20267,25 @@ function MultiViewChartsPage(p){
         </div>;
       })}
       <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume, MACD (12/26/9) and EPS shown in panels below each chart. Prices split-adjusted; intraday includes pre / post-market. In the EPS panel, each bar is a quarter's diluted EPS at its report date — green = up year-over-year, red = down, gray dot = no prior-year quarter; tap a bar for the value and YoY change.</div>
+
+      {/* ===== VOLUME & TRADES COMPARISON — three daily bar charts, last 30 sessions ===== */}
+      <div style={{marginTop:22,paddingTop:16,borderTop:'2px solid '+C.accent+'44'}}>
+        <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Volume &amp; Trades Comparison</div>
+        <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Daily activity over the last {vtRows.length} sessions{vtRows.length?(' ('+vtRows[0].d+' → '+vtRows[vtRows.length-1].d+')'):''}. Tap any bar to inspect a session.</div>
+        {[{f:'n',c:C.blue,t:'Daily Trade Count',u:'number of individual trades executed',fmt:fmtVol},
+          {f:'v',c:C.accent,t:'Daily Share Volume',u:'total shares traded',fmt:fmtVol},
+          {f:'dollars',c:C.gold,t:'Daily Notional Value',u:'dollars transacted (VWAP × shares)',fmt:fmtUSD}
+         ].map(function(cfg,ci){
+          return <div key={cfg.f} style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+              <div style={{color:cfg.c,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>{cfg.t}</div>
+              <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{cfg.u}</div>
+            </div>
+            <div style={{marginTop:10}}>{vtChart(ci,cfg.f,cfg.c,cfg.t,cfg.fmt)}</div>
+          </div>;
+        })}
+        <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:10,textAlign:'center',lineHeight:1.6}}>Daily bars, split-adjusted, from Polygon aggregates (regular + extended hours). Trade count is Polygon's per-day count and may differ slightly from consolidated SIP tallies. Notional = each day's VWAP × share volume.</div>
+      </div>
     </div>}
   </div>;
 }
