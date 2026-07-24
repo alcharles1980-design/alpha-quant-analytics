@@ -20132,7 +20132,7 @@ function MultiViewChartsPage(p){
     var innerW=W-padL-padR, innerH=H-padT-padB;
     var bw=innerW/n, gap=Math.min(2,bw*0.15);
     var hv=(vtHover.c===chartIdx)?vtHover.b:-1;
-    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block',touchAction:'pan-y'}}
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block',touchAction:'pan-y pinch-zoom'}}
       onMouseLeave={function(){setVtHover({c:-1,b:-1});}}>
       {/* baseline */}
       <line x1={padL} y1={padT+innerH} x2={W-padR} y2={padT+innerH} stroke={C.border} strokeWidth="1"/>
