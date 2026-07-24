@@ -13444,6 +13444,11 @@ function MostActivesPage(p){
   var s30=useState([]),slDates=s30[0],setSlDates=s30[1];
   var s31=useState([]),slCard=s31[0],setSlCard=s31[1];
   var s32=useState(false),slCardOpen=s32[0],setSlCardOpen=s32[1];
+  // Rolling pooled accuracy (predictor_rolling RPC). Kept separate from slCard: that one is
+  // per-day, this one pools across the window. Pooling is not the same as averaging the daily
+  // rates — days have unequal resolved counts, so mean-of-rates reads 79.5% where the correct
+  // pooled top-5 figure is 77.6%.
+  var s33=useState([]),slRoll=s33[0],setSlRoll=s33[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var inFlight=useRef(false); // guards against overlapping fetches
@@ -13826,6 +13831,14 @@ function MostActivesPage(p){
       body:JSON.stringify({p_days:30})})
       .then(function(r){return r.ok?r.json():[];})
       .then(function(d){setSlCard(d||[]);}).catch(function(){});
+    // Rolling pooled hit rates over the last 10 trading days, split by capture label.
+    // The RPC returns one row per (label, bucket) — at most a handful — so the PostgREST
+    // 1,000-row RPC cap (which cannot be raised from the client) is structurally unreachable.
+    fetch(SB_URL+'/rest/v1/rpc/predictor_rolling',{method:'POST',
+      headers:Object.assign({},getSbHeaders(),{'Content-Type':'application/json'}),
+      body:JSON.stringify({p_days:10})})
+      .then(function(r){return r.ok?r.json():[];})
+      .then(function(d){setSlRoll(d||[]);}).catch(function(){});
   },[session,refreshTrigger]);
   // Poll while the tab is open. 90s matches the pre/after-market scanner cadence — the underlying
   // tables refresh every 3 min, so anything tighter just re-reads the same rows.
@@ -14221,7 +14234,62 @@ function MostActivesPage(p){
             Top 20 captured each day, scored against whether the stock went on to trade {'\u2265'}120% of its 20-session average in the regular session. Base rate for any stock is about 12%.
             <div style={{marginTop:3,opacity:0.8}}>Rows marked <b>reconstructed</b> were rebuilt from stored history rather than captured live, so they show what the model <i>would</i> have said. Genuine forward captures begin from the next session.</div>
           </div>
-          {slCard.length===0&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim}}>No scorecard data yet.</div>}
+            {/* ROLLING ACCURACY — pooled hit rate per bucket over the window, one block per capture
+              label. Reconstructed and live are never pooled together: the reconstructed rows were
+              fitted in-sample on overlapping days, so merging them into a single percentage would
+              let in-sample fit quality silently dilute a genuine forward record. */}
+          {slRoll.length>0&&<div style={{marginBottom:12}}>
+            {(function(){
+              var byLabel={},order=[];
+              slRoll.forEach(function(rw){
+                if(!byLabel[rw.label]){byLabel[rw.label]=[];order.push(rw.label);}
+                byLabel[rw.label].push(rw);
+              });
+              // Live first when present — it is the number that actually matters.
+              order.sort(function(a,b){return (a==='live'?0:1)-(b==='live'?0:1);});
+              return order.map(function(lb){
+                var rows=byLabel[lb].slice().sort(function(a,b){return Number(a.top_n)-Number(b.top_n);});
+                var isRecon=(lb==='reconstructed');
+                var sess=rows.length?Number(rows[0].sessions):0;
+                var fd=rows.length?rows[0].first_date:null,ld=rows.length?rows[0].last_date:null;
+                return <div key={lb} style={{marginBottom:10}}>
+                  <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:5,flexWrap:'wrap'}}>
+                    <span style={{fontSize:8.5,fontFamily:F,fontWeight:700,color:isRecon?C.gold:C.accent,textTransform:'uppercase',letterSpacing:0.5}}>
+                      {isRecon?'Reconstructed \u2014 in-sample':'Live \u2014 forward captures'}
+                    </span>
+                    <span style={{fontSize:7.5,fontFamily:F,color:C.txtDim}}>
+                      {sess} session{sess===1?'':'s'}{fd&&ld?' \u00b7 '+fd+' \u2192 '+ld:''}
+                    </span>
+                  </div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    {rows.map(function(rw){
+                      var hr=(rw.hit_rate==null)?null:Number(rw.hit_rate);
+                      var nres=Number(rw.n_resolved),nrank=Number(rw.n_ranked);
+                      var unresolved=nrank-nres;
+                      return <div key={rw.bucket} style={{flex:'1 1 90px',minWidth:90,padding:'7px 9px',borderRadius:5,
+                        border:'1px solid '+(isRecon?C.gold+'33':C.accent+'44'),
+                        background:(isRecon?C.gold:C.accent)+'08'}}>
+                        <div style={{fontSize:7.5,fontFamily:F,color:C.txtDim,fontWeight:600,letterSpacing:0.4}}>{rw.bucket}</div>
+                        <div style={{fontSize:15,fontFamily:F,fontWeight:700,lineHeight:1.25,
+                          color:hr==null?C.txtDim:hr>=50?C.accent:hr>=25?C.gold:C.txtDim}}>
+                          {hr==null?'\u2014':hr.toFixed(1)+'%'}
+                        </div>
+                        <div style={{fontSize:7.5,fontFamily:F,color:C.txtDim}}>
+                          {rw.hits}/{nres} resolved
+                          {unresolved>0?<span style={{opacity:0.75}}> {'\u00b7'} {unresolved} n/a</span>:null}
+                        </div>
+                      </div>;
+                    })}
+                  </div>
+                </div>;
+              });
+            })()}
+            <div style={{fontSize:7.5,fontFamily:F,color:C.txtDim,lineHeight:1.5,opacity:0.85}}>
+              Pooled across the window (total hits {'\u00f7'} total resolved), not an average of the daily rates {'\u2014'} days carry unequal resolved counts. {'\u201c'}n/a{'\u201d'} counts ranked names with no regular-session bar on file, excluded from the denominator rather than scored as misses. At these sample sizes a single flip moves Top 1 by ten points, so read the direction, not the decimal.
+            </div>
+          </div>}
+          {slRoll.length===0&&<div style={{fontSize:8.5,fontFamily:F,color:C.txtDim,marginBottom:10}}>Rolling accuracy unavailable.</div>}
+        {slCard.length===0&&<div style={{fontSize:9,fontFamily:F,color:C.txtDim}}>No scorecard data yet.</div>}
           {slCard.length>0&&<table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8.5}}>
             <thead><tr style={{borderBottom:'1px solid '+C.border}}>
               <th style={{textAlign:'left',padding:'3px',color:C.txtDim,fontSize:7.5}}>DATE</th>
