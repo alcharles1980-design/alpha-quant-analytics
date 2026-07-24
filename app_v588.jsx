@@ -13786,7 +13786,8 @@ function MostActivesPage(p){
           amTrd:num(row.am_trd),amVol:num(row.am_vol),amGap:num(row.am_gap),
           ovnTrd:num(row.ovn_trd),ovnVol:num(row.ovn_vol),
           pmTrd:num(row.pm_trd),pmVol:num(row.pm_vol),
-          score:num(row.score),sumTrades:num(row.sum_trades),breadthScore:num(row.breadth_score),legsPresent:num(row.legs_present),confidence:row.confidence,phase:row.phase,
+          score:num(row.score),sumTrades:num(row.sum_trades),breadthScore:num(row.breadth_score),legsPresent:num(row.legs_present),
+          rthAvgTrades:num(row.rth_avg_trades),rthAvgVolume:num(row.rth_avg_volume),confidence:row.confidence,phase:row.phase,
           ovnPartial:!!row.ovn_partial,pmPartial:!!row.pm_partial,
           price:num(row.price),marketCap:num(row.market_cap),tickerType:row.ticker_type};
       }));
@@ -14157,6 +14158,8 @@ function MostActivesPage(p){
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRE-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>TRADES vs AVG</div></th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>PRE-MKT<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>SHARES vs AVG</div></th>
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>MARKET<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>CAP</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}} title="This stock's AVERAGE daily regular-session trade count over the trailing 20 sessions. Everything else on this page is a ratio against a stock's own norm, which hides absolute size — a 3,000% reading on a name that normally does 200 trades is a very different proposition from the same reading on one that does 200,000. This is that missing context.">RTH AVG<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>DAILY TRADES</div></th>
+              <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}} title="This stock's AVERAGE daily regular-session share volume over the trailing 20 sessions. Read alongside RTH AVG DAILY TRADES: a high volume against a low trade count means large average order sizes.">RTH AVG<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>DAILY SHARES</div></th>
             </tr></thead>
             <tbody>
               {shortlist.map(function(r,i){
@@ -14189,6 +14192,8 @@ function MostActivesPage(p){
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.pmTrd>=200?C.accent:C.txtDim}}>{pct(r.pmTrd)}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.pmVol>=200?C.accent:C.txtDim}}>{pct(r.pmVol)}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{r.marketCap?fmtVol(r.marketCap):'\u2014'}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{(r.rthAvgTrades!=null&&isFinite(r.rthAvgTrades))?fmtVol(r.rthAvgTrades):'\u2014'}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txt}}>{(r.rthAvgVolume!=null&&isFinite(r.rthAvgVolume))?fmtVol(r.rthAvgVolume):'\u2014'}</td>
                 </tr>;
               })}
             </tbody>
