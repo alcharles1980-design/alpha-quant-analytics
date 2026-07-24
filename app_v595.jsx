@@ -20123,10 +20123,10 @@ function MultiViewChartsPage(p){
   // Self-contained daily bar chart for the Volume & Trades block. rows come from vtRows;
   // field selects which measure to plot; fmt formats the axis + tooltip value.
   var vtChart=function(chartIdx,field,color,label,fmt){
-    var W=900,H=190,padL=8,padR=8,padT=14,padB=26;
+    var W=900,H=380,padL=8,padR=8,padT=18,padB=30;
     var vals=vtRows.map(function(r){return r[field];});
     var have=vals.filter(function(v){return v!=null&&isFinite(v);});
-    if(!have.length)return <div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>No {label} data.</div>;
+    if(!have.length)return <div style={{height:240,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>No {label} data.</div>;
     var mx=Math.max.apply(null,have);
     var n=vtRows.length;
     var innerW=W-padL-padR, innerH=H-padT-padB;
