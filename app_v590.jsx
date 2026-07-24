@@ -13434,7 +13434,10 @@ function MostActivesPage(p){
   // they filter a different table on different columns — reusing minTrades/minAvgTrades would
   // couple two unrelated views and make a value typed on one tab silently apply to the other.
   var slFiltered=[];
-  var s27=useState(''),slMinRthTrades=s27[0],setSlMinRthTrades=s27[1];
+  // Default 100,000: excludes names that score highly on ratios but are thin in absolute terms.
+  // On 2026-07-24 this kept 29 of 38 candidates (76%). Clearable like any other filter, and the
+  // "N of M shown" counter makes the exclusion visible rather than silent.
+  var s27=useState('100000'),slMinRthTrades=s27[0],setSlMinRthTrades=s27[1];
   var s28=useState(''),slMinRthVol=s28[0],setSlMinRthVol=s28[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
