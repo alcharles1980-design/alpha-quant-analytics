@@ -13430,6 +13430,12 @@ function MostActivesPage(p){
   // methodology in particular is reference material rather than something to read every visit.
   var s25=useState(false),slAboutOpen=s25[0],setSlAboutOpen=s25[1];
   var s26=useState(false),slMathOpen=s26[0],setSlMathOpen=s26[1];
+  // AI Predictor liquidity filters. Kept SEPARATE from the Most Actives filter state because
+  // they filter a different table on different columns — reusing minTrades/minAvgTrades would
+  // couple two unrelated views and make a value typed on one tab silently apply to the other.
+  var slFiltered=[];
+  var s27=useState(''),slMinRthTrades=s27[0],setSlMinRthTrades=s27[1];
+  var s28=useState(''),slMinRthVol=s28[0],setSlMinRthVol=s28[1];
 
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
   var inFlight=useRef(false); // guards against overlapping fetches
@@ -14135,11 +14141,59 @@ function MostActivesPage(p){
 
       {slLoading&&!shortlist&&<div style={card}><div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Scoring sessions...</div></div>}
 
+      {(function(){
+        // Applied here rather than inline so the empty-state message and the table are driven by
+        // the SAME list — filtering only in the .map would leave "no candidates" showing while
+        // rows were actually present, or vice versa.
+        var mnT=(slMinRthTrades===''||slMinRthTrades==null)?null:parseFloat(slMinRthTrades);
+        var mnV=(slMinRthVol===''||slMinRthVol==null)?null:parseFloat(slMinRthVol);
+        slFiltered=(shortlist||[]).filter(function(r){
+          if(mnT!=null&&isFinite(mnT)){
+            // A null RTH baseline means the ticker is absent from signal_rth_bars, not that it is
+            // illiquid — exclude it when a bound is set, same convention as the Avg Trades filter.
+            if(!(typeof r.rthAvgTrades==='number'&&isFinite(r.rthAvgTrades)))return false;
+            if(r.rthAvgTrades<mnT)return false;
+          }
+          if(mnV!=null&&isFinite(mnV)){
+            if(!(typeof r.rthAvgVolume==='number'&&isFinite(r.rthAvgVolume)))return false;
+            if(r.rthAvgVolume<mnV)return false;
+          }
+          return true;
+        });
+        return null;
+      })()}
+
+      {/* Liquidity filters — only meaningful on this tab, so they live here rather than in the
+          shared Most Actives filter panel. */}
+      {shortlist&&shortlist.length>0&&<div style={Object.assign({},card,{paddingTop:10,paddingBottom:10})}>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>RTH avg daily trades {'\u2265'}</span>
+          <input value={slMinRthTrades} onChange={function(e){setSlMinRthTrades(e.target.value);}}
+            placeholder="Min" type="number" step="1000"
+            style={{width:88,background:C.bgInput,border:'1px solid '+((slMinRthTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+          <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600,marginLeft:6}}>RTH avg daily shares {'\u2265'}</span>
+          <input value={slMinRthVol} onChange={function(e){setSlMinRthVol(e.target.value);}}
+            placeholder="Min" type="number" step="100000"
+            style={{width:100,background:C.bgInput,border:'1px solid '+((slMinRthVol!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
+          {(slMinRthTrades!==''||slMinRthVol!=='')&&<button onClick={function(){setSlMinRthTrades('');setSlMinRthVol('');}}
+            style={{padding:'4px 9px',borderRadius:4,border:'1px solid '+C.border,background:'transparent',color:C.txtDim,fontFamily:F,fontSize:8,cursor:'pointer'}}>clear</button>}
+          <span style={{fontSize:7.5,fontFamily:F,color:C.txtDim,opacity:0.8,marginLeft:'auto'}}>
+            {slFiltered.length} of {shortlist.length} shown
+          </span>
+        </div>
+      </div>}
+
       {shortlist&&shortlist.length===0&&!slLoading&&<div style={card}>
         <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>No carry-over candidates for this session. Quiet after-market means nothing to carry forward {'\u2014'} this is the normal state on most days.</div>
       </div>}
 
-      {shortlist&&shortlist.length>0&&<div style={card}>
+      {shortlist&&shortlist.length>0&&slFiltered.length===0&&<div style={card}>
+        <div style={{textAlign:'center',padding:16,color:C.warn,fontSize:9.5,fontFamily:F}}>
+          All {shortlist.length} candidates are below the liquidity filter. Lower or clear it to see them.
+        </div>
+      </div>}
+
+      {shortlist&&slFiltered.length>0&&<div style={card}>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8,whiteSpace:'nowrap'}}>
             <thead><tr style={{borderBottom:'2px solid '+C.border}}>
@@ -14162,7 +14216,7 @@ function MostActivesPage(p){
               <th style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}} title="This stock's AVERAGE daily regular-session share volume over the trailing 20 sessions. Read alongside RTH AVG DAILY TRADES: a high volume against a low trade count means large average order sizes.">RTH AVG<div style={{fontSize:6.5,opacity:0.75,fontWeight:400}}>DAILY SHARES</div></th>
             </tr></thead>
             <tbody>
-              {shortlist.map(function(r,i){
+              {slFiltered.map(function(r,i){
                 var stCol=r.confidence==='CONFIRMED'?C.accent:r.confidence==='BUILDING'?C.gold:r.confidence==='WATCH'?C.blue:C.txtDim;
                 var pct=function(v){return (v!=null&&isFinite(v))?Math.round(v)+'%':'\u2014';};
                 // Escalation marker: pre-market running hotter than overnight means the chain is
