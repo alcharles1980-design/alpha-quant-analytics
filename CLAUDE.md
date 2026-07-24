@@ -169,6 +169,43 @@ feature dropped entirely.
   128 MB), statement timeouts (anon = 3s via PostgREST) — and raise them with the
   user *before* building.
 
+### 5.2a CONNECTION-POOL PROTOCOL — read this before invoking anything that writes
+
+The free-plan pool is small. I have saturated it **three times in one session**, each by a
+different mechanism but the same root cause: too many things holding connections at once.
+
+| # | What I did | Result |
+|---|---|---|
+| 1 | `pg_sleep` in SQL waiting for async `pg_net` results | pool starved, DB refused connections |
+| 2 | Fired **7 Edge Function calls in one statement** | 7 concurrent full-universe scanners, each bulk-upserting ~1,600 rows → even `select 1` timed out |
+
+**The generalisation I keep getting wrong.** I had earlier fired 20 `net.http_get` chunks
+concurrently with no trouble, and concluded "the pool handles 20 concurrent requests". Those were
+*lightweight fetches to an external API with no database work at the far end*. An Edge Function
+that **writes** is a completely different weight class. This is the same error shape as
+generalising Alpaca's row cap from BOATS (a thin tape) to SIP — never infer a limit from the
+cheapest case.
+
+**Hard rules:**
+- **Edge Functions / bulk writers: ONE AT A TIME.** Fire, wait for the return, verify, then the
+  next. Never batch them in a single statement, never loop them.
+- **Lightweight `net.http_get` chunks:** batches of ~15–20 are fine — but *only* when the target
+  is an external API and nothing writes to Postgres.
+- **Never hold a connection while not doing DB work.** No `pg_sleep`, no long transactions, no
+  waiting on external I/O inside a statement. Wait client-side.
+- **When the pool is saturated: STOP QUERYING.** Every probe is another connection and slows
+  recovery. Back off in *minutes*, then test with a single `select 1`.
+- **Escalation:** Supabase dashboard → Settings → General → **Restart project** (force-closes all
+  connections).
+
+**What is safe to tell the user:** session-table writes are idempotent upserts keyed on
+`(session_date, ticker)`, so a killed scan leaves **no partial or corrupt rows** — whatever
+completed is correct, whatever did not simply is not there.
+
+**Check storage before blaming quota.** The Jul 22 outage *was* quota (a 436 MB backfill blew the
+512 MB cap). These three were pure connection availability at ~45% storage. Different problem,
+different fix.
+
 ### 5.2b NEVER use `pg_sleep` to wait for async results — took the DB down Jul 23 2026
 
 **The mistake:** `net.http_get`/`net.http_post` are asynchronous — results land in
