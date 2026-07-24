@@ -20123,19 +20123,26 @@ function MultiViewChartsPage(p){
   // Self-contained daily bar chart for the Volume & Trades block. rows come from vtRows;
   // field selects which measure to plot; fmt formats the axis + tooltip value.
   var vtChart=function(chartIdx,field,color,label,fmt){
-    var W=900,H=380,padL=8,padR=8,padT=18,padB=30;
+    var W=900,H=380,padL=64,padR=10,padT=18,padB=34;
     var vals=vtRows.map(function(r){return r[field];});
     var have=vals.filter(function(v){return v!=null&&isFinite(v);});
-    if(!have.length)return <div style={{height:240,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:10,background:C.bgDeep,borderRadius:8}}>No {label} data.</div>;
+    if(!have.length)return <div style={{height:240,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No {label} data.</div>;
     var mx=Math.max.apply(null,have);
     var n=vtRows.length;
     var innerW=W-padL-padR, innerH=H-padT-padB;
     var bw=innerW/n, gap=Math.min(2,bw*0.15);
     var hv=(vtHover.c===chartIdx)?vtHover.b:-1;
+    // Value-axis ticks at 0/25/50/75/100% of peak — gives every bar a readable magnitude.
+    var ticks=[0,0.25,0.5,0.75,1].map(function(f){return {f:f, val:mx*f, y:padT+innerH-(f*innerH)};});
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block',touchAction:'pan-y pinch-zoom'}}
       onMouseLeave={function(){setVtHover({c:-1,b:-1});}}>
-      {/* baseline */}
-      <line x1={padL} y1={padT+innerH} x2={W-padR} y2={padT+innerH} stroke={C.border} strokeWidth="1"/>
+      {/* horizontal gridlines + value labels down the left axis */}
+      {ticks.map(function(t,ti){
+        return <g key={'g'+ti}>
+          <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity={t.f===0?1:0.4} strokeDasharray={t.f===0?'':'3 4'}/>
+          <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="12" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmt(t.val)}</text>
+        </g>;
+      })}
       {vtRows.map(function(r,i){
         var v=r[field];
         var x=padL+i*bw;
@@ -20148,25 +20155,23 @@ function MultiViewChartsPage(p){
           onMouseEnter={function(){setVtHover({c:chartIdx,b:i});}}
           onClick={function(){setVtHover({c:chartIdx,b:i});}}/>;
       })}
-      {/* max-value tag, top-left */}
-      <text x={padL} y={padT-3} fontSize="9" fontWeight="700" fill={C.txtDim} fontFamily={F}>peak {fmt(mx)}</text>
       {/* date ticks: first, middle, last */}
       {[0,Math.floor(n/2),n-1].map(function(i){
         if(!vtRows[i])return null;
         var x=padL+i*bw+bw/2;
-        return <text key={'t'+i} x={x} y={H-8} textAnchor="middle" fontSize="8" fill={C.txtDim} fontFamily={F}>{vtRows[i].d.slice(5)}</text>;
+        return <text key={'t'+i} x={x} y={H-9} textAnchor="middle" fontSize="13" fontWeight="700" fill={C.txtDim} fontFamily={F}>{vtRows[i].d.slice(5)}</text>;
       })}
       {/* tooltip */}
       {hv>=0&&vtRows[hv]&&(function(){
         var r=vtRows[hv];var v=r[field];
         var x=padL+hv*bw+bw/2;
-        var tw=150,th=34;
+        var tw=170,th=40;
         var tx=Math.max(padL,Math.min(W-padR-tw,x-tw/2));
         return <g>
           <line x1={x} y1={padT} x2={x} y2={padT+innerH} stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.6"/>
           <rect x={tx} y={2} width={tw} height={th} rx="4" fill={C.bgDeep} stroke={color} strokeWidth="1"/>
-          <text x={tx+8} y={16} fontSize="10" fontWeight="700" fill={C.txtBright} fontFamily={F}>{r.d}</text>
-          <text x={tx+8} y={29} fontSize="10" fontWeight="700" fill={color} fontFamily={F}>{v==null?'—':fmt(v)}</text>
+          <text x={tx+9} y={18} fontSize="12" fontWeight="700" fill={C.txtBright} fontFamily={F}>{r.d}</text>
+          <text x={tx+9} y={33} fontSize="12" fontWeight="700" fill={color} fontFamily={F}>{v==null?'—':fmt(v)}</text>
         </g>;
       })()}
     </svg>;
