@@ -22127,6 +22127,7 @@ function ViolentChopScreenerPage(p){
   var s19=useState({}),fetchingRating=s19[0],setFetchingRating=s19[1]; // {ticker:true} while on-demand fetch in flight
   var s52=useState({}),wk52=s52[0],setWk52=s52[1];             // {ticker:{high,low}} 52-week range from cached_oscillation_screener.range_position
   var sAtr14=useState({}),atr14=sAtr14[0],setAtr14=sAtr14[1];     // {ticker:{pct,dollar}} 14-day ATR from cached_oscillation_screener (atr_14d_pct / atr_14d_dollar)
+  var s52e=useState(false),wk52Err=s52e[0],setWk52Err=s52e[1];    // true if the 52w/ATR load failed (was silently swallowed before v605)
   var sSec=useState({}),sectorMap=sSec[0],setSectorMap=sSec[1];   // {ticker: gics_sector} from market_universe_full (single source of truth)
   var pollRef=useRef(null);
   var loadGen=useRef(0);
@@ -22332,14 +22333,45 @@ function ViolentChopScreenerPage(p){
   };
 
   useEffect(function(){loadData();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&order=started_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length){setPipeStatus(rows[0]);if(rows[0].status==='running'){setScanning(true);pollProgress();}}}catch(e){}})();(async function(){try{var r=await fetch(SB_URL+'/rest/v1/pipeline_status?mode=eq.chop-screener&status=eq.complete&select=updated_at&order=updated_at.desc&limit=1',{headers:getSbHeaders()});var rows=r.ok?await r.json():[];if(rows.length)setLastRunTs(rows[0].updated_at);}catch(e){}})();(async function(){try{var map={};var off=0;while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/yahoo_ratings?select=ticker,reco_mean,reco_key,target_mean,target_high,target_low,current_price,num_analysts,fetched_at&order=ticker.asc',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(x){map[x.ticker]=x;});if(batch.length<1000)break;off+=1000;}setRatings(map);}catch(e){}})();(async function(){try{
-    // 52-week high/low from cached_oscillation_screener.range_position (latest scan).
-    // range_position is a DOUBLE-ENCODED JSON string, so JSON.parse twice.
+    // 52-week high/low + 14d ATR for every ticker in the latest scan.
+    // v605: was a raw table GET selecting range_position (a ~1KB double-encoded JSON blob per
+    // row). Sorting/serializing 2,500 of those pushed COLD-cache runs past the anon 3s
+    // statement_timeout (measured up to 5.9s), PostgREST killed the request, and the previously
+    // silent catch left all five columns blank intermittently. Now uses chop_range_atr_light,
+    // a SECURITY DEFINER RPC that extracts only the small numeric fields server-side (~120KB/page
+    // vs ~1MB) and sets its own statement_timeout=30s so a cold spike can't be killed by the 3s
+    // cap. PostgREST caps RPC delivery at 1,000 rows and ignores Range headers on RPCs, so the
+    // RPC paginates via p_offset/p_limit. Retry each page once; surface failure via wk52Err;
+    // commit the maps ONLY on a complete read so a mid-loop failure can't leave partial data
+    // masquerading as complete.
+    setWk52Err(false);
     var sd=null;try{var sr=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1',{headers:getSbHeaders()});var srows=sr.ok?await sr.json():[];if(srows.length)sd=srows[0].scan_date;}catch(e){}
-    if(!sd)return;
-    var map={};var atrMap={};var off=0;
-    while(true){var h=getSbHeaders();h['Range']=off+'-'+(off+999);var r=await fetch(SB_URL+'/rest/v1/cached_oscillation_screener?scan_date=eq.'+sd+'&select=ticker,range_position,atr_14d_pct,atr_14d_dollar&order=ticker.asc',{headers:h});if(!r.ok)break;var batch=await r.json();if(!Array.isArray(batch)||batch.length===0)break;batch.forEach(function(row){var rp=row.range_position;if(rp!=null){try{if(typeof rp==='string')rp=JSON.parse(rp);if(typeof rp==='string')rp=JSON.parse(rp);}catch(e){rp=null;}if(rp&&rp.high!=null&&rp.low!=null)map[row.ticker]={high:+rp.high,low:+rp.low,h30:(rp.hl30&&rp.hl30.high!=null?+rp.hl30.high:null),l30:(rp.hl30&&rp.hl30.low!=null?+rp.hl30.low:null),h7:(rp.hl7&&rp.hl7.high!=null?+rp.hl7.high:null),l7:(rp.hl7&&rp.hl7.low!=null?+rp.hl7.low:null)};}if(row.atr_14d_pct!=null||row.atr_14d_dollar!=null)atrMap[row.ticker]={pct:row.atr_14d_pct!=null?+row.atr_14d_pct:null,dollar:row.atr_14d_dollar!=null?+row.atr_14d_dollar:null};});if(batch.length<1000)break;off+=1000;}
-    setWk52(map);setAtr14(atrMap);
-  }catch(e){}})();(async function(){try{
+    if(!sd){setWk52Err(true);return;}
+    var fetchPage=async function(off){
+      for(var attempt=0;attempt<2;attempt++){
+        try{
+          var r=await fetch(SB_URL+'/rest/v1/rpc/chop_range_atr_light',{method:'POST',headers:Object.assign(getSbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_scan_date:sd,p_offset:off,p_limit:1000})});
+          if(r.ok){var b=await r.json();if(Array.isArray(b))return b;}
+        }catch(e){}
+        if(attempt===0)await new Promise(function(res){setTimeout(res,400);});
+      }
+      return null;
+    };
+    var map={};var atrMap={};var off=0;var ok=true;
+    while(true){
+      var batch=await fetchPage(off);
+      if(batch===null){ok=false;break;}
+      if(batch.length===0)break;
+      batch.forEach(function(row){
+        if(row.hi!=null&&row.lo!=null)map[row.ticker]={high:+row.hi,low:+row.lo,h30:(row.h30!=null?+row.h30:null),l30:(row.l30!=null?+row.l30:null),h7:(row.h7!=null?+row.h7:null),l7:(row.l7!=null?+row.l7:null)};
+        if(row.atr_pct!=null||row.atr_dol!=null)atrMap[row.ticker]={pct:row.atr_pct!=null?+row.atr_pct:null,dollar:row.atr_dol!=null?+row.atr_dol:null};
+      });
+      if(batch.length<1000)break;
+      off+=1000;
+    }
+    if(ok){setWk52(map);setAtr14(atrMap);setWk52Err(false);}
+    else{setWk52Err(true);}
+  }catch(e){setWk52Err(true);}})();(async function(){try{
     // Sector per ticker from market_universe_full (single source of truth; kept complete by the
     // nightly sector-refresh self-heal). Paginate past the 1,000-row PostgREST cap.
     var smap={};var off=0;
@@ -22864,7 +22896,8 @@ function ViolentChopScreenerPage(p){
     {loading&&(!data||data.length===0)&&<Cd><div style={{textAlign:'center',color:C.gold,fontSize:10,fontFamily:F,padding:20}}>Loading chop data...</div></Cd>}
 
     {data&&data.length>0&&<Cd style={{padding:'14px 6px'}}>
-      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',marginBottom:6}}>
+      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:8,marginBottom:6}}>
+        {wk52Err&&<span style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 10px',border:'1px solid '+C.warn+'66',borderRadius:5,background:C.warn+'12',color:C.warn,fontFamily:F,fontSize:8,fontWeight:600}} title="The 52W/30d/7d H/L and 14d ATR data failed to load (server timeout or network). Refresh the page to retry.">⚠ 52W H/L &amp; ATR data didn't load — refresh to retry</span>}
         <button onClick={function(){setShowColInfo(true);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 10px',border:'1px solid '+C.accent+'55',borderRadius:5,background:'transparent',color:C.accent,fontFamily:F,fontSize:8,fontWeight:600,cursor:'pointer'}} title="What does each column mean?">
           <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:13,height:13,borderRadius:'50%',border:'1px solid '+C.accent,fontSize:8,fontWeight:700,fontStyle:'italic'}}>i</span>
           Column guide
