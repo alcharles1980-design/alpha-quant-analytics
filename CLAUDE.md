@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v593 · Jul 24 2026
+**Status at last update:** v599 · Jul 24 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -533,7 +533,13 @@ using a PAT in `app_config`): `nightly`, `hourly`, `backfill`, `autotune`,
 
 ## 9. Recent work
 
-**v555 (current)** — Most Actives RTH/My Lists snapshots IEX → SIP; removed the
+**Current: v599** (Jul 24 2026) — see the "Resolved Jul 24 2026" block in §10 for the full
+v592→v598 session (predictor accuracy box, Most Actives median fix, Volume & Trades charts +
+lookback). v599 is a docs-sync/audit sweep with no code change: route/menu parity clean (87
+menu pages all route; `glanceapi`/`cheatsheet` are intentional deep-link-only views), no
+module-scope function collisions, no duplicate RPC definitions.
+
+**v555** — Most Actives RTH/My Lists snapshots IEX → SIP; removed the
 `avgFeed` conditional (SIP end-to-end, mismatch now impossible). Verified live:
 NVDA SIP 138.7M shares / 2.36M trades vs IEX 5.8M / 57k (24x / 41x), and IEX's
 `latestTrade` was ~4h stale in extended hours with `ap:0` quotes observed.
@@ -691,6 +697,26 @@ capped, so no single leg can carry the score alone. Sample sizes are small enoug
   label), and the noisy per-day reconstructed table was removed. `predictor_rolling` RPC added
   with anon EXECUTE. `predictor_accuracy` and `predictor_scorecard` still exist in the DB but
   nothing calls them.
+- **v594–v598 — Volume & Trades Comparison on Multi View Charts** (bottom of MultiViewChartsPage,
+  after the timeframe candlestick block). Three daily bar charts for the loaded ticker: trade
+  count (Polygon `n`), share volume (`v`), and notional (`vw`×`v`, close-price fallback if `vw`
+  missing). **No new fetch** — reuses the 10y daily series the page already pulls for
+  atrMap/c2hMap; `vtRows` holds the full series (each row keeps its `t` ms timestamp) and is
+  sliced at render. Self-contained SVG bar helper `vtChart` (not the candlestick `Chart()` and
+  not Recharts). Progression: v594 built it (30-session view), v595 doubled the height
+  (viewBox H 190→380; renders ~2× taller because width:100%/height:auto makes H the aspect
+  ratio), v596 fixed mobile pinch-zoom (`touchAction` was `pan-y`, needed `pan-y pinch-zoom` —
+  matching the candlestick chart; the bars have no touch-drag so restricting zoom bought
+  nothing), v597 added a numbered left value axis (gridlines at 0/25/50/75/100% of peak) and
+  enlarged axis text for mobile, v598 added a date-based Lookback dropdown (12m/6m/3m/1m/1w,
+  default 1m) via `vtVisible()` which filters the full series by calendar window anchored to
+  the most recent bar. **Latent bug fixed in v598** (§5.1a — worked that day, would break
+  silently later): `setUTCMonth` overflows on day-31 dates (Mar 31 − 1mo → Mar 3, not Feb 28),
+  so on any day the latest bar fell on the 29th–31st, "1 month" would have returned ~3 days;
+  clamped with `setUTCDate(0)` to snap to the target month's last valid day. All verified
+  against real Polygon timestamps in node — notional matched hand-computed `vw`×`v` to the
+  dollar, every lookback returned the correct bar count and date span, bar widths stay
+  renderable (12m ≈ 2.8px/bar, ≥1px floor). These are UI-only, backend untouched.
 
 ### Predictor live-capture cron — VERIFIED ACTIVE (Jul 24 2026)
 Earlier sessions worried the live snapshot might never run, leaving the new accuracy box showing
