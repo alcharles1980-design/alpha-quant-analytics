@@ -19749,7 +19749,7 @@ function MultiViewChartsPage(p){
   var VWAP_COLOR=C.warn; // distinct from MA blue/gold/purple
   // ---- Fibonacci retracement overlays (display-only; two independent anchor modes) ----
   var FIB_RANGE_COLOR=C.gold;   // dim gold for the visible-high/low anchored levels
-  var FIB_SWING_COLOR=C.teal||'#3fb8af'; // teal for the detected-swing anchored levels
+  var FIB_SWING_COLOR='#22d3ee'; // bright cyan — distinct from the gold range Fib, the green up-line, and red
   var FIB_LEVELS=[0,0.236,0.382,0.5,0.618,0.786,1]; // retracements only (no extensions)
   var FIB_KEY_LEVELS={0.382:1,0.5:1,0.618:1}; // the most-watched — labelled even on dense charts
   // Per-timeframe pivot sensitivity N (bars required on each side to confirm a swing).
@@ -19762,14 +19762,22 @@ function MultiViewChartsPage(p){
     if(key==='3M'||key==='YTD'||key==='1Y')return 5; // daily bars
     return 4;                                     // 5Y / 10Y (weekly / monthly bars)
   };
-  // Detect the most recent CONFIRMED swing high and swing low via the pivot method:
-  // a bar is a swing high if its high exceeds the highs of N bars on each side (low symmetric).
-  // "Confirmed" means N bars must follow it, so the newest possible swing sits N bars from the
-  // right edge — never the live bar (correct / non-repainting, matching standard tools).
-  // Returns {hiIdx,hi,loIdx,lo} using the most recent of each, or null if a clean pair isn't found.
+  // Detect the most recent CONFIRMED swing LEG via the pivot method. A bar is a swing high if its
+  // high strictly exceeds the highs of N bars on each side (low symmetric). "Confirmed" means N
+  // bars must follow it, so the newest possible pivot sits N bars from the right edge — never the
+  // live bar (non-repainting, matching standard tools).
+  //
+  // A Fibonacci retracement needs ONE directional LEG — a swing low and the swing high adjacent to
+  // it — not just "the last high anywhere + the last low anywhere," which can straddle intermediate
+  // pivots and produce a span that was never a single move. So we: (1) collect every pivot in time
+  // order; (2) collapse consecutive same-type pivots to the most extreme (a run of lows keeps the
+  // lowest, a run of highs keeps the highest) so the sequence strictly alternates H,L,H,L…; (3)
+  // take the LAST TWO entries — the most recent completed adjacent leg. The later of the two is the
+  // 0% anchor (buildFibLevels handles that via the indices), so an up-leg retraces down from the
+  // high and a down-leg retraces up from the low. Returns {hiIdx,hi,loIdx,lo} or null.
   var detectSwing=function(bars,N){
     if(!bars||bars.length<2*N+1)return null;
-    var lastHiIdx=-1,lastLoIdx=-1;
+    var raw=[];
     for(var i=N;i<bars.length-N;i++){
       var isHi=true,isLo=true;
       for(var j=1;j<=N;j++){
@@ -19777,11 +19785,27 @@ function MultiViewChartsPage(p){
         if(bars[i].l>=bars[i-j].l||bars[i].l>=bars[i+j].l)isLo=false;
         if(!isHi&&!isLo)break;
       }
-      if(isHi)lastHiIdx=i;
-      if(isLo)lastLoIdx=i;
+      // A bar flagged as BOTH (only in flat/degenerate data) is assigned the role with the larger
+      // one-bar excursion, so it doesn't corrupt the alternation.
+      if(isHi&&isLo){ if((bars[i].h-bars[i-1].h)>=(bars[i-1].l-bars[i].l))isLo=false; else isHi=false; }
+      if(isHi)raw.push({i:i,t:'H',v:bars[i].h});
+      if(isLo)raw.push({i:i,t:'L',v:bars[i].l});
     }
-    if(lastHiIdx<0||lastLoIdx<0)return null;
-    return {hiIdx:lastHiIdx,hi:bars[lastHiIdx].h,loIdx:lastLoIdx,lo:bars[lastLoIdx].l};
+    if(raw.length<2)return null;
+    // Collapse consecutive same-type pivots to the extreme so the sequence strictly alternates.
+    var alt=[];
+    for(var k=0;k<raw.length;k++){
+      var p=raw[k];
+      if(alt.length&&alt[alt.length-1].t===p.t){
+        var prev=alt[alt.length-1];
+        if(p.t==='H'){ if(p.v>prev.v)alt[alt.length-1]=p; }
+        else { if(p.v<prev.v)alt[alt.length-1]=p; }
+      } else alt.push(p);
+    }
+    if(alt.length<2)return null;
+    var a=alt[alt.length-2], b=alt[alt.length-1]; // most recent completed adjacent leg
+    var hiP=(a.t==='H')?a:b, loP=(a.t==='L')?a:b;
+    return {hiIdx:hiP.i,hi:hiP.v,loIdx:loP.i,lo:loP.v};
   };
   // Build the level list from a hi/lo pair. 0% is anchored at the MOST RECENT of the two
   // extremes so the levels read as a retracement of the latest move. Returns [{pct,label,price}].
