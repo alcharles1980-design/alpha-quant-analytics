@@ -22087,7 +22087,7 @@ function ViolentChopScreenerPage(p){
   var s3=useState(''),err=s3[0],setErr=s3[1];
   var s4=useState(null),scanDate=s4[0],setScanDate=s4[1];
   var s5=useState('30s'),res=s5[0],setRes=s5[1];               // resolution: 30s default
-  var s5b=useState('all'),lookback=s5b[0],setLookback=s5b[1];   // lookback days: all (full) default
+  var s5b=useState('3'),lookback=s5b[0],setLookback=s5b[1];   // lookback days: 3-day default (v608; was 'all')
   var s5c=useState(null),daysData=s5c[0],setDaysData=s5c[1];    // lazily-loaded per-day arrays {ticker:{res:[days]}}
   var s5d=useState(false),daysLoading=s5d[0],setDaysLoading=s5d[1];
   var s6=useState(''),filter=s6[0],setFilter=s6[1];
@@ -22383,29 +22383,44 @@ function ViolentChopScreenerPage(p){
     setSectorMap(smap);
   }catch(e){}})();},[]);
 
-  // Lazy-load per-day arrays only when a 2/3/4-day lookback is first selected.
-  // Keeps the initial load light (avg-only); this heavier fetch is on demand.
+  // Lazy-load per-day arrays only when a 2/3/4-day lookback is selected (the default is now '3').
+  // v608: was a raw GET of the whole chop_profile blob (~6KB/row, ~7MB/page, ~21MB total) with a
+  // sort — heavy enough to risk the anon 3s statement_timeout, and it now runs on load. Switched
+  // to chop_perday_light, a SECURITY DEFINER RPC (statement_timeout=30s so a cold spike can't be
+  // killed) that returns only the last 4 days per resolution (max lookback is 4, so 2/3/4-day
+  // selections all work from this cached data with no re-fetch) and drops the unused .avg blocks
+  // (~21MB -> ~10MB). The client-side "take last N" slicing below is unchanged and produces
+  // identical averages (verified: last-3 and last-4 match the raw table exactly). RPC paginates
+  // via p_offset/p_limit (PostgREST caps RPC delivery at 1,000 and ignores Range on RPCs).
   useEffect(function(){
     if(lookback==='all'||daysData||daysLoading||!scanDate)return;
     setDaysLoading(true);
     (async function(){
       try{
-        var map={};var off=0;
+        var map={};var off=0;var ok=true;
+        var fetchPage=async function(o){
+          for(var attempt=0;attempt<2;attempt++){
+            try{
+              var r=await fetch(SB_URL+'/rest/v1/rpc/chop_perday_light',{method:'POST',headers:Object.assign(getSbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_scan_date:scanDate,p_offset:o,p_limit:1000})});
+              if(r.ok){var b=await r.json();if(Array.isArray(b))return b;}
+            }catch(e){}
+            if(attempt===0)await new Promise(function(res){setTimeout(res,400);});
+          }
+          return null;
+        };
         while(true){
-          var h=getSbHeaders();h['Range']=off+'-'+(off+999);
-          var r=await fetch(SB_URL+'/rest/v1/cached_chop_screener?scan_date=eq.'+scanDate+'&select=ticker,chop_profile&order=composite_score.desc.nullslast,ticker.asc',{headers:h});
-          if(!r.ok)break;
-          var batch=await r.json();
-          if(!Array.isArray(batch)||batch.length===0)break;
+          var batch=await fetchPage(off);
+          if(batch===null){ok=false;break;}
+          if(batch.length===0)break;
           batch.forEach(function(row){
-            var cp=row.chop_profile;if(!cp)return;
-            var perRes={};['10s','30s','60s','120s','180s','1h','4h','1d'].forEach(function(rk){if(cp[rk]&&cp[rk].days)perRes[rk]=cp[rk].days;});
+            var d=row.days_by_res;if(!d)return;
+            var perRes={};['10s','30s','60s','120s','180s','1h','4h','1d'].forEach(function(rk){if(Array.isArray(d[rk]))perRes[rk]=d[rk];});
             map[row.ticker]=perRes;
           });
           if(batch.length<1000)break;
           off+=1000;
         }
-        setDaysData(map);
+        if(ok)setDaysData(map);
       }catch(e){}
       setDaysLoading(false);
     })();
