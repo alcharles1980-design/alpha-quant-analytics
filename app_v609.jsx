@@ -19411,6 +19411,8 @@ function MultiViewChartsPage(p){
   var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
   // Session VWAP toggle (RTH-anchored, per-session reset). Intraday charts only: TODAY/YEST/7D/30D.
   var s9b=useState(false),showVwap=s9b[0],setShowVwap=s9b[1];
+  var s9f1=useState(false),showFibRange=s9f1[0],setShowFibRange=s9f1[1];  // Fib retracement anchored to visible high/low
+  var s9f2=useState(false),showFibSwing=s9f2[0],setShowFibSwing=s9f2[1];  // Fib retracement anchored to most recent detected swing
   var s10=useState({}),atrMap=s10[0],setAtrMap=s10[1];   // per-tf 14-period daily ATR% (over each chart's own window)
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
   var s12=useState(null),livePrice=s12[0],setLivePrice=s12[1];  // single most-recent traded price, same tag on every chart
@@ -19745,6 +19747,53 @@ function MultiViewChartsPage(p){
   // not 'intraday', so a kind check would wrongly exclude it.
   var VWAP_KEYS={TODAY:1,YEST:1,'7D':1,'30D':1};
   var VWAP_COLOR=C.warn; // distinct from MA blue/gold/purple
+  // ---- Fibonacci retracement overlays (display-only; two independent anchor modes) ----
+  var FIB_RANGE_COLOR=C.gold;   // dim gold for the visible-high/low anchored levels
+  var FIB_SWING_COLOR=C.teal||'#3fb8af'; // teal for the detected-swing anchored levels
+  var FIB_LEVELS=[0,0.236,0.382,0.5,0.618,0.786,1]; // retracements only (no extensions)
+  var FIB_KEY_LEVELS={0.382:1,0.5:1,0.618:1}; // the most-watched — labelled even on dense charts
+  // Per-timeframe pivot sensitivity N (bars required on each side to confirm a swing).
+  // Higher = fewer, more significant swings. Scaled so intraday charts don't lock onto noise
+  // and long-range charts still find real legs. Keyed by the chart's bar interval.
+  var fibSwingN=function(tf){
+    var k=tf.kind, key=tf.key;
+    if(k==='intraday')return 10;                 // Today / Yesterday (5-min bars)
+    if(key==='7D'||key==='30D')return 6;         // hourly bars
+    if(key==='3M'||key==='YTD'||key==='1Y')return 5; // daily bars
+    return 4;                                     // 5Y / 10Y (weekly / monthly bars)
+  };
+  // Detect the most recent CONFIRMED swing high and swing low via the pivot method:
+  // a bar is a swing high if its high exceeds the highs of N bars on each side (low symmetric).
+  // "Confirmed" means N bars must follow it, so the newest possible swing sits N bars from the
+  // right edge — never the live bar (correct / non-repainting, matching standard tools).
+  // Returns {hiIdx,hi,loIdx,lo} using the most recent of each, or null if a clean pair isn't found.
+  var detectSwing=function(bars,N){
+    if(!bars||bars.length<2*N+1)return null;
+    var lastHiIdx=-1,lastLoIdx=-1;
+    for(var i=N;i<bars.length-N;i++){
+      var isHi=true,isLo=true;
+      for(var j=1;j<=N;j++){
+        if(bars[i].h<=bars[i-j].h||bars[i].h<=bars[i+j].h)isHi=false;
+        if(bars[i].l>=bars[i-j].l||bars[i].l>=bars[i+j].l)isLo=false;
+        if(!isHi&&!isLo)break;
+      }
+      if(isHi)lastHiIdx=i;
+      if(isLo)lastLoIdx=i;
+    }
+    if(lastHiIdx<0||lastLoIdx<0)return null;
+    return {hiIdx:lastHiIdx,hi:bars[lastHiIdx].h,loIdx:lastLoIdx,lo:bars[lastLoIdx].l};
+  };
+  // Build the level list from a hi/lo pair. 0% is anchored at the MOST RECENT of the two
+  // extremes so the levels read as a retracement of the latest move. Returns [{pct,label,price}].
+  var buildFibLevels=function(hi,lo,hiIdx,loIdx){
+    if(hi==null||lo==null||!(hi>lo))return [];
+    var span=hi-lo;
+    var recentIsHigh=hiIdx>=loIdx; // the later-occurring extreme is the 0% anchor
+    return FIB_LEVELS.map(function(f){
+      var price=recentIsHigh?(hi-span*f):(lo+span*f);
+      return {pct:f,price:price,label:(f*100).toFixed(1).replace(/\.0$/,'')+'%'};
+    });
+  };
   // RTH-anchored, per-session-reset VWAP. For each bar: if RTH (09:30<=ET<16:00), accumulate
   // vw*v and v into the running session sums; a new ET calendar date resets them. Pre-market and
   // after-hours bars return null (line breaks there, so VWAP draws only across each RTH session).
@@ -19960,6 +20009,34 @@ function MultiViewChartsPage(p){
           if(seg.length<2)return null; // a lone point can't draw a line
           return <polyline key={'vwap'+si} points={seg.join(' ')} fill="none" stroke={VWAP_COLOR} strokeWidth="1.6" opacity="0.9"/>;
         })}</g>;
+      })()}
+      {/* Fibonacci retracement overlays — range (visible hi/lo) and/or swing (detected pivot) */}
+      {(showFibRange||showFibSwing)&&(function(){
+        var bothOn=showFibRange&&showFibSwing;
+        var drawSet=function(levels,color,prefix,keyTag){
+          if(!levels||!levels.length)return null;
+          return <g key={keyTag}>{levels.map(function(L,i){
+            var y=Yp(L.price);
+            if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
+            var isKey=FIB_KEY_LEVELS[L.pct];
+            var labelled=isKey||n>60; // always label key levels; label all only on roomy charts
+            var ly=Math.min(Math.max(y,PADT+8),PADT+priceH-3);
+            return <g key={keyTag+i}>
+              <line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.75:0.5}/>
+              {labelled&&<text x={W-PADR-2} y={ly-2} textAnchor="end" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.95">{(bothOn?prefix+' ':'')+L.label+' '+fmtPx(L.price)}</text>}
+            </g>;
+          })}</g>;
+        };
+        var out=[];
+        if(showFibRange){
+          // anchor to the chart's visible high/low (already computed as hi/lo/hiIdx/loIdx)
+          out.push(drawSet(buildFibLevels(hi,lo,hiIdx,loIdx),FIB_RANGE_COLOR,'R','fibR'));
+        }
+        if(showFibSwing){
+          var sw=detectSwing(bars,fibSwingN(tf));
+          if(sw)out.push(drawSet(buildFibLevels(sw.hi,sw.lo,sw.hiIdx,sw.loIdx),FIB_SWING_COLOR,'S','fibS'));
+        }
+        return <g>{out}</g>;
       })()}
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
@@ -20296,6 +20373,14 @@ function MultiViewChartsPage(p){
         <button onClick={function(){setShowVwap(!showVwap);}} title="RTH-anchored session VWAP, resets each day — shown on Today / Yesterday / 7D / 30D only" style={{display:'flex',alignItems:'center',gap:6,padding:'6px 11px',border:'1px solid '+(showVwap?VWAP_COLOR:C.border),borderRadius:6,background:showVwap?VWAP_COLOR+'22':'transparent',color:showVwap?C.txtBright:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>
           <span style={{width:16,height:0,borderTop:'2px solid '+VWAP_COLOR,display:'inline-block'}}></span>
           VWAP <span style={{fontWeight:400,opacity:0.7,fontSize:8.5}}>· intraday</span>
+        </button>
+        <button onClick={function(){setShowFibRange(!showFibRange);}} title="Fibonacci retracement levels anchored to this chart's visible high and low. Levels: 23.6 / 38.2 / 50 / 61.8 / 78.6%." style={{display:'flex',alignItems:'center',gap:6,padding:'6px 11px',border:'1px solid '+(showFibRange?FIB_RANGE_COLOR:C.border),borderRadius:6,background:showFibRange?FIB_RANGE_COLOR+'22':'transparent',color:showFibRange?C.txtBright:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+          <span style={{width:16,height:0,borderTop:'2px dashed '+FIB_RANGE_COLOR,display:'inline-block'}}></span>
+          Fib <span style={{fontWeight:400,opacity:0.7,fontSize:8.5}}>· range</span>
+        </button>
+        <button onClick={function(){setShowFibSwing(!showFibSwing);}} title="Fibonacci retracement anchored to the most recent detected swing high/low (pivot method, sensitivity scales with timeframe). Draws only when a clear swing is found." style={{display:'flex',alignItems:'center',gap:6,padding:'6px 11px',border:'1px solid '+(showFibSwing?FIB_SWING_COLOR:C.border),borderRadius:6,background:showFibSwing?FIB_SWING_COLOR+'22':'transparent',color:showFibSwing?C.txtBright:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+          <span style={{width:16,height:0,borderTop:'2px dashed '+FIB_SWING_COLOR,display:'inline-block'}}></span>
+          Fib <span style={{fontWeight:400,opacity:0.7,fontSize:8.5}}>· swing</span>
         </button>
       </div>
     </div>
