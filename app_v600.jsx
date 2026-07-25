@@ -19427,8 +19427,8 @@ function MultiViewChartsPage(p){
   var s18=useState('1m'),vtPeriod=s18[0],setVtPeriod=s18[1];
   // interval options offered per chart (only where the window is long enough to be meaningful)
   var INTERVAL_OPTS={
-    'YTD':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
-    '3M':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
+    'YTD':[{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
+    '3M':[{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
     '30D':[{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'}],
     '7D':[{span:'hour',bar:'hourly',kind:'intraday',label:'Hourly'},{span:'day',bar:'daily',kind:'day',label:'Daily'}]
   };
@@ -19442,8 +19442,8 @@ function MultiViewChartsPage(p){
     {key:'5Y',label:'5 YEARS',mult:1,span:'week',yearsBack:5,bar:'weekly',kind:'long'},
     {key:'3Y',label:'3 YEARS',mult:1,span:'day',yearsBack:3,bar:'daily',kind:'day'},
     {key:'1Y',label:'1 YEAR',mult:1,span:'day',yearsBack:1,bar:'daily',kind:'day'},
-    {key:'YTD',label:'YEAR TO DATE',mult:1,span:'hour',ytd:true,bar:'hourly',kind:'hour'},
-    {key:'3M',label:'LAST 3 MONTHS',mult:1,span:'hour',monthsBack:3,bar:'hourly',kind:'hour'},
+    {key:'YTD',label:'YEAR TO DATE',mult:1,span:'day',ytd:true,bar:'daily',kind:'day'},
+    {key:'3M',label:'LAST 3 MONTHS',mult:1,span:'day',monthsBack:3,bar:'daily',kind:'day'},
     {key:'30D',label:'LAST 30 DAYS',mult:1,span:'hour',daysBack:30,bar:'hourly',kind:'hour'},
     {key:'7D',label:'LAST 7 DAYS',mult:1,span:'hour',daysBack:7,bar:'hourly',kind:'intraday'},
     {key:'YEST',label:'YESTERDAY',mult:5,span:'minute',dayOffset:1,bar:'5-minute',kind:'intraday'},
