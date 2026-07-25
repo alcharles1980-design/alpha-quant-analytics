@@ -20341,7 +20341,7 @@ function MultiViewChartsPage(p){
                 })()
               : stat('Interval',tf.bar)}
             {bars&&stat('Bars',bars.length.toLocaleString())}
-            {bars&&bars.length&&(function(){
+            {bars&&bars.length>0&&(function(){
               // Timeframe high/low/range over THIS chart's own window — same derivation Chart() uses.
               var hh=-Infinity,ll=Infinity;
               for(var i=0;i<bars.length;i++){if(typeof bars[i].h==='number'&&bars[i].h>hh)hh=bars[i].h;if(typeof bars[i].l==='number'&&bars[i].l<ll)ll=bars[i].l;}
