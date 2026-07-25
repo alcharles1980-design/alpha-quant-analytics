@@ -20070,10 +20070,21 @@ function MultiViewChartsPage(p){
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*loIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(lo)+14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(lo)}</text>}
-      {/* last price line (single most-recent traded price — identical value on every chart) */}
+      {/* last price line (single most-recent traded price — identical value on every chart).
+          The filled price tag used to sit pinned to the RIGHT edge, which covered the newest
+          candles (the most-watched, right-most price action). It's now centered horizontally on
+          the plot so it clears both the recent candles on the right AND the Fib level labels on
+          the left. Vertical position is unchanged (still on the current-price line — moving it
+          vertically would misstate the price). The full-width dashed price line still runs behind
+          it, so the centered tag reads clearly as sitting ON that line. */}
       <line x1={PADL} y1={tagY} x2={W-PADR} y2={tagY} stroke={tagUp?UP:DN} strokeWidth="1" strokeDasharray="4 3" opacity="0.7"/>
-      <rect x={W-PADR-58} y={tagY-9} width="58" height="18" fill={tagUp?UP:DN} rx="3"/>
-      <text x={W-PADR-29} y={tagY+4} textAnchor="middle" fontSize="11" fontWeight="700" fill={'#04121e'} fontFamily={F}>{fmtPx(tagPrice)}</text>
+      {(function(){
+        var tw=58, tcx=(PADL+(W-PADR))/2, tx=tcx-tw/2;   // center of the plot area
+        return <g key="lasttag">
+          <rect x={tx} y={tagY-9} width={tw} height="18" fill={tagUp?UP:DN} rx="3"/>
+          <text x={tcx} y={tagY+4} textAnchor="middle" fontSize="11" fontWeight="700" fill={'#04121e'} fontFamily={F}>{fmtPx(tagPrice)}</text>
+        </g>;
+      })()}
       {/* volume panel */}
       <text x={PADL-8} y={volTop+10} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>Vol</text>
       <text x={PADL-8} y={volTop+volH} textAnchor="end" fontSize="10" fill={C.txtDim} fontFamily={F}>{fmtVol(vmax)}</text>
