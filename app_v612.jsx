@@ -20013,38 +20013,53 @@ function MultiViewChartsPage(p){
       {/* Fibonacci retracement overlays — range (visible hi/lo) and/or swing (detected pivot) */}
       {(showFibRange||showFibSwing)&&(function(){
         var bothOn=showFibRange&&showFibSwing;
-        var drawSet=function(levels,color,prefix,keyTag){
+        var drawSet=function(levels,color,prefix,keyTag,anchorLo,anchorHi,capRow){
           if(!levels||!levels.length)return null;
-          return <g key={keyTag}>{levels.map(function(L,i){
+          // A subtle dark background pill behind each label makes the % AND price readable even
+          // where the level crosses candles (previously the price text was lost against the
+          // candle colors, so a label could look like it was missing its price).
+          var lblW=bothOn?92:78;   // pill width (wider when the R/S prefix is present)
+          // Caption at the top-left naming the anchor range these levels are measured between
+          // (low -> high). This is why the same price sits at different Fib levels across
+          // timeframes: the high may be shared but each timeframe's low differs, so the range
+          // — and thus every level — changes. capRow stacks range (row 0) above swing (row 1).
+          var capY=PADT+9+((capRow||0)*13);
+          var capTxt=(bothOn?prefix+' ':'')+'anchor '+fmtPx(anchorLo)+' \u2192 '+fmtPx(anchorHi);
+          var capW=capTxt.length*5.3+8;
+          return <g key={keyTag}>
+            <rect x={PADL+2} y={capY-9} width={capW} height={12} rx="2" fill={C.bgDeep||C.bg} opacity="0.82"/>
+            <text x={PADL+5} y={capY} textAnchor="start" fontSize="8.5" fontWeight="700" fill={color} fontFamily={F} opacity="0.98">{capTxt}</text>
+            {levels.map(function(L,i){
             var y=Yp(L.price);
             if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
             var isKey=FIB_KEY_LEVELS[L.pct];
             var dense=(tf.kind==='intraday');
-            // Label rules to avoid collisions with the chart's own markers:
-            //  - skip 0% and 100% labels: those are the anchor extremes, already shown by the
-            //    high/low markers (range mode) and visually obvious as the outermost lines —
-            //    labelling them printed "0% $x" right on top of the existing "$x" high marker.
-            //  - skip any label whose y is within ~10px of the last-price tag (the filled box),
-            //    which sits on the right edge — the label would render over it.
-            //  - on dense intraday charts, only the key levels (38.2/50/61.8) get labels.
+            // Skip 0%/100% (those are the anchor extremes, shown by the high/low markers and the
+            // anchor caption above) and, on dense intraday charts, the non-key levels. The old
+            // "skip if near the price tag" rule is gone — the background pill + left position
+            // keep the label readable, and dropping it made a level look like it had no price.
             var isEndpoint=(L.pct===0||L.pct===1);
-            var nearPriceTag=Math.abs(y-tagY)<11;
-            var labelled=!isEndpoint&&!nearPriceTag&&(isKey||!dense);
+            var labelled=!isEndpoint&&(isKey||!dense);
+            if(!labelled) return <g key={keyTag+i}><line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.7:0.45}/></g>;
             var ly=Math.min(Math.max(y,PADT+9),PADT+priceH-3);
+            // nudge a label down if it would sit on the anchor caption row(s) at the very top
+            if(ly<capY+11&&ly>capY-11)ly=capY+13;
+            var txt=(bothOn?prefix+' ':'')+L.label+' '+fmtPx(L.price);
             return <g key={keyTag+i}>
               <line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.7:0.45}/>
-              {labelled&&<text x={PADL+3} y={ly-2} textAnchor="start" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.95">{(bothOn?prefix+' ':'')+L.label+' '+fmtPx(L.price)}</text>}
+              <rect x={PADL+2} y={ly-10} width={lblW} height={13} rx="2" fill={C.bgDeep||C.bg} opacity="0.72"/>
+              <text x={PADL+5} y={ly} textAnchor="start" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.98">{txt}</text>
             </g>;
           })}</g>;
         };
         var out=[];
         if(showFibRange){
           // anchor to the chart's visible high/low (already computed as hi/lo/hiIdx/loIdx)
-          out.push(drawSet(buildFibLevels(hi,lo,hiIdx,loIdx),FIB_RANGE_COLOR,'R','fibR'));
+          out.push(drawSet(buildFibLevels(hi,lo,hiIdx,loIdx),FIB_RANGE_COLOR,'R','fibR',lo,hi,0));
         }
         if(showFibSwing){
           var sw=detectSwing(bars,fibSwingN(tf));
-          if(sw)out.push(drawSet(buildFibLevels(sw.hi,sw.lo,sw.hiIdx,sw.loIdx),FIB_SWING_COLOR,'S','fibS'));
+          if(sw)out.push(drawSet(buildFibLevels(sw.hi,sw.lo,sw.hiIdx,sw.loIdx),FIB_SWING_COLOR,'S','fibS',sw.lo,sw.hi,showFibRange?1:0));
         }
         return <g>{out}</g>;
       })()}
