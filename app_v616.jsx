@@ -20057,18 +20057,15 @@ function MultiViewChartsPage(p){
             var y=Yp(L.price);
             if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
             var isKey=FIB_KEY_LEVELS[L.pct];
-            // Skip only 0%/100% (those are the anchor extremes, shown by the high/low markers and
-            // the anchor caption above). The old "skip if near the price tag" rule is gone — the
-            // background pill + left position keep the label readable, and dropping it made a
-            // level look like it had no price.
-            var isEndpoint=(L.pct===0||L.pct===1);
-            // Label every interior level on ALL timeframes. (v610 had trimmed intraday charts to
-            // only the 3 key levels to avoid crowding, but the background pills now keep labels
-            // readable, and a level drawn as a bare line with no price read as "the price is
-            // missing." Only the 0%/100% endpoints stay unlabelled — their values are in the
-            // anchor caption and the high/low markers.)
-            var labelled=!isEndpoint;
-            if(!labelled) return <g key={keyTag+i}><line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.7:0.45}/></g>;
+            // Label EVERY level, including 0% and 100%. The 0% line is the anchor the whole
+            // retracement is measured from — the single most important level — so leaving it
+            // unlabelled read as broken; and for SWING the 0%/100% prices are the detected pivot
+            // hi/lo, which differ from the chart's visible high/low markers, so those values
+            // appeared on NO labelled line (only in the caption). The left-gutter pill labels
+            // don't collide with the high/low markers (those sit centered on the extreme candle,
+            // mid-chart), so there's no reason to suppress them. (v610's intraday-key-only trim
+            // and v611's near-price-tag suppression were both removed earlier for the same
+            // reason: a bare line with no price reads as a missing level.)
             var ly=Math.min(Math.max(y,PADT+9),PADT+priceH-3);
             // nudge a label down if it would sit on the anchor caption row(s) at the very top
             if(ly<capY+11&&ly>capY-11)ly=capY+13;
