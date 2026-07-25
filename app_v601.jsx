@@ -19409,6 +19409,8 @@ function MultiViewChartsPage(p){
   var s8=useState({}),hover=s8[0],setHover=s8[1];      // {key: barIndex} for crosshair
   var suppressRef=useRef({});                          // {key: ms-until} — after closing (×), ignore re-trigger for 5s
   var s9=useState({sma50:false,sma100:false,sma200:false,ema50:false,ema100:false,ema200:false}),ma=s9[0],setMa=s9[1];
+  // Session VWAP toggle (RTH-anchored, per-session reset). Intraday charts only: TODAY/YEST/7D/30D.
+  var s9b=useState(false),showVwap=s9b[0],setShowVwap=s9b[1];
   var s10=useState({}),atrMap=s10[0],setAtrMap=s10[1];   // per-tf 14-period daily ATR% (over each chart's own window)
   var s11=useState({}),c2hMap=s11[0],setC2hMap=s11[1];  // per-tf avg (today High - prev Close)/prev Close %
   var s12=useState(null),livePrice=s12[0],setLivePrice=s12[1];  // single most-recent traded price, same tag on every chart
@@ -19735,6 +19737,34 @@ function MultiViewChartsPage(p){
     {key:'ema100',type:'EMA',n:100,color:C.gold,dash:'5 3'},
     {key:'ema200',type:'EMA',n:200,color:C.purple,dash:'5 3'}
   ];
+  // VWAP shows only on intraday charts. NOTE gate is by KEY, not tf.kind — 30D is kind:'hour',
+  // not 'intraday', so a kind check would wrongly exclude it.
+  var VWAP_KEYS={TODAY:1,YEST:1,'7D':1,'30D':1};
+  var VWAP_COLOR=C.warn; // distinct from MA blue/gold/purple
+  // RTH-anchored, per-session-reset VWAP. For each bar: if RTH (09:30<=ET<16:00), accumulate
+  // vw*v and v into the running session sums; a new ET calendar date resets them. Pre-market and
+  // after-hours bars return null (line breaks there, so VWAP draws only across each RTH session).
+  // Uses vw (Polygon per-bar volume-weighted price) — more accurate than HLC/3. Validated against
+  // a full 192-bar day: exactly 78 RTH values, anchors at 09:30 == opening bar's vw, closing value
+  // matched an independent full-RTH computation to 4 dp.
+  var sessionVwap=function(bars){
+    var out=[]; var curDay=null; var cumPV=0, cumV=0;
+    for(var i=0;i<bars.length;i++){
+      var e=etParts(bars[i].t);
+      var dayKey=e.y+'-'+e.mo+'-'+e.d;
+      var isRTH=(e.h>9||(e.h===9&&e.mi>=30))&&(e.h<16);
+      if(dayKey!==curDay){curDay=dayKey;cumPV=0;cumV=0;}
+      var price=(typeof bars[i].vw==='number'&&bars[i].vw>0)?bars[i].vw:bars[i].c;
+      var vol=(typeof bars[i].v==='number')?bars[i].v:0;
+      if(isRTH&&vol>0&&price!=null){
+        cumPV+=price*vol; cumV+=vol;
+        out.push(cumV>0?cumPV/cumV:null);
+      }else{
+        out.push(null);
+      }
+    }
+    return out;
+  };
 
   // ---- interactive candlestick + volume chart ----
   var Chart=function(tf,bars){
@@ -19907,6 +19937,25 @@ function MultiViewChartsPage(p){
           if(pts.length<2)return null;
           return <polyline key={d.key} points={pts.join(' ')} fill="none" stroke={d.color} strokeWidth="1.5" strokeDasharray={d.dash} opacity="0.95"/>;
         });
+      })()}
+      {/* session VWAP overlay (RTH-anchored, per-session reset) — intraday charts only */}
+      {(function(){
+        if(!showVwap||!VWAP_KEYS[tf.key])return null;
+        var vw=sessionVwap(bars);
+        var cxOf=function(i){return PADL+slot*i+slot/2;};
+        // Split into contiguous non-null runs so the line breaks over pre/post-market gaps
+        // (and, on 7D/30D, between sessions) instead of connecting across them.
+        var segs=[],cur=[];
+        for(var i=0;i<vw.length;i++){
+          if(vw[i]!=null){cur.push(cxOf(i)+','+Yp(vw[i]));}
+          else if(cur.length){segs.push(cur);cur=[];}
+        }
+        if(cur.length)segs.push(cur);
+        if(!segs.length)return null;
+        return <g>{segs.map(function(seg,si){
+          if(seg.length<2)return null; // a lone point can't draw a line
+          return <polyline key={'vwap'+si} points={seg.join(' ')} fill="none" stroke={VWAP_COLOR} strokeWidth="1.6" opacity="0.9"/>;
+        })}</g>;
       })()}
       {/* high / low markers */}
       {n>3&&<text x={Math.min(Math.max(PADL+slot*hiIdx+slot/2,PADL+16),W-PADR-16)} y={Yp(hi)-5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPx(hi)}</text>}
@@ -20240,6 +20289,10 @@ function MultiViewChartsPage(p){
             {d.type+' '+d.n}
           </button>;
         })}
+        <button onClick={function(){setShowVwap(!showVwap);}} title="RTH-anchored session VWAP, resets each day — shown on Today / Yesterday / 7D / 30D only" style={{display:'flex',alignItems:'center',gap:6,padding:'6px 11px',border:'1px solid '+(showVwap?VWAP_COLOR:C.border),borderRadius:6,background:showVwap?VWAP_COLOR+'22':'transparent',color:showVwap?C.txtBright:C.txtDim,fontFamily:F,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+          <span style={{width:16,height:0,borderTop:'2px solid '+VWAP_COLOR,display:'inline-block'}}></span>
+          VWAP <span style={{fontWeight:400,opacity:0.7,fontSize:8.5}}>· intraday</span>
+        </button>
       </div>
     </div>
 
