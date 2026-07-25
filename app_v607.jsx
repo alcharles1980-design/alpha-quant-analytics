@@ -22103,7 +22103,7 @@ function ViolentChopScreenerPage(p){
   var s10na=useState(''),minAnalysts=s10na[0],setMinAnalysts=s10na[1]; // optional min number of analysts
   var s10up=useState(''),minUpside=s10up[0],setMinUpside=s10up[1];     // optional min % upside vs mean target
   var s10af=useState(false),showMoreFilters=s10af[0],setShowMoreFilters=s10af[1]; // "Additional Filters" collapse toggle
-  var s11=useState('all'),typeFilter=s11[0],setTypeFilter=s11[1];
+  var s11=useState('stocks'),typeFilter=s11[0],setTypeFilter=s11[1];  // v607: default to stocks only (was 'all')
   var s11s=useState('all'),sectorFilter=s11s[0],setSectorFilter=s11s[1]; // optional GICS sector filter ('all' = off)
   var s12=useState('capEff'),sortKey=s12[0],setSortKey=s12[1];
   var s13=useState(true),sortDesc=s13[0],setSortDesc=s13[1];
