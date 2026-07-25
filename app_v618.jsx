@@ -19779,8 +19779,12 @@ function MultiViewChartsPage(p){
     if(!bars||bars.length<2*N+1)return null;
     var raw=[];
     for(var i=N;i<bars.length-N;i++){
+      // Skip any bar with a non-finite high/low — a null h/l would otherwise pass the pivot
+      // comparisons (null<=x is false) and get mis-selected as an anchor with a null price.
+      if(bars[i].h==null||bars[i].l==null||isNaN(bars[i].h)||isNaN(bars[i].l))continue;
       var isHi=true,isLo=true;
       for(var j=1;j<=N;j++){
+        if(bars[i-j].h==null||bars[i+j].h==null||bars[i-j].l==null||bars[i+j].l==null){isHi=false;isLo=false;break;}
         if(bars[i].h<=bars[i-j].h||bars[i].h<=bars[i+j].h)isHi=false;
         if(bars[i].l>=bars[i-j].l||bars[i].l>=bars[i+j].l)isLo=false;
         if(!isHi&&!isLo)break;
@@ -20051,6 +20055,31 @@ function MultiViewChartsPage(p){
           var capY=PADT+9+((capRow||0)*13);
           var capTxt=(bothOn?prefix+' ':'')+'anchor '+fmtPx(anchorLo)+' \u2192 '+fmtPx(anchorHi);
           var capW=capTxt.length*5.3+8;
+          // Pre-pass: decide which levels get a TEXT label vs a line only, to avoid the vertical
+          // crush that happens when a set's leg is small relative to the chart's price range (e.g.
+          // a $16 swing leg on a 10Y chart spanning $200 squeezes all 7 labels into ~25px). Walk
+          // top-to-bottom; keep a label if it clears the last kept one by >=MINGAP px. Key levels
+          // (0/38.2/50/61.8/100) win ties — a non-key label (23.6/78.6) is dropped first when it
+          // would collide. 0% and 100% (the anchors) are always kept. Lines still draw for every
+          // level regardless; only the text is thinned.
+          var MINGAP=12;
+          var ys=levels.map(function(L){var y=Yp(L.price);return (isFinite(y))?Math.min(Math.max(y,PADT+9),PADT+priceH-3):null;});
+          var order=levels.map(function(L,i){return i;}).filter(function(i){return ys[i]!=null;})
+            .sort(function(a,b){return ys[a]-ys[b];});
+          var showTxt={}; var keptY=[];
+          // First reserve the always-keep anchors (0% / 100%), then fill in the rest by priority.
+          var prio=order.slice().sort(function(a,b){
+            var ka=(levels[a].pct===0||levels[a].pct===1)?0:(FIB_KEY_LEVELS[levels[a].pct]?1:2);
+            var kb=(levels[b].pct===0||levels[b].pct===1)?0:(FIB_KEY_LEVELS[levels[b].pct]?1:2);
+            return ka-kb;
+          });
+          prio.forEach(function(i){
+            var yi=ys[i], ok=true;
+            for(var q=0;q<keptY.length;q++){ if(Math.abs(keptY[q]-yi)<MINGAP){ok=false;break;} }
+            // anchors (0/100) are forced on even if slightly tight — they matter most
+            if(!ok && (levels[i].pct===0||levels[i].pct===1)) ok=true;
+            if(ok){ showTxt[i]=1; keptY.push(yi); }
+          });
           return <g key={keyTag}>
             <rect x={PADL+2+xOff} y={capY-9} width={capW} height={12} rx="2" fill={C.bgDeep||C.bg} opacity="0.82"/>
             <text x={PADL+5+xOff} y={capY} textAnchor="start" fontSize="8.5" fontWeight="700" fill={color} fontFamily={F} opacity="0.98">{capTxt}</text>
@@ -20058,15 +20087,13 @@ function MultiViewChartsPage(p){
             var y=Yp(L.price);
             if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
             var isKey=FIB_KEY_LEVELS[L.pct];
-            // Label EVERY level, including 0% and 100%. The 0% line is the anchor the whole
-            // retracement is measured from — the single most important level — so leaving it
-            // unlabelled read as broken; and for SWING the 0%/100% prices are the detected pivot
-            // hi/lo, which differ from the chart's visible high/low markers, so those values
-            // appeared on NO labelled line (only in the caption). The left-gutter pill labels
-            // don't collide with the high/low markers (those sit centered on the extreme candle,
-            // mid-chart), so there's no reason to suppress them. (v610's intraday-key-only trim
-            // and v611's near-price-tag suppression were both removed earlier for the same
-            // reason: a bare line with no price reads as a missing level.)
+            // Whether this level shows its text label (see the de-collision pre-pass above). Every
+            // level still draws its LINE; only crushed non-key labels are dropped so the readable
+            // ones (anchors + key levels) don't pile up. The 0% line is the anchor the whole
+            // retracement is measured from, and for SWING the 0%/100% prices are the detected pivot
+            // hi/lo (different from the chart's high/low markers), so those anchors are always kept.
+            var showLabel=!!showTxt[i];
+            if(!showLabel) return <g key={keyTag+i}><line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.7:0.4}/></g>;
             var ly=Math.min(Math.max(y,PADT+9),PADT+priceH-3);
             // nudge a label down if it would sit on the anchor caption row(s) at the very top
             if(ly<capY+11&&ly>capY-11)ly=capY+13;
