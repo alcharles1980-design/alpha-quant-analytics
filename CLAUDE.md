@@ -928,3 +928,52 @@ Senior developer. Terse, often voice-to-text on mobile. Expects **empirical
 verification before claiming a fix works** — test it, show the number. Root-cause
 analysis over symptom patches. Push back with reasoning rather than agreeing
 reflexively; if something looks wrong, say so and show why.
+
+## 12. Sandbox tools & libraries (probed Jul 25 2026 — re-verify, versions drift)
+
+The dev sandbox is a Linux box (`sh`, NOT bash — no `${PIPESTATUS}`, no process substitution;
+write node/py scripts to `/tmp/*.js`|`.py` via heredoc). It has full network egress (curl, pip
+installs, live Polygon/Alpaca/Supabase all reachable). This section is what's ACTUALLY available so
+a fresh chat doesn't have to guess — but treat it as a starting point and re-probe if in doubt.
+
+**Headless browser — render & inspect the live app.** Chromium at
+`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; drive it with `playwright-core`
+(`cd /home/claude/pwtest && npm install playwright-core`, already present in that dir). Full
+launch/flow/verify recipe and the access code **`BT`** are in **§5.7a** — that section is the
+canonical reference for UI/visual verification. Key point repeated here because it's the highest-
+value tool: **the app loads real live Polygon/Supabase data in the sandbox**, so you can confirm
+rendered values/colors/positions on the LIVE deploy, not just that code exists (§5.1a). Verify by
+extracting DOM text + computed styles + element rects and by pixel analysis — and note the `view`
+tool's IMAGE channel has been returning blank on valid PNGs (fall back to DOM/pixel extraction; the
+PNG files on disk are fine).
+
+**Viewing the page / images:** screenshots write fine to disk (`page.screenshot`); inspect them
+with Pillow (installed) for pixel-level checks (color counts, region comparison) when the `view`
+image channel is glitching. `convert` (ImageMagick) and `ffmpeg` are also on PATH.
+
+**Python 3.12 — preinstalled (no install needed):** `pandas` 3.0, `numpy` 2.4, `scipy` 1.17,
+`scikit-learn` 1.8, `matplotlib` 3.10, `seaborn` 0.13, `sympy` 1.14, `networkx` 3.6, `Pillow` 12.1,
+`openpyxl` 3.1, `requests` 2.33, `beautifulsoup4` 4.14 + `lxml` 6.0. This covers most numeric/stat/
+ML/regression, plotting, HTML-scraping, and xlsx work directly.
+
+**Python — installable ON DEMAND (network is open; use `pip install --break-system-packages <pkg>`;
+PEP 668 blocks a bare `pip install`):** confirmed working this session — `TA-Lib` (imports and
+runs — the C dep resolves here, which it often doesn't elsewhere), `statsmodels` 0.14, `yfinance`
+1.5. So the quant-specific stack (TA-Lib indicators, statsmodels for ARIMA/regime/HMM-adjacent work,
+GARCH via `arch`, `pandas-ta`, etc.) is available with one install command — just don't ASSUME
+they're preinstalled; they're not, only the core scientific stack above is.
+
+**Node 22 / npm 10:** available. `playwright-core` in `/home/claude/pwtest`. For MV-Charts logic
+checks, the reliable pattern is to copy a function out of the source `.jsx` and exercise it in node
+against real Polygon data (that's how the v615 swing bug was proven) — see §5.1a / §5.7a.
+
+**CLI present:** `git`, `curl`, `node`, `python3`, `pip`, `convert` (ImageMagick), `ffmpeg`.
+**CLI ABSENT (don't reach for these):** `jq` (parse JSON in python/node instead), `sqlite3`, `psql`
+(use the Supabase MCP tools for DB work — never a raw psql), `wrangler`, `gh` (deploy via the
+GitHub Actions push, not CLI). The file system resets between tasks; treat `/home/claude` as scratch
+and re-clone the repo each session.
+
+**Data/APIs reachable from the sandbox** (keys in the bundle / `app_config`, see §3/§8): Polygon
+(key `Nhwwc_...` is in the bundle), Alpaca via the `alpaca-proxy` worker, SEC EDGAR via
+`edgar-proxy`, TipRanks via `tipranks-proxy`, and Supabase (project `haeqzegdlwryvaecanrn`) both via
+REST with the hardcoded anon `SB_KEY` and via the Supabase MCP tools for admin/SQL.
