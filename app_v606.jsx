@@ -22110,7 +22110,7 @@ function ViolentChopScreenerPage(p){
   var s14=useState(500),showCount=s14[0],setShowCount=s14[1];
   var s15=useState(false),scanning=s15[0],setScanning=s15[1];
   var s15b=useState(false),showColInfo=s15b[0],setShowColInfo=s15b[1];
-  var s15c=useState(true),showInstr=s15c[0],setShowInstr=s15c[1];
+  var s15c=useState(false),showInstr=s15c[0],setShowInstr=s15c[1];  // instructions panel — collapsed by default (v606)
   var sCh=useState(null),chartTk=sCh[0],setChartTk=sCh[1];          // null = closed; else ticker
   var sChI=useState('5'),chartInt=sChI[0],setChartInt=sChI[1];      // chart modal interval (default 5m)
   var sChR=useState('5D'),chartRange=sChR[0],setChartRange=sChR[1]; // chart modal range (default 5D)
