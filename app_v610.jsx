@@ -20019,7 +20019,11 @@ function MultiViewChartsPage(p){
             var y=Yp(L.price);
             if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
             var isKey=FIB_KEY_LEVELS[L.pct];
-            var labelled=isKey||n>60; // always label key levels; label all only on roomy charts
+            // On the dense intraday charts (5-min, 7D) label only the key levels to avoid clutter;
+            // on daily+ charts there's room to label all seven. (Bar count doesn't distinguish these
+            // — intraday charts actually have MORE bars — so key on the timeframe kind.)
+            var dense=(tf.kind==='intraday');
+            var labelled=isKey||!dense;
             var ly=Math.min(Math.max(y,PADT+8),PADT+priceH-3);
             return <g key={keyTag+i}>
               <line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.75:0.5}/>
