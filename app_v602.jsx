@@ -20341,6 +20341,18 @@ function MultiViewChartsPage(p){
                 })()
               : stat('Interval',tf.bar)}
             {bars&&stat('Bars',bars.length.toLocaleString())}
+            {bars&&bars.length&&(function(){
+              // Timeframe high/low/range over THIS chart's own window — same derivation Chart() uses.
+              var hh=-Infinity,ll=Infinity;
+              for(var i=0;i<bars.length;i++){if(typeof bars[i].h==='number'&&bars[i].h>hh)hh=bars[i].h;if(typeof bars[i].l==='number'&&bars[i].l<ll)ll=bars[i].l;}
+              if(!isFinite(hh)||!isFinite(ll))return null;
+              var rng=hh-ll, rngPct=ll>0?(rng/ll*100):null;
+              return [
+                <div key="tfhi" style={{display:'flex',flexDirection:'column',gap:1}}><span style={lblCss}>High</span><span style={valCss}><span style={{color:UP}}>{fmtPx(hh)}</span></span></div>,
+                <div key="tflo" style={{display:'flex',flexDirection:'column',gap:1}}><span style={lblCss}>Low</span><span style={valCss}><span style={{color:DN}}>{fmtPx(ll)}</span></span></div>,
+                <div key="tfrng" style={{display:'flex',flexDirection:'column',gap:1}}><span style={lblCss}>Range</span><span style={valCss}>{fmtPx(rng)}{rngPct!=null?<span style={{color:C.txtDim,fontWeight:400}}>{' · '+rngPct.toFixed(1)+'%'}</span>:null}</span></div>
+              ];
+            })()}
             {atrMap[tf.key]!=null&&stat('Avg daily range',atrMap[tf.key].toFixed(2)+'%')}
             {c2hMap[tf.key]!=null&&stat('Avg close→high',<span style={{color:c2hMap[tf.key]>=0?UP:DN}}>{(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'}</span>)}
             {(function(){var q=null;for(var i=epsQ.length-1;i>=0;i--){if(epsQ[i].yoy!=null){q=epsQ[i];break;}}return q?stat('EPS YoY ('+q.label+')',<span style={{color:q.yoy>=0?UP:DN}}>{(q.yoy>=0?'+':'')+q.yoy.toFixed(1)+'%'}</span>):null;})()}
