@@ -19617,7 +19617,7 @@ function MultiViewChartsPage(p){
           // prepend the last bar before the window so the first in-window day has a prior close
           var before=null;acc.forEach(function(b){if(b.t<s)before=b;});
           var series=before?[before].concat(slice):slice;
-          am[tf.key]=avgTrPct(series);        // simple avg of daily TR% over this window
+          am[tf.key]=avgTrueRange(series);        // {pct, dollar}: avg daily TR over this window
           cm[tf.key]=closeToHighPct(series);
         });
         setAtrMap(am);setC2hMap(cm);
@@ -19671,16 +19671,20 @@ function MultiViewChartsPage(p){
   var fmtUSD=function(v){if(v==null||!isFinite(v))return '—';var s=v<0?'-':'';var a=Math.abs(v);if(a>=1e9)return s+'$'+(a/1e9).toFixed(2)+'B';if(a>=1e6)return s+'$'+(a/1e6).toFixed(0)+'M';if(a>=1e3)return s+'$'+(a/1e3).toFixed(0)+'K';return s+'$'+a.toFixed(0);};
 
   // ---- average daily True Range %, simple mean over the window (each day's TR / that day's close) ----
-  var avgTrPct=function(daily){
+  // Returns {pct, dollar}: average 14(-ish)-period true range as BOTH percent and dollars,
+  // computed in one pass. The dollar figure is the true average of per-bar TR in dollars — NOT
+  // atr% x current price, which drifts on windows where price moved a lot. Both come from the
+  // same tr = max(h-l, |h-pc|, |l-pc|): dollar accumulates tr, pct accumulates tr/c*100.
+  var avgTrueRange=function(daily){
     if(!daily||daily.length<2)return null;
-    var sum=0,cnt=0;
+    var sumPct=0,sumDol=0,cnt=0;
     for(var i=1;i<daily.length;i++){
       var h=daily[i].h,l=daily[i].l,c=daily[i].c,pc=daily[i-1].c;
       if(!c)continue;
       var tr=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));
-      sum+=tr/c*100;cnt++;
+      sumPct+=tr/c*100; sumDol+=tr; cnt++;
     }
-    return cnt?sum/cnt:null;
+    return cnt?{pct:sumPct/cnt, dollar:sumDol/cnt}:null;
   };
 
   // ---- avg (today's High - prev Close)/prev Close % over all daily bars (negatives included) ----
@@ -20353,7 +20357,7 @@ function MultiViewChartsPage(p){
                 <div key="tfrng" style={{display:'flex',flexDirection:'column',gap:1}}><span style={lblCss}>Range</span><span style={valCss}>{fmtPx(rng)}{rngPct!=null?<span style={{color:C.txtDim,fontWeight:400}}>{' · '+rngPct.toFixed(1)+'%'}</span>:null}</span></div>
               ];
             })()}
-            {atrMap[tf.key]!=null&&stat('Avg daily range',atrMap[tf.key].toFixed(2)+'%')}
+            {atrMap[tf.key]!=null&&atrMap[tf.key].pct!=null&&stat('ATR',<span>{fmtPx(atrMap[tf.key].dollar)}<span style={{color:C.txtDim,fontWeight:400}}>{' · '+atrMap[tf.key].pct.toFixed(2)+'%'}</span></span>)}
             {c2hMap[tf.key]!=null&&stat('Avg close→high',<span style={{color:c2hMap[tf.key]>=0?UP:DN}}>{(c2hMap[tf.key]>=0?'+':'')+c2hMap[tf.key].toFixed(2)+'%'}</span>)}
             {(function(){var q=null;for(var i=epsQ.length-1;i>=0;i--){if(epsQ[i].yoy!=null){q=epsQ[i];break;}}return q?stat('EPS YoY ('+q.label+')',<span style={{color:q.yoy>=0?UP:DN}}>{(q.yoy>=0?'+':'')+q.yoy.toFixed(1)+'%'}</span>):null;})()}
           </div>
@@ -20366,7 +20370,7 @@ function MultiViewChartsPage(p){
           </div>
         </div>;
       })}
-      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · AVG DAILY RANGE = mean daily true range % over the period · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume, MACD (12/26/9) and EPS shown in panels below each chart. Prices split-adjusted; intraday includes pre / post-market. In the EPS panel, each bar is a quarter's diluted EPS at its report date — green = up year-over-year, red = down, gray dot = no prior-year quarter; tap a bar for the value and YoY change.</div>
+      <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:14,textAlign:'center',lineHeight:1.6}}>PRICE = latest traded price (same across all charts) · RETURN = change over this chart's period · ATR = average daily true range over the period, shown in dollars and as a percent of price (always daily, even on longer-interval charts) · AVG CLOSE→HIGH = mean of (day's high − prior close) / prior close % over the period.<br/>Green candle = close ≥ open, red = close &lt; open. Dashed line marks the latest price. Volume, MACD (12/26/9) and EPS shown in panels below each chart. Prices split-adjusted; intraday includes pre / post-market. In the EPS panel, each bar is a quarter's diluted EPS at its report date — green = up year-over-year, red = down, gray dot = no prior-year quarter; tap a bar for the value and YoY change.</div>
 
       {/* ===== VOLUME & TRADES COMPARISON — three daily bar charts, date-filtered lookback ===== */}
       <div style={{marginTop:22,paddingTop:16,borderTop:'2px solid '+C.accent+'44'}}>
