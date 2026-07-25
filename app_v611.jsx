@@ -20019,15 +20019,21 @@ function MultiViewChartsPage(p){
             var y=Yp(L.price);
             if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
             var isKey=FIB_KEY_LEVELS[L.pct];
-            // On the dense intraday charts (5-min, 7D) label only the key levels to avoid clutter;
-            // on daily+ charts there's room to label all seven. (Bar count doesn't distinguish these
-            // — intraday charts actually have MORE bars — so key on the timeframe kind.)
             var dense=(tf.kind==='intraday');
-            var labelled=isKey||!dense;
-            var ly=Math.min(Math.max(y,PADT+8),PADT+priceH-3);
+            // Label rules to avoid collisions with the chart's own markers:
+            //  - skip 0% and 100% labels: those are the anchor extremes, already shown by the
+            //    high/low markers (range mode) and visually obvious as the outermost lines —
+            //    labelling them printed "0% $x" right on top of the existing "$x" high marker.
+            //  - skip any label whose y is within ~10px of the last-price tag (the filled box),
+            //    which sits on the right edge — the label would render over it.
+            //  - on dense intraday charts, only the key levels (38.2/50/61.8) get labels.
+            var isEndpoint=(L.pct===0||L.pct===1);
+            var nearPriceTag=Math.abs(y-tagY)<11;
+            var labelled=!isEndpoint&&!nearPriceTag&&(isKey||!dense);
+            var ly=Math.min(Math.max(y,PADT+9),PADT+priceH-3);
             return <g key={keyTag+i}>
-              <line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.75:0.5}/>
-              {labelled&&<text x={W-PADR-2} y={ly-2} textAnchor="end" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.95">{(bothOn?prefix+' ':'')+L.label+' '+fmtPx(L.price)}</text>}
+              <line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.7:0.45}/>
+              {labelled&&<text x={PADL+3} y={ly-2} textAnchor="start" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.95">{(bothOn?prefix+' ':'')+L.label+' '+fmtPx(L.price)}</text>}
             </g>;
           })}</g>;
         };
