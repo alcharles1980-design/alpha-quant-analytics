@@ -20037,8 +20037,9 @@ function MultiViewChartsPage(p){
       {/* Fibonacci retracement overlays — range (visible hi/lo) and/or swing (detected pivot) */}
       {(showFibRange||showFibSwing)&&(function(){
         var bothOn=showFibRange&&showFibSwing;
-        var drawSet=function(levels,color,prefix,keyTag,anchorLo,anchorHi,capRow){
+        var drawSet=function(levels,color,prefix,keyTag,anchorLo,anchorHi,capRow,xOff){
           if(!levels||!levels.length)return null;
+          xOff=xOff||0; // horizontal shift for the label column (swing shifts right of range when both on)
           // A subtle dark background pill behind each label makes the % AND price readable even
           // where the level crosses candles (previously the price text was lost against the
           // candle colors, so a label could look like it was missing its price).
@@ -20051,8 +20052,8 @@ function MultiViewChartsPage(p){
           var capTxt=(bothOn?prefix+' ':'')+'anchor '+fmtPx(anchorLo)+' \u2192 '+fmtPx(anchorHi);
           var capW=capTxt.length*5.3+8;
           return <g key={keyTag}>
-            <rect x={PADL+2} y={capY-9} width={capW} height={12} rx="2" fill={C.bgDeep||C.bg} opacity="0.82"/>
-            <text x={PADL+5} y={capY} textAnchor="start" fontSize="8.5" fontWeight="700" fill={color} fontFamily={F} opacity="0.98">{capTxt}</text>
+            <rect x={PADL+2+xOff} y={capY-9} width={capW} height={12} rx="2" fill={C.bgDeep||C.bg} opacity="0.82"/>
+            <text x={PADL+5+xOff} y={capY} textAnchor="start" fontSize="8.5" fontWeight="700" fill={color} fontFamily={F} opacity="0.98">{capTxt}</text>
             {levels.map(function(L,i){
             var y=Yp(L.price);
             if(!isFinite(y)||y<PADT-0.5||y>PADT+priceH+0.5)return null; // outside price panel
@@ -20072,19 +20073,20 @@ function MultiViewChartsPage(p){
             var txt=(bothOn?prefix+' ':'')+L.label+' '+fmtPx(L.price);
             return <g key={keyTag+i}>
               <line x1={PADL} y1={y} x2={W-PADR} y2={y} stroke={color} strokeWidth={isKey?1:0.6} strokeDasharray={isKey?'4 3':'2 5'} opacity={isKey?0.7:0.45}/>
-              <rect x={PADL+2} y={ly-10} width={lblW} height={13} rx="2" fill={C.bgDeep||C.bg} opacity="0.72"/>
-              <text x={PADL+5} y={ly} textAnchor="start" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.98">{txt}</text>
+              <rect x={PADL+2+xOff} y={ly-10} width={lblW} height={13} rx="2" fill={C.bgDeep||C.bg} opacity="0.72"/>
+              <text x={PADL+5+xOff} y={ly} textAnchor="start" fontSize="9.5" fontWeight={isKey?'700':'400'} fill={color} fontFamily={F} opacity="0.98">{txt}</text>
             </g>;
           })}</g>;
         };
         var out=[];
+        var swXOff=bothOn?96:0; // when both sets show, swing labels sit just right of range labels (avoids same-y overlap when they share an anchor price)
         if(showFibRange){
           // anchor to the chart's visible high/low (already computed as hi/lo/hiIdx/loIdx)
-          out.push(drawSet(buildFibLevels(hi,lo,hiIdx,loIdx),FIB_RANGE_COLOR,'R','fibR',lo,hi,0));
+          out.push(drawSet(buildFibLevels(hi,lo,hiIdx,loIdx),FIB_RANGE_COLOR,'R','fibR',lo,hi,0,0));
         }
         if(showFibSwing){
           var sw=detectSwing(bars,fibSwingN(tf));
-          if(sw)out.push(drawSet(buildFibLevels(sw.hi,sw.lo,sw.hiIdx,sw.loIdx),FIB_SWING_COLOR,'S','fibS',sw.lo,sw.hi,showFibRange?1:0));
+          if(sw)out.push(drawSet(buildFibLevels(sw.hi,sw.lo,sw.hiIdx,sw.loIdx),FIB_SWING_COLOR,'S','fibS',sw.lo,sw.hi,showFibRange?1:0,swXOff));
         }
         return <g>{out}</g>;
       })()}
