@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v599 · Jul 24 2026
+**Status at last update:** v615 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -389,6 +389,32 @@ CF Workers: 300s CPU / 128 MB. Supabase Edge Functions: 150s. Heavy stocks (SOXL
 needs a browser Web Worker fallback**; browsers have no CPU cap and GBs of memory.
 Set a `serverFailed` flag so subsequent days skip the doomed server attempt.
 
+### 5.7a Headless-browser visual verification — USE IT for any UI/render change
+
+The most repeated failure in this codebase is *verifying that code is PRESENT, not that it
+BEHAVES/RENDERS correctly* (§5.1a). For any change that affects what's drawn, actually render the
+live app and inspect it:
+
+- **Setup (once per sandbox):** `cd /home/claude/pwtest && npm install playwright-core`; Chromium is
+  at `/opt/pw-browsers/chromium-*/chrome-linux/chrome`. Launch headless with
+  `args:['--no-sandbox','--disable-gpu']`.
+- **Flow:** goto the live URL (`waitUntil:'networkidle'`) → fill the access-code `input` with **`BT`**
+  → click the ENTER button → wait ~2.5s → set `window.location.hash='#<page>:<TICKER>'` → wait
+  ~13–14s for data to load (**the app DOES fetch real live Polygon/Supabase data in the sandbox**).
+- **Verify by DATA, not just by eye:** extract rendered `<text>` contents, computed `fill` colors,
+  and element bounding boxes from the DOM, and/or do pixel analysis (count pixels of a target color,
+  compare regions). Often MORE precise than a screenshot for confirming exact values, positions, and
+  color separation — and immune to the image-view glitch below.
+- **Known environment quirks:** (a) the `view` tool's IMAGE channel intermittently returns blank on
+  valid PNGs — fall back to DOM/pixel extraction; the screenshot files themselves are fine. (b)
+  Recharts throws a PropTypes `oneOfType` error headless (`window.Recharts` undefined), so the few
+  `RC.*` pages don't render — but MV Charts / Fib / screeners are all custom SVG, unaffected. (c)
+  Backgrounding `python3 -m http.server` to test a LOCAL build is unreliable here
+  (ERR_CONNECTION_REFUSED); reliable pattern is verify logic in node → ship → verify on LIVE.
+- **Chart-order gotcha:** don't assume MV-Charts SVG order maps to timeframes — read each chart's
+  timeframe label from the DOM before interpreting its caption (a v615 near-miss came from
+  mis-mapping chart index → timeframe).
+
 ### 5.8 Process lessons
 
 - **Derived data computed at write time goes stale when writes arrive out of order.**
@@ -533,11 +559,89 @@ using a PAT in `app_config`): `nightly`, `hourly`, `backfill`, `autotune`,
 
 ## 9. Recent work
 
-**Current: v599** (Jul 24 2026) — see the "Resolved Jul 24 2026" block in §10 for the full
-v592→v598 session (predictor accuracy box, Most Actives median fix, Volume & Trades charts +
-lookback). v599 is a docs-sync/audit sweep with no code change: route/menu parity clean (87
-menu pages all route; `glanceapi`/`cheatsheet` are intentional deep-link-only views), no
-module-scope function collisions, no duplicate RPC definitions.
+**Current: v615** (Jul 25 2026) — Fibonacci retracement overlays on Multi View Charts (v609–v613),
+last-price-tag centering (v614), and a Fib-swing anchor fix (v615). Full detail in the block
+immediately below. The v592→v599 session (predictor accuracy box, Most Actives median fix, Volume
+& Trades charts) is summarised further down and in §10.
+
+---
+
+### Fibonacci overlays + last-price tag + swing fix (v609–v615, Jul 25 2026)
+
+Two independent toggle buttons on Multi View Charts, next to VWAP, both **off by default**,
+display-only (no predictive claim, no backend/data change — pure custom SVG in the MV-Charts
+`Chart=function(tf,bars)` closure). State `s9f1`/`s9f2` (`showFibRange`/`showFibSwing`). Levels
+`[0,.236,.382,.5,.618,.786,1]`, key levels `{.382,.5,.618}`. Two colors: **range = gold**
+(`C.gold`), **swing = cyan `#22d3ee`** (see v615 note — was teal, clashed with the green up-line).
+
+- **Fib (range)** — anchors to the chart's visible high/low (reuses the v602 `hi`/`lo`/`hiIdx`/
+  `loIdx` the chart already computes). `buildFibLevels(hi,lo,hiIdx,loIdx)` puts 0% at the MOST
+  RECENT extreme via `recentIsHigh = hiIdx>=loIdx`, so an up-leg retraces down from the high and a
+  down-leg retraces up from the low. This math was correct throughout; only swing's anchor
+  *selection* was ever broken.
+- **Fib (swing)** — anchors to the most recent confirmed swing leg via the pivot method.
+  `fibSwingN(tf)` sets pivot sensitivity per bar interval (10 intraday / 6 hourly 7D–30D / 5 daily
+  3M–1Y / 4 weekly–monthly 5Y–10Y). Draws only when a clean leg is found (else the toggle is a
+  silent no-op, by design).
+
+**Rendering (drawSet), evolved across versions — the current v615 behaviour:**
+- Each level = a full-width dashed line + a left-aligned label (`% $price`) sitting on a dark
+  **background pill** (`rect fill C.bgDeep opacity .72`) so the price reads over candles. Labels are
+  on the LEFT gutter (x≈`PADL+2`, textAnchor start), NOT the right edge.
+- An **anchor caption** at top-left of each set names the range: `anchor $lo → $hi` (range on
+  capRow 0, swing on capRow 1 when both are on, each in its own color with an `R`/`S` prefix). This
+  is what makes the cross-timeframe behaviour legible: same high, different low per timeframe ⇒ same
+  last price sits at a different Fib %.
+- **Only 0%/100% are unlabelled** (their values are in the caption + the high/low markers). ALL
+  interior levels label on EVERY timeframe (see v610/v613 history — do NOT re-add the intraday-only
+  trim or the near-price-tag suppression; both made levels look like they had "no price").
+
+**Per-version history (so a diff makes sense):**
+- **v609** — first build (display-only option chosen after discussing three approaches).
+- **v610** — fixed a no-op: v609's `labelled = isKey || n>60` never triggered because intraday
+  charts have MORE bars than daily (bar count is inversely related to density). Was changed to a
+  `dense=(tf.kind==='intraday')` gate… which v613 then removed entirely.
+- **v611** — moved labels to the left edge + skipped 0%/100% + skipped labels within 11px of the
+  last-price tag (to stop collisions). The near-tag skip was later found to hide whole levels.
+- **v612** — added the anchor caption + the background pills; REMOVED the near-tag suppression (it
+  was hiding e.g. CRDO 3M's 61.8% because it sat 7px from the price tag). Only 0%/100% + the
+  intraday-key-only rule remained.
+- **v613** — removed the intraday-key-only trim too. Root cause of the user's "some prices aren't
+  shown": on intraday charts (TODAY/YEST/7D, `kind:'intraday'`) 23.6%/78.6% were drawn as BARE
+  LINES with no label, indistinguishable from "the price is missing." Now `labelled = !isEndpoint`
+  on all timeframes; pills keep them readable. **This was found only because the user repeated the
+  report — I had been verifying the DAILY charts, which were already fine. Look at the exact chart
+  the user is looking at.**
+- **v614** — **centered the last-price tag.** It was pinned to the right edge (`x = W-PADR-58`),
+  covering the newest candles (the most-watched price action). Now centered horizontally on the
+  plot: `tcx = (PADL+(W-PADR))/2` (≈x454 of the 160–748 plot), clearing BOTH the recent candles on
+  the right AND the Fib labels on the left (which live at x≈165–239). Vertical position unchanged
+  (still on the price line at `tagY` — moving it vertically would misstate the price). Only the
+  tag's x changed; `tagY` stays vertical-only and nothing else depended on the tag's x.
+- **v615** — **fixed the Fib-swing anchor bug + recolored swing.** `detectSwing` was taking the
+  most-recent pivot high and most-recent pivot low INDEPENDENTLY and pairing them, so when a pivot
+  sat between them the "swing" straddled it and was never a single leg. Proven on live Polygon
+  data: NVDA's recent pivots run H@Jun22 $213.99, L@Jun29 **$189.80**, L@Jul17 $197.97 — the old
+  code paired $213.99 with $197.97, skipping the real recent bottom $189.80 and anchoring 0% to a
+  minor higher-low. It looked fine on TSLA/AAPL/CRDO only because their last high and last low
+  happen to be adjacent. **Fix:** collect all pivots in time order, collapse consecutive same-type
+  pivots to the extreme (a run of lows keeps the lowest, a run of highs the highest) so the sequence
+  strictly alternates H,L,H,L, then take the last two = the most recent COMPLETED adjacent leg.
+  A bar flagged as BOTH high and low (flat/degenerate data) is assigned the role with the larger
+  one-bar excursion. Verified live: NVDA 3M/YTD/1Y all now read `anchor $189.80 → $213.99`. Also
+  recolored swing gold-adjacent teal `#3fb8af` → cyan `#22d3ee` (teal was ~identical to the green
+  up-line `C.accent #00e5a0`). `buildFibLevels` was already correct — only anchor selection changed.
+  **Open decision:** on 5Y/10Y (weekly/monthly, N=4) the detected leg is now a real leg but can be
+  large/old; left visible so the toggle isn't a no-op. Suppressing swing there is a one-line change
+  if wanted.
+
+**Verification note for this session:** the app renders live Polygon/Supabase data in a headless
+Chromium in the sandbox (see §5.7a), which made real visual verification possible for the first
+time. Every Fib fix above was confirmed on the LIVE deploy by extracting the rendered label/caption
+text and computed colors from the DOM, and by pixel analysis — not by eyeballing, because the
+`view` tool's IMAGE channel returned blank all session (a tool glitch; the PNGs were valid on disk).
+
+---
 
 **v555** — Most Actives RTH/My Lists snapshots IEX → SIP; removed the
 `avgFeed` conditional (SIP end-to-end, mismatch now impossible). Verified live:
@@ -791,6 +895,13 @@ left as is** — do not re-investigate without a specific reason.
 
 ### Older, still open
 
+- **Fib swing on 5Y/10Y charts (v615, decision pending):** on weekly/monthly bars (N=4) the
+  detected swing leg is now a *real* adjacent leg but can be large/old — a "recent swing" on a
+  decade of monthly bars isn't actionable. Currently left visible so the toggle isn't a silent
+  no-op. Suppressing swing on 5Y/10Y (or requiring a minimum leg magnitude / recency) is a small
+  change if the user decides it's noise. Also un-actioned from this session: the Fib **range**
+  overlay was never hardened — it's fine; and the Confluence page L26315 12-field extraction RPC
+  is still parked (borderline-not-broken, §ordering).
 - **Change B (queued):** High/Low Levels historical bars still `feed=iex`
   (~line 15571). IEX samples ~2.5% of volume so it can miss a session's true
   high/low — material for a *levels* tool. Changes computed values → verify on a
