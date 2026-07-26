@@ -20621,6 +20621,88 @@ function MultiViewChartsPage(p){
     </svg>;
   };
 
+  // ---- Consecutive-day streak distribution ----------------------------------------------------
+  // A "run" is a maximal sequence of consecutive sessions sharing the same sign. Returns
+  // {green:{len:runCount}, red:{...}, maxLen, longestGreen, longestRed, greenRuns, redRuns}.
+  //
+  // TERMINATION RULE: a day that is exactly flat (0.00%) or has a null return ENDS the current run
+  // and starts no run of its own. It is a genuine break in the sequence, not a continuation — three
+  // green, one flat, three green is two runs of 3, never one run of 6. This matters on thin names
+  // where flat closes are common; on liquid ones it almost never fires.
+  //
+  // Runs are counted by OCCURRENCE, not by days: a 3-day green run contributes 1 to green[3],
+  // not 3. Total days in green runs therefore equals sum(len * green[len]) and reconciles to the
+  // green-day count from retStats — asserted in the verification.
+  var streakStats=function(rows){
+    var green={},red={},cur=0,sign=0,maxLen=0,longestGreen=0,longestRed=0;
+    var flush=function(){
+      if(sign!==0&&cur>0){
+        var bucket=(sign>0)?green:red;
+        bucket[cur]=(bucket[cur]||0)+1;
+        if(cur>maxLen)maxLen=cur;
+        if(sign>0){if(cur>longestGreen)longestGreen=cur;}else{if(cur>longestRed)longestRed=cur;}
+      }
+      cur=0;sign=0;
+    };
+    for(var i=0;i<rows.length;i++){
+      var v=rows[i].ret;
+      var s=(v==null||!isFinite(v)||v===0)?0:(v>0?1:-1);
+      if(s===0){flush();continue;}
+      if(s===sign){cur++;}
+      else{flush();sign=s;cur=1;}
+    }
+    flush();
+    var countRuns=function(o){var t=0;for(var k in o)t+=o[k];return t;};
+    return {green:green,red:red,maxLen:maxLen,
+            longestGreen:longestGreen,longestRed:longestRed,
+            greenRuns:countRuns(green),redRuns:countRuns(red)};
+  };
+
+  // Grouped bars: one x-slot per streak length, green run-count beside red run-count. Counts are
+  // small integers, so the value is printed above each bar — far more useful than reading a bar
+  // against a y-axis. Empty when the window contains no runs at all.
+  var streakChart=function(sk){
+    if(!sk.maxLen)return <div style={{height:160,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No streaks in this window.</div>;
+    var W=900,H=300,padL=44,padR=10,padT=24,padB=42;
+    var innerW=W-padL-padR, innerH=H-padT-padB;
+    var L=sk.maxLen;
+    var mx=0;
+    for(var i=1;i<=L;i++){
+      if((sk.green[i]||0)>mx)mx=sk.green[i]||0;
+      if((sk.red[i]||0)>mx)mx=sk.red[i]||0;
+    }
+    if(mx<=0)mx=1;
+    var groupW=innerW/L, barW=Math.max(3,Math.min(26,groupW/2-4));
+    var ticks=[0,0.5,1].map(function(f){return {val:Math.round(mx*f), y:padT+innerH-(f*innerH)};});
+    var bars=[];
+    for(var n=1;n<=L;n++){
+      var gx=padL+(n-1)*groupW+groupW/2;
+      [['g',sk.green[n]||0,UP,-1],['r',sk.red[n]||0,DN,1]].forEach(function(pair){
+        var cnt=pair[1], col=pair[2], side=pair[3];
+        var bh=(cnt/mx)*innerH;
+        var x=gx+(side<0?-(barW+2):2);
+        var y=padT+innerH-bh;
+        bars.push(<g key={pair[0]+n}>
+          <rect x={x} y={y} width={barW} height={Math.max(cnt>0?1:0,bh)} fill={col} opacity="0.85"/>
+          {cnt>0&&<text x={x+barW/2} y={y-4} textAnchor="middle" fontSize="11" fontWeight="700" fill={col} fontFamily={F}>{cnt}</text>}
+        </g>);
+      });
+    }
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block'}}>
+      {ticks.map(function(t,ti){
+        return <g key={'gl'+ti}>
+          <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity={t.val===0?1:0.4} strokeDasharray={t.val===0?'':'3 4'}/>
+          <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="11" fontWeight="700" fill={C.txtDim} fontFamily={F}>{t.val}</text>
+        </g>;
+      })}
+      {bars}
+      {(function(){var out=[];for(var n=1;n<=L;n++){
+        out.push(<text key={'x'+n} x={padL+(n-1)*groupW+groupW/2} y={H-22} textAnchor="middle" fontSize="12" fontWeight="700" fill={C.txtDim} fontFamily={F}>{n}</text>);
+      }return out;})()}
+      <text x={padL+innerW/2} y={H-6} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>consecutive sessions in the run</text>
+    </svg>;
+  };
+
   var started=sym!=='';
   var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
 
@@ -20815,6 +20897,46 @@ function MultiViewChartsPage(p){
               </div>
               <div style={{marginTop:10}}>{retChart(vis)}</div>
             </div>
+
+            {/* --- fixed 12-month streak subsection: independent of the lookback dropdown above --- */}
+            {(function(){
+              var y1=vtVisible('12m');
+              var ys=retStats(y1);
+              var sk=streakStats(y1);
+              if(!ys.n)return null;
+              var runRow=function(label,dist,total,color){
+                var cells=[];
+                for(var n=1;n<=sk.maxLen;n++){
+                  var c=dist[n]||0;
+                  cells.push(<div key={n} style={{flex:'1 1 44px',minWidth:42,background:C.bgDeep,border:'1px solid '+(c>0?color+'55':C.border),borderRadius:6,padding:'5px 4px',textAlign:'center'}}>
+                    <div style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.4}}>{n+(n===1?' DAY':' DAYS')}</div>
+                    <div style={{fontSize:14,color:c>0?color:C.txtDim,fontFamily:F,fontWeight:700,lineHeight:1.2}}>{c}</div>
+                  </div>);
+                }
+                return <div style={{marginTop:8}}>
+                  <div style={{fontSize:8.5,color:color,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',marginBottom:4}}>{label} <span style={{color:C.txtDim,fontWeight:700}}>{'· '+total+' run'+(total===1?'':'s')}</span></div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:5}}>{cells}</div>
+                </div>;
+              };
+              return <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                  <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Consecutive Day Streaks · Last 12 Months</div>
+                  <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>fixed window — not affected by the lookback above</div>
+                </div>
+                <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>
+                  {ys.n+' session'+(ys.n===1?'':'s')+' ('+y1[0].d+' → '+y1[y1.length-1].d+') · '}
+                  <span style={{color:UP,fontWeight:700}}>{ys.green+' green'}</span>{' · '}
+                  <span style={{color:DN,fontWeight:700}}>{ys.red+' red'}</span>
+                  {ys.flat>0?' · '+ys.flat+' unchanged':''}
+                  {' · longest run '}<span style={{color:UP,fontWeight:700}}>{sk.longestGreen+'G'}</span>{' / '}
+                  <span style={{color:DN,fontWeight:700}}>{sk.longestRed+'R'}</span>
+                </div>
+                <div style={{marginTop:10}}>{streakChart(sk)}</div>
+                {runRow('Consecutive green runs',sk.green,sk.greenRuns,UP)}
+                {runRow('Consecutive red runs',sk.red,sk.redRuns,DN)}
+                <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each figure is the number of TIMES a run of that length occurred, not a day count — a 3-day green run adds 1 to the "3 days" bucket. Runs are maximal, so a 4-day run is counted only under 4 and never also under 3, 2 or 1. A session that closes exactly unchanged, or has no prior close, breaks the run and starts none of its own. Total days in green runs therefore reconciles to the green-day count above.</div>
+              </div>;
+            })()}
           </div>;
         })()}
         <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:10,textAlign:'center',lineHeight:1.6}}>Return = (close − prior session's close) / prior session's close, on split-adjusted daily bars. Green = up, red = down, and a day that closes exactly unchanged is counted separately from both. Sessions with no prior close are excluded from the counts rather than treated as flat, so the percentages always sum across the sessions actually measured. Note these are close-to-close moves and ignore intraday path — a green day can still have traded well below the prior close.</div>
