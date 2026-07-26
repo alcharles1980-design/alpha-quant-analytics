@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v622 · Jul 25 2026
+**Status at last update:** v623 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,53 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### C→H 10d — close-to-next-day-high, 10-session average (v623, Jul 25 2026)
+
+New sortable column on the Holy Grail screener, right of the ATR-derived block.
+`c2h_10d_pct` = mean of `(day high − PRIOR close) / prior close × 100` over the **last 10
+transitions** (needs 11 bars). Reads as: buy at the close, average % upside to the next
+session's peak. Same calculation as the Daily Close To High Screener and the Multi View
+Charts `Avg close→high` stat (`closeToHighPct`).
+
+**Guarded, because a MEAN is fragile in a way ATR is not.** INHD stopped trading 2026-06-08
+after a genuine 4030% final session; its raw 10-day mean was **405.85%**, which would have
+made the column unsortable (delisted junk pinned to the top). Two guards:
+- **Backfill:** ticker must have traded through the scan's reference session (2026-07-24).
+  20 stale-listing tickers excluded. Distribution went from max 405.85 → **max 11.84**.
+- **Pipeline:** any single `|transition| > 100%` voids the metric (null) rather than poisoning
+  the mean. Verified by injecting a +400% final bar → returns null.
+
+The ATR ladder deliberately has **no** equivalent guard — Wilder is far less outlier-sensitive,
+and INHD's `atr_1d` of 107% is a *true* reading of that session.
+
+**Backfill without leaving anything behind.** No write-RPC this time (see the v620 security
+note). Used a PostgREST bulk upsert with `?on_conflict=ticker,scan_date` +
+`Prefer: resolution=merge-duplicates`, **tested on a single row first** and confirmed it changed
+only `c2h_10d_pct` and nulled nothing. Then 5 sequential chunks of 500. Note a plain
+merge-duplicates POST **fails 409** without the explicit `on_conflict` target, since the unique
+key is `(ticker, scan_date)` not the PK.
+
+**Verified:** pipeline `_classifyRegime` reproduces the backfill exactly (WOLF 2.34, SMCI 4.76,
+MXL 4.98, CRDO 2.80); 36 header cells == 36 body cells; desc monotonic over all 500 rows;
+every displayed value checked against full-precision DB — **500/500 exact, worst delta 0.0**.
+
+> **A WRONG DIAGNOSIS I published mid-task, corrected.** On seeing INHD's 4030% day I asserted
+> that stitching Polygon *grouped* daily snapshots breaks across splits and that I had therefore
+> corrupted the ATR backfill. **That was false.** Re-fetching from the *per-ticker* (properly
+> split-adjusted) endpoint returned the SAME values — INHD 7d 15.66/3d 36.01/1d 107.17 vs the
+> backfilled 15.63/36.01/107.17; STI and QBTZ matched exactly. Grouped and per-ticker agree, the
+> ATR backfill was never corrupt, and the prepared "fix" was discarded as a no-op that would only
+> have added rounding noise. **Lesson: I reached for the most alarming explanation before testing
+> the cheap one. Check whether the two sources actually disagree before claiming one is broken.**
+
+> **`DN is not defined` — the build passed and the page was dead.** I coloured negatives with
+> `DN`, which is scoped to `MultiViewChartsPage`; `ViolentChopScreenerPage` uses the
+> `C.red||'#ef4444'` idiom. Babel compiled it, route parity was green, and the whole page
+> white-screened to "Something went wrong". Caught only by loading it. **Cross-page identifier
+> reuse is invisible to every structural check in this repo — §5.1a again.**
+
+---
 
 ### Vol Exp column — volatility expansion ratio (v622, Jul 25 2026)
 

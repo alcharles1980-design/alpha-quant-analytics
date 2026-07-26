@@ -1847,6 +1847,7 @@ function _classifyRegime(allBars) {
       atr_7d_dollar: null, atr_7d_pct: null,
       atr_3d_dollar: null, atr_3d_pct: null,
       atr_1d_dollar: null, atr_1d_pct: null,
+      c2h_10d_pct: null,
       return_10d_pct: null, return_60d_pct: null,
       direction_10d: null, direction_60d: null,
       trend_r2_60d: null, trend_pattern: null,
@@ -1911,6 +1912,25 @@ function _classifyRegime(allBars) {
   var atr7dPct = (atr7d != null && lastClose > 0) ? (atr7d / lastClose) * 100 : null;
   var atr3dPct = (atr3d != null && lastClose > 0) ? (atr3d / lastClose) * 100 : null;
   var atr1dPct = (atr1d != null && lastClose > 0) ? (atr1d / lastClose) * 100 : null;
+  // v623: 10-day average close-to-next-day-high. Mean of (day high - PRIOR close)/prior close %
+  // over the last 10 transitions, so it needs 11 bars. Reads as: buy at the close, how much
+  // upside to the next session's peak.
+  // GUARD: a single pathological transition destroys a 10-day MEAN (a delisted name with a 4030%
+  // final day produced a 405% "average" during the v623 backfill). Any |transition| > 100% voids
+  // the metric rather than poisoning it. ATR is far less sensitive to this, which is why the
+  // ladder has no equivalent guard.
+  var c2h10 = null;
+  if (allBars.length >= 11) {
+    var c2hSum = 0, c2hOk = true;
+    for (var ci = allBars.length - 10; ci < allBars.length; ci++) {
+      var cPrev = allBars[ci - 1].c;
+      if (!cPrev || cPrev <= 0) { c2hOk = false; break; }
+      var cPct = (allBars[ci].h - cPrev) / cPrev * 100;
+      if (!isFinite(cPct) || Math.abs(cPct) > 100) { c2hOk = false; break; }
+      c2hSum += cPct;
+    }
+    if (c2hOk) c2h10 = c2hSum / 10;
+  }
 
   // Trend direction: net return over 10d + 60d windows, ATR-relative deadband
   var ret10 = _netReturn(allBars, 10);
@@ -1985,6 +2005,7 @@ function _classifyRegime(allBars) {
     atr_3d_pct: atr3dPct != null ? Math.round(atr3dPct * 100) / 100 : null,
     atr_1d_dollar: atr1d != null ? Math.round(atr1d * 1000) / 1000 : null,
     atr_1d_pct: atr1dPct != null ? Math.round(atr1dPct * 100) / 100 : null,
+    c2h_10d_pct: c2h10 != null ? Math.round(c2h10 * 100) / 100 : null,
     return_10d_pct: ret10 != null ? Math.round(ret10 * 100) / 100 : null,
     return_60d_pct: ret60 != null ? Math.round(ret60 * 100) / 100 : null,
     direction_10d: dir10,
@@ -2870,6 +2891,7 @@ async function runScreener() {
       atr_3d_pct: regimeBlock.atr_3d_pct,
       atr_1d_dollar: regimeBlock.atr_1d_dollar,
       atr_1d_pct: regimeBlock.atr_1d_pct,
+      c2h_10d_pct: regimeBlock.c2h_10d_pct,
       return_10d_pct: regimeBlock.return_10d_pct,
       return_60d_pct: regimeBlock.return_60d_pct,
       direction_10d: regimeBlock.direction_10d,

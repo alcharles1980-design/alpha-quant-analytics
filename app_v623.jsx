@@ -22542,12 +22542,13 @@ function ViolentChopScreenerPage(p){
         // v620: the RPC now also returns the 7d/3d/1d Wilder rungs. Keep the same
         // "any field present" admission test as 14d so a ticker with only some rungs
         // still lands in the map rather than being dropped wholesale.
-        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null)
+        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null||row.c2h10!=null)
           atrMap[row.ticker]={
             pct:row.atr_pct!=null?+row.atr_pct:null,   dollar:row.atr_dol!=null?+row.atr_dol:null,
             p7:row.atr7_pct!=null?+row.atr7_pct:null,  d7:row.atr7_dol!=null?+row.atr7_dol:null,
             p3:row.atr3_pct!=null?+row.atr3_pct:null,  d3:row.atr3_dol!=null?+row.atr3_dol:null,
-            p1:row.atr1_pct!=null?+row.atr1_pct:null,  d1:row.atr1_dol!=null?+row.atr1_dol:null
+            p1:row.atr1_pct!=null?+row.atr1_pct:null,  d1:row.atr1_dol!=null?+row.atr1_dol:null,
+            c2h:row.c2h10!=null?+row.c2h10:null
           };
       });
       if(batch.length<1000)break;
@@ -22849,6 +22850,8 @@ function ViolentChopScreenerPage(p){
     // Guard the denominator: null or <=0 yields null, never Infinity/NaN, because the shared
     // comparator does bv-av and a NaN there silently unsorts the whole table (the v581 class).
     r.volExp=(r.atr3Pct!=null&&r.atrPct!=null&&r.atrPct>0)?Math.round((r.atr3Pct/r.atrPct)*100)/100:null;
+    // v623: 10-day average close-to-next-day-high %, straight from the row (never the side map).
+    r.c2h10=(a14&&a14.c2h!=null)?+a14.c2h:null;
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23178,6 +23181,7 @@ function ViolentChopScreenerPage(p){
             {thATR('3d ATR','atr3Pct','atr3Dol')}
             {thATR('Prev day','atr1Pct','atr1Dol')}
             {th('volExp',['Vol',<br key="b"/>,'Exp'])}
+            {th('c2h10',['C\u2192H',<br key="b"/>,'10d'])}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23314,6 +23318,15 @@ function ViolentChopScreenerPage(p){
                       return <td key="vx" style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:v>=1.15||v<=0.85?700:400,color:col}}
                         title={'3d ATR% \u00F7 14d ATR% = '+v.toFixed(2)+'\u00D7. Above 1 = short-window volatility running hotter than baseline (range expanding); below 1 = settling. Both rungs are Wilder, so this compares ~5-day against ~27-day effective memory.'}>
                         {v.toFixed(2)+'\u00D7'}</td>;
+                    })(),
+                    (function(){
+                      // v623: 10-day average close-to-next-day-high. Mean of
+                      // (day high - prior close)/prior close % over the last 10 transitions.
+                      var v=r.c2h10;
+                      if(v==null)return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                      return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:v<0?(C.red||'#ef4444'):(v>=3?C.gold:C.txt)}}
+                        title={'Average close-to-next-day-high over the last 10 sessions: buy at the close, '+v.toFixed(2)+'% average upside to the next session\u2019s high. Negative means the next day\u2019s high was on average below the prior close. This is a MEAN, not a hit rate \u2014 a few large up-days can carry it.'}>
+                        {(v>=0?'+':'')+v.toFixed(2)+'%'}</td>;
                     })()
                   ];
                 })()}
