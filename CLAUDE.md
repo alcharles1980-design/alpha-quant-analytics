@@ -597,6 +597,55 @@ and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
 
+### Full data-integrity hunt — findings + `ladder_integrity_check` (Jul 25 2026)
+
+A deliberate sweep for things NOT previously checked. Two real findings, one new safeguard.
+
+**Delivery is complete — verified end to end for the first time.** The RPC return type grew from 9
+to 23 columns this session and paginates in 3 pages under a 30s statement timeout, so truncation
+was a live risk (§5.1). Measured: **2,500/2,500 unique tickers delivered**, matching the server's
+`content-range: 0-0/2500`; latency 2.1s / 5.6s / 1.0s; **0 unpaired legs across the full 2,500**
+(previous checks only covered the visible 500). Only the app consumes this RPC — grepped; the
+widening broke no other caller.
+
+> **FINDING — the scan universe contains DEAD LISTINGS carrying live-looking numbers.** 69 rows
+> had a 14d ATR and a price but no short rungs. Chasing it: NGD, ERJ, SAND, BYON, CIVI, COOP are
+> **absent from Polygon's grouped endpoint entirely** (12,410 tickers returned for 2026-07-24;
+> none of them present), absent from the per-ticker endpoint, and absent from a 13,345-ticker
+> cached series covering May 12 onward. Polygon has no data for these symbols for two months —
+> yet `cached_oscillation_screener` listed NGD at $9.08 with `atr_14d_pct` 9.16. The pipeline's
+> bar window reaches back far enough to pick them up and nothing flagged them.
+>
+> The v626 `staleListing` guard nulls their ladders from the next scan. **But the row still
+> appears in the Holy Grail table with a price, a chop score and a Cap Eff rank.** ~87 of 2,500
+> (3.5%) of the universe. Nulling the ladders is a mitigation, not a fix — **the real fix is in
+> universe selection, which is out of scope here and left open deliberately.**
+
+Today's scan_date was aligned to the new semantics: 18 stale listings nulled across all 16 ladder
+fields, then the 69 dead listings' `atr_14d_*` nulled. Post-cleanup counts: atr_14d 2402, short
+rungs 2409, c2h 2407, **`still_mismatched: 0`**. The 7-row gap between 14d and the short rungs is
+legitimate — those tickers have enough bars for a 7-period Wilder but not a 14.
+
+**NEW SAFEGUARD — `ladder_integrity_check(write_log)`, pg_cron job 49 hourly at `:25`.**
+Deliberately offset from `data_integrity_check` at `:07` so the two never contend for the
+free-plan pool (§5.2b). 20 checks in four classes:
+1. **Coverage** per rung — FAIL < 50%, WARN < 80% of scan rows. Calibrated from the observed 96%.
+2. **Paired legs** — `count(pct)` must equal `count(dollar)` for all 8 pairs. This is the
+   Most Actives `excluded.<col>` failure class, which is invisible to any structural check.
+3. **Arithmetic, ATR only** — `pct = dollar/price*100` within 0.5. **Deliberately excludes C→H**,
+   where the two legs are averaged independently and the identity does not hold.
+4. **Guard leak** — no `|c2h| > 100`, no negative ATR.
+
+**Alarms proven to fire** (§5 — an alarm never shown to fire is not a safeguard). Corrupted three
+distinct classes on three tickers: nulled `MXL.atr_14d_dollar` → `paired legs FAIL GAP=1`; set
+`WOLF.c2h_10d_pct=999` → `guard leak FAIL`; set `SMCI.atr_7d_pct=99` → `arithmetic FAIL`. Repaired
+and re-verified **20 OK / 0 not-OK**.
+
+Still open from this hunt: dead listings in universe selection (above), and `integrity_log` still
+has no notification path.
+
+---
+
 ### v626 — stale-listing guard on BOTH ladders + audit fixes (Jul 25 2026)
 
 Outcome of a full integrity audit of the C→H columns. **Cross-source verification passed**: 12
