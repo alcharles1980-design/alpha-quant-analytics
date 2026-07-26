@@ -22539,7 +22539,16 @@ function ViolentChopScreenerPage(p){
       if(batch.length===0)break;
       batch.forEach(function(row){
         if(row.hi!=null&&row.lo!=null)map[row.ticker]={high:+row.hi,low:+row.lo,h30:(row.h30!=null?+row.h30:null),l30:(row.l30!=null?+row.l30:null),h7:(row.h7!=null?+row.h7:null),l7:(row.l7!=null?+row.l7:null)};
-        if(row.atr_pct!=null||row.atr_dol!=null)atrMap[row.ticker]={pct:row.atr_pct!=null?+row.atr_pct:null,dollar:row.atr_dol!=null?+row.atr_dol:null};
+        // v620: the RPC now also returns the 7d/3d/1d Wilder rungs. Keep the same
+        // "any field present" admission test as 14d so a ticker with only some rungs
+        // still lands in the map rather than being dropped wholesale.
+        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null)
+          atrMap[row.ticker]={
+            pct:row.atr_pct!=null?+row.atr_pct:null,   dollar:row.atr_dol!=null?+row.atr_dol:null,
+            p7:row.atr7_pct!=null?+row.atr7_pct:null,  d7:row.atr7_dol!=null?+row.atr7_dol:null,
+            p3:row.atr3_pct!=null?+row.atr3_pct:null,  d3:row.atr3_dol!=null?+row.atr3_dol:null,
+            p1:row.atr1_pct!=null?+row.atr1_pct:null,  d1:row.atr1_dol!=null?+row.atr1_dol:null
+          };
       });
       if(batch.length<1000)break;
       off+=1000;
@@ -22826,6 +22835,11 @@ function ViolentChopScreenerPage(p){
     var a14=atr14[r.ticker];
     r.atrPct=(a14&&a14.pct!=null)?+a14.pct:null;
     r.atrDol=(a14&&a14.dollar!=null)?+a14.dollar:null;
+    // v620: the 7d/3d/1d rungs get the same treatment. Every one of these eight fields is
+    // BOTH a sort key and the rendered value — never read the side map below this point.
+    r.atr7Pct=(a14&&a14.p7!=null)?+a14.p7:null;  r.atr7Dol=(a14&&a14.d7!=null)?+a14.d7:null;
+    r.atr3Pct=(a14&&a14.p3!=null)?+a14.p3:null;  r.atr3Dol=(a14&&a14.d3!=null)?+a14.d3:null;
+    r.atr1Pct=(a14&&a14.p1!=null)?+a14.p1:null;  r.atr1Dol=(a14&&a14.d1!=null)?+a14.d1:null;
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -22833,6 +22847,17 @@ function ViolentChopScreenerPage(p){
   var doSort=function(k){if(sortKey===k)setSortDesc(!sortDesc);else{setSortKey(k);setSortDesc(true);}};
   var thS=function(k){return{padding:'4px 3px',textAlign:'center',color:sortKey===k?C.gold:C.txtDim,cursor:'pointer',fontWeight:sortKey===k?700:400,fontSize:7,lineHeight:1.15,verticalAlign:'bottom'};};
   var th=function(k,label,fzIdx){return <th onClick={function(){doSort(k);}} style={Object.assign({},thS(k),fzIdx!=null?fzTh(fzIdx):{})}>{label}{sortKey===k?(sortDesc?' \u25BC':' \u25B2'):''}</th>;};
+  // v620: ATR ladder header with TWO independent sort targets in one column — the cell shows
+  // % over $, so the header offers % and $ as separate clickable sub-labels. Whichever is
+  // active gets the gold/bold treatment and the arrow, matching thS() elsewhere.
+  var thATR=function(label,kPct,kDol){
+    var sub=function(k,txt){return <span onClick={function(e){e.stopPropagation();doSort(k);}}
+      style={{cursor:'pointer',padding:'0 2px',color:sortKey===k?C.gold:C.txtDim,fontWeight:sortKey===k?700:400}}>
+      {txt}{sortKey===k?(sortDesc?'\u25BC':'\u25B2'):''}</span>;};
+    return <th style={{padding:'4px 3px',textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom',
+      color:(sortKey===kPct||sortKey===kDol)?C.gold:C.txtDim}}>
+      {label}<br/>{sub(kPct,'%')}<span style={{color:C.border}}>{'\u00B7'}</span>{sub(kDol,'$')}</th>;
+  };
   // Abbreviated GICS sector label + color for the compact Sector column (full name on hover).
   var SEC_ABBR={'Information Technology':'Tech','Health Care':'Health','Financials':'Fin','Consumer Discretionary':'Cons Disc','Consumer Staples':'Staples','Communication':'Comm','Industrials':'Indust','Energy':'Energy','Materials':'Materials','Utilities':'Utils','Real Estate':'RE','ETFs & Funds':'Fund','Warrants/Rights/Units':'Deriv','Unclassified':'—'};
   var SEC_COLOR={'Information Technology':C.blue,'Health Care':'#4ade80','Financials':C.gold,'Consumer Discretionary':'#f472b6','Consumer Staples':'#a3e635','Communication':C.purple,'Industrials':'#94a3b8','Energy':'#fb923c','Materials':'#22d3ee','Utilities':'#facc15','Real Estate':'#c084fc'};
@@ -23130,7 +23155,10 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>7d<br/>H/L</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>%<br/>52WH</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Tgt<br/>Up%</th>
-            {th('atrPct',['14d',<br key="b"/>,'ATR'])}
+            {thATR('14d ATR','atrPct','atrDol')}
+            {thATR('7d ATR','atr7Pct','atr7Dol')}
+            {thATR('3d ATR','atr3Pct','atr3Dol')}
+            {thATR('Prev day','atr1Pct','atr1Dol')}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23243,13 +23271,21 @@ function ViolentChopScreenerPage(p){
                   return <td style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Implied upside to Yahoo mean target $'+(+rt.target_mean).toFixed(2)+(rt.num_analysts!=null?' ('+rt.num_analysts+' analysts)':'')+'. Positive = price below target.'}>{(up>=0?'+':'')+up.toFixed(0)+'%'}</td>;
                 })()}
                 {(function(){
-                  // v619: read from the ROW (r.atrPct/r.atrDol), not the atr14 side map, so the
-                  // value that sorts is provably the value that renders — one source, no drift.
-                  if(r.atrPct==null&&r.atrDol==null)return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
-                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}} title="Rolling 14-day Average True Range (Wilder, volatility) — percent of price over dollar value. Sorts by percent.">
-                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{r.atrPct!=null?r.atrPct.toFixed(1)+'%':'\u2014'}</div>
-                    <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{r.atrDol!=null?'$'+r.atrDol.toFixed(2):'\u2014'}</div>
-                  </td>;
+                  // v620: one renderer for all four rungs. Reads ONLY row fields (r.atr*), never
+                  // the atr14 side map, so the value that sorts is the value that displays.
+                  var cell=function(key,pct,dol,tip){
+                    if(pct==null&&dol==null)return <td key={key} style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                    return <td key={key} style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}} title={tip}>
+                      <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{pct!=null?pct.toFixed(1)+'%':'\u2014'}</div>
+                      <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{dol!=null?'$'+dol.toFixed(2):'\u2014'}</div>
+                    </td>;
+                  };
+                  return [
+                    cell('a14',r.atrPct,r.atrDol,'Wilder ATR(14) — ~27-day effective memory. Percent of price over dollar value.'),
+                    cell('a7',r.atr7Pct,r.atr7Dol,'Wilder ATR(7) — ~13-day effective memory.'),
+                    cell('a3',r.atr3Pct,r.atr3Dol,'Wilder ATR(3) — ~5-day effective memory.'),
+                    cell('a1',r.atr1Pct,r.atr1Dol,'Previous trading day true range (Wilder at period 1 = the last true range exactly).')
+                  ];
                 })()}
                 <td style={{padding:'4px 3px',textAlign:'center'}}>
                   <button onClick={function(tk){return function(){setChartTk(tk);};}(r.ticker)} style={{padding:'3px 9px',border:'1px solid '+C.blue+'60',borderRadius:3,background:'transparent',color:C.blue,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',lineHeight:1}} title={'Open '+r.ticker+' chart ('+(chartInt==='D'?'1D':chartInt==='60'?'1h':chartInt+'m')+' / '+({'1D':'1D','5D':'5D','1M':'1M','3M':'3M','12M':'1Y','60M':'5Y'}[chartRange]||chartRange)+')'}>{'\u25F0'}</button>

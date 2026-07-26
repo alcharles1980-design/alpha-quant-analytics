@@ -1844,6 +1844,9 @@ function _classifyRegime(allBars) {
       yz_vol_252d: null, yz_vol_63d: null, yz_pct_252d: null, yz_pct_63d: null,
       hurst_60d: null, autocorr_60d: null, adx_14d: null,
       atr_14d_dollar: null, atr_14d_pct: null,
+      atr_7d_dollar: null, atr_7d_pct: null,
+      atr_3d_dollar: null, atr_3d_pct: null,
+      atr_1d_dollar: null, atr_1d_pct: null,
       return_10d_pct: null, return_60d_pct: null,
       direction_10d: null, direction_60d: null,
       trend_r2_60d: null, trend_pattern: null,
@@ -1892,8 +1895,22 @@ function _classifyRegime(allBars) {
   var adx14 = _adx(adxBars, 14);
   // ATR 14d (Wilder) on the same recent bars
   var atr14d = _atr14(adxBars, 14);
+  // Short-window ATR ladder (v620). Same Wilder function, same 40-bar window, so all four
+  // rungs are computed identically and are directly comparable. NOTE: Wilder(N) carries an
+  // effective memory of ~2N-1 bars, so this is a 27/13/5/1-day memory ladder, not 14/7/3/1.
+  // That understates fresh vol spikes vs a simple trailing mean (measured: SMCI 3d reads 8.9%
+  // Wilder vs 12.5% simple) — this is a deliberate, accepted choice to keep the ladder
+  // methodologically consistent with the pre-existing 14d column. Do not "fix" one rung alone.
+  // At period 1 Wilder degenerates to exactly the last true range, which is what we want for
+  // "previous trading day".
+  var atr7d = _atr14(adxBars, 7);
+  var atr3d = _atr14(adxBars, 3);
+  var atr1d = _atr14(adxBars, 1);
   var lastClose = allBars[allBars.length - 1].c;
   var atr14dPct = (atr14d != null && lastClose > 0) ? (atr14d / lastClose) * 100 : null;
+  var atr7dPct = (atr7d != null && lastClose > 0) ? (atr7d / lastClose) * 100 : null;
+  var atr3dPct = (atr3d != null && lastClose > 0) ? (atr3d / lastClose) * 100 : null;
+  var atr1dPct = (atr1d != null && lastClose > 0) ? (atr1d / lastClose) * 100 : null;
 
   // Trend direction: net return over 10d + 60d windows, ATR-relative deadband
   var ret10 = _netReturn(allBars, 10);
@@ -1962,6 +1979,12 @@ function _classifyRegime(allBars) {
     adx_14d: adx14 != null ? Math.round(adx14 * 100) / 100 : null,
     atr_14d_dollar: atr14d != null ? Math.round(atr14d * 1000) / 1000 : null,
     atr_14d_pct: atr14dPct != null ? Math.round(atr14dPct * 100) / 100 : null,
+    atr_7d_dollar: atr7d != null ? Math.round(atr7d * 1000) / 1000 : null,
+    atr_7d_pct: atr7dPct != null ? Math.round(atr7dPct * 100) / 100 : null,
+    atr_3d_dollar: atr3d != null ? Math.round(atr3d * 1000) / 1000 : null,
+    atr_3d_pct: atr3dPct != null ? Math.round(atr3dPct * 100) / 100 : null,
+    atr_1d_dollar: atr1d != null ? Math.round(atr1d * 1000) / 1000 : null,
+    atr_1d_pct: atr1dPct != null ? Math.round(atr1dPct * 100) / 100 : null,
     return_10d_pct: ret10 != null ? Math.round(ret10 * 100) / 100 : null,
     return_60d_pct: ret60 != null ? Math.round(ret60 * 100) / 100 : null,
     direction_10d: dir10,
@@ -2841,6 +2864,12 @@ async function runScreener() {
       adx_14d: regimeBlock.adx_14d,
       atr_14d_dollar: regimeBlock.atr_14d_dollar,
       atr_14d_pct: regimeBlock.atr_14d_pct,
+      atr_7d_dollar: regimeBlock.atr_7d_dollar,
+      atr_7d_pct: regimeBlock.atr_7d_pct,
+      atr_3d_dollar: regimeBlock.atr_3d_dollar,
+      atr_3d_pct: regimeBlock.atr_3d_pct,
+      atr_1d_dollar: regimeBlock.atr_1d_dollar,
+      atr_1d_pct: regimeBlock.atr_1d_pct,
       return_10d_pct: regimeBlock.return_10d_pct,
       return_60d_pct: regimeBlock.return_60d_pct,
       direction_10d: regimeBlock.direction_10d,

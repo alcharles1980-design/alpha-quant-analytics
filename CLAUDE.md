@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v619 · Jul 25 2026
+**Status at last update:** v620 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -559,7 +559,8 @@ using a PAT in `app_config`): `nightly`, `hourly`, `backfill`, `autotune`,
 
 ## 9. Recent work
 
-**Current: v619** (Jul 25 2026) — sortable 14d ATR column on the Holy Grail screener (v619);
+**Current: v620** (Jul 25 2026) — ATR ladder (14d/7d/3d/prev-day) on the Holy Grail screener
+(v620), sortable 14d ATR column (v619);
 Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-tag centering (v614),
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
@@ -573,6 +574,54 @@ down and in §10.
 > (their edits were confined to the Fib code; all three ATR anchors were untouched), but **nobody
 > has written these up or verified them here** — the Fib block below still describes v615
 > behaviour. Fill this in before trusting that section.
+
+---
+
+### ATR ladder — 14d / 7d / 3d / previous day (v620, Jul 25 2026)
+
+Three columns added beside the existing 14d, each sortable by **both** % and $ (8 sort targets).
+
+**Method — all four rungs are Wilder, deliberately.** `pipeline.js` computes them with the same
+`_atr14(adxBars, period)` on the same 40-bar window, so they are directly comparable.
+
+> **Known, ACCEPTED tradeoff — do not "fix" this in isolation.** Wilder(N) carries an effective
+> memory of ~2N−1 bars, so this is really a **27/13/5/1-day memory ladder**, not 14/7/3/1. It
+> therefore *understates fresh volatility spikes* relative to a simple trailing mean. Measured:
+> SMCI 3d reads **8.9% Wilder vs 12.5% simple** — the Wilder rung hides a near-doubling of
+> 3-session vol. This was raised before building and Wilder was chosen to stay consistent with the
+> pre-existing 14d column. Changing one rung alone would make the ladder incomparable and is worse
+> than either consistent choice.
+
+Only at period 1 do the two methods agree exactly — Wilder degenerates to the last true range,
+which is precisely "previous trading day". Verified: `1d == last true range on 400/400` sampled.
+
+**Backfill.** `chop-scan-daily` is `30 1 * * 2-6`; it had already run, so the next native fill was
+3 days out. Backfilled scan_date 2026-07-25 from **Polygon grouped daily aggregates** — one call
+returns every ticker for a date, so 51 trading days cost 51 calls instead of 2,500. Written via a
+`SECURITY DEFINER` RPC (`atr_short_backfill`) taking a jsonb payload in ONE statement (§5.2b: one
+writer, never a loop). 2,425 of 2,500 rows updated.
+
+**Bar-alignment was calibrated, not assumed** (§5.1c). Reproduced the stored `atr_14d_pct` at three
+candidate end-dates: end=2026-07-24 gave mean |err| **0.022pp** (pure 2dp rounding); end=07-23 and
+07-22 were off by 1.9–4.5pp. That fixed the window before any value was written.
+
+**The pipeline and the backfill provably agree.** Loaded the real `_atr14` out of `pipeline.js` and
+ran it against the same bars: WOLF/SMCI/MXL/A matched the DB to **0.0000**, and CRDO's apparent
+0.08 gap was my hardcoded test fixture being wrong — the DB holds 10.27/9.93/12.64, exactly what
+the pipeline produces. So Tuesday's scan will not silently rewrite the backfilled numbers.
+
+**Verified behaviourally** (§5.1a): replacing 1 header + 1 cell with 4 each risks column
+misalignment that would shift everything to its right. Headless: **34 header cells == 34 body
+cells**, ladder at indices 24–27, and all 8 sort targets desc-monotonic over 496–500 rows.
+Ladder reads correctly — MXL 16.5→17.0→19.5→31.8 (expanding), FCEL 16.0→14.2→12.3→11.5 (decaying).
+
+**~65 tickers have 14d but no 7/3/1**: Polygon's grouped endpoint omits some thin/OTC names the
+per-ticker fetch does return. The next native scan fills them.
+
+**Storage note.** Estimated ~360 KB for the 6 numeric columns; the DB actually grew 231→236 MB.
+The estimate covered the payload but not MVCC churn — a full-table UPDATE rewrites every touched
+row, and these rows carry ~1 KB jsonb blobs. Autovacuum reclaims it. **Budget for row rewrites,
+not just new bytes, on any future backfill.**
 
 ---
 
