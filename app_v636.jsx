@@ -19917,6 +19917,37 @@ function MultiViewChartsPage(p){
     var hiP=(a.t==='H')?a:b, loP=(a.t==='L')?a:b;
     return {hiIdx:hiP.i,hi:hiP.v,loIdx:loP.i,lo:loP.v};
   };
+  // Minimum swing leg as a FRACTION OF THE VISIBLE PRICE RANGE. Below this, the 7 Fib levels
+  // compress into an unreadable sliver and the MINGAP pre-pass thins the labels down to the two
+  // anchors plus one. Measured on NVDA: the 3Y leg was $15.84 against a $197 visible range = 8%,
+  // about 31px on a 380px panel, which rendered exactly 3 labels.
+  //
+  // WHY A FRACTION OF RANGE RATHER THAN SUPPRESSING BY TIMEFRAME: the compression is DATA-dependent,
+  // not timeframe-dependent. On the same ticker the worst panel was 3Y (8%), while 10Y sat at 20%
+  // and 5Y at 32% — so a hardcoded "hide the swing set on 5Y/10Y" rule would have hidden the two
+  // readable panels and kept the sliver. This scales itself to whatever the data actually is.
+  var MIN_LEG_FRAC=0.22;
+  // Walk UP the pivot-sensitivity ladder until the leg clears MIN_LEG_FRAC of the visible range.
+  // Higher N = fewer, more significant swings, which generally yields a bigger leg — but NOT
+  // monotonically: measured on NVDA 5Y the fraction went 32% (N4) -> 21% (N12) -> 56% (N20), so we
+  // cannot just climb until it clears and assume every later N is better. Returns the FIRST
+  // qualifying swing (keeping the anchor as recent as possible) and otherwise falls back to the
+  // LARGEST leg found anywhere on the ladder. Returns null only if no swing exists at any
+  // sensitivity. Once detectSwing yields null, higher N cannot find more pivots, so we stop.
+  var detectSwingScaled=function(bars,N0,visRange){
+    if(!bars||!bars.length)return null;
+    if(!(visRange>0))return detectSwing(bars,N0);
+    var cap=Math.min(60,Math.floor(bars.length/4));
+    var best=null,bestLeg=-1;
+    for(var N=N0;N<=cap;N=Math.ceil(N*1.6)){
+      var sw=detectSwing(bars,N);
+      if(!sw)break;
+      var leg=sw.hi-sw.lo;
+      if(leg>bestLeg){bestLeg=leg;best=sw;}
+      if(leg>=visRange*MIN_LEG_FRAC)return sw;
+    }
+    return best;
+  };
   // Build the level list from a hi/lo pair. 0% is anchored at the MOST RECENT of the two
   // extremes so the levels read as a retracement of the latest move. Returns [{pct,label,price}].
   var buildFibLevels=function(hi,lo,hiIdx,loIdx){
@@ -20218,7 +20249,7 @@ function MultiViewChartsPage(p){
           out.push(drawSet(buildFibLevels(hi,lo,hiIdx,loIdx),FIB_RANGE_COLOR,'R','fibR',lo,hi,0,0));
         }
         if(showFibSwing){
-          var sw=detectSwing(bars,fibSwingN(tf));
+          var sw=detectSwingScaled(bars,fibSwingN(tf),mx-mn);
           if(sw)out.push(drawSet(buildFibLevels(sw.hi,sw.lo,sw.hiIdx,sw.loIdx),FIB_SWING_COLOR,'S','fibS',sw.lo,sw.hi,showFibRange?1:0,swXOff));
         }
         return <g>{out}</g>;
@@ -20772,7 +20803,7 @@ function MultiViewChartsPage(p){
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
             <div style={{color:C.accent,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:1}}>{tf.label}{(function(){
               var ss=sessionStamp(tf,bars);
-              return ss?<span style={{color:C.txtDim,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginLeft:8}}>{'\u00B7 '+ss}</span>:null;
+              return ss?<span style={{color:C.txtDim,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginLeft:8}}>{' \u00B7 '+ss}</span>:null;
             })()}</div>
             {px!=null&&<div style={{display:'flex',alignItems:'flex-end',gap:14}}>
               <div style={{display:'flex',flexDirection:'column',gap:1,alignItems:'flex-end'}}>
