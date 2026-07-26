@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v630 · Jul 26 2026
+**Status at last update:** v631 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,74 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### v631 — Source Code page: Holy Grail metric definitions (Jul 26 2026)
+
+Documentation only, no logic change. New `CollapseStage` on the in-app **Source Code** page
+("Holy Grail Screener — Metric Definitions") covering everything shipped v619–v630, so the
+definitions live where the user actually reads them rather than only in this file:
+ATR ladder (with the Wilder ~2N−1 effective-memory caveat), Vol Exp, the C→H ladder (mean-not-hit-rate,
+and the independently-averaged legs), volume/trades medians + RVol/RTrd (mean-over-median asymmetry,
+and the 3d day-of-week caveat), and the stale-listing guard / minimum-bar requirements /
+`ladder_integrity_check`.
+
+Verified: build clean, route parity 87/88, strings confirmed present in `dist/index.html`, zero page
+errors. Note `CollapseStage` renders children only when expanded, so a DOM-text probe on a collapsed
+section returns nothing — confirm via the bundle or expand the section first.
+
+---
+
+### Multi View Charts — architecture notes + OPEN VWAP BUG (Jul 26 2026)
+
+**READ THIS FIRST if picking up the VWAP bug.** Nothing was changed — v630 is deployed, tree clean.
+
+**Reported symptom:** toggling `VWAP · intraday` draws nothing.
+**Reproduced:** headless, `#multiviewcharts:NVDA`, both before/after states captured. Toggling
+changes the rendered output by **exactly zero `<line>` elements** in every panel — byte-identical
+stroke-colour counts. `#ffb020` (`C.warn`, the VWAP colour) sits at 2 per panel before AND after,
+which is axis/marker usage, not a series. **No page errors.** The button responds, so state flips.
+
+> **Probe gotcha that cost me a cycle:** these charts render with `<line>`/`<polyline>`, **not
+> `<path>`**. My first probe counted paths, got 0 everywhere, and proved nothing. Count `line`
+> elements and group by `stroke`.
+
+**RULED OUT** (don't re-investigate):
+- **The gate.** `VWAP_KEYS={TODAY:1,YEST:1,'7D':1,'30D':1}` and `TFS` really does define keys
+  `TODAY`, `YEST`, `7D`, `30D`. They match exactly. Gate is on `tf.key` not `tf.kind` **on
+  purpose** — `30D` is `kind:'hour'` while `7D`/`YEST`/`TODAY` are `kind:'intraday'`.
+- **The intraday restriction.** Real and by design, but would still leave 4 of 10 panels drawing.
+- **Page errors.** None.
+
+**HOW IT WORKS** (so the next session doesn't re-derive it):
+- `TFS` (≈line 19445) = 10 panels: `10Y 5Y 3Y 1Y YTD 3M 30D 7D YEST TODAY`.
+- `etParts(ms)` (≈19458) — Intl/`America/New_York`, DST-safe, with a UTC fallback in `catch`.
+- `sessionVwap(bars)` (≈19831) — per bar: `etParts(bars[i].t)` → ET date key + hour; resets
+  `cumPV`/`cumV` on a new ET calendar date; accumulates only when
+  `isRTH && vol>0 && price!=null` where `isRTH = (h>9||(h===9&&mi>=30)) && h<16`;
+  price prefers `bars[i].vw`, falls back to `bars[i].c`. **Pushes `null` on any failure** so the
+  line breaks between sessions — which is exactly why a total failure is silent.
+- Draw site (≈20024): `if(!showVwap||!VWAP_KEYS[tf.key])return null; var vw=sessionVwap(bars);`
+
+**THREE REMAINING SUSPECTS, in order:**
+1. **`bars[i].t` on the intraday fetch path.** Prime suspect. If it's absent, or in **seconds
+   rather than milliseconds**, `etParts` returns a 1970 date / nonsense hour, `isRTH` is false for
+   every bar, and you get a full column of nulls **with no error** — the try/catch swallows
+   nothing because nothing throws. Note the intraday fetch is a separate path from the daily one.
+2. **`vw` / `v` missing on intraday bars.** `vol>0` fails → all null.
+3. **The RTH boundary itself.**
+
+**THE DISCRIMINATOR — do this first, it is one line:** log `etParts(bars[0].t)` for the TODAY
+panel. 1970 or an implausible hour → suspect 1. Sensible hour → suspect 2.
+
+**Also open on this page (pre-existing, §10):** on 5Y/10Y the range set spans e.g. $183→$59 while
+the swing set sits in a ≈$195–$220 band — the swing leg is a few percent of the visible range, so
+its levels compress into a sliver. My preference is a **minimum leg size as a fraction of visible
+range** rather than hard-coding timeframe suppression (self-scaling). Separately, on the densest
+panel the swing set rendered **zero labels** — determine whether `detectSwing` found nothing at
+N=4 on monthly bars, or v618's `MINGAP=12px` thinned them all away. If the latter, that is bare
+unlabelled lines, the exact symptom v613 removed.
+
+---
 
 ### v630 — regroup volume / trades columns (Jul 26 2026)
 

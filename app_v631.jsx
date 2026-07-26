@@ -5727,6 +5727,43 @@ function SourcePage(p){
         <p style={{marginBottom:10}}>Alpha Quant Analytics is a single-file web application with a Supabase backend. The entire frontend, including all logic, UI, styles, and data processing, is contained in one HTML file (~400KB). Server-side batch processing runs on a Supabase Edge Function. There is no build system and no framework to install. You open the file in a browser and it works.</p>
       </div>
     </Cd>
+    <CollapseStage title="Holy Grail Screener — Metric Definitions" sub="ATR ladder, close-to-high ladder, volume & trade-count ratios">
+      <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
+        <p style={{marginBottom:10}}>All of the following are computed nightly in <span style={{color:C.accent}}>pipeline.js</span> (<span style={{color:C.accent}}>_classifyRegime</span>), stored on <span style={{color:C.accent}}>cached_oscillation_screener</span>, and delivered to the browser by the <span style={{color:C.accent}}>chop_range_atr_light</span> RPC, which paginates in 1,000-row pages.</p>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>ATR ladder — 14d / 7d / 3d / Prev day</span></p>
+          <p style={{marginBottom:6}}>Wilder Average True Range on a 40-bar window, shown as percent of price over dollar value. Each rung is sortable by % or $ independently.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.warn}}>Important:</span> Wilder(N) carries an effective memory of roughly 2N&minus;1 bars, so this is really a 27 / 13 / 5 / 1-day memory ladder. It therefore damps a fresh volatility spike relative to a simple trailing mean. This is a deliberate choice so all four rungs are computed identically and remain comparable. At period 1 Wilder reduces exactly to the last true range.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>Vol Exp</span></p>
+          <p style={{marginBottom:6}}>3d ATR% &divide; 14d ATR%. Above 1 means short-window volatility is running hotter than baseline (range expanding); below 1 means it is settling. Gold at or above 1.15, blue at or below 0.85, with a neutral deadband between so ordinary noise is not shown as signal.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>C&rarr;H ladder — 10d / 5d / 3d / prev</span></p>
+          <p style={{marginBottom:6}}>Mean of (day high &minus; PRIOR close) &divide; prior close, over the last N transitions. Reads as: buy at the close, average upside to the next session&rsquo;s peak. Shown as percent over dollars, each sortable independently. &ldquo;prev&rdquo; is the single most recent transition, not an average.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.warn}}>The two legs are averaged independently.</span> Unlike ATR (where pct = dollar/price&times;100 exactly), each C&rarr;H transition divides by a different prior close, so the percent and dollar columns are not a fixed ratio of one another.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.warn}}>This is a mean, not a hit rate.</span> A few large up-days can carry it; it does not tell you how often a given target is reached.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>Volume &amp; Trades — 20d median, then RVol / RTrd 5d / 3d / prev</span></p>
+          <p style={{marginBottom:6}}>Baseline is the 20-session <span style={{color:C.accent}}>median</span> so a single earnings or rebalance day cannot inflate it. The ratio columns are the recent-window <span style={{color:C.accent}}>mean</span> divided by that median — mean on top because the point is to catch a spike, which a median would discard.</p>
+          <p style={{marginBottom:6}}>Read RVol against RTrd: volume up with trades flat means larger average trade size (block or institutional); trades up with volume flat means fragmentation. Note RTrd is systematically tighter than RVol, so a 1.5&times; RTrd is a rarer event than a 1.5&times; RVol.</p>
+          <p style={{marginBottom:6}}><span style={{color:C.warn}}>The 3d window is not day-of-week neutral.</span> A 5-session window always spans one of each weekday; a 3-session window&rsquo;s weekday composition shifts with the scan day. Read 3d against the 5d column, not against its own history.</p>
+        </div>
+
+        <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border}}>
+          <p style={{marginBottom:6}}><span style={{color:C.gold,fontWeight:700}}>Stale-listing guard &amp; blanks</span></p>
+          <p style={{marginBottom:6}}>If a ticker&rsquo;s most recent bar predates the scan by more than 6 days it is treated as a dead listing and every ATR, C&rarr;H, volume and trade-count field is blanked together — a dash across the whole right-hand side rather than a plausible-looking stale number.</p>
+          <p style={{marginBottom:6}}>Metrics have different minimum-bar requirements (9 bars for 7d ATR, 11 for C&rarr;H 10d, 16 for 14d ATR, 20 for the medians), so a very short history can legitimately produce a partially filled row.</p>
+          <p>Integrity is checked hourly by <span style={{color:C.accent}}>ladder_integrity_check()</span> (pg_cron job 49) — 23 checks covering coverage, paired legs, group cohesion, ATR arithmetic and guard leaks.</p>
+        </div>
+      </div>
+    </CollapseStage>
     <CollapseStage title="Application Structure" sub="Single-file React architecture">
       <div style={{color:C.txt,fontSize:10,fontFamily:F,lineHeight:1.8}}>
         <div style={{padding:'10px 12px',background:C.bg,borderRadius:6,border:'1px solid '+C.border,marginBottom:10}}>
