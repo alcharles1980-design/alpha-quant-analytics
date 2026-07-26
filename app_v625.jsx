@@ -22542,13 +22542,16 @@ function ViolentChopScreenerPage(p){
         // v620: the RPC now also returns the 7d/3d/1d Wilder rungs. Keep the same
         // "any field present" admission test as 14d so a ticker with only some rungs
         // still lands in the map rather than being dropped wholesale.
-        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null||row.c2h10!=null)
+        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null||row.c2h10!=null||row.c2h5!=null||row.c2h3!=null||row.c2h1!=null)
           atrMap[row.ticker]={
             pct:row.atr_pct!=null?+row.atr_pct:null,   dollar:row.atr_dol!=null?+row.atr_dol:null,
             p7:row.atr7_pct!=null?+row.atr7_pct:null,  d7:row.atr7_dol!=null?+row.atr7_dol:null,
             p3:row.atr3_pct!=null?+row.atr3_pct:null,  d3:row.atr3_dol!=null?+row.atr3_dol:null,
             p1:row.atr1_pct!=null?+row.atr1_pct:null,  d1:row.atr1_dol!=null?+row.atr1_dol:null,
-            c2h:row.c2h10!=null?+row.c2h10:null,  c2hd:row.c2h10_dol!=null?+row.c2h10_dol:null
+            c2h:row.c2h10!=null?+row.c2h10:null,  c2hd:row.c2h10_dol!=null?+row.c2h10_dol:null,
+            c5:row.c2h5!=null?+row.c2h5:null,     c5d:row.c2h5_dol!=null?+row.c2h5_dol:null,
+            c3:row.c2h3!=null?+row.c2h3:null,     c3d:row.c2h3_dol!=null?+row.c2h3_dol:null,
+            c1:row.c2h1!=null?+row.c2h1:null,     c1d:row.c2h1_dol!=null?+row.c2h1_dol:null
           };
       });
       if(batch.length<1000)break;
@@ -22853,6 +22856,9 @@ function ViolentChopScreenerPage(p){
     // v623: 10-day average close-to-next-day-high %, straight from the row (never the side map).
     r.c2h10=(a14&&a14.c2h!=null)?+a14.c2h:null;
     r.c2h10Dol=(a14&&a14.c2hd!=null)?+a14.c2hd:null;
+    r.c2h5Pct=(a14&&a14.c5!=null)?+a14.c5:null;   r.c2h5Dol=(a14&&a14.c5d!=null)?+a14.c5d:null;
+    r.c2h3Pct=(a14&&a14.c3!=null)?+a14.c3:null;   r.c2h3Dol=(a14&&a14.c3d!=null)?+a14.c3d:null;
+    r.c2h1Pct=(a14&&a14.c1!=null)?+a14.c1:null;   r.c2h1Dol=(a14&&a14.c1d!=null)?+a14.c1d:null;
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23183,6 +23189,9 @@ function ViolentChopScreenerPage(p){
             {thATR('Prev day','atr1Pct','atr1Dol')}
             {th('volExp',['Vol',<br key="b"/>,'Exp'])}
             {thATR('C\u2192H 10d','c2h10','c2h10Dol')}
+            {thATR('C\u2192H 5d','c2h5Pct','c2h5Dol')}
+            {thATR('C\u2192H 3d','c2h3Pct','c2h3Dol')}
+            {thATR('C\u2192H prev','c2h1Pct','c2h1Dol')}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23321,18 +23330,26 @@ function ViolentChopScreenerPage(p){
                         {v.toFixed(2)+'\u00D7'}</td>;
                     })(),
                     (function(){
-                      // v623/v624: 10-day average close-to-next-day-high, shown % over $ like the
-                      // ATR ladder. Both legs come off the ROW so the sorted value is the shown one.
+                      // v623/v624/v625: close-to-next-day-high ladder, one renderer for all four
+                      // windows. Both legs read off the ROW so the sorted value is the shown one.
                       // pct and dollar are averaged INDEPENDENTLY (each transition divides by a
                       // different prior close), so dollar != pct/100 * price. Don't derive either.
-                      var v=r.c2h10, d=r.c2h10Dol;
-                      if(v==null&&d==null)return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
-                      var col=(v!=null&&v<0)?(C.red||'#ef4444'):((v!=null&&v>=3)?C.gold:C.txt);
-                      return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}}
-                        title={'Average close-to-next-day-high over the last 10 sessions \u2014 buy at the close, this is the mean upside to the next session\u2019s high, in percent and in dollars. Negative means the next day\u2019s high averaged below the prior close. This is a MEAN, not a hit rate: a few large up-days can carry it. Percent and dollar are averaged independently, so they are not a fixed ratio of each other.'}>
-                        <div style={{color:col,fontSize:7,fontWeight:600}}>{v!=null?(v>=0?'+':'')+v.toFixed(2)+'%':'\u2014'}</div>
-                        <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{d!=null?'$'+d.toFixed(2):'\u2014'}</div>
-                      </td>;
+                      // The pipeline guard voids both legs together, so a % never shows without a $.
+                      var cc=function(key,v,d,label){
+                        if(v==null&&d==null)return <td key={key} style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                        var col=(v!=null&&v<0)?(C.red||'#ef4444'):((v!=null&&v>=3)?C.gold:C.txt);
+                        return <td key={key} style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}}
+                          title={label+' \u2014 buy at the close, mean upside to the next session\u2019s high, in percent and dollars. Negative means the next day\u2019s high averaged below the prior close. A MEAN, not a hit rate. Percent and dollar are averaged independently, so they are not a fixed ratio.'}>
+                          <div style={{color:col,fontSize:7,fontWeight:600}}>{v!=null?(v>=0?'+':'')+v.toFixed(2)+'%':'\u2014'}</div>
+                          <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{d!=null?'$'+d.toFixed(2):'\u2014'}</div>
+                        </td>;
+                      };
+                      return [
+                        cc('c2h10',r.c2h10,r.c2h10Dol,'Average close-to-next-day-high over the last 10 sessions'),
+                        cc('c2h5', r.c2h5Pct,r.c2h5Dol,'Average close-to-next-day-high over the last 5 sessions'),
+                        cc('c2h3', r.c2h3Pct,r.c2h3Dol,'Average close-to-next-day-high over the last 3 sessions'),
+                        cc('c2h1', r.c2h1Pct,r.c2h1Dol,'Close-to-next-day-high for the single most recent session (not an average)')
+                      ];
                     })()
                   ];
                 })()}

@@ -1835,6 +1835,28 @@ function _classifyDirection(retPct, atr14Pct, lookback) {
   return 'Sideways';
 }
 
+function _c2hAvg(bars, n) {
+  // Mean close-to-next-day-high over the last `n` transitions, in percent AND dollars.
+  // n = 1 is simply the most recent transition, not an average.
+  // Needs n+1 bars (each transition reads the PRIOR bar's close).
+  // GUARD: any single |transition| > 100% voids the whole metric (returns null) rather than
+  // poisoning the mean — a delisted name with a 4030% final session produced a 405% "average"
+  // before this existed. Both legs are voided together so a % never shows without its $.
+  // pct and dollar are summed INDEPENDENTLY: each transition divides by a different prior
+  // close, so mean(pct) != mean(dollar)/lastClose*100. Never derive one from the other.
+  if (!bars || bars.length < n + 1) return null;
+  var pSum = 0, dSum = 0;
+  for (var i = bars.length - n; i < bars.length; i++) {
+    var prev = bars[i - 1].c;
+    if (!prev || prev <= 0) return null;
+    var d = bars[i].h - prev;
+    var p = d / prev * 100;
+    if (!isFinite(p) || Math.abs(p) > 100) return null;
+    pSum += p; dSum += d;
+  }
+  return { pct: pSum / n, dollar: dSum / n };
+}
+
 function _classifyRegime(allBars) {
   // Compute the full regime classification block from a daily bar array.
   // Returns an object with all 11 regime fields. Bars assumed sorted oldest-first.
@@ -1848,6 +1870,9 @@ function _classifyRegime(allBars) {
       atr_3d_dollar: null, atr_3d_pct: null,
       atr_1d_dollar: null, atr_1d_pct: null,
       c2h_10d_pct: null, c2h_10d_dollar: null,
+      c2h_5d_pct: null, c2h_5d_dollar: null,
+      c2h_3d_pct: null, c2h_3d_dollar: null,
+      c2h_1d_pct: null, c2h_1d_dollar: null,
       return_10d_pct: null, return_60d_pct: null,
       direction_10d: null, direction_60d: null,
       trend_r2_60d: null, trend_pattern: null,
@@ -1919,22 +1944,10 @@ function _classifyRegime(allBars) {
   // final day produced a 405% "average" during the v623 backfill). Any |transition| > 100% voids
   // the metric rather than poisoning it. ATR is far less sensitive to this, which is why the
   // ladder has no equivalent guard.
-  var c2h10 = null, c2h10Dol = null;
-  if (allBars.length >= 11) {
-    var c2hSum = 0, c2hDolSum = 0, c2hOk = true;
-    for (var ci = allBars.length - 10; ci < allBars.length; ci++) {
-      var cPrev = allBars[ci - 1].c;
-      if (!cPrev || cPrev <= 0) { c2hOk = false; break; }
-      var cDol = allBars[ci].h - cPrev;
-      var cPct = cDol / cPrev * 100;
-      if (!isFinite(cPct) || Math.abs(cPct) > 100) { c2hOk = false; break; }
-      c2hSum += cPct; c2hDolSum += cDol;
-    }
-    // NOTE: pct and dollar are averaged INDEPENDENTLY. Unlike the ATR columns (where
-    // pct = dollar/lastClose*100 exactly), each c2h transition divides by a DIFFERENT prior
-    // close, so mean(pct) != mean(dollar)/lastClose*100. Do not derive one from the other.
-    if (c2hOk) { c2h10 = c2hSum / 10; c2h10Dol = c2hDolSum / 10; }
-  }
+  // v625: close-to-next-day-high ladder. See _c2hAvg for the guards.
+  var c2hL10 = _c2hAvg(allBars, 10), c2hL5 = _c2hAvg(allBars, 5),
+      c2hL3 = _c2hAvg(allBars, 3),  c2hL1 = _c2hAvg(allBars, 1);
+  var c2h10 = c2hL10 ? c2hL10.pct : null, c2h10Dol = c2hL10 ? c2hL10.dollar : null;
 
   // Trend direction: net return over 10d + 60d windows, ATR-relative deadband
   var ret10 = _netReturn(allBars, 10);
@@ -2011,6 +2024,12 @@ function _classifyRegime(allBars) {
     atr_1d_pct: atr1dPct != null ? Math.round(atr1dPct * 100) / 100 : null,
     c2h_10d_pct: c2h10 != null ? Math.round(c2h10 * 100) / 100 : null,
     c2h_10d_dollar: c2h10Dol != null ? Math.round(c2h10Dol * 1000) / 1000 : null,
+    c2h_5d_pct: c2hL5 ? Math.round(c2hL5.pct * 100) / 100 : null,
+    c2h_5d_dollar: c2hL5 ? Math.round(c2hL5.dollar * 1000) / 1000 : null,
+    c2h_3d_pct: c2hL3 ? Math.round(c2hL3.pct * 100) / 100 : null,
+    c2h_3d_dollar: c2hL3 ? Math.round(c2hL3.dollar * 1000) / 1000 : null,
+    c2h_1d_pct: c2hL1 ? Math.round(c2hL1.pct * 100) / 100 : null,
+    c2h_1d_dollar: c2hL1 ? Math.round(c2hL1.dollar * 1000) / 1000 : null,
     return_10d_pct: ret10 != null ? Math.round(ret10 * 100) / 100 : null,
     return_60d_pct: ret60 != null ? Math.round(ret60 * 100) / 100 : null,
     direction_10d: dir10,
@@ -2898,6 +2917,9 @@ async function runScreener() {
       atr_1d_pct: regimeBlock.atr_1d_pct,
       c2h_10d_pct: regimeBlock.c2h_10d_pct,
       c2h_10d_dollar: regimeBlock.c2h_10d_dollar,
+      c2h_5d_pct: regimeBlock.c2h_5d_pct,   c2h_5d_dollar: regimeBlock.c2h_5d_dollar,
+      c2h_3d_pct: regimeBlock.c2h_3d_pct,   c2h_3d_dollar: regimeBlock.c2h_3d_dollar,
+      c2h_1d_pct: regimeBlock.c2h_1d_pct,   c2h_1d_dollar: regimeBlock.c2h_1d_dollar,
       return_10d_pct: regimeBlock.return_10d_pct,
       return_60d_pct: regimeBlock.return_60d_pct,
       direction_10d: regimeBlock.direction_10d,

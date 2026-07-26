@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v624 · Jul 25 2026
+**Status at last update:** v625 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,42 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### C→H ladder — 10d / 5d / 3d / prev (v625, Jul 25 2026)
+
+Close-to-next-day-high now mirrors the ATR ladder: four windows, each **% over $**, each with
+`%` and `$` as separate sort targets (**8 sort targets, 4 columns**). Six new DB columns
+(`c2h_{5d,3d,1d}_{pct,dollar}`), returned by `chop_range_atr_light`, computed in `pipeline.js`,
+backfilled for scan_date 2026-07-25.
+
+**`pipeline.js` refactored**: the inline 10d block became a reusable top-level
+`_c2hAvg(bars, n) -> {pct, dollar} | null`, called four times. One guard implementation instead
+of four copies. **`n = 1` is the single most recent transition, not an average** — verified it
+equals the manual `(lastHigh - prevClose)/prevClose` exactly (−4.0333 on MXL).
+
+**Shorter windows behave very differently, and that is the point.** Averaging hides down days:
+10d min is −0.57%, but 1d min is −8.72%. MXL reads **+4.98% over 10d and −4.03% on the last
+transition**. CBRS runs +5.27% → +10.34% → +9.12% → −2.28% — a strong run that just rolled over.
+Reading 10d alone would miss that entirely.
+
+**Verified:** all 9 sampled window×ticker combinations match the backfill exactly; 39 header cells
+== 39 body cells; **all 8 sort targets desc-monotonic** over 500 rows; zero page errors; and
+**4,000 displayed cells vs DB — 0 mismatches**.
+
+> **THE ROUNDING TRAP, FIFTH AND FINAL FORM — read this before writing another verifier.**
+> Having been burned four times by Python `round()`, I "fixed" my comparator with
+> `Decimal(str(v))` + `ROUND_HALF_UP` and got **93 fresh false mismatches**. Both approaches are
+> wrong, for opposite reasons, and no rounding mode fixes it:
+> - `1.625` **is** exactly representable in binary. JS `toFixed(2)` ties away from zero → `1.63`.
+>   Python `round()` ties to even → `1.62`. **Python too low.**
+> - `3.275` is **not** exactly representable (stored `3.27499999…`). JS correctly gives `3.27`.
+>   `Decimal(str(v))` treats it as exact decimal and rounds half-up → `3.28`. **Python too high.**
+>
+> **The fix is not a rounding mode — it is a TOLERANCE.** Compare with `|db - shown| <= half-ulp
+> at display precision` (0.005 for 2dp). Re-run: 4,000 cells, 0 mismatches, worst error exactly
+> 0.005. Chasing exact equality against a rendered, rounded number is the wrong question.
+
+---
 
 ### C→H 10d gains a dollar leg + dual sort (v624, Jul 25 2026)
 
