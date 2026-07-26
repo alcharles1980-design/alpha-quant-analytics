@@ -1857,7 +1857,14 @@ function _c2hAvg(bars, n) {
   return { pct: pSum / n, dollar: dSum / n };
 }
 
-function _classifyRegime(allBars) {
+function _classifyRegime(allBars, refMs) {
+  // v626: refMs = the scan's reference time (ms). When supplied, a ticker whose most recent bar
+  // predates it by more than STALE_DAYS is treated as a STALE LISTING and both the ATR ladder and
+  // the C->H ladder are nulled. Without this a delisted name (e.g. one that stopped trading in
+  // June) would emit a June-window value stamped with a July scan_date -- the same number meaning
+  // two different things depending on which scan you read. 6 days covers a long weekend plus a
+  // market holiday while still catching genuinely dead listings, which are weeks or months stale.
+  // Scoped deliberately to the two DATE-WINDOWED ladders; hurst/adx/returns are left alone.
   // Compute the full regime classification block from a daily bar array.
   // Returns an object with all 11 regime fields. Bars assumed sorted oldest-first.
   var n = allBars.length;
@@ -1947,6 +1954,13 @@ function _classifyRegime(allBars) {
   // v625: close-to-next-day-high ladder. See _c2hAvg for the guards.
   var c2hL10 = _c2hAvg(allBars, 10), c2hL5 = _c2hAvg(allBars, 5),
       c2hL3 = _c2hAvg(allBars, 3),  c2hL1 = _c2hAvg(allBars, 1);
+  // NOTE: this flag is applied at the RETURN below, never by mutating atr14d/c2hL* here --
+  // the *Pct vars are already derived above, so mutating would null the dollar leg and leave
+  // the percent leg populated, and would also change dir10/dir60 which read atr14dPct.
+  var STALE_DAYS = 6;
+  var lastBarMs = (allBars[allBars.length - 1] && allBars[allBars.length - 1].t) || null;
+  var staleListing = (refMs != null && lastBarMs != null &&
+                      (refMs - lastBarMs) > STALE_DAYS * 86400000);
   var c2h10 = c2hL10 ? c2hL10.pct : null, c2h10Dol = c2hL10 ? c2hL10.dollar : null;
 
   // Trend direction: net return over 10d + 60d windows, ATR-relative deadband
@@ -2014,22 +2028,22 @@ function _classifyRegime(allBars) {
     hurst_60d: hurst60 != null ? Math.round(hurst60 * 1000) / 1000 : null,
     autocorr_60d: ac60 != null ? Math.round(ac60 * 1000) / 1000 : null,
     adx_14d: adx14 != null ? Math.round(adx14 * 100) / 100 : null,
-    atr_14d_dollar: atr14d != null ? Math.round(atr14d * 1000) / 1000 : null,
-    atr_14d_pct: atr14dPct != null ? Math.round(atr14dPct * 100) / 100 : null,
-    atr_7d_dollar: atr7d != null ? Math.round(atr7d * 1000) / 1000 : null,
-    atr_7d_pct: atr7dPct != null ? Math.round(atr7dPct * 100) / 100 : null,
-    atr_3d_dollar: atr3d != null ? Math.round(atr3d * 1000) / 1000 : null,
-    atr_3d_pct: atr3dPct != null ? Math.round(atr3dPct * 100) / 100 : null,
-    atr_1d_dollar: atr1d != null ? Math.round(atr1d * 1000) / 1000 : null,
-    atr_1d_pct: atr1dPct != null ? Math.round(atr1dPct * 100) / 100 : null,
-    c2h_10d_pct: c2h10 != null ? Math.round(c2h10 * 100) / 100 : null,
-    c2h_10d_dollar: c2h10Dol != null ? Math.round(c2h10Dol * 1000) / 1000 : null,
-    c2h_5d_pct: c2hL5 ? Math.round(c2hL5.pct * 100) / 100 : null,
-    c2h_5d_dollar: c2hL5 ? Math.round(c2hL5.dollar * 1000) / 1000 : null,
-    c2h_3d_pct: c2hL3 ? Math.round(c2hL3.pct * 100) / 100 : null,
-    c2h_3d_dollar: c2hL3 ? Math.round(c2hL3.dollar * 1000) / 1000 : null,
-    c2h_1d_pct: c2hL1 ? Math.round(c2hL1.pct * 100) / 100 : null,
-    c2h_1d_dollar: c2hL1 ? Math.round(c2hL1.dollar * 1000) / 1000 : null,
+    atr_14d_dollar: (staleListing || atr14d == null) ? null : Math.round(atr14d * 1000) / 1000,
+    atr_14d_pct: (staleListing || atr14dPct == null) ? null : Math.round(atr14dPct * 100) / 100,
+    atr_7d_dollar: (staleListing || atr7d == null) ? null : Math.round(atr7d * 1000) / 1000,
+    atr_7d_pct: (staleListing || atr7dPct == null) ? null : Math.round(atr7dPct * 100) / 100,
+    atr_3d_dollar: (staleListing || atr3d == null) ? null : Math.round(atr3d * 1000) / 1000,
+    atr_3d_pct: (staleListing || atr3dPct == null) ? null : Math.round(atr3dPct * 100) / 100,
+    atr_1d_dollar: (staleListing || atr1d == null) ? null : Math.round(atr1d * 1000) / 1000,
+    atr_1d_pct: (staleListing || atr1dPct == null) ? null : Math.round(atr1dPct * 100) / 100,
+    c2h_10d_pct: (staleListing || c2h10 == null) ? null : Math.round(c2h10 * 100) / 100,
+    c2h_10d_dollar: (staleListing || c2h10Dol == null) ? null : Math.round(c2h10Dol * 1000) / 1000,
+    c2h_5d_pct: (staleListing || !c2hL5) ? null : Math.round(c2hL5.pct * 100) / 100,
+    c2h_5d_dollar: (staleListing || !c2hL5) ? null : Math.round(c2hL5.dollar * 1000) / 1000,
+    c2h_3d_pct: (staleListing || !c2hL3) ? null : Math.round(c2hL3.pct * 100) / 100,
+    c2h_3d_dollar: (staleListing || !c2hL3) ? null : Math.round(c2hL3.dollar * 1000) / 1000,
+    c2h_1d_pct: (staleListing || !c2hL1) ? null : Math.round(c2hL1.pct * 100) / 100,
+    c2h_1d_dollar: (staleListing || !c2hL1) ? null : Math.round(c2hL1.dollar * 1000) / 1000,
     return_10d_pct: ret10 != null ? Math.round(ret10 * 100) / 100 : null,
     return_60d_pct: ret60 != null ? Math.round(ret60 * 100) / 100 : null,
     direction_10d: dir10,
@@ -2893,7 +2907,7 @@ async function runScreener() {
     };
 
     // Stage A: Regime classification (uses cand.bars, no extra API calls)
-    var regimeBlock = _classifyRegime(allBars);
+    var regimeBlock = _classifyRegime(allBars, Date.parse(scanDate + 'T00:00:00Z'));
 
     results.push({
       ticker: cand.ticker, price: Math.round(cand.price * 100) / 100,

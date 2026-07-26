@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v625 · Jul 25 2026
+**Status at last update:** v626 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,48 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### v626 — stale-listing guard on BOTH ladders + audit fixes (Jul 25 2026)
+
+Outcome of a full integrity audit of the C→H columns. **Cross-source verification passed**: 12
+tickers × 4 windows × 2 legs recomputed from the independent per-ticker Polygon endpoint, worst
+pct error 0.00499, worst dollar error 0.0005 — pure 2dp/3dp storage rounding. Off-by-one
+hand-traced on AAPL (3d = the three transitions ending at the last bar; mean +1.1803 → DB 1.18).
+0 half-populated pairs, 0 guard leaks, 4,000 displayed cells vs DB with 0 mismatches.
+
+**REAL finding — backfill and pipeline disagreed.** The v623–v625 backfill required a ticker to
+have traded through the scan's reference session; `_c2hAvg` had no such guard. Today 18 stale
+listings were NULL, but Tuesday's scan would have emitted a June-window value stamped with a July
+`scan_date` — the same column meaning two different things depending which scan you read. The ATR
+ladder had the identical hole.
+
+**Fix:** `_classifyRegime(allBars, refMs)` takes the scan reference time and sets `staleListing`
+when the last bar predates it by more than `STALE_DAYS = 6` (covers a long weekend plus a market
+holiday; real dead listings are weeks or months stale). Applied to **both** ladders — 16 fields.
+Today's scan_date was aligned by nulling the same 18 tickers, so backfilled and future rows agree.
+
+> **A BUG IN MY OWN FIX, caught before shipping.** My first implementation nulled the source vars
+> (`atr14d = null; …`) inside the function body. But `atr14dPct` is derived ~15 lines ABOVE that
+> point, so the percent leg would have stayed populated while the dollar leg went null —
+> **half-populated pairs, exactly what the audit had just confirmed was clean** — and it would also
+> have changed `dir10`/`dir60`, which read `atr14dPct` and are outside the ladders. **Correct
+> approach: gate at the RETURN, never by mutating shared intermediates.** Same lesson as the v584
+> hoisting bug — check declaration order before assigning to anything already consumed.
+
+Verified: fresh bars → all 16 populated; last bar 06-08 → all 16 null together; `adx_14d`,
+`direction_10d`, `hurst_60d` untouched; no `refMs` → guard inert (backward compatible); boundary
+6d gap kept / 7d gap nulled.
+
+**Cosmetic fixes:** negative dollars rendered `$-3.68`; now `-$3.68` (C→H only — ATR dollars are
+true ranges and cannot be negative). Row field `r.c2h10` renamed `r.c2h10Pct` so all eight sort
+keys follow one `…Pct`/`…Dol` convention.
+
+**Known, not fixed:** BBD shows `-0.01%` over `$0.00` — storage precision on a $3.60 stock
+(−$0.00036 rounds to 3dp zero), 1 row of 2,500. And `data_integrity_check` still covers **neither**
+ladder, so a future pipeline regression that blanks them would be silent — same class as the Most
+Actives median bug.
+
+---
 
 ### C→H ladder — 10d / 5d / 3d / prev (v625, Jul 25 2026)
 

@@ -22854,7 +22854,7 @@ function ViolentChopScreenerPage(p){
     // comparator does bv-av and a NaN there silently unsorts the whole table (the v581 class).
     r.volExp=(r.atr3Pct!=null&&r.atrPct!=null&&r.atrPct>0)?Math.round((r.atr3Pct/r.atrPct)*100)/100:null;
     // v623: 10-day average close-to-next-day-high %, straight from the row (never the side map).
-    r.c2h10=(a14&&a14.c2h!=null)?+a14.c2h:null;
+    r.c2h10Pct=(a14&&a14.c2h!=null)?+a14.c2h:null;
     r.c2h10Dol=(a14&&a14.c2hd!=null)?+a14.c2hd:null;
     r.c2h5Pct=(a14&&a14.c5!=null)?+a14.c5:null;   r.c2h5Dol=(a14&&a14.c5d!=null)?+a14.c5d:null;
     r.c2h3Pct=(a14&&a14.c3!=null)?+a14.c3:null;   r.c2h3Dol=(a14&&a14.c3d!=null)?+a14.c3d:null;
@@ -23188,7 +23188,7 @@ function ViolentChopScreenerPage(p){
             {thATR('3d ATR','atr3Pct','atr3Dol')}
             {thATR('Prev day','atr1Pct','atr1Dol')}
             {th('volExp',['Vol',<br key="b"/>,'Exp'])}
-            {thATR('C\u2192H 10d','c2h10','c2h10Dol')}
+            {thATR('C\u2192H 10d','c2h10Pct','c2h10Dol')}
             {thATR('C\u2192H 5d','c2h5Pct','c2h5Dol')}
             {thATR('C\u2192H 3d','c2h3Pct','c2h3Dol')}
             {thATR('C\u2192H prev','c2h1Pct','c2h1Dol')}
@@ -23341,11 +23341,11 @@ function ViolentChopScreenerPage(p){
                         return <td key={key} style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}}
                           title={label+' \u2014 buy at the close, mean upside to the next session\u2019s high, in percent and dollars. Negative means the next day\u2019s high averaged below the prior close. A MEAN, not a hit rate. Percent and dollar are averaged independently, so they are not a fixed ratio.'}>
                           <div style={{color:col,fontSize:7,fontWeight:600}}>{v!=null?(v>=0?'+':'')+v.toFixed(2)+'%':'\u2014'}</div>
-                          <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{d!=null?'$'+d.toFixed(2):'\u2014'}</div>
+                          <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{d!=null?(d<0?'-$'+Math.abs(d).toFixed(2):'$'+d.toFixed(2)):'\u2014'}</div>
                         </td>;
                       };
                       return [
-                        cc('c2h10',r.c2h10,r.c2h10Dol,'Average close-to-next-day-high over the last 10 sessions'),
+                        cc('c2h10',r.c2h10Pct,r.c2h10Dol,'Average close-to-next-day-high over the last 10 sessions'),
                         cc('c2h5', r.c2h5Pct,r.c2h5Dol,'Average close-to-next-day-high over the last 5 sessions'),
                         cc('c2h3', r.c2h3Pct,r.c2h3Dol,'Average close-to-next-day-high over the last 3 sessions'),
                         cc('c2h1', r.c2h1Pct,r.c2h1Dol,'Close-to-next-day-high for the single most recent session (not an average)')
