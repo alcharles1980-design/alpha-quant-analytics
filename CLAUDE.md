@@ -599,7 +599,18 @@ which is precisely "previous trading day". Verified: `1d == last true range on 4
 3 days out. Backfilled scan_date 2026-07-25 from **Polygon grouped daily aggregates** — one call
 returns every ticker for a date, so 51 trading days cost 51 calls instead of 2,500. Written via a
 `SECURITY DEFINER` RPC (`atr_short_backfill`) taking a jsonb payload in ONE statement (§5.2b: one
-writer, never a loop). 2,425 of 2,500 rows updated.
+writer, never a loop). 2,425 of 2,500 rows updated. **That RPC has since been DROPPED — see the
+security note below. It no longer exists; do not look for it.**
+
+> **SECURITY — mistake made and corrected, same session.** `atr_short_backfill` was created
+> `SECURITY DEFINER` and, like every function here, EXECUTE defaulted to `anon` **and PUBLIC**. The
+> anon key ships inside the public JS bundle, so for the ~40 minutes it existed, anyone who viewed
+> source could have called it and overwritten every ATR column for any `scan_date` with arbitrary
+> values. Dropped; verified the endpoint now returns 404 while `chop_range_atr_light` still serves
+> and the data is intact. **RULE: a one-off migration/backfill RPC must be dropped in the same
+> session it is used.** If a write-capable RPC ever needs to persist, `revoke execute ... from
+> anon, public` is mandatory — read-only RPCs like `chop_range_atr_light` are the only safe
+> things to leave anon-callable.
 
 **Bar-alignment was calibrated, not assumed** (§5.1c). Reproduced the stored `atr_14d_pct` at three
 candidate end-dates: end=2026-07-24 gave mean |err| **0.022pp** (pure 2dp rounding); end=07-23 and
@@ -609,6 +620,23 @@ candidate end-dates: end=2026-07-24 gave mean |err| **0.022pp** (pure 2dp roundi
 ran it against the same bars: WOLF/SMCI/MXL/A matched the DB to **0.0000**, and CRDO's apparent
 0.08 gap was my hardcoded test fixture being wrong — the DB holds 10.27/9.93/12.64, exactly what
 the pipeline produces. So Tuesday's scan will not silently rewrite the backfilled numbers.
+
+**Post-ship audit (same session) — two false alarms I raised, recorded so they are not re-chased.**
+(1) 12 apparent value mismatches were all on `.X5` boundaries: Python's `round(14.25,1)`=14.2
+(banker's, half-to-even) vs JS `toFixed(1)`="14.3". The app was right, my comparator was not — do
+not verify JS rounding with Python `round()`. (2) An apparent column misalignment on rows lacking
+Yahoo ratings: I measured `tr.children.length` (DOM elements) when the Fetch-ratings cell already
+carries `colSpan={5}`, so 30 elements == 34 rendered columns. **Row-cell counts are NOT an alignment
+test when any cell spans columns — compare `getBoundingClientRect().left` against the header's.**
+Also note my first "34/34 ALIGNED" pass was right only by luck: it sampled row 0, which happens to
+be a full row.
+
+**Cross-source verification, done properly the second time.** The initial pipeline-vs-backfill check
+was internal consistency wearing a cross-source costume — both sides read the SAME grouped-agg
+data, so it proved the two code paths agreed, not that the numbers were right. Redone against the
+**per-ticker** Polygon endpoint: worst |displayed − independent| = **0.054pp** over 14 tickers × 4
+rungs (pure 1dp display rounding), plus a full displayed-vs-DB sweep of 500 rows × 4 rungs × 2
+values ≈ 4,000 cells with zero real mismatches.
 
 **Verified behaviourally** (§5.1a): replacing 1 header + 1 cell with 4 each risks column
 misalignment that would shift everything to its right. Headless: **34 header cells == 34 body
