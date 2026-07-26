@@ -1908,6 +1908,7 @@ function _classifyRegime(allBars, refMs) {
       c2h_10d_pct: null, c2h_10d_dollar: null,
       vol_med_20d: null, trades_med_20d: null,
       vol_mean_5d: null, vol_mean_3d: null, vol_mean_1d: null,
+      trades_mean_5d: null, trades_mean_3d: null, trades_mean_1d: null,
       c2h_5d_pct: null, c2h_5d_dollar: null,
       c2h_3d_pct: null, c2h_3d_dollar: null,
       c2h_1d_pct: null, c2h_1d_dollar: null,
@@ -1988,6 +1989,9 @@ function _classifyRegime(allBars, refMs) {
   // NOTE: this flag is applied at the RETURN below, never by mutating atr14d/c2hL* here --
   // the *Pct vars are already derived above, so mutating would null the dollar leg and leave
   // the percent leg populated, and would also change dir10/dir60 which read atr14dPct.
+  var trdMean5 = _meanN(allBars, 5, 'n');
+  var trdMean3 = _meanN(allBars, 3, 'n');
+  var trdMean1 = _meanN(allBars, 1, 'n');
   var volMean5 = _meanN(allBars, 5, 'v');
   var volMean3 = _meanN(allBars, 3, 'v');
   var volMean1 = _meanN(allBars, 1, 'v');
@@ -2082,6 +2086,9 @@ function _classifyRegime(allBars, refMs) {
     vol_mean_5d: (staleListing || volMean5 == null) ? null : Math.round(volMean5),
     vol_mean_3d: (staleListing || volMean3 == null) ? null : Math.round(volMean3),
     vol_mean_1d: (staleListing || volMean1 == null) ? null : Math.round(volMean1),
+    trades_mean_5d: (staleListing || trdMean5 == null) ? null : Math.round(trdMean5),
+    trades_mean_3d: (staleListing || trdMean3 == null) ? null : Math.round(trdMean3),
+    trades_mean_1d: (staleListing || trdMean1 == null) ? null : Math.round(trdMean1),
     trades_med_20d: (staleListing || trdMed20 == null) ? null : Math.round(trdMed20),
     c2h_10d_pct: (staleListing || c2h10 == null) ? null : Math.round(c2h10 * 100) / 100,
     c2h_10d_dollar: (staleListing || c2h10Dol == null) ? null : Math.round(c2h10Dol * 1000) / 1000,
@@ -2980,6 +2987,9 @@ async function runScreener() {
       vol_mean_5d: regimeBlock.vol_mean_5d,
       vol_mean_3d: regimeBlock.vol_mean_3d,
       vol_mean_1d: regimeBlock.vol_mean_1d,
+      trades_mean_5d: regimeBlock.trades_mean_5d,
+      trades_mean_3d: regimeBlock.trades_mean_3d,
+      trades_mean_1d: regimeBlock.trades_mean_1d,
       trades_med_20d: regimeBlock.trades_med_20d,
       c2h_10d_pct: regimeBlock.c2h_10d_pct,
       c2h_10d_dollar: regimeBlock.c2h_10d_dollar,

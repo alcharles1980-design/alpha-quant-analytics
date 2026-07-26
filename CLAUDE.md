@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v628 · Jul 25 2026
+**Status at last update:** v629 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,36 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### v629 — Relative trade count: RTrd 5d / 3d / prev (Jul 26 2026)
+
+Mirrors v628 for trade counts: `trades_mean_{5,3,1}d ÷ trades_med_20d`, three sortable columns
+after the RVol block. Same mean-over-median asymmetry, same client-side derivation, same stale
+propagation via a null denominator.
+
+**The point is the DIVERGENCE from RVol, not the level.** Trade count and share volume answer
+different questions, and their ratio is average trade size:
+- volume up, trades flat → **larger average trade size** — block / institutional participation
+- trades up, volume flat → **smaller size** — retail or algo fragmentation
+- both up → broad participation
+
+Measured on the live scan: **RVol 5d and RTrd 5d differ by more than 0.25× for 7% of tickers**, so
+the divergence is uncommon enough to be worth flagging when it appears. Note RTrd is
+systematically tighter than RVol (5d p90 1.20 vs 1.30; p99-tail max 2.4 vs 6.8) — trade *count* is
+far less volatile than share volume, because a volume spike is often a few large prints rather than
+many more participants. **Do not apply the same colour thresholds mentally to both**: a 1.5× RTrd
+is a much rarer event than a 1.5× RVol.
+
+The RVol 3d day-of-week caveat applies identically to RTrd 3d and is in its tooltip.
+
+**Verified:** 47 header cells == 47 body cells; all six ratio columns desc-monotonic over 500 rows;
+**2,988 displayed ratios vs DB-derived — 0 mismatches**; pipeline `_meanN(bars, n, 'n')` matches a
+manual sum and is stale-gated with everything else; zero page errors.
+
+MXL reads RVol 1.52 / 1.87 / 2.57 against RTrd 1.40 / 1.71 / 2.20 — volume rising slightly faster
+than trade count, i.e. average trade size creeping up as participation builds.
+
+---
 
 ### v628 — Relative volume: RVol 5d / 3d / prev (Jul 25 2026)
 

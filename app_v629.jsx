@@ -22553,7 +22553,8 @@ function ViolentChopScreenerPage(p){
             c3:row.c2h3!=null?+row.c2h3:null,     c3d:row.c2h3_dol!=null?+row.c2h3_dol:null,
             c1:row.c2h1!=null?+row.c2h1:null,     c1d:row.c2h1_dol!=null?+row.c2h1_dol:null,
             vm:row.volmed!=null?+row.volmed:null, tm:row.trdmed!=null?+row.trdmed:null,
-            v5:row.volm5!=null?+row.volm5:null, v3:row.volm3!=null?+row.volm3:null, v1:row.volm1!=null?+row.volm1:null
+            v5:row.volm5!=null?+row.volm5:null, v3:row.volm3!=null?+row.volm3:null, v1:row.volm1!=null?+row.volm1:null,
+            t5:row.trdm5!=null?+row.trdm5:null, t3:row.trdm3!=null?+row.trdm3:null, t1:row.trdm1!=null?+row.trdm1:null
           };
       });
       if(batch.length<1000)break;
@@ -22876,6 +22877,14 @@ function ViolentChopScreenerPage(p){
     r.rvol5=_rv((a14&&a14.v5!=null)?+a14.v5:null);
     r.rvol3=_rv((a14&&a14.v3!=null)?+a14.v3:null);
     r.rvol1=_rv((a14&&a14.v1!=null)?+a14.v1:null);
+    // v629: same treatment for trade counts, against the 20d trade-count median.
+    // The DIVERGENCE between RVol and RTrd is the signal: volume up with trades flat = larger
+    // average trade size (block/institutional); trades up with volume flat = fragmentation.
+    var _tb=r.trdMed;
+    var _rt=function(m){return (m!=null&&_tb!=null&&_tb>0)?Math.round((m/_tb)*100)/100:null;};
+    r.rtrd5=_rt((a14&&a14.t5!=null)?+a14.t5:null);
+    r.rtrd3=_rt((a14&&a14.t3!=null)?+a14.t3:null);
+    r.rtrd1=_rt((a14&&a14.t1!=null)?+a14.t1:null);
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23214,6 +23223,9 @@ function ViolentChopScreenerPage(p){
             {th('rvol5',['RVol',<br key="b"/>,'5d'])}
             {th('rvol3',['RVol',<br key="b"/>,'3d'])}
             {th('rvol1',['RVol',<br key="b"/>,'prev'])}
+            {th('rtrd5',['RTrd',<br key="b"/>,'5d'])}
+            {th('rtrd3',['RTrd',<br key="b"/>,'3d'])}
+            {th('rtrd1',['RTrd',<br key="b"/>,'prev'])}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23402,7 +23414,10 @@ function ViolentChopScreenerPage(p){
                       return [
                         rv('rv5',r.rvol5,'Mean share volume over the last 5 sessions \u00F7 the 20-session median. Above 1 = participation elevated, below 1 = drying up. A 5-session window always spans one of each weekday, so it is day-of-week neutral.'),
                         rv('rv3',r.rvol3,'Mean share volume over the last 3 sessions \u00F7 the 20-session median. NOTE: a 3-session window is NOT day-of-week neutral \u2014 its weekday composition shifts with the scan day, so read it against the 5d column rather than against its own history.'),
-                        rv('rv1',r.rvol1,'Previous session\u2019s share volume \u00F7 the 20-session median. The event detector \u2014 news, halt-resume, index add. Noisy alone; read it next to the 5d column.')
+                        rv('rv1',r.rvol1,'Previous session\u2019s share volume \u00F7 the 20-session median. The event detector \u2014 news, halt-resume, index add. Noisy alone; read it next to the 5d column.'),
+                        rv('rt5',r.rtrd5,'Mean TRADE COUNT over the last 5 sessions \u00F7 the 20-session median. Compare against RVol 5d: volume up with trades flat = larger average trade size (block/institutional); trades up with volume flat = fragmentation.'),
+                        rv('rt3',r.rtrd3,'Mean trade count over the last 3 sessions \u00F7 the 20-session median. Same day-of-week caveat as RVol 3d \u2014 read it against the 5d column, not its own history.'),
+                        rv('rt1',r.rtrd1,'Previous session\u2019s trade count \u00F7 the 20-session median.')
                       ];
                     })()
                   ];
