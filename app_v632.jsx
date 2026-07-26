@@ -19514,15 +19514,52 @@ function MultiViewChartsPage(p){
     return date+'  '+pad(e.h)+':'+pad(e.mi)+' ET';
   };
 
+  // How far back the TODAY / YESTERDAY panels look to find real trading sessions. Must cover the
+  // worst holiday cluster: a Friday holiday + weekend puts the SECOND-most-recent session 4 calendar
+  // days back (e.g. Sun Dec 27 2026 -> last=Thu 24th, prev=Wed 23rd). 10 gives ample headroom while
+  // still returning a single Polygon page (~7 sessions x 192 five-minute bars).
+  var SESSION_LOOKBACK_DAYS=10;
+  // Reduce a multi-day bar array to ONE ET trading session, counting back from the most recent
+  // session actually present in the data. Groups by ET calendar date using the same dayKey rule as
+  // sessionVwap, so pre/post-market bars stay attached to their own session. back=0 is the latest
+  // session, back=1 the one before it. Returns [] when that session isn't in the window.
+  //
+  // WHY THIS EXISTS: the panels used to request a fixed CALENDAR offset from today, so on any
+  // non-trading day Polygon returned zero bars, Chart() bailed on the empty array, and the panel
+  // rendered no SVG at all. That blanked TODAY every Sat/Sun/holiday and YESTERDAY every Sun/Mon
+  // (Monday's "yesterday" is Sunday) — and, because there was no chart underneath, made the VWAP
+  // overlay look broken when it was fine. Deriving the session from returned data rather than from
+  // the calendar self-corrects for weekends, holidays and holiday clusters with no lookup table.
+  var pickSession=function(bars,back){
+    if(!bars||!bars.length)return [];
+    var keys=[],order=[],seen={};
+    for(var i=0;i<bars.length;i++){
+      var ep=etParts(bars[i].t);
+      var k=ep.y+'-'+ep.mo+'-'+ep.d;
+      keys.push(k);
+      if(!seen[k]){seen[k]=1;order.push(k);}
+    }
+    // bars are fetched sort=asc, so order is chronological — count back from the end
+    var want=order[order.length-1-back];
+    if(want==null)return [];
+    return bars.filter(function(_,i){return keys[i]===want;});
+  };
+
   var fetchAgg=function(t,tf,ovArg){
     // Anchor "today" to the current date in ET (America/New_York), not UTC —
     // otherwise in the evening ET the UTC date has already rolled over and
     // Today/Yesterday would request the wrong trading day.
     var e=etParts(Date.now());
     var etToday=new Date(Date.UTC(e.y,e.mo-1,e.d)); // midnight of the ET calendar day (as a UTC anchor for date arithmetic)
-    var to=iso(etToday),from;
+    var to=iso(etToday),from,sessionPick=null;
     if(tf.ytd){from=e.y+'-01-01';}
-    else if(tf.dayOffset!=null){var dd=new Date(Date.UTC(e.y,e.mo-1,e.d-tf.dayOffset));from=iso(dd);to=iso(dd);}
+    else if(tf.dayOffset!=null){
+      // Trading-day, not calendar-day: request a rolling window and select the session afterwards
+      // (see pickSession). A fixed calendar offset lands on weekends/holidays and returns nothing.
+      var dEnd=new Date(Date.UTC(e.y,e.mo-1,e.d));
+      var dStart=new Date(Date.UTC(e.y,e.mo-1,e.d-SESSION_LOOKBACK_DAYS));
+      from=iso(dStart);to=iso(dEnd);sessionPick=tf.dayOffset;
+    }
     else if(tf.monthsBack!=null){var dm=new Date(Date.UTC(e.y,e.mo-1-tf.monthsBack,e.d));from=iso(dm);}
     else if(tf.daysBack!=null){var dq=new Date(Date.UTC(e.y,e.mo-1,e.d-tf.daysBack));from=iso(dq);}
     else{var d=new Date(Date.UTC(e.y-tf.yearsBack,e.mo-1,e.d));from=iso(d);}
@@ -19537,7 +19574,7 @@ function MultiViewChartsPage(p){
       guard++;
       if(j.next_url&&guard<12)return step(j.next_url+'&apiKey='+p.apiKey);
     });};
-    return step(url).then(function(){return all;});
+    return step(url).then(function(){return sessionPick==null?all:pickSession(all,sessionPick);});
   };
 
   // Auto-load when arriving via a '#multiviewcharts:TICKER' deep link (the Most Actives quick
