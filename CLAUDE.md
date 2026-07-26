@@ -597,6 +597,53 @@ and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
 
+### Post-v629 integrity sweep — clean, plus a mistake I made DURING the sweep (Jul 26 2026)
+
+**Delivery re-measured** after the RPC widened again (23 → 31 columns): **2,500/2,500 unique
+tickers**, 2.45s / 3.01s / 0.99s, 1.25 MB total. No truncation, comfortable headroom.
+
+**Cross-field integrity across the full 2,500** (not just the visible 500): 0 unpaired within the
+volume group, 0 within the trades group, 0 volume-without-ATR, 0 non-positive, and **0 rows where
+trade count exceeds share volume** (physically impossible — worth checking precisely because it
+cannot happen in valid data). Average trade size p50 71.7 shares, p99 817 — plausible for US equities.
+
+**5 rows have ATR but no volume** — legitimate. The metrics have DIFFERENT minimum-bar
+requirements: 9 bars for `atr_7d`, 11 for `c2h_10d`, 16 for `atr_14d`, 20 for the medians. A ticker
+with 9–19 bars therefore produces a ragged row. **Consider standardising all of them at 20** — it
+would kill the ragged rows and the degenerate cases (TMHC shows `atr_7d 0.22%` / `atr_1d 0.06%` on
+a $72 stock: a 4-cent daily true range is a barely-trading listing, not low volatility).
+
+**`ladder_integrity_check` extended to 23 checks** — added coverage for the volume/trades columns,
+plus two new classes: **group cohesion** (all four vol columns present-or-absent together; same for
+trades — catches one write path dropping a column) and **volume-vs-trades sanity** (trade count >
+share volume, or non-positive). All three new alarm classes proven to fire by deliberate corruption,
+then repaired.
+
+> ### THE MISTAKE: I corrupted three cells while testing the alarms
+> To prove the alarms fire I nulled/altered `MXL.vol_mean_3d`, `WOLF.trades_mean_5d` and
+> `SMCI.trades_med_20d` — then **restored them from memory instead of reading them first.** All
+> three restores were wrong: MXL 6,362,097 (true 7,605,171), WOLF 77,694 (true 40,713), SMCI
+> 133,176 (true 242,368).
+>
+> **The integrity check reported 23 OK / 0 FAIL on the corrupted data**, because cohesion and
+> null-pairing checks test *presence*, not *correctness*. A plausible wrong number passes every
+> structural check ever written — this is the §5.1a thesis demonstrated on my own safeguard.
+>
+> Caught only by recomputing from source. Then re-verified **every** volume/trades cell rather than
+> just the three touched: **19,232 cells vs recomputed source, 0 mismatches.**
+>
+> **RULES: (1) `SELECT` the original values into the transcript BEFORE corrupting anything — never
+> restore from memory. (2) Prefer a rolled-back transaction to corrupt-and-repair. (3) After any
+> repair, re-verify the WHOLE column against source, not just the cells you touched. (4) Presence
+> checks cannot validate values; only recomputation can.**
+
+**Structural:** route parity 87 nav / 88 routes with the 2 known orphans; version consistent across
+`app_v629.jsx` / `build.js` / `package.json` / built banner; one `getSbHeaders`; no out-of-scope
+`UP`/`DN` in the chop page; `pipeline.js` syntax clean; working tree clean; no stray files.
+Cron: job 38 `data_integrity_check` at `:07`, job 49 `ladder_integrity_check` at `:25`.
+
+---
+
 ### v629 — Relative trade count: RTrd 5d / 3d / prev (Jul 26 2026)
 
 Mirrors v628 for trade counts: `trades_mean_{5,3,1}d ÷ trades_med_20d`, three sortable columns
