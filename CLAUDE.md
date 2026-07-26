@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v632 · Jul 26 2026
+**Status at last update:** v633 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,11 +602,38 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v632** (Jul 26 2026) — MV Charts TODAY/YESTERDAY now select by **trading day** rather than
-calendar day, which resolved the long-open "VWAP draws nothing" report (it was never a VWAP fault; the
-panels were rendering no chart at all on non-trading days). Preceded by the Holy Grail metric-definition
-docs (v631), volume/trades column regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians
-plus the stale-guard fix (v627), and the ATR ladder (v619–v620). Full detail in the blocks below.
+**Current: v633** (Jul 26 2026) — MV Charts TODAY/YESTERDAY select by **trading day** rather than
+calendar day (v632, which resolved the long-open "VWAP draws nothing" report — it was never a VWAP
+fault), and those panels now print the real session date in the heading (v633), plus a DST fix to the
+build banner. Preceded by the Holy Grail metric-definition docs (v631), volume/trades column regroup
+(v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians plus the stale-guard fix (v627), and the
+ATR ladder (v619–v620). Full detail in the blocks below.
+
+### v633 — real session date on TODAY/YESTERDAY + build.js DST fix (Jul 26 2026)
+
+**1. Panel headings now name the session.** `TODAY · Fri Jul 24`, `YESTERDAY · Thu Jul 23`. Because v632
+made those panels resolve to the most recent *trading* sessions, on a weekend/holiday/pre-Monday-open
+"TODAY" is really Friday — the heading now says so instead of implying the wrong day. `sessionStamp()`
+derives it from `bars[0].t` via `etParts` — **from the data, not the clock** — so it cannot disagree
+with what is drawn. Returns null (renders nothing) for the range panels and for any missing or
+malformed bar array.
+
+**2. `build.js` had a hardcoded `now - 5 hours` labelled "EST".** From March to November that banner was
+an hour behind *and* mislabelled (EDT is UTC-4). Replaced with Intl/`America/New_York`, which resolves
+offset and abbreviation together. Banner went `5:23 PM EST` → correct `6:23 PM EDT`. **This is the same
+hardcoded-offset class §5.3 records as already swept out of the app — `build.js` was missed at the
+time.** Worth re-grepping for other survivors outside the main JSX.
+
+Verified in node against failure inputs (null/undefined/empty bars, bar with no `t`, `t=null`,
+non-dayOffset panel → all null, no throw), across the session boundary (04:00 and 19:55 ET bars both
+resolve to the same day; a 00:30 UTC bar = 20:30 ET correctly stays with the *previous* ET session),
+and across DST (a January bar returns `Thu Jan 15`). Confirmed on live: headings render, span is
+`#a0b8d0` / 10px with an 8px gap. Route parity 86/86.
+
+*Known cosmetic nit:* the 8px gap is CSS margin, so `textContent` reads `TODAY· Fri Jul 24` with no
+space before the separator. Renders correctly; only affects copy-paste and screen readers.
+
+---
 
 ### v631 — Source Code page: Holy Grail metric definitions (Jul 26 2026)
 
