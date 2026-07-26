@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v633 · Jul 26 2026
+**Status at last update:** v634 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,12 +602,58 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v633** (Jul 26 2026) — MV Charts TODAY/YESTERDAY select by **trading day** rather than
-calendar day (v632, which resolved the long-open "VWAP draws nothing" report — it was never a VWAP
-fault), and those panels now print the real session date in the heading (v633), plus a DST fix to the
-build banner. Preceded by the Holy Grail metric-definition docs (v631), volume/trades column regroup
-(v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians plus the stale-guard fix (v627), and the
-ATR ladder (v619–v620). Full detail in the blocks below.
+**Current: v634** (Jul 26 2026) — new **Daily Returns & Red / Green Day Counts** section on MV Charts
+(v634); TODAY/YESTERDAY select by **trading day** rather than calendar day (v632, which resolved the
+long-open "VWAP draws nothing" report — it was never a VWAP fault) and now print the real session date
+in the heading (v633), plus a DST fix to the build banner. Preceded by the Holy Grail metric-definition
+docs (v631), volume/trades column regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians
+plus the stale-guard fix (v627), and the ATR ladder (v619–v620). Full detail below.
+
+### v634 — Daily Returns & Red / Green Day Counts (Jul 26 2026)
+
+New section below Volume & Trades, same visual language, with its **own** lookback dropdown —
+deliberately independent of the volume block, since returns over a year alongside volume over a month
+is a normal thing to want. Defaults to 3 months so the tally starts from a meaningful sample.
+
+Contents: tally tiles (green / red / unchanged / avg per day / best / worst with dates), a proportion
+bar, and a signed bar chart of each session's close-to-close return.
+
+**Data.** `vtRows` gains `c` and `ret`. `acc` is `sort=asc`, so `acc[bi-1]` is genuinely the prior
+session. `ret` is null on the first row and whenever either close is missing or non-positive, so a gap
+renders as an **absent bar** rather than a fake 0% that would be miscounted as a flat day. **No extra
+network call** — reuses the 10y daily fetch already running for ATR / close-to-high.
+
+**Design notes worth preserving:**
+- `vtVisible()` now takes an optional period key so both blocks share **one** date-cut implementation.
+  Duplicating that logic would have let the two windows drift apart silently.
+- `retChart` is separate from `vtChart` because returns straddle zero — the axis spans the real
+  `[min,max]` with zero forced into range and drawn as a baseline. `vtChart` is always `0→max` and
+  cannot express a negative bar.
+- Exactly-zero days are counted separately from green. **"Unchanged" is not "up".**
+- Null-return days are excluded from `n`, so percentages are never computed against a denominator
+  containing days with no return.
+
+**Verified — behaviour, not presence** (the §5.1a failure mode). Node against real data: compounding
+all 249 one-year returns gives **1.170240** vs an actual close ratio of **1.170240**, exact — which also
+agrees with the app's own independently computed "1 YEAR RETURN +17.02%" panel. NaN/Infinity are
+excluded rather than miscounted; empty / all-null / single-row inputs don't throw. Then on live, 30
+assertions across three lookbacks, comparing rendered DOM against independently computed Polygon values:
+
+| Window | Sessions | Green | Red | Best | Worst | Avg |
+|---|---|---|---|---|---|---|
+| 3m | 63 | 30 | 33 | +6.26% | −6.20% | +0.09% |
+| 12m | 252 | 129 | 123 | +7.87% | −6.20% | +0.10% |
+| 1w | 6 | 3 | 3 | +2.30% | −2.21% | −0.03% |
+
+Rendered **bar counts** matched the **tile counts** in every window, so chart and tally cannot disagree.
+The dropdown was driven programmatically (native setter + `change` event) to prove it re-slices rather
+than just rendering once. Route parity 86/86.
+
+*Note:* `fmtPct` now exists in 4 components — all in separate scopes (`StockProfileCheatSheetPage`,
+`MultiViewChartsPage`, `ExtendedHoursVolumePage`, `HourlyDataPage`). Check the enclosing function before
+assuming a duplicate-definition grep hit is a collision.
+
+---
 
 ### v633 — real session date on TODAY/YESTERDAY + build.js DST fix (Jul 26 2026)
 
