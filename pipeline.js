@@ -1835,6 +1835,20 @@ function _classifyDirection(retPct, atr14Pct, lookback) {
   return 'Sideways';
 }
 
+function _meanN(bars, n, key) {
+  // Mean of the last `n` bars' `key`. Used for the recent-volume windows, where MEAN is correct
+  // and median is not: the whole point is to catch a spike, and a median would discard it.
+  // (The 20-day BASELINE uses median for the opposite reason -- see _median20.)
+  if (!bars || bars.length < n) return null;
+  var t = 0;
+  for (var i = bars.length - n; i < bars.length; i++) {
+    var x = bars[i][key];
+    if (typeof x !== 'number' || !isFinite(x)) return null;
+    t += x;
+  }
+  return t / n;
+}
+
 function _median20(bars, key) {
   // Median of the last 20 bars' `key`. MEDIAN not mean: a single earnings or index-rebalance day
   // can be 10x normal volume and would drag a mean badly. Same reasoning as the Stage 9 dollar-bar
@@ -1893,6 +1907,7 @@ function _classifyRegime(allBars, refMs) {
       atr_1d_dollar: null, atr_1d_pct: null,
       c2h_10d_pct: null, c2h_10d_dollar: null,
       vol_med_20d: null, trades_med_20d: null,
+      vol_mean_5d: null, vol_mean_3d: null, vol_mean_1d: null,
       c2h_5d_pct: null, c2h_5d_dollar: null,
       c2h_3d_pct: null, c2h_3d_dollar: null,
       c2h_1d_pct: null, c2h_1d_dollar: null,
@@ -1973,6 +1988,9 @@ function _classifyRegime(allBars, refMs) {
   // NOTE: this flag is applied at the RETURN below, never by mutating atr14d/c2hL* here --
   // the *Pct vars are already derived above, so mutating would null the dollar leg and leave
   // the percent leg populated, and would also change dir10/dir60 which read atr14dPct.
+  var volMean5 = _meanN(allBars, 5, 'v');
+  var volMean3 = _meanN(allBars, 3, 'v');
+  var volMean1 = _meanN(allBars, 1, 'v');
   var volMed20 = _median20(allBars, 'v');
   var trdMed20 = _median20(allBars, 'n');
   var STALE_DAYS = 6;
@@ -2061,6 +2079,9 @@ function _classifyRegime(allBars, refMs) {
     atr_1d_dollar: (staleListing || atr1d == null) ? null : Math.round(atr1d * 1000) / 1000,
     atr_1d_pct: (staleListing || atr1dPct == null) ? null : Math.round(atr1dPct * 100) / 100,
     vol_med_20d: (staleListing || volMed20 == null) ? null : Math.round(volMed20),
+    vol_mean_5d: (staleListing || volMean5 == null) ? null : Math.round(volMean5),
+    vol_mean_3d: (staleListing || volMean3 == null) ? null : Math.round(volMean3),
+    vol_mean_1d: (staleListing || volMean1 == null) ? null : Math.round(volMean1),
     trades_med_20d: (staleListing || trdMed20 == null) ? null : Math.round(trdMed20),
     c2h_10d_pct: (staleListing || c2h10 == null) ? null : Math.round(c2h10 * 100) / 100,
     c2h_10d_dollar: (staleListing || c2h10Dol == null) ? null : Math.round(c2h10Dol * 1000) / 1000,
@@ -2956,6 +2977,9 @@ async function runScreener() {
       atr_1d_dollar: regimeBlock.atr_1d_dollar,
       atr_1d_pct: regimeBlock.atr_1d_pct,
       vol_med_20d: regimeBlock.vol_med_20d,
+      vol_mean_5d: regimeBlock.vol_mean_5d,
+      vol_mean_3d: regimeBlock.vol_mean_3d,
+      vol_mean_1d: regimeBlock.vol_mean_1d,
       trades_med_20d: regimeBlock.trades_med_20d,
       c2h_10d_pct: regimeBlock.c2h_10d_pct,
       c2h_10d_dollar: regimeBlock.c2h_10d_dollar,

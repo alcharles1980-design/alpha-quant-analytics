@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v627 · Jul 25 2026
+**Status at last update:** v628 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,57 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### v628 — Relative volume: RVol 5d / 3d / prev (Jul 25 2026)
+
+Three sortable columns after the volume medians. **RVol = recent window MEAN ÷ 20-session MEDIAN.**
+
+**The asymmetry is deliberate.** Mean on top because the point is to *catch* a spike — a median of
+3 sessions would discard exactly the day you care about. Median underneath because one earnings or
+rebalance session must not inflate the baseline you measure against.
+
+**Stored as raw window means (`vol_mean_5d/3d/1d`), ratio derived client-side** against
+`vol_med_20d`, following the `Vol Exp` precedent: the mean is independently useful, changing the
+baseline needs no re-backfill, and the stale guard propagates for free (a dead listing has a null
+median → null ratio). Denominator guarded: null or ≤ 0 → null, never Infinity/NaN, which would
+silently unsort the table through the shared `bv-av` comparator (v581 class). All five failure
+inputs simulated before building.
+
+**Window selection was measured, not assumed** (2,400 tickers with full history):
+
+| pair | r | reading |
+|---|---|---|
+| 3d vs 5d | **0.893** | ~80% redundant |
+| 1d vs 5d | 0.479 | genuinely independent |
+| 1d vs 3d | 0.632 | moderately independent |
+| 5d vs 10d | 0.461 | — |
+
+Distribution tightens as the window lengthens (1d p99 3.20 → 10d p99 1.84). 1d and 5d disagree on
+"elevated (>1.2×)" for **15% of tickers** — real independent signal.
+
+> **I recommended 5d + 1d only and was overruled; 3d shipped as requested.** The case against 3d
+> stands and is worth knowing when reading the column: **a 5-session window always spans exactly
+> one of each weekday, so it is day-of-week neutral by construction. A 3-session window is not** —
+> today it is Wed/Thu/Fri, on a Monday scan it is Thu/Fri/Mon. Volume has strong weekday
+> seasonality (the Daily Close To High screener has `Mon>Tue`…`Fri>Mon` columns for that reason),
+> so 3d composition drifts with the scan day. **Read 3d against the 5d column, never against its
+> own history.** This caveat is in the column's tooltip. 10d was dropped: against a 20d median it
+> compresses to p50 1.00 / p90 1.27 — half the window IS the baseline, so it cannot discriminate.
+
+Colour is directional: gold ≥ 1.5× (elevated), blue ≤ 0.7× (drying up), dim between. **The low end
+matters most for grid work** — falling volume means fewer fills regardless of how good the range
+looks.
+
+**Verified:** 44 header cells == 44 body cells; all three desc-monotonic over 500 rows;
+**1,494 displayed ratios vs DB-derived — 0 mismatches**; pipeline `_meanN` matches a manual sum,
+returns null at n-1 bars, and is stale-gated with the rest.
+
+Useful pairing already visible: MXL reads 5d 1.52× → 3d 1.87× → prev 2.57× (participation ramping
+into the last session) while FCEL reads 0.80 → 0.77 → 0.66 (draining). Cross this against `Vol Exp`:
+volume up **with** Vol Exp ≈ 1 is churn without direction — the ideal grid condition; volume up
+**with** Vol Exp rising is a breakout forming.
+
+---
 
 ### v627 — Vol / Trades 20d median + CRITICAL stale-guard fix (Jul 25 2026)
 

@@ -22552,7 +22552,8 @@ function ViolentChopScreenerPage(p){
             c5:row.c2h5!=null?+row.c2h5:null,     c5d:row.c2h5_dol!=null?+row.c2h5_dol:null,
             c3:row.c2h3!=null?+row.c2h3:null,     c3d:row.c2h3_dol!=null?+row.c2h3_dol:null,
             c1:row.c2h1!=null?+row.c2h1:null,     c1d:row.c2h1_dol!=null?+row.c2h1_dol:null,
-            vm:row.volmed!=null?+row.volmed:null, tm:row.trdmed!=null?+row.trdmed:null
+            vm:row.volmed!=null?+row.volmed:null, tm:row.trdmed!=null?+row.trdmed:null,
+            v5:row.volm5!=null?+row.volm5:null, v3:row.volm3!=null?+row.volm3:null, v1:row.volm1!=null?+row.volm1:null
           };
       });
       if(batch.length<1000)break;
@@ -22864,6 +22865,17 @@ function ViolentChopScreenerPage(p){
     // index-rebalance day can be 10x normal and would drag a mean badly.
     r.volMed=(a14&&a14.vm!=null)?+a14.vm:null;
     r.trdMed=(a14&&a14.tm!=null)?+a14.tm:null;
+    // v628: relative volume = recent window MEAN / 20d MEDIAN. Mean on top because the point is
+    // to catch a spike (a median would discard it); median underneath so one earnings day doesn't
+    // inflate the baseline. Denominator guarded: null or <=0 -> null, never Infinity/NaN, which
+    // would silently unsort the table via the shared bv-av comparator (v581 class).
+    // NOTE the 3d window is NOT day-of-week neutral (5d always spans one of each weekday), so its
+    // composition shifts with the scan day. Compare 3d against 5d, not against itself over time.
+    var _vb=r.volMed;
+    var _rv=function(m){return (m!=null&&_vb!=null&&_vb>0)?Math.round((m/_vb)*100)/100:null;};
+    r.rvol5=_rv((a14&&a14.v5!=null)?+a14.v5:null);
+    r.rvol3=_rv((a14&&a14.v3!=null)?+a14.v3:null);
+    r.rvol1=_rv((a14&&a14.v1!=null)?+a14.v1:null);
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23199,6 +23211,9 @@ function ViolentChopScreenerPage(p){
             {thATR('C\u2192H prev','c2h1Pct','c2h1Dol')}
             {th('volMed',['Vol',<br key="b"/>,'20d med'])}
             {th('trdMed',['Trades',<br key="b"/>,'20d med'])}
+            {th('rvol5',['RVol',<br key="b"/>,'5d'])}
+            {th('rvol3',['RVol',<br key="b"/>,'3d'])}
+            {th('rvol1',['RVol',<br key="b"/>,'prev'])}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23375,7 +23390,21 @@ function ViolentChopScreenerPage(p){
                   };
                   return [
                     cell('volm',r.volMed,'Median daily share volume over the last 20 sessions'),
-                    cell('trdm',r.trdMed,'Median daily trade count over the last 20 sessions')
+                    cell('trdm',r.trdMed,'Median daily trade count over the last 20 sessions'),
+                    (function(){
+                      // v628: relative volume ladder. Colour is directional, not good/bad.
+                      var rv=function(key,v,tip){
+                        if(v==null)return <td key={key} style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                        var col=v>=1.5?C.gold:(v<=0.7?C.blue:C.txtDim);
+                        return <td key={key} style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:(v>=1.5||v<=0.7)?700:400,color:col}}
+                          title={tip}>{v.toFixed(2)+'\u00D7'}</td>;
+                      };
+                      return [
+                        rv('rv5',r.rvol5,'Mean share volume over the last 5 sessions \u00F7 the 20-session median. Above 1 = participation elevated, below 1 = drying up. A 5-session window always spans one of each weekday, so it is day-of-week neutral.'),
+                        rv('rv3',r.rvol3,'Mean share volume over the last 3 sessions \u00F7 the 20-session median. NOTE: a 3-session window is NOT day-of-week neutral \u2014 its weekday composition shifts with the scan day, so read it against the 5d column rather than against its own history.'),
+                        rv('rv1',r.rvol1,'Previous session\u2019s share volume \u00F7 the 20-session median. The event detector \u2014 news, halt-resume, index add. Noisy alone; read it next to the 5d column.')
+                      ];
+                    })()
                   ];
                 })()
                   ];
