@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v615 · Jul 25 2026
+**Status at last update:** v619 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -559,10 +559,62 @@ using a PAT in `app_config`): `nightly`, `hourly`, `backfill`, `autotune`,
 
 ## 9. Recent work
 
-**Current: v615** (Jul 25 2026) — Fibonacci retracement overlays on Multi View Charts (v609–v613),
-last-price-tag centering (v614), and a Fib-swing anchor fix (v615). Full detail in the block
-immediately below. The v592→v599 session (predictor accuracy box, Most Actives median fix, Volume
-& Trades charts) is summarised further down and in §10.
+**Current: v619** (Jul 25 2026) — sortable 14d ATR column on the Holy Grail screener (v619);
+Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-tag centering (v614),
+and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
+(predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
+down and in §10.
+
+> **⚠ §9 GAP — v616, v617, v618 are undocumented.** They were pushed from a parallel session while
+> v619 was being built, and landed on `main` between the clone and the push. Commit subjects only:
+> `d4d7837 v616` label the 0%/100% Fib lines (drawn but unlabelled); `3b48406 v617` offset swing
+> labels beside range labels to fix 0% overlap when both toggles are on; `fc06585 v618` null-bar
+> guard in swing detection + label de-collision on compressed legs. v619 rebased cleanly onto v618
+> (their edits were confined to the Fib code; all three ATR anchors were untouched), but **nobody
+> has written these up or verified them here** — the Fib block below still describes v615
+> behaviour. Fill this in before trusting that section.
+
+---
+
+### Sortable 14d ATR column — Holy Grail screener (v619, Jul 25 2026)
+
+The `14d ATR` column was a plain non-sortable `<th>`. Making it sortable is a two-line change that
+walks straight into the **v581 ON PACE trap** (§5.1a) if done naively: `atr14` is a **side map keyed
+by ticker** (`atr14[r.ticker]`), while the comparator reads `a[sortKey]` off the **row object**. An
+`onClick` alone would render a header with a working ▼ arrow that sorts by `undefined`.
+
+**Fix — follow the `sector` precedent already in the file** (`rows.forEach(r => r.sector = …)`,
+which carries the comment "so it's sortable + renderable"):
+
+1. Attach `r.atrPct` / `r.atrDol` from the side map onto each row, immediately before `rows.sort`.
+2. Header becomes `{th('atrPct',['14d',<br key="b"/>,'ATR'])}`.
+3. **The cell now renders from `r.atrPct` / `r.atrDol`, not from `atr14[r.ticker]`** — one source,
+   so the value that sorts is provably the value that displays.
+
+**`null` vs `undefined` matters and is not cosmetic.** Missing tickers must be set to explicit
+`null`. The comparator ends `return sortDesc ? bv-av : av-bv`; `bv-null` coerces to `bv-0` (blanks
+sink to the bottom on desc, matching every other numeric column) but `bv-undefined` is **NaN**, and
+a NaN comparator leaves the array in its original order — a header that shows a sort arrow and does
+nothing. Simulated in node before building: with `undefined` the four test rows came back
+`A B C D`, i.e. completely unsorted.
+
+**Verified behaviourally, not structurally** (§5.1a): served the local build and drove it headless —
+desc is monotonic across all 500 rendered rows (WOLF 20.5% → 3.8%), asc monotonic across 492 with
+the 8 blanks floating to the top, arrows flip ▼/▲, and the rendered text (`"20.5% $4.74"`) matches
+the value sorted on. `rows.sort()` runs **before** `rows.slice(0, showCount)`, so the sort covers
+the whole filtered set (~2,500) and not just the visible 500.
+
+**Values were audited at the same time and are correct.** Cross-checked 8 tickers against
+Wilder ATR(14) computed independently from 400 days of Polygon dailies: CBRS −1.8%, MXL +0.6%,
+AXTI +0.1%, WOLF +0.2%, SNDK +1.0%, SMCI +5.2%, CRDO +2.7%, RIOT +1.8%. Residuals are small and
+mixed-sign — consistent with the stored value being written at the 01:30 UTC scan against the prior
+close. A **simple** 14-day mean of TR is the wrong comparison and understates by up to 41% (Wilder
+carries ~27-period memory, so it reads high when recent vol has cooled — that's why WOLF and SMCI
+diverged most). The 12–20% readings are real; it's a chop screener.
+
+Note the top-ATR names in the table (WOLF 20.5%) are **not** the DB maxima (AXTX 70.6%, AAOX 50.2%,
+POEL 49.5%, BEX 48.2%) — those are all `ticker_type='ETF'` leveraged single-stock funds, excluded by
+the page's default stocks-only type filter. Expected, pre-existing.
 
 ---
 

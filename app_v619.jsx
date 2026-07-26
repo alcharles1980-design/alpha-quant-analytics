@@ -22816,7 +22816,17 @@ function ViolentChopScreenerPage(p){
   });
 
   // attach sector (from market_universe_full) so it's sortable + renderable
-  rows.forEach(function(r){r.sector=sectorMap[r.ticker]||null;});
+  // v619: same treatment for 14d ATR. It arrives in the atr14 side map keyed by ticker;
+  // the comparator below reads a[sortKey] off the ROW, so a side-map-only value would
+  // sort as undefined -> NaN and silently scramble the order (the v581 ON PACE bug).
+  // Explicit null (not undefined) for missing tickers: bv-null coerces to bv-0 and sinks
+  // blanks to the bottom on desc, matching every other numeric column; bv-undefined is NaN.
+  rows.forEach(function(r){
+    r.sector=sectorMap[r.ticker]||null;
+    var a14=atr14[r.ticker];
+    r.atrPct=(a14&&a14.pct!=null)?+a14.pct:null;
+    r.atrDol=(a14&&a14.dollar!=null)?+a14.dollar:null;
+  });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
 
@@ -23120,7 +23130,7 @@ function ViolentChopScreenerPage(p){
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>7d<br/>H/L</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>%<br/>52WH</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Tgt<br/>Up%</th>
-            <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>14d<br/>ATR</th>
+            {th('atrPct',['14d',<br key="b"/>,'ATR'])}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23233,11 +23243,12 @@ function ViolentChopScreenerPage(p){
                   return <td style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:col}} title={'Implied upside to Yahoo mean target $'+(+rt.target_mean).toFixed(2)+(rt.num_analysts!=null?' ('+rt.num_analysts+' analysts)':'')+'. Positive = price below target.'}>{(up>=0?'+':'')+up.toFixed(0)+'%'}</td>;
                 })()}
                 {(function(){
-                  var a=atr14[r.ticker];
-                  if(!a||(a.pct==null&&a.dollar==null))return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
-                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}} title="Rolling 14-day Average True Range (volatility) — percent of price over dollar value">
-                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{a.pct!=null?(+a.pct).toFixed(1)+'%':'\u2014'}</div>
-                    <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{a.dollar!=null?'$'+(+a.dollar).toFixed(2):'\u2014'}</div>
+                  // v619: read from the ROW (r.atrPct/r.atrDol), not the atr14 side map, so the
+                  // value that sorts is provably the value that renders — one source, no drift.
+                  if(r.atrPct==null&&r.atrDol==null)return <td style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                  return <td style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}} title="Rolling 14-day Average True Range (Wilder, volatility) — percent of price over dollar value. Sorts by percent.">
+                    <div style={{color:C.txt,fontSize:7,fontWeight:600}}>{r.atrPct!=null?r.atrPct.toFixed(1)+'%':'\u2014'}</div>
+                    <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{r.atrDol!=null?'$'+r.atrDol.toFixed(2):'\u2014'}</div>
                   </td>;
                 })()}
                 <td style={{padding:'4px 3px',textAlign:'center'}}>
