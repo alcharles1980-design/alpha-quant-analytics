@@ -1628,6 +1628,84 @@ strength*. Each leg is scored on a log scale from a floor (AM 200%, OVN 100%) an
 capped, so no single leg can carry the score alone. Sample sizes are small enough
 (n=10–14) that the exact split is a judgment call; revisit once more sessions accumulate.
 
+## 9a. Research: persistence testing (Jul 26 2026)
+
+**Question:** does a metric measured in one period still hold in the next? A metric that fails this
+ranks on noise, however confident the ranking looks. Prior results: volatility r=+0.964, mean
+close→next-high +0.848, oscillation efficiency −0.046, direction −0.041.
+
+### METHOD — always use a positive control
+Both tests below included a control whose answer was already known. Without one, a broken harness
+produces plausible numbers and there is no way to tell. Phase 1's control was volatility
+(reproduced Spearman 0.933 vs the known 0.964 — harness sound). Phase 2's control was the stored
+`composite_score` itself: window B was chosen to be exactly the window the stored scan covers, so a
+correct replication had to reproduce it. It did, **r = 1.00000, median relative error 0.00%**.
+
+### FINDING 1 — the stored chop history is ONE observation, duplicated
+`cached_chop_screener` holds scan_dates 2026-07-24 and 2026-07-25. **Both cover the identical five
+sessions (Jul 20–24) and carry identical scores** — r = 0.99999 across 2,403 tickers, only 121
+differing at all. NVDA is 220.71 in both. A scan that runs when no new session has completed simply
+re-derives the same 5-day window.
+**This is a landmine:** correlating the two stored scan_dates returns r ≈ 1.0 and looks like proof of
+perfect persistence. It is a number correlated with itself. Any future persistence work MUST recompute
+from raw bars, or wait for genuine `metric_history` (§10 item 2). It also means the extra scan burns
+Polygon calls, Actions minutes and DB writes for zero new information.
+
+### FINDING 2 — runs-z (streak alternation) does NOT persist. Do not build the screen.
+Wald–Wolfowitz z on the daily sign sequence, 4,346 liquid tickers, two non-overlapping 134-day windows:
+
+| Metric | Pearson | Spearman |
+|---|---|---|
+| Volatility (control) | 0.451 | **0.933** |
+| Mean abs daily move | 0.865 | 0.946 |
+| **Runs z (alternation)** | **0.071** | **0.060** |
+| Up-day rate | 0.457 | 0.272 |
+
+Same signature as oscillation efficiency. A cross-sectional ranking would surface the ~5% of names
+that clear |z|>1.96 by chance and rank on nothing. **The v635 streak section stays descriptive; it does
+not become a screen.** (Pearson≪Spearman on volatility is outlier distortion — prefer Spearman here.)
+
+### FINDING 3 — Chop Score DOES persist. I predicted otherwise and was wrong.
+Recomputed from raw 10s bars, two non-overlapping weeks (Jul 13–17 vs Jul 20–24), 220 tickers
+stratified across all ten score deciles:
+
+| Component | Pearson | Spearman |
+|---|---|---|
+| **Chop Score composite** | **0.955** | **0.949** |
+| pathPct (total intraday path) | 0.955 | 0.955 |
+| avg swing size | 0.963 | 0.975 |
+| day range % (plain volatility) | 0.930 | 0.921 |
+| coef of variation (erraticness) | 0.850 | 0.834 |
+
+Chop Score is a stable property of a name, not noise. It is safe to rank on. Every component persists,
+including the erraticness term.
+
+### FINDING 4 — but the erraticness multiplier is nearly inert
+Formula is `pathPct × (1 + sdPct/avgPct)`, intended to "reward RVI-style ERRATIC violence over
+metronomic chop." Within the same window:
+
+| Comparison | Pearson | Spearman |
+|---|---|---|
+| Chop vs **pathPct alone** | 0.987 | **0.996** |
+| Chop vs day-range % | 0.770 | 0.848 |
+| Chop vs coef of variation | **−0.457** | **−0.321** |
+
+At Spearman 0.996 against pathPct, **dropping the multiplier entirely would produce a near-identical
+ranking.** Worse, the correlation with the erraticness term is *negative*: the highest-path names tend
+to be more metronomic, not more erratic. The multiplier is not achieving its design intent. Either
+weight it far more strongly, or drop it and rank on pathPct honestly. Note also Chop vs day-range
+Spearman 0.848 — related to plain volatility but genuinely distinct, so it is not merely repackaged ATR.
+
+### CAVEATS on Finding 3/4
+- **Consecutive weeks is the most favourable horizon.** Persistence at 1 month / 3 months is untested
+  and will be lower. The horizon that matters is the redeployment frequency.
+- **The sample was stratified across deciles**, which widens the x-spread and inflates correlation
+  relative to a random draw. The direction of the result is safe; treat 0.95 as an upper bound.
+- Polygon **10-second aggregates truncate near ~7,500 bars despite `limit=50000`** and set `next_url`.
+  Pagination is mandatory — another instance of §5.1b on an endpoint not previously documented for it.
+
+---
+
 ## 10. Known open items
 
 ### Resolved Jul 24 2026
