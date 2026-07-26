@@ -22542,7 +22542,7 @@ function ViolentChopScreenerPage(p){
         // v620: the RPC now also returns the 7d/3d/1d Wilder rungs. Keep the same
         // "any field present" admission test as 14d so a ticker with only some rungs
         // still lands in the map rather than being dropped wholesale.
-        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null||row.c2h10!=null||row.c2h5!=null||row.c2h3!=null||row.c2h1!=null)
+        if(row.atr_pct!=null||row.atr_dol!=null||row.atr7_pct!=null||row.atr3_pct!=null||row.atr1_pct!=null||row.c2h10!=null||row.c2h5!=null||row.c2h3!=null||row.c2h1!=null||row.volmed!=null||row.trdmed!=null)
           atrMap[row.ticker]={
             pct:row.atr_pct!=null?+row.atr_pct:null,   dollar:row.atr_dol!=null?+row.atr_dol:null,
             p7:row.atr7_pct!=null?+row.atr7_pct:null,  d7:row.atr7_dol!=null?+row.atr7_dol:null,
@@ -22551,7 +22551,8 @@ function ViolentChopScreenerPage(p){
             c2h:row.c2h10!=null?+row.c2h10:null,  c2hd:row.c2h10_dol!=null?+row.c2h10_dol:null,
             c5:row.c2h5!=null?+row.c2h5:null,     c5d:row.c2h5_dol!=null?+row.c2h5_dol:null,
             c3:row.c2h3!=null?+row.c2h3:null,     c3d:row.c2h3_dol!=null?+row.c2h3_dol:null,
-            c1:row.c2h1!=null?+row.c2h1:null,     c1d:row.c2h1_dol!=null?+row.c2h1_dol:null
+            c1:row.c2h1!=null?+row.c2h1:null,     c1d:row.c2h1_dol!=null?+row.c2h1_dol:null,
+            vm:row.volmed!=null?+row.volmed:null, tm:row.trdmed!=null?+row.trdmed:null
           };
       });
       if(batch.length<1000)break;
@@ -22859,6 +22860,10 @@ function ViolentChopScreenerPage(p){
     r.c2h5Pct=(a14&&a14.c5!=null)?+a14.c5:null;   r.c2h5Dol=(a14&&a14.c5d!=null)?+a14.c5d:null;
     r.c2h3Pct=(a14&&a14.c3!=null)?+a14.c3:null;   r.c2h3Dol=(a14&&a14.c3d!=null)?+a14.c3d:null;
     r.c2h1Pct=(a14&&a14.c1!=null)?+a14.c1:null;   r.c2h1Dol=(a14&&a14.c1d!=null)?+a14.c1d:null;
+    // v627: 20-day MEDIAN share volume and trade count. Median, not mean: one earnings or
+    // index-rebalance day can be 10x normal and would drag a mean badly.
+    r.volMed=(a14&&a14.vm!=null)?+a14.vm:null;
+    r.trdMed=(a14&&a14.tm!=null)?+a14.tm:null;
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23192,6 +23197,8 @@ function ViolentChopScreenerPage(p){
             {thATR('C\u2192H 5d','c2h5Pct','c2h5Dol')}
             {thATR('C\u2192H 3d','c2h3Pct','c2h3Dol')}
             {thATR('C\u2192H prev','c2h1Pct','c2h1Dol')}
+            {th('volMed',['Vol',<br key="b"/>,'20d med'])}
+            {th('trdMed',['Trades',<br key="b"/>,'20d med'])}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23350,7 +23357,27 @@ function ViolentChopScreenerPage(p){
                         cc('c2h3', r.c2h3Pct,r.c2h3Dol,'Average close-to-next-day-high over the last 3 sessions'),
                         cc('c2h1', r.c2h1Pct,r.c2h1Dol,'Close-to-next-day-high for the single most recent session (not an average)')
                       ];
-                    })()
+                    })(),
+                    (function(){
+                  // v627: 20-day MEDIAN share volume and trade count, compact-formatted.
+                  // Median not mean — one earnings or rebalance day can be 10x normal.
+                  var compact=function(x){
+                    var a=Math.abs(x);
+                    if(a>=1e9)return (x/1e9).toFixed(2)+'B';
+                    if(a>=1e6)return (x/1e6).toFixed(1)+'M';
+                    if(a>=1e3)return (x/1e3).toFixed(0)+'K';
+                    return String(Math.round(x));
+                  };
+                  var cell=function(key,v,tip){
+                    if(v==null)return <td key={key} style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                    return <td key={key} style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:C.txt}}
+                      title={tip+': '+Math.round(v).toLocaleString()}>{compact(v)}</td>;
+                  };
+                  return [
+                    cell('volm',r.volMed,'Median daily share volume over the last 20 sessions'),
+                    cell('trdm',r.trdMed,'Median daily trade count over the last 20 sessions')
+                  ];
+                })()
                   ];
                 })()}
                 <td style={{padding:'4px 3px',textAlign:'center'}}>

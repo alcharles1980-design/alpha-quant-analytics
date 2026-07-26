@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v626 · Jul 25 2026
+**Status at last update:** v627 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,52 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### v627 — Vol / Trades 20d median + CRITICAL stale-guard fix (Jul 25 2026)
+
+Two new sortable columns after the C→H block: **`Vol 20d med`** (median daily share volume) and
+**`Trades 20d med`** (median daily trade count), both over the last 20 sessions, compact-formatted
+(128.4M / 2.4M) with the exact figure in the tooltip. New DB columns `vol_med_20d`,
+`trades_med_20d`; RPC returns them as `volmed` / `trdmed`; computed in `pipeline.js`.
+
+**MEDIAN, not mean** — one earnings or index-rebalance session runs 10x normal volume and would
+drag a mean badly. Same reasoning as the Stage 9 dollar-bar threshold calibration.
+
+> ### CRITICAL — the v626 stale-listing guard was DEAD CODE in production
+> v626 read `allBars[last].t`. **Production bars have no `t` field** — `pipeline.js:2122` builds
+> them as `{o, h, l, c, v, date}` with `date` a `YYYY-MM-DD` string. So `lastBarMs` was always
+> `null`, `staleListing` was always `false`, and the guard never fired.
+>
+> **It passed its own test because the test harness synthesised a `t` field that production does
+> not have.** I verified against a fabricated input shape instead of the real one — the §5.1a trap
+> in its purest form, and I walked into it the same night I documented it. Proven after the fact:
+> 47-day-stale production-shaped bars returned `atr_14d_pct = 16.48` instead of null.
+>
+> **Fixed** to read `t` OR `date`, and re-verified against the REAL bar shape:
+> `{o,h,l,c,v,n,date}` 47 days stale → all 16 ladder fields **and** both medians null; legacy
+> `{t}` shape still guarded; fresh bars unaffected.
+>
+> **RULE: build test fixtures from the production object, never from what you assume it contains.**
+> Read the construction site (here `tickerData[tk].push({...})`) and copy its exact key set.
+
+**`n` (trade count) had to be added to the bar push** — it was being discarded at line 2122, so no
+downstream code could ever have computed a trade-count metric.
+
+Both medians are gated by `staleListing` alongside the ladders, so a dead listing shows blanks
+across the whole right-hand side rather than a plausible-looking volume.
+
+**Verified:** 41 header cells == 41 body cells; both columns desc-monotonic over 500 rows;
+**996 displayed values vs DB — 0 mismatches** (compared against the full-precision tooltip, not
+the compact label); 2404/2500 populated, **0 unpaired**, 0 non-positive, 0 rows with a volume but
+no ATR. Median helper checked against a manual sort (1405 == 1405) and returns null at 19 bars.
+
+> **A JSX splice error worth remembering.** The C→H block is an **element of the enclosing
+> `return [...]` array**, not a standalone `{...}` container. My first splice closed the array and
+> the container early (`})()}` + `{(function(){`) and the build failed with
+> `Unexpected token, expected ","`. Before inserting next to an IIFE in this file, check whether
+> it sits in a JSX child list or an array literal — they look identical and splice differently.
+
+---
 
 ### Full data-integrity hunt — findings + `ladder_integrity_check` (Jul 25 2026)
 

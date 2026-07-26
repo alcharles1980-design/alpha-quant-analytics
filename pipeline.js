@@ -1835,6 +1835,21 @@ function _classifyDirection(retPct, atr14Pct, lookback) {
   return 'Sideways';
 }
 
+function _median20(bars, key) {
+  // Median of the last 20 bars' `key`. MEDIAN not mean: a single earnings or index-rebalance day
+  // can be 10x normal volume and would drag a mean badly. Same reasoning as the Stage 9 dollar-bar
+  // threshold calibration. Needs 20 bars; even count -> mean of the two middle values.
+  if (!bars || bars.length < 20) return null;
+  var v = [];
+  for (var i = bars.length - 20; i < bars.length; i++) {
+    var x = bars[i][key];
+    if (typeof x !== 'number' || !isFinite(x)) return null;
+    v.push(x);
+  }
+  v.sort(function (a, b) { return a - b; });
+  return (v[9] + v[10]) / 2;
+}
+
 function _c2hAvg(bars, n) {
   // Mean close-to-next-day-high over the last `n` transitions, in percent AND dollars.
   // n = 1 is simply the most recent transition, not an average.
@@ -1877,6 +1892,7 @@ function _classifyRegime(allBars, refMs) {
       atr_3d_dollar: null, atr_3d_pct: null,
       atr_1d_dollar: null, atr_1d_pct: null,
       c2h_10d_pct: null, c2h_10d_dollar: null,
+      vol_med_20d: null, trades_med_20d: null,
       c2h_5d_pct: null, c2h_5d_dollar: null,
       c2h_3d_pct: null, c2h_3d_dollar: null,
       c2h_1d_pct: null, c2h_1d_dollar: null,
@@ -1957,8 +1973,16 @@ function _classifyRegime(allBars, refMs) {
   // NOTE: this flag is applied at the RETURN below, never by mutating atr14d/c2hL* here --
   // the *Pct vars are already derived above, so mutating would null the dollar leg and leave
   // the percent leg populated, and would also change dir10/dir60 which read atr14dPct.
+  var volMed20 = _median20(allBars, 'v');
+  var trdMed20 = _median20(allBars, 'n');
   var STALE_DAYS = 6;
-  var lastBarMs = (allBars[allBars.length - 1] && allBars[allBars.length - 1].t) || null;
+  // v627 CRITICAL FIX: production bars are {o,h,l,c,v,n,date} -- there is NO `t` field. v626 read
+  // .t, got undefined, and the guard was silently inert in production while passing a node test
+  // that fed a synthesised `t`. Accept both shapes; verify against the REAL bar object.
+  var _lb = allBars[allBars.length - 1];
+  var lastBarMs = !_lb ? null
+    : (typeof _lb.t === 'number' ? _lb.t
+      : (_lb.date ? Date.parse(String(_lb.date).slice(0, 10) + 'T00:00:00Z') : null));
   var staleListing = (refMs != null && lastBarMs != null &&
                       (refMs - lastBarMs) > STALE_DAYS * 86400000);
   var c2h10 = c2hL10 ? c2hL10.pct : null, c2h10Dol = c2hL10 ? c2hL10.dollar : null;
@@ -2036,6 +2060,8 @@ function _classifyRegime(allBars, refMs) {
     atr_3d_pct: (staleListing || atr3dPct == null) ? null : Math.round(atr3dPct * 100) / 100,
     atr_1d_dollar: (staleListing || atr1d == null) ? null : Math.round(atr1d * 1000) / 1000,
     atr_1d_pct: (staleListing || atr1dPct == null) ? null : Math.round(atr1dPct * 100) / 100,
+    vol_med_20d: (staleListing || volMed20 == null) ? null : Math.round(volMed20),
+    trades_med_20d: (staleListing || trdMed20 == null) ? null : Math.round(trdMed20),
     c2h_10d_pct: (staleListing || c2h10 == null) ? null : Math.round(c2h10 * 100) / 100,
     c2h_10d_dollar: (staleListing || c2h10Dol == null) ? null : Math.round(c2h10Dol * 1000) / 1000,
     c2h_5d_pct: (staleListing || !c2hL5) ? null : Math.round(c2hL5.pct * 100) / 100,
@@ -2119,7 +2145,7 @@ async function runScreener() {
         var tk = bar.T;
         if (!tk || tk.indexOf('.') >= 0 || tk.indexOf('/') >= 0 || tk.length > 5) continue; // skip warrants, classes, etc
         if (!tickerData[tk]) tickerData[tk] = [];
-        tickerData[tk].push({ o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v || 0, date: date });
+        tickerData[tk].push({ o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v || 0, n: bar.n || 0, date: date });
       }
     } catch (e) { console.log('  Grouped daily ' + date + ' error: ' + e.message); }
     await sleep(250); // rate limit
@@ -2929,6 +2955,8 @@ async function runScreener() {
       atr_3d_pct: regimeBlock.atr_3d_pct,
       atr_1d_dollar: regimeBlock.atr_1d_dollar,
       atr_1d_pct: regimeBlock.atr_1d_pct,
+      vol_med_20d: regimeBlock.vol_med_20d,
+      trades_med_20d: regimeBlock.trades_med_20d,
       c2h_10d_pct: regimeBlock.c2h_10d_pct,
       c2h_10d_dollar: regimeBlock.c2h_10d_dollar,
       c2h_5d_pct: regimeBlock.c2h_5d_pct,   c2h_5d_dollar: regimeBlock.c2h_5d_dollar,
