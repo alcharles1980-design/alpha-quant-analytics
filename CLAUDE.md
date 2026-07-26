@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v629 · Jul 26 2026
+**Status at last update:** v630 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,24 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### v630 — regroup volume / trades columns (Jul 26 2026)
+
+Layout only, no data change. `Trades 20d med` moved from immediately after `Vol 20d med` down to
+the head of the trades block, so each metric now reads baseline-then-ratios:
+
+`Vol 20d med | RVol 5d | RVol 3d | RVol prev  ‖  Trades 20d med | RTrd 5d | RTrd 3d | RTrd prev`
+
+Both the header and the cell had to move together — the header lives in the `<thead>` list, the
+cell inside the ratio block's return array. Moving one without the other silently shifts every
+value in between under the wrong heading, which no build or parity check would catch.
+
+**Verified by pixel position, not header text:** 47 header cells == 47 body cells; volume block
+contiguous; trades block contiguous; the two blocks adjacent; and each value re-checked against the
+DB after the move (**0 misplacements**), including a `volume < trades` assertion that would fire
+immediately if the two columns had been swapped.
+
+---
 
 ### Post-v629 integrity sweep — clean, plus a mistake I made DURING the sweep (Jul 26 2026)
 

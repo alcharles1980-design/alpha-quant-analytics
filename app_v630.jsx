@@ -23219,10 +23219,10 @@ function ViolentChopScreenerPage(p){
             {thATR('C\u2192H 3d','c2h3Pct','c2h3Dol')}
             {thATR('C\u2192H prev','c2h1Pct','c2h1Dol')}
             {th('volMed',['Vol',<br key="b"/>,'20d med'])}
-            {th('trdMed',['Trades',<br key="b"/>,'20d med'])}
             {th('rvol5',['RVol',<br key="b"/>,'5d'])}
             {th('rvol3',['RVol',<br key="b"/>,'3d'])}
             {th('rvol1',['RVol',<br key="b"/>,'prev'])}
+            {th('trdMed',['Trades',<br key="b"/>,'20d med'])}
             {th('rtrd5',['RTrd',<br key="b"/>,'5d'])}
             {th('rtrd3',['RTrd',<br key="b"/>,'3d'])}
             {th('rtrd1',['RTrd',<br key="b"/>,'prev'])}
@@ -23402,7 +23402,6 @@ function ViolentChopScreenerPage(p){
                   };
                   return [
                     cell('volm',r.volMed,'Median daily share volume over the last 20 sessions'),
-                    cell('trdm',r.trdMed,'Median daily trade count over the last 20 sessions'),
                     (function(){
                       // v628: relative volume ladder. Colour is directional, not good/bad.
                       var rv=function(key,v,tip){
@@ -23415,6 +23414,7 @@ function ViolentChopScreenerPage(p){
                         rv('rv5',r.rvol5,'Mean share volume over the last 5 sessions \u00F7 the 20-session median. Above 1 = participation elevated, below 1 = drying up. A 5-session window always spans one of each weekday, so it is day-of-week neutral.'),
                         rv('rv3',r.rvol3,'Mean share volume over the last 3 sessions \u00F7 the 20-session median. NOTE: a 3-session window is NOT day-of-week neutral \u2014 its weekday composition shifts with the scan day, so read it against the 5d column rather than against its own history.'),
                         rv('rv1',r.rvol1,'Previous session\u2019s share volume \u00F7 the 20-session median. The event detector \u2014 news, halt-resume, index add. Noisy alone; read it next to the 5d column.'),
+                        cell('trdm',r.trdMed,'Median daily trade count over the last 20 sessions'),
                         rv('rt5',r.rtrd5,'Mean TRADE COUNT over the last 5 sessions \u00F7 the 20-session median. Compare against RVol 5d: volume up with trades flat = larger average trade size (block/institutional); trades up with volume flat = fragmentation.'),
                         rv('rt3',r.rtrd3,'Mean trade count over the last 3 sessions \u00F7 the 20-session median. Same day-of-week caveat as RVol 3d \u2014 read it against the 5d column, not its own history.'),
                         rv('rt1',r.rtrd1,'Previous session\u2019s trade count \u00F7 the 20-session median.')
