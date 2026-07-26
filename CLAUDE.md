@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v635 · Jul 26 2026
+**Status at last update:** v636 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,13 +602,49 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v635** (Jul 26 2026) — **Daily Returns & Red / Green Day Counts** section on MV Charts
-(v634) plus a fixed-12-month **consecutive-day streak distribution** inside it (v635);
-TODAY/YESTERDAY select by **trading day** rather than calendar day (v632, which resolved the long-open
-"VWAP draws nothing" report — it was never a VWAP fault) and now print the real session date in the
-heading (v633), plus a DST fix to the build banner. Preceded by the Holy Grail metric-definition docs
-(v631), volume/trades regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians plus the
-stale-guard fix (v627), and the ATR ladder (v619–v620). Full detail below.
+**Current: v636** (Jul 26 2026) — Fib swing now scales its leg to the visible range (v636, closes the
+last MV Charts open item); **Daily Returns & Red / Green Day Counts** (v634) with a fixed-12-month
+**consecutive-day streak distribution** (v635); TODAY/YESTERDAY select by **trading day** not calendar
+day (v632, which resolved the long-open "VWAP draws nothing" report) and print the real session date
+(v633), plus a build-banner DST fix. Preceded by the Holy Grail metric docs (v631), volume/trades
+regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades medians + stale-guard fix (v627), ATR ladder
+(v619–v620). Full detail below. **See also §9a for the persistence-test results.**
+
+### v636 — Fib swing scales to visible range (Jul 26 2026)
+
+**The §9 write-up named two problems here; only one was real.** "The densest panel renders zero swing
+labels" is **not reproducible** — on live, all 8 panels draw 7 cyan lines, a caption and 3–7 labels.
+It also cannot happen by construction: the MINGAP pre-pass **force-keeps the 0% and 100% anchors**
+(`if(!ok && (pct===0||pct===1)) ok=true`), so thinning can never reach zero. And `detectSwing` does
+**not** fail at N=4 on monthly bars — it returns a swing on all four long panels. Both stated
+hypotheses were wrong. Another artifact of the same unreliable probing that produced the VWAP
+misdiagnosis; see §5.7a.
+
+**The real problem, and it is not where the write-up said.** Leg as a fraction of visible range, NVDA:
+3Y **8%** (31px on a 380px panel) · 10Y 20% (77px) · 5Y 32% · 1Y 33%. **The worst panel is 3Y, not
+5Y/10Y.** Compression is DATA-dependent, not timeframe-dependent, so the hardcoded "suppress on
+5Y/10Y" idea would have hidden two readable panels and kept the sliver.
+
+**Fix:** `detectSwingScaled(bars,N0,visRange)` walks up the pivot-sensitivity ladder until the leg
+clears `MIN_LEG_FRAC = 0.22` of visible range, returning the FIRST qualifying swing (anchor stays as
+recent as possible), else the largest leg found. **Escalation is not monotonic** — NVDA 5Y measured
+32% (N4) → 21% (N12) → 56% (N20) — so it tracks best-so-far rather than assuming later N is better.
+Stops early when `detectSwing` returns null (higher N cannot find more pivots). Capped at
+`min(60, bars/4)`.
+
+Verified in node across 4 tickers × 4 panels plus failure inputs (null/empty/visRange 0/NaN/too-few →
+null, no throw). **Panels already above threshold are unchanged** — NVDA 5Y 32%→32%, 1Y 33%→33%, SOXL
+89%/63%/66% all untouched. Fixed: NVDA 3Y 8%→24%, NVDA 10Y 20%→46%, KO 10Y 18%→46%, TLT 5Y 7%→25%.
+Confirmed on live: 10Y labels 5→7, 3Y labels 3→5 with the anchor moving from a $15.84 wiggle to a
+$46.74 major leg; 5Y/1Y/YTD/3M/7D unchanged at 7.
+
+*Known behaviour:* a ticker whose most significant swing IS the whole visible move (TLT 10Y) resolves
+to 100% of range, so the swing set coincides with the range set there. Correct, not a fault — they are
+independent toggles.
+
+Also folded in: the v633 heading `textContent` spacing nit (`TODAY· Fri` → `TODAY · Fri`).
+
+---
 
 ### v635 — consecutive-day streak distribution, fixed 12-month window (Jul 26 2026)
 
