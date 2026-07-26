@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v620 · Jul 25 2026
+**Status at last update:** v621 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -557,6 +557,37 @@ using a PAT in `app_config`): `nightly`, `hourly`, `backfill`, `autotune`,
 
 ---
 
+### 8a. Alerting System (undocumented until v621 — currently DORMANT)
+
+An entire subsystem existed with **zero mentions** in this file. Recorded now so it isn't
+rediscovered from scratch again.
+
+**Shape.** Menu page `alerting` ("Alerting System"). Three tables — `alert_schedules`
+(`send_at_et`, `days_of_week`, `session_type`, `top_n`, `min_score`, `active`, `last_run`),
+`alert_recipients`, `alert_log`. Eight RPCs: `alert_schedule_upsert`, `alert_recipient_upsert`,
+`alert_recipient_delete`, `alert_recipient_set_optin`, `alert_preview`, `alert_build_body`,
+`alert_send(p_schedule_id, p_session, p_top_n, p_dry_run)`, `alert_dispatch_due()`. Driven by
+pg_cron **job 40, `select public.alert_dispatch_due();` every 5 minutes.**
+
+**It sends predictor shortlists** (session + top_n + min_score), not integrity results — so §10's
+"integrity results have no notification path" remains accurate.
+
+**It is completely dormant:** 0 schedules, 0 recipients, 0 log rows. Job 40 has therefore been a
+no-op every 5 minutes since it was added. Harmless, but it is a scheduled job doing nothing, and on
+this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be deliberate.
+
+> **FINDING, not fixed — duplicate RPC overloads.** `alert_recipient_upsert` and
+> `alert_recipient_delete` each exist in TWO signatures, with and without `p_channel`:
+> `(p_phone,p_label,p_active)` vs `(p_phone,p_label,p_active,p_channel)`, and `(p_phone)` vs
+> `(p_phone,p_channel)`. The app passes `p_channel` in both cases so it binds the 4-arg/2-arg
+> versions and nothing is broken today. But PostgREST resolves overloads from the JSON body keys
+> and will refuse an ambiguous call with "could not choose the best candidate function", so the
+> stale 3-arg/1-arg leftovers are a live trap for the next caller written without `p_channel`.
+> This is precisely what §4's "check for duplicate Supabase methods" step is for. Left in place
+> pending a decision — dropping them is a one-liner once someone confirms nothing else calls them.
+
+---
+
 ## 9. Recent work
 
 **Current: v620** (Jul 25 2026) — ATR ladder (14d/7d/3d/prev-day) on the Holy Grail screener
@@ -566,14 +597,75 @@ and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
 
-> **⚠ §9 GAP — v616, v617, v618 are undocumented.** They were pushed from a parallel session while
-> v619 was being built, and landed on `main` between the clone and the push. Commit subjects only:
-> `d4d7837 v616` label the 0%/100% Fib lines (drawn but unlabelled); `3b48406 v617` offset swing
-> labels beside range labels to fix 0% overlap when both toggles are on; `fc06585 v618` null-bar
-> guard in swing detection + label de-collision on compressed legs. v619 rebased cleanly onto v618
-> (their edits were confined to the Fib code; all three ATR anchors were untouched), but **nobody
-> has written these up or verified them here** — the Fib block below still describes v615
-> behaviour. Fill this in before trusting that section.
+### v621 — housekeeping: freshness weekday guard, tap targets, stray file (Jul 25 2026)
+
+**1. Integrity freshness check FAILed every weekend (REAL, fixed).** `data_integrity_check` decided
+whether a session was live purely from the ET clock hour — no day-of-week test anywhere. The
+after-market scanner is `*/3 20-23 * * 1-5` (weekdays), so on a Saturday at 4–8pm ET the check saw
+the clock inside the window, called the session LIVE, measured 1,322 minutes since Friday's correct
+8:05pm close, and logged FAIL. Same defect on premarket. It fired every Sat and Sun — **the exact
+failure §5 warns about: an alarm inside normal behaviour gets tuned out, and the real one goes with
+it.**
+
+Fixed by adding a `dow` guard to all three legs. Overnight needed care: the session for trading day
+D runs D−1 20:00 → D 04:00 ET, so it is live on Sun–Thu evenings (`dow 0-4`) and Mon–Fri early
+hours (`dow 1-5`) — Friday 20:00 onward is closed until Sunday 20:00.
+
+Applied by reading `pg_get_functiondef`, doing three text substitutions, and `execute`-ing the
+result, with `raise exception` if any substitution failed to match — so a silent no-op was
+impossible and I never had to retype the ~6,400 characters of the function I hadn't read.
+
+Verified both directions, because a guard that only silences is not a fix: the live check now reads
+OK / "closed — expected" on all three legs, and simulating the new expressions across a full week
+gives Sun 4 overnight-live hours, Mon–Thu 8/6/4, Fri 4/6/4, **Sat 0/0/0**. That is 40 overnight
+live-hours/week = Sun 20:00 → Fri 04:00 ET. The `mins > 20 → FAIL` path is untouched, so the alarm
+still fires on a genuine weekday stall.
+
+> **RESIDUAL, not fixed:** market holidays still false-FAIL (~9 days/year vs the 104 weekend days
+> now covered). Fixing it needs a holiday calendar, which this DB does not have. Deliberately left
+> rather than half-solved.
+
+**2. ATR ladder tap targets (v620 regression, fixed).** The `%`/`$` sub-labels were `fontSize: 7`
+with `padding: '0 2px'` — about a 6×8px hit area. Usable with a mouse, not on a phone. The entire
+`<th>` is now a tap target that sorts by % (the common case) and the sub-labels are `inline-block`
+with real padding. Measured after the change: **th = 35×57px, subs = 15×15px** (was ~6×8).
+Both paths verified: whole-header click → `7d ATR %▼·$` with % desc monotonic; `$` sub-label click
+→ `7d ATR %·$▼` with $ desc monotonic.
+
+**3. The stray `:` file is finally gone.** §12 had claimed it was already removed while it stayed
+tracked. Its name literally contains newlines, so `rm -- ':'` matched nothing; removal needed
+`find . -maxdepth 1 -name ':*' -print0 | xargs -0 git rm --cached` plus the same for the disk copy.
+
+---
+
+### Fib overlay refinements (v616–v618, Jul 25 2026) — written up from the diffs
+
+These three shipped from a parallel session and sat undocumented for several versions. Reconstructed
+from the commits, not from memory — nobody has re-verified the rendered output, so treat the
+behavioural claims as read-from-code rather than observed.
+
+- **v616** (`d4d7837`) — **label the 0% and 100% lines.** They were drawn but deliberately left
+  unlabelled (v612/v613 reasoning: the anchor caption plus the high/low markers covered them). That
+  was wrong for the SWING set: its 0%/100% prices are the *detected pivot* hi/lo, which differ from
+  the chart's visible high/low markers, so those two prices appeared on no labelled line at all.
+  `isEndpoint`/`labelled` gone; every level gets text.
+- **v617** (`3b48406`) — **`drawSet` gains an `xOff` parameter.** When both toggles are on, range
+  and swing can share an anchor price and their labels collided at the same y. Swing labels now
+  shift right by `swXOff = bothOn ? 96 : 0` px (applied to both the level pills and the caption).
+- **v618** (`fc06585`) — two fixes. (a) **Null-bar guard in `detectSwing`**: a bar with null/NaN
+  h/l would pass the pivot comparisons (`null <= x` is false, so it never fails a test) and could be
+  selected as an anchor carrying a null price. Now skipped, both for the candidate bar and its
+  neighbours. (b) **Label de-collision on compressed legs**: a small leg on a long chart (a $16
+  swing on a 10Y chart spanning $200) crushed all 7 labels into ~25px. A pre-pass walks levels
+  top-to-bottom and keeps a text label only if it clears the last kept one by `MINGAP = 12`px;
+  0%/100% are always kept, then key levels (38.2/50/61.8), then 23.6/78.6 are dropped first. Lines
+  still draw for every level — only the text is thinned.
+
+Note (b) partially re-introduces the label suppression that v613 removed, but on a different
+criterion: v613 dropped labels by *timeframe class*, v618 drops them only on *measured pixel
+collision*. That is the right axis — but it does mean a level can again appear as a bare line, the
+exact symptom v613 was fixing. If "some prices aren't shown" is reported again on a long chart with
+a small swing leg, this is the cause and it is by design.
 
 ---
 
@@ -1047,7 +1139,10 @@ left as is** — do not re-investigate without a specific reason.
 - README pinned at v261.
 
 *(Resolved since last edit: the stale "pre/after-market not wired up" comment was
-fixed in v558; the stray `:` file is gone.)*
+fixed in v558. The stray `:` file was NOT actually gone — this line claimed it was while the
+file stayed tracked for many versions. Really removed in v621; its name literally contained
+newlines, so `rm -- ':'` silently matched nothing and only `find -maxdepth 1 -name ':*' -print0 |
+xargs -0` worked.)*
 
 ---
 

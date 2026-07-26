@@ -22825,7 +22825,7 @@ function ViolentChopScreenerPage(p){
   });
 
   // attach sector (from market_universe_full) so it's sortable + renderable
-  // v619: same treatment for 14d ATR. It arrives in the atr14 side map keyed by ticker;
+  // v619/v620: same treatment for the whole ATR ladder. It arrives in the atr14 side map keyed by ticker;
   // the comparator below reads a[sortKey] off the ROW, so a side-map-only value would
   // sort as undefined -> NaN and silently scramble the order (the v581 ON PACE bug).
   // Explicit null (not undefined) for missing tickers: bv-null coerces to bv-0 and sinks
@@ -22850,12 +22850,21 @@ function ViolentChopScreenerPage(p){
   // v620: ATR ladder header with TWO independent sort targets in one column — the cell shows
   // % over $, so the header offers % and $ as separate clickable sub-labels. Whichever is
   // active gets the gold/bold treatment and the arrow, matching thS() elsewhere.
+  // v621: the sub-labels were fontSize 7 with 2px padding — roughly a 6x8px hit area, fine with
+  // a mouse but unusable on a phone. Now the ENTIRE <th> is a tap target that sorts by % (the
+  // common case), and the sub-labels are inline-block with real padding so $ is reachable too.
+  // The sub-labels stopPropagation so a tap on one doesn't also fire the th handler.
   var thATR=function(label,kPct,kDol){
+    var act=(sortKey===kPct||sortKey===kDol);
     var sub=function(k,txt){return <span onClick={function(e){e.stopPropagation();doSort(k);}}
-      style={{cursor:'pointer',padding:'0 2px',color:sortKey===k?C.gold:C.txtDim,fontWeight:sortKey===k?700:400}}>
+      style={{cursor:'pointer',display:'inline-block',padding:'2px 5px',borderRadius:3,fontSize:8,
+        color:sortKey===k?C.gold:C.txtDim,fontWeight:sortKey===k?700:400,
+        background:sortKey===k?C.gold+'22':'transparent'}}>
       {txt}{sortKey===k?(sortDesc?'\u25BC':'\u25B2'):''}</span>;};
-    return <th style={{padding:'4px 3px',textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom',
-      color:(sortKey===kPct||sortKey===kDol)?C.gold:C.txtDim}}>
+    return <th onClick={function(){doSort(kPct);}}
+      title={label+' \u2014 tap the header (or %) to sort by percent, $ to sort by dollar value'}
+      style={{padding:'4px 3px',textAlign:'center',fontSize:7,lineHeight:1.35,verticalAlign:'bottom',
+        cursor:'pointer',color:act?C.gold:C.txtDim}}>
       {label}<br/>{sub(kPct,'%')}<span style={{color:C.border}}>{'\u00B7'}</span>{sub(kDol,'$')}</th>;
   };
   // Abbreviated GICS sector label + color for the compact Sector column (full name on hover).
