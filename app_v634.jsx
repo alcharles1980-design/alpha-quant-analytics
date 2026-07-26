@@ -19466,6 +19466,11 @@ function MultiViewChartsPage(p){
   // filtering the full daily series at render — the bars are trading days, so bar count varies
   // with holidays. '1m' ~ the prior 30-session default.
   var s18=useState('1m'),vtPeriod=s18[0],setVtPeriod=s18[1];
+  // Daily Returns block keeps its OWN lookback + hover, deliberately independent of the volume
+  // block — you often want returns over a year while inspecting volume over a month. Defaults to
+  // 3 months so the red/green counts start from a sample big enough to mean something (~63 days).
+  var s19=useState('3m'),drPeriod=s19[0],setDrPeriod=s19[1];
+  var s20=useState(-1),drHover=s20[0],setDrHover=s20[1];
   // interval options offered per chart (only where the window is long enough to be meaningful)
   var INTERVAL_OPTS={
     'YTD':[{span:'day',bar:'daily',kind:'day',label:'Daily'},{span:'hour',bar:'hourly',kind:'hour',label:'Hourly'},{span:'week',bar:'weekly',kind:'long',label:'Weekly'}],
@@ -19715,19 +19720,28 @@ function MultiViewChartsPage(p){
           cm[tf.key]=closeToHighPct(series);
         });
         setAtrMap(am);setC2hMap(cm);
-        // Volume & Trades Comparison: the FULL daily series (up to 10y), kept so the
-        // lookback dropdown can re-slice by date without re-fetching. Each row keeps t
+        // Volume & Trades Comparison + Daily Returns: the FULL daily series (up to 10y), kept so the
+        // lookback dropdowns can re-slice by date without re-fetching. Each row keeps t
         // (ms) for date filtering. Polygon daily aggs carry v (shares), n (trades),
-        // vw (VWAP). Notional = vw*v, falling back to c*v if vw missing.
-        var vt=acc.map(function(b){
+        // vw (VWAP), c (close). Notional = vw*v, falling back to c*v if vw missing.
+        var vt=acc.map(function(b,bi){
           var shares=(typeof b.v==='number')?b.v:null;
           var vwap=(typeof b.vw==='number'&&b.vw>0)?b.vw:((typeof b.c==='number')?b.c:null);
+          var close=(typeof b.c==='number'&&isFinite(b.c))?b.c:null;
+          var prevC=(bi>0&&typeof acc[bi-1].c==='number'&&isFinite(acc[bi-1].c))?acc[bi-1].c:null;
           return {
             t: b.t,
             d: iso(new Date(b.t)).slice(0,10),
             n: (typeof b.n==='number')?b.n:null,
             v: shares,
-            dollars: (shares!=null&&vwap!=null)?vwap*shares:null
+            dollars: (shares!=null&&vwap!=null)?vwap*shares:null,
+            c: close,
+            // Close-to-close daily return vs the PRIOR session's close — the standard definition,
+            // and the one that matches how a day is called red or green. acc is sort=asc so bi-1 is
+            // genuinely the previous session. null on the first row (no prior close) and whenever
+            // either close is missing or non-positive, so a gap renders as an ABSENT bar rather than
+            // a fake 0% that would silently be counted as a flat day.
+            ret: (close!=null&&prevC!=null&&prevC>0)?((close-prevC)/prevC*100):null
           };
         });
         setVtRows(vt);
@@ -20444,10 +20458,11 @@ function MultiViewChartsPage(p){
   // most recent bar. Anchored to the last bar (not now()) so a stale/weekend load still
   // shows a full window. Returns the visible subset of vtRows, oldest->newest.
   var VT_PERIODS=[{k:'12m',label:'12 months',months:12},{k:'6m',label:'6 months',months:6},{k:'3m',label:'3 months',months:3},{k:'1m',label:'1 month',months:1},{k:'1w',label:'1 week',days:7}];
-  var vtVisible=function(){
+  var vtVisible=function(periodKey){
     if(!vtRows.length)return [];
     var lastMs=vtRows[vtRows.length-1].t;
-    var def=null;VT_PERIODS.forEach(function(p){if(p.k===vtPeriod)def=p;});
+    var pk=periodKey||vtPeriod;
+    var def=null;VT_PERIODS.forEach(function(p){if(p.k===pk)def=p;});
     if(!def)def=VT_PERIODS[3];
     var cut=new Date(lastMs);
     if(def.days!=null){cut.setUTCDate(cut.getUTCDate()-def.days);}
@@ -20514,6 +20529,93 @@ function MultiViewChartsPage(p){
           <rect x={tx} y={2} width={tw} height={th} rx="4" fill={C.bgDeep} stroke={color} strokeWidth="1"/>
           <text x={tx+9} y={18} fontSize="12" fontWeight="700" fill={C.txtBright} fontFamily={F}>{r.d}</text>
           <text x={tx+9} y={33} fontSize="12" fontWeight="700" fill={color} fontFamily={F}>{v==null?'—':fmt(v)}</text>
+        </g>;
+      })()}
+    </svg>;
+  };
+
+  // ---- Daily Returns: red/green tally + signed bar chart -------------------------------------
+  // Counts over the visible window. Days with a null return (first bar of the whole series, or a
+  // missing close) are EXCLUDED from n entirely rather than counted as flat — otherwise the
+  // percentages would be computed against a denominator containing days we have no return for.
+  // Exactly-zero days are counted separately from green: "unchanged" is not "up".
+  var retStats=function(rows){
+    var g=0,r=0,f=0,sum=0,n=0,best=null,worst=null;
+    for(var i=0;i<rows.length;i++){
+      var v=rows[i].ret;
+      if(v==null||!isFinite(v))continue;
+      n++;sum+=v;
+      if(v>0)g++;else if(v<0)r++;else f++;
+      if(best==null||v>best.v)best={v:v,d:rows[i].d};
+      if(worst==null||v<worst.v)worst={v:v,d:rows[i].d};
+    }
+    return {green:g,red:r,flat:f,n:n,
+            avg:n?sum/n:null,
+            greenPct:n?(g/n*100):null,
+            redPct:n?(r/n*100):null,
+            best:best,worst:worst};
+  };
+  var fmtPct=function(v){if(v==null||!isFinite(v))return '—';return (v>=0?'+':'')+v.toFixed(2)+'%';};
+
+  // Signed daily-return bars. Unlike vtChart (always 0->max) returns straddle zero, so the axis
+  // spans the actual [min,max] with zero FORCED into range and drawn as a solid baseline; bars
+  // grow up or down from that baseline. Colour is the day's sign, matching the candle convention.
+  var retChart=function(rows){
+    var W=900,H=380,padL=64,padR=10,padT=18,padB=34;
+    var have=[];
+    for(var i=0;i<rows.length;i++){var v=rows[i].ret;if(v!=null&&isFinite(v))have.push(v);}
+    if(!have.length)return <div style={{height:240,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No return data for this window.</div>;
+    var lo=Math.min.apply(null,have), hi=Math.max.apply(null,have);
+    lo=Math.min(0,lo); hi=Math.max(0,hi);              // zero always on the axis
+    if(hi===lo){hi=lo+1;}                              // degenerate (all days exactly flat)
+    var n=rows.length;
+    var innerW=W-padL-padR, innerH=H-padT-padB;
+    var bw=innerW/n, gap=Math.min(2,bw*0.15);
+    var Y=function(v){return padT+innerH-((v-lo)/(hi-lo))*innerH;};
+    var zeroY=Y(0);
+    var hv=drHover;
+    // five evenly spaced ticks across the real range, plus the emphasised zero baseline
+    var ticks=[0,0.25,0.5,0.75,1].map(function(f){var val=lo+(hi-lo)*f;return {val:val,y:Y(val)};});
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block',touchAction:'pan-y pinch-zoom'}}
+      onMouseLeave={function(){setDrHover(-1);}}>
+      {ticks.map(function(t,ti){
+        return <g key={'g'+ti}>
+          <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity="0.4" strokeDasharray="3 4"/>
+          <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="12" fontWeight="700" fill={C.txtDim} fontFamily={F}>{fmtPct(t.val)}</text>
+        </g>;
+      })}
+      {/* zero baseline, drawn last of the gridlines so it reads as the reference */}
+      <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="1.2" opacity="0.9"/>
+      {rows.map(function(r,i){
+        var v=r.ret;
+        if(v==null||!isFinite(v))return null;
+        var x=padL+i*bw;
+        var yv=Y(v);
+        var top=(v>=0)?yv:zeroY;
+        var bh=Math.abs(zeroY-yv);
+        var on=(hv===i);
+        return <rect key={i} x={x+gap/2} y={top} width={Math.max(1,bw-gap)} height={Math.max(v===0?1:0.5,bh)}
+          fill={v>=0?UP:DN} opacity={on?1:0.72}
+          onMouseEnter={function(){setDrHover(i);}}
+          onClick={function(){setDrHover(i);}}/>;
+      })}
+      {[0,Math.floor(n/2),n-1].map(function(i){
+        if(!rows[i])return null;
+        var x=padL+i*bw+bw/2;
+        return <text key={'t'+i} x={x} y={H-9} textAnchor="middle" fontSize="13" fontWeight="700" fill={C.txtDim} fontFamily={F}>{rows[i].d.slice(5)}</text>;
+      })}
+      {hv>=0&&rows[hv]&&(function(){
+        var r=rows[hv];var v=r.ret;
+        var col=(v==null)?C.txtDim:(v>=0?UP:DN);
+        var x=padL+hv*bw+bw/2;
+        var tw=190,th=54;
+        var tx=Math.max(padL,Math.min(W-padR-tw,x-tw/2));
+        return <g>
+          <line x1={x} y1={padT} x2={x} y2={padT+innerH} stroke={col} strokeWidth="1" strokeDasharray="3 3" opacity="0.6"/>
+          <rect x={tx} y={2} width={tw} height={th} rx="4" fill={C.bgDeep} stroke={col} strokeWidth="1"/>
+          <text x={tx+9} y={18} fontSize="12" fontWeight="700" fill={C.txtBright} fontFamily={F}>{r.d}</text>
+          <text x={tx+9} y={33} fontSize="12" fontWeight="700" fill={col} fontFamily={F}>{fmtPct(v)}</text>
+          <text x={tx+9} y={48} fontSize="11" fontWeight="700" fill={C.txtDim} fontFamily={F}>{r.c!=null?('close '+fmtPx(r.c)):''}</text>
         </g>;
       })()}
     </svg>;
@@ -20667,6 +20769,55 @@ function MultiViewChartsPage(p){
           </div>;
         })}
         <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:10,textAlign:'center',lineHeight:1.6}}>Daily bars, split-adjusted, from Polygon aggregates (regular + extended hours). Trade count is Polygon's per-day count and may differ slightly from consolidated SIP tallies. Notional = each day's VWAP × share volume.</div>
+      </div>
+
+      {/* ===== DAILY RETURNS & RED / GREEN DAY COUNTS — signed bar chart + tally, own lookback ===== */}
+      <div style={{marginTop:22,paddingTop:16,borderTop:'2px solid '+C.accent+'44'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+          <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Daily Returns &amp; Red / Green Day Counts</div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Lookback</span>
+            <select value={drPeriod} onChange={function(e){setDrHover(-1);setDrPeriod(e.target.value);}} style={{background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:700,border:'1px solid '+C.accent+'88',borderRadius:5,padding:'4px 8px',cursor:'pointer'}}>
+              {VT_PERIODS.map(function(p){return <option key={p.k} value={p.k}>{p.label}</option>;})}
+            </select>
+          </div>
+        </div>
+        {(function(){
+          var vis=vtVisible(drPeriod);
+          var st=retStats(vis);
+          var tile=function(label,value,color,sub){
+            return <div style={{flex:'1 1 92px',minWidth:88,background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8,padding:'8px 10px'}}>
+              <div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase'}}>{label}</div>
+              <div style={{fontSize:16,color:color||C.txtBright,fontFamily:F,fontWeight:700,lineHeight:1.25}}>{value}</div>
+              {sub?<div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:1}}>{sub}</div>:null}
+            </div>;
+          };
+          return <div>
+            <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Close-to-close returns over {st.n} session{st.n===1?'':'s'}{vis.length?(' ('+vis[0].d+' → '+vis[vis.length-1].d+')'):''}. Tap any bar to inspect a session.</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:10}}>
+              {tile('Green days',st.green,UP,st.greenPct!=null?st.greenPct.toFixed(1)+'% of sessions':null)}
+              {tile('Red days',st.red,DN,st.redPct!=null?st.redPct.toFixed(1)+'% of sessions':null)}
+              {st.flat>0?tile('Unchanged',st.flat,C.txtDim,'exactly 0.00%'):null}
+              {tile('Avg / day',fmtPct(st.avg),st.avg==null?C.txtBright:(st.avg>=0?UP:DN),'mean daily return')}
+              {tile('Best',st.best?fmtPct(st.best.v):'—',UP,st.best?st.best.d:null)}
+              {tile('Worst',st.worst?fmtPct(st.worst.v):'—',DN,st.worst?st.worst.d:null)}
+            </div>
+            {/* proportion bar — green vs red share of the window at a glance */}
+            {st.n>0&&<div style={{display:'flex',height:8,borderRadius:4,overflow:'hidden',marginTop:10,border:'1px solid '+C.border}}>
+              <div style={{width:(st.green/st.n*100)+'%',background:UP}}/>
+              <div style={{width:(st.flat/st.n*100)+'%',background:C.txtDim}}/>
+              <div style={{width:(st.red/st.n*100)+'%',background:DN}}/>
+            </div>}
+            <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Daily Return %</div>
+                <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>each session's close vs the prior close</div>
+              </div>
+              <div style={{marginTop:10}}>{retChart(vis)}</div>
+            </div>
+          </div>;
+        })()}
+        <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:10,textAlign:'center',lineHeight:1.6}}>Return = (close − prior session's close) / prior session's close, on split-adjusted daily bars. Green = up, red = down, and a day that closes exactly unchanged is counted separately from both. Sessions with no prior close are excluded from the counts rather than treated as flat, so the percentages always sum across the sessions actually measured. Note these are close-to-close moves and ignore intraday path — a green day can still have traded well below the prior close.</div>
       </div>
     </div>}
   </div>;
