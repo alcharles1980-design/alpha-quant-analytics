@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v634 · Jul 26 2026
+**Status at last update:** v635 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,12 +602,49 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v634** (Jul 26 2026) — new **Daily Returns & Red / Green Day Counts** section on MV Charts
-(v634); TODAY/YESTERDAY select by **trading day** rather than calendar day (v632, which resolved the
-long-open "VWAP draws nothing" report — it was never a VWAP fault) and now print the real session date
-in the heading (v633), plus a DST fix to the build banner. Preceded by the Holy Grail metric-definition
-docs (v631), volume/trades column regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians
-plus the stale-guard fix (v627), and the ATR ladder (v619–v620). Full detail below.
+**Current: v635** (Jul 26 2026) — **Daily Returns & Red / Green Day Counts** section on MV Charts
+(v634) plus a fixed-12-month **consecutive-day streak distribution** inside it (v635);
+TODAY/YESTERDAY select by **trading day** rather than calendar day (v632, which resolved the long-open
+"VWAP draws nothing" report — it was never a VWAP fault) and now print the real session date in the
+heading (v633), plus a DST fix to the build banner. Preceded by the Holy Grail metric-definition docs
+(v631), volume/trades regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians plus the
+stale-guard fix (v627), and the ATR ladder (v619–v620). Full detail below.
+
+### v635 — consecutive-day streak distribution, fixed 12-month window (Jul 26 2026)
+
+Subsection inside Daily Returns: green/red/unchanged counts and longest run each way, a grouped bar
+chart of run-count by streak length (green beside red), and per-length tiles for both directions.
+**Fixed trailing 12 months, deliberately not tied to the lookback dropdown above**, so it stays a
+stable reference while the dropdown is moved.
+
+**Counting rules** (also stated in the in-app footnote):
+- Figures are **occurrences, not days** — a 3-day green run adds 1 to the "3 days" bucket, not 3.
+- Runs are **maximal** — a 4-day run is counted only under 4, never also under 3/2/1.
+- A session that closes **exactly unchanged, or has no prior close, breaks the run** and starts none of
+  its own. `[1,1,1,0,1,1,1]` is `{3:2}`, never `{6:1}`. Rare on liquid names, common enough on thin
+  ones to matter.
+- The x-axis **self-scales to the longest observed run** rather than capping at an arbitrary "5+"
+  bucket, so an 11-day run is visible as an 11-day run.
+
+**The verification worth reusing — a reconciliation identity.** Every green day belongs to exactly one
+green run, so `sum(len × runCount)` MUST equal the green-day count from `retStats`. That is a real
+invariant, not a plausibility check, and it caught nothing only because the logic was right. Asserted
+in node across empty / all-null / single / all-green / all-red / alternating / flat-splits-a-run /
+null-splits-a-run / leading-trailing-null / NaN-breaks-run, then **on the rendered DOM values on live**:
+252 sessions, 129 green / 123 red, green runs `{1:36,2:13,3:10,4:2,5:1,6:1,7:1,11:1}`, red
+`{1:32,2:18,3:8,4:4,5:3}`, longest 11G / 5R — all matching independently computed Polygon values, with
+rendered green run-days 129 == rendered green days 129. An independently written brute-force run counter
+reproduced both distributions exactly.
+
+**Research note (matters before this drives capital).** Compared against a Monte Carlo null of
+independent days at the observed 51.0% green rate (20,000 trials), NVDA's 12-month streak distribution
+is close to what independence predicts at every length: obs/exp green 35/30.9, 13/15.7, 10/8.0, 2/4.1;
+red 32/32.2, 18/15.7, 8/7.7, 4/3.8. The single 11-day green run is the only visible outlier and
+**P(longest green run ≥ 11 | independence) = 7.1%** — not significant. Consistent with the measured
+direction autocorrelation of r = −0.041. **Read this section as descriptive, not predictive:** it
+describes what happened, and on this evidence streak length carries no directional edge.
+
+---
 
 ### v634 — Daily Returns & Red / Green Day Counts (Jul 26 2026)
 
