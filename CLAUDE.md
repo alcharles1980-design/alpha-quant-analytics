@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v631 · Jul 26 2026
+**Status at last update:** v632 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -411,6 +411,18 @@ live app and inspect it:
   `RC.*` pages don't render — but MV Charts / Fib / screeners are all custom SVG, unaffected. (c)
   Backgrounding `python3 -m http.server` to test a LOCAL build is unreliable here
   (ERR_CONNECTION_REFUSED); reliable pattern is verify logic in node → ship → verify on LIVE.
+- **A PROBE THAT RETURNS ZERO PROVES NOTHING UNTIL IT HAS A POSITIVE CONTROL.** This has now cost two
+  cycles on the same bug. First probe counted `<path>` and got 0 everywhere. Second counted `<line>`
+  *and* looked for `#ffb020` — but VWAP renders as **`<polyline>`** and its colour is
+  `C.warn = #ff5c3a` (`#ffb020` is `C.gold`). Two independent blindnesses, **either one sufficient**
+  to produce a confident "toggling changes exactly zero elements", which then hardened into a written
+  diagnosis with three suspects, all wrong. **Before believing a null result, make the probe report
+  something you already know is there** — census every tag and every stroke colour and print the whole
+  table, rather than asking a yes/no question about one hard-coded selector. Resolve colour constants
+  from `C.*` in the source; never hand-copy a hex.
+- **Absence of an element may mean the container never rendered.** When a probe finds nothing, check
+  whether the *parent* exists before concluding the child is broken — the v632 VWAP "bug" was an empty
+  `bars` array killing the whole `<svg>` two levels up.
 - **Chart-order gotcha:** don't assume MV-Charts SVG order maps to timeframes — read each chart's
   timeframe label from the DOM before interpreting its caption (a v615 near-miss came from
   mis-mapping chart index → timeframe).
@@ -590,12 +602,11 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v620** (Jul 25 2026) — ATR ladder (14d/7d/3d/prev-day) on the Holy Grail screener
-(v620), sortable 14d ATR column (v619);
-Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-tag centering (v614),
-and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
-(predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
-down and in §10.
+**Current: v632** (Jul 26 2026) — MV Charts TODAY/YESTERDAY now select by **trading day** rather than
+calendar day, which resolved the long-open "VWAP draws nothing" report (it was never a VWAP fault; the
+panels were rendering no chart at all on non-trading days). Preceded by the Holy Grail metric-definition
+docs (v631), volume/trades column regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades 20d medians
+plus the stale-guard fix (v627), and the ATR ladder (v619–v620). Full detail in the blocks below.
 
 ### v631 — Source Code page: Holy Grail metric definitions (Jul 26 2026)
 
@@ -613,55 +624,55 @@ section returns nothing — confirm via the bundle or expand the section first.
 
 ---
 
-### Multi View Charts — architecture notes + OPEN VWAP BUG (Jul 26 2026)
+### v632 — MV Charts: TODAY/YESTERDAY selected by trading day (Jul 26 2026) — VWAP BUG RESOLVED
 
-**READ THIS FIRST if picking up the VWAP bug.** Nothing was changed — v630 is deployed, tree clean.
+**The reported "VWAP draws nothing" was never a VWAP bug.** `sessionVwap` is correct and always was.
+The two panels it was being judged on had no chart at all.
 
-**Reported symptom:** toggling `VWAP · intraday` draws nothing.
-**Reproduced:** headless, `#multiviewcharts:NVDA`, both before/after states captured. Toggling
-changes the rendered output by **exactly zero `<line>` elements** in every panel — byte-identical
-stroke-colour counts. `#ffb020` (`C.warn`, the VWAP colour) sits at 2 per panel before AND after,
-which is axis/marker usage, not a series. **No page errors.** The button responds, so state flips.
+**Root cause.** `fetchAgg` derived the TODAY/YEST dates with calendar arithmetic
+(`e.d - tf.dayOffset`) and requested `from==to==` that date. On any non-trading day Polygon returns
+`results:[]`, `Chart()` bails at `if(!bars||!bars.length)return null`, and the panel renders **no
+`<svg>` whatsoever**. So TODAY was blank every Sat/Sun/holiday, and YESTERDAY every Sun **and Monday**
+(Monday's "yesterday" is Sunday), plus the day after each holiday. With no chart underneath, the
+overlay had nothing to draw on — which read as an overlay fault.
 
-> **Probe gotcha that cost me a cycle:** these charts render with `<line>`/`<polyline>`, **not
-> `<path>`**. My first probe counted paths, got 0 everywhere, and proved nothing. Count `line`
-> elements and group by `stroke`.
+All three suspects recorded in the previous handoff were disproven by direct API check (NVDA 5-min):
+Jul 23/24 return 192 bars each with `t` in **milliseconds** (1784793600000 → 04:00 ET) and `vw`/`v`
+both present; Jul 25/26 (Sat/Sun) return **0 bars**.
 
-**RULED OUT** (don't re-investigate):
-- **The gate.** `VWAP_KEYS={TODAY:1,YEST:1,'7D':1,'30D':1}` and `TFS` really does define keys
-  `TODAY`, `YEST`, `7D`, `30D`. They match exactly. Gate is on `tf.key` not `tf.kind` **on
-  purpose** — `30D` is `kind:'hour'` while `7D`/`YEST`/`TODAY` are `kind:'intraday'`.
-- **The intraday restriction.** Real and by design, but would still leave 4 of 10 panels drawing.
-- **Page errors.** None.
+**Fix.** Request a rolling `SESSION_LOOKBACK_DAYS=10` window for the two `dayOffset` panels, then pick
+the Nth-most-recent session from what actually came back (`pickSession`), grouping by ET calendar date
+with the same `dayKey` rule `sessionVwap` uses. Self-corrects for weekends, holidays and holiday
+clusters with **no lookup table** — worst case (Friday holiday + weekend) puts the second-most-recent
+session 4 calendar days back, and 10 days still returns a single Polygon page.
 
-**HOW IT WORKS** (so the next session doesn't re-derive it):
-- `TFS` (≈line 19445) = 10 panels: `10Y 5Y 3Y 1Y YTD 3M 30D 7D YEST TODAY`.
-- `etParts(ms)` (≈19458) — Intl/`America/New_York`, DST-safe, with a UTC fallback in `catch`.
-- `sessionVwap(bars)` (≈19831) — per bar: `etParts(bars[i].t)` → ET date key + hour; resets
-  `cumPV`/`cumV` on a new ET calendar date; accumulates only when
-  `isRTH && vol>0 && price!=null` where `isRTH = (h>9||(h===9&&mi>=30)) && h<16`;
-  price prefers `bars[i].vw`, falls back to `bars[i].c`. **Pushes `null` on any failure** so the
-  line breaks between sessions — which is exactly why a total failure is silent.
-- Draw site (≈20024): `if(!showVwap||!VWAP_KEYS[tf.key])return null; var vw=sessionVwap(bars);`
+**Verified on live**, values traced end to end rather than merely present:
 
-**THREE REMAINING SUSPECTS, in order:**
-1. **`bars[i].t` on the intraday fetch path.** Prime suspect. If it's absent, or in **seconds
-   rather than milliseconds**, `etParts` returns a 1970 date / nonsense hour, `isRTH` is false for
-   every bar, and you get a full column of nulls **with no error** — the try/catch swallows
-   nothing because nothing throws. Note the intraday fetch is a separate path from the daily one.
-2. **`vw` / `v` missing on intraday bars.** `vol>0` fails → all null.
-3. **The RTH boundary itself.**
+| Panel | Session | BARS | HIGH | LOW | VWAP segs |
+|---|---|---|---|---|---|
+| YESTERDAY | Thu Jul 23 | 192 | $212.46 | $205.96 | 1 |
+| TODAY | Fri Jul 24 | 192 | $211.91 | $204.81 | 1 |
 
-**THE DISCRIMINATOR — do this first, it is one line:** log `etParts(bars[0].t)` for the TODAY
-panel. 1970 or an implausible hour → suspect 1. Sensible hour → suspect 2.
+Highs/lows are exact against independently computed Polygon figures. Segment counts are self-consistent
+across panels — 30D → 20, 7D → 5, TODAY/YEST → 1 each, i.e. one contiguous RTH run per session.
 
-**Also open on this page (pre-existing, §10):** on 5Y/10Y the range set spans e.g. $183→$59 while
-the swing set sits in a ≈$195–$220 band — the swing leg is a few percent of the visible range, so
-its levels compress into a sliver. My preference is a **minimum leg size as a fraction of visible
-range** rather than hard-coding timeframe suppression (self-scaling). Separately, on the densest
-panel the swing set rendered **zero labels** — determine whether `detectSwing` found nothing at
-N=4 on monthly bars, or v618's `MINGAP=12px` thinned them all away. If the latter, that is bare
-unlabelled lines, the exact symptom v613 removed.
+**MV Charts architecture** (kept — still accurate):
+- `TFS` = 10 panels: `10Y 5Y 3Y 1Y YTD 3M 30D 7D YEST TODAY`. `etParts(ms)` is Intl/`America/New_York`,
+  DST-safe, UTC fallback in `catch`.
+- `VWAP_KEYS={TODAY,YEST,7D,30D}`, gated on `tf.key` **not** `tf.kind` on purpose — `30D` is
+  `kind:'hour'` while the others are `kind:'intraday'`.
+- `sessionVwap(bars)` resets `cumPV`/`cumV` on a new ET date; accumulates only when
+  `isRTH && vol>0 && price!=null`, `isRTH=(h>9||(h===9&&mi>=30))&&h<16`; price prefers `vw`, falls back
+  to `c`. **Pushes `null` on any failure** so the line breaks between sessions — which is precisely why
+  a total failure is silent.
+- Renders `<polyline>`, stroke `VWAP_COLOR = C.warn = #ff5c3a`.
+
+**Still open on this page** (pre-existing, §10): on 5Y/10Y the range set spans e.g. $183→$59 while the
+swing set sits in a ≈$195–$220 band, so the swing leg is a few percent of visible range and its levels
+compress into a sliver. Preference is a **minimum leg size as a fraction of visible range** over
+hard-coded timeframe suppression. Separately, the densest panel rendered **zero swing labels** —
+determine whether `detectSwing` found nothing at N=4 on monthly bars, or v618's `MINGAP=12px` thinned
+them all away. If the latter, that is bare unlabelled lines, the exact symptom v613 removed.
 
 ---
 
