@@ -19545,6 +19545,24 @@ function MultiViewChartsPage(p){
     return bars.filter(function(_,i){return keys[i]===want;});
   };
 
+  // Subtitle for the two session-selected panels (TODAY / YESTERDAY): the ET calendar date the
+  // bars ACTUALLY belong to, derived from the data rather than the clock. Since v632 those panels
+  // resolve to the most recent trading sessions, so on a weekend, a holiday, or before Monday's
+  // pre-market opens, "TODAY" is really Friday — this makes the heading say so instead of
+  // silently implying the wrong day. Returns null for every other panel.
+  var sessionStamp=function(tf,bars){
+    if(tf.dayOffset==null||!bars||!bars.length||bars[0].t==null)return null;
+    var e=etParts(bars[0].t);
+    var wd;
+    try{
+      wd=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short'}).format(new Date(bars[0].t));
+    }catch(err){
+      wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(Date.UTC(e.y,e.mo-1,e.d)).getUTCDay()];
+    }
+    if(!wd||!MON[e.mo-1])return null;
+    return wd+' '+MON[e.mo-1]+' '+e.d;
+  };
+
   var fetchAgg=function(t,tf,ovArg){
     // Anchor "today" to the current date in ET (America/New_York), not UTC —
     // otherwise in the evening ET the UTC date has already rolled over and
@@ -20568,7 +20586,10 @@ function MultiViewChartsPage(p){
         return <div key={tf.key} style={{marginTop:14,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
           {/* Row 1: timeframe title + current price / period return */}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
-            <div style={{color:C.accent,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:1}}>{tf.label}</div>
+            <div style={{color:C.accent,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:1}}>{tf.label}{(function(){
+              var ss=sessionStamp(tf,bars);
+              return ss?<span style={{color:C.txtDim,fontSize:10,fontFamily:F,fontWeight:700,letterSpacing:0.5,marginLeft:8}}>{'\u00B7 '+ss}</span>:null;
+            })()}</div>
             {px!=null&&<div style={{display:'flex',alignItems:'flex-end',gap:14}}>
               <div style={{display:'flex',flexDirection:'column',gap:1,alignItems:'flex-end'}}>
                 <span style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.6}}>PRICE</span>

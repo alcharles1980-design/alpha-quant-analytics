@@ -12,17 +12,20 @@ const jsx = fs.readFileSync(path.join(__dirname, srcFile), 'utf8');
 const result = babel.transformSync(jsx, { presets: ['@babel/preset-react'] });
 try { new Function(result.code); } catch (e) { console.error('SYNTAX ERROR:', e.message); process.exit(1); }
 
-// Inject build timestamp
+// Injected build timestamp, in real market time. Previously this subtracted a hardcoded
+// 5 hours and labelled the result "EST", so from March to November the banner was an hour
+// behind AND mislabelled (EDT is UTC-4). Same hardcoded-offset class already swept out of
+// the app itself — see CLAUDE.md §5.3. Intl resolves the offset and the abbreviation.
 const now = new Date();
-const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const est = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-const estH = est.getUTCHours();
-const ampm = estH >= 12 ? 'PM' : 'AM';
-const h12 = estH % 12 || 12;
-const mm = String(est.getUTCMinutes()).padStart(2, '0');
-const buildTS = months[est.getUTCMonth()] + ' ' + est.getUTCDate() + ', ' + est.getUTCFullYear() + ' ' + 
-  h12 + ':' + mm + ' ' + ampm + ' EST';
-const finalCode = 'var BUILD_TS="v632 | Built: ' + buildTS + '";\n' + result.code;
+const tsParts = {};
+new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short', day: 'numeric', year: 'numeric',
+  hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short'
+}).formatToParts(now).forEach(p => { tsParts[p.type] = p.value; });
+const buildTS = `${tsParts.month} ${tsParts.day}, ${tsParts.year} ` +
+  `${tsParts.hour}:${tsParts.minute} ${tsParts.dayPeriod} ${tsParts.timeZoneName}`;
+const finalCode = 'var BUILD_TS="v633 | Built: ' + buildTS + '";\n' + result.code;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
