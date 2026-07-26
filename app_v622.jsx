@@ -22840,6 +22840,15 @@ function ViolentChopScreenerPage(p){
     r.atr7Pct=(a14&&a14.p7!=null)?+a14.p7:null;  r.atr7Dol=(a14&&a14.d7!=null)?+a14.d7:null;
     r.atr3Pct=(a14&&a14.p3!=null)?+a14.p3:null;  r.atr3Dol=(a14&&a14.d3!=null)?+a14.d3:null;
     r.atr1Pct=(a14&&a14.p1!=null)?+a14.p1:null;  r.atr1Dol=(a14&&a14.d1!=null)?+a14.d1:null;
+    // v622: volatility expansion ratio = short-window ATR / baseline ATR, on the % rungs so it's
+    // price-independent and comparable across names. >1 = vol expanding (range breaking out,
+    // hostile to a grid), <1 = vol compressing (settling into a range, friendly to one).
+    // NOTE both inputs are Wilder, so the true comparison is ~5-day vs ~27-day EFFECTIVE memory,
+    // not 3 vs 14 (see the ladder note in CLAUDE.md §9). It is still a valid short-vs-long vol
+    // ratio; just don't read the "3d/14d" label too literally.
+    // Guard the denominator: null or <=0 yields null, never Infinity/NaN, because the shared
+    // comparator does bv-av and a NaN there silently unsorts the whole table (the v581 class).
+    r.volExp=(r.atr3Pct!=null&&r.atrPct!=null&&r.atrPct>0)?Math.round((r.atr3Pct/r.atrPct)*100)/100:null;
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23168,6 +23177,7 @@ function ViolentChopScreenerPage(p){
             {thATR('7d ATR','atr7Pct','atr7Dol')}
             {thATR('3d ATR','atr3Pct','atr3Dol')}
             {thATR('Prev day','atr1Pct','atr1Dol')}
+            {th('volExp',['Vol',<br key="b"/>,'Exp'])}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23293,7 +23303,18 @@ function ViolentChopScreenerPage(p){
                     cell('a14',r.atrPct,r.atrDol,'Wilder ATR(14) — ~27-day effective memory. Percent of price over dollar value.'),
                     cell('a7',r.atr7Pct,r.atr7Dol,'Wilder ATR(7) — ~13-day effective memory.'),
                     cell('a3',r.atr3Pct,r.atr3Dol,'Wilder ATR(3) — ~5-day effective memory.'),
-                    cell('a1',r.atr1Pct,r.atr1Dol,'Previous trading day true range (Wilder at period 1 = the last true range exactly).')
+                    cell('a1',r.atr1Pct,r.atr1Dol,'Previous trading day true range (Wilder at period 1 = the last true range exactly).'),
+                    (function(){
+                      // v622: vol expansion ratio, 3d ATR% / 14d ATR%. Colour is directional, not
+                      // good/bad: gold = expanding out of range, blue = compressing into one.
+                      // Deadband 0.85-1.15 stays neutral so ordinary noise isn't dressed up as signal.
+                      var v=r.volExp;
+                      if(v==null)return <td key="vx" style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                      var col=v>=1.15?C.gold:(v<=0.85?C.blue:C.txtDim);
+                      return <td key="vx" style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:v>=1.15||v<=0.85?700:400,color:col}}
+                        title={'3d ATR% \u00F7 14d ATR% = '+v.toFixed(2)+'\u00D7. Above 1 = short-window volatility running hotter than baseline (range expanding); below 1 = settling. Both rungs are Wilder, so this compares ~5-day against ~27-day effective memory.'}>
+                        {v.toFixed(2)+'\u00D7'}</td>;
+                    })()
                   ];
                 })()}
                 <td style={{padding:'4px 3px',textAlign:'center'}}>

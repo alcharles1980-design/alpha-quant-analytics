@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v621 · Jul 25 2026
+**Status at last update:** v622 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,38 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### Vol Exp column — volatility expansion ratio (v622, Jul 25 2026)
+
+`Vol Exp = 3d ATR% ÷ 14d ATR%`, sortable, sitting right of the ATR ladder. The ladder answers
+"is this name's volatility expanding or settling?" but only by eye, across four columns and 500
+rows. This makes that question **screenable**: >1 = short-window vol running hotter than baseline
+(range expanding — hostile to a grid), <1 = compressing into a range.
+
+Pure derivation from columns already fetched — **no DB change, no backfill, no pipeline change.**
+
+- Uses the **%** rungs, not $, so it is price-independent and comparable across names.
+- Both inputs are Wilder, so this really compares **~5-day against ~27-day effective memory**, not
+  3 against 14. Still a valid short-vs-long vol ratio; just don't read the label literally.
+- Colour is **directional, not good/bad**: gold ≥ 1.15 (expanding), blue ≤ 0.85 (compressing),
+  dim between. The 0.85–1.15 deadband stops ordinary noise being dressed up as signal.
+- **Denominator guarded**: null or ≤ 0 yields `null`, never Infinity/NaN. A NaN reaching the shared
+  `bv-av` comparator silently unsorts the entire table (the v581 class) — simulated all five failure
+  inputs before building.
+
+**Verified:** 35 header cells == 35 body cells; sorted desc monotonic over all 500 rows
+(2.01× → 0.94×); and every displayed ratio recomputed against **full-precision** DB values —
+**496/496 correct**, 4 legitimately blank.
+
+> **Recording a mistake I made three times this session.** My first pass reported 41 mismatches,
+> because I recomputed the ratio from the **1dp displayed** 3d and 14d values while the app divides
+> full-precision 2dp numbers — dividing two ±0.05-rounded small numbers propagates to ~3%. The
+> residual single "mismatch" against full precision (TMUS 6.18/4 = 1.545) was Python's banker's
+> rounding again: 1.54 in Python, 1.55 in JS `Math.round`. **Both traps are the same lesson —
+> verify against the precision the code actually uses, and never check JS rounding with Python
+> `round()`.** See also the v620 audit note.
+
+---
 
 ### v621 — housekeeping: freshness weekday guard, tap targets, stray file (Jul 25 2026)
 
