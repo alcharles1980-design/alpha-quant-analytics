@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v623 · Jul 25 2026
+**Status at last update:** v624 · Jul 25 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -596,6 +596,40 @@ Fibonacci retracement overlays on Multi View Charts (v609–v613), last-price-ta
 and a Fib-swing anchor fix (v615). Full detail in the blocks below. The v592→v599 session
 (predictor accuracy box, Most Actives median fix, Volume & Trades charts) is summarised further
 down and in §10.
+
+### C→H 10d gains a dollar leg + dual sort (v624, Jul 25 2026)
+
+The column now renders **% over $** like the ATR ladder, with `%` and `$` as separate sort
+targets via the same `thATR` helper. New DB column `c2h_10d_dollar`, returned by
+`chop_range_atr_light` as `c2h10_dol`, computed in `pipeline.js`, and backfilled for
+scan_date 2026-07-25.
+
+> **The two legs are averaged INDEPENDENTLY — do not derive one from the other.** For the ATR
+> columns `pct = dollar / lastClose × 100` exactly, so they are a strict ratio. C→H is not:
+> each of the 10 transitions divides by a *different* prior close, so
+> `mean(pct) ≠ mean(dollar) / lastClose × 100`. Both are summed separately in the same loop and
+> the >100% guard voids **both** legs together (verified: injecting a +400% final bar returns
+> null for pct and dollar).
+
+Backfilled with the same PostgREST `?on_conflict=ticker,scan_date` upsert path proven in v623 —
+no write-RPC created, nothing left behind. 2,407 rows.
+
+**Verified:** pipeline reproduces the backfill on both legs (WOLF 2.34/$0.76, SMCI 4.76/$1.243,
+MXL 4.98/$4.042); header reads `C→H 10d %·$` with 15×15px sub-targets; 36 header cells == 36
+body cells; **both** sort targets desc-monotonic over 500 rows (% top 10.79, $ top 110.97);
+displayed vs DB — pct 500/500 exact, dollar 500/500 exact.
+
+Dollar distribution: min −$1.81, median $0.86, p90 $4.29, max $110.97. The % and $ orderings
+differ sharply — sorting by $ surfaces high-priced names (SNDK $42.48 at 3.14%), sorting by %
+surfaces cheap movers. That divergence is the point of having both.
+
+> **My comparator was wrong a FOURTH time this session.** Two dollar rows flagged (WPM 1.625,
+> ESTC 1.125) — both exact `.X25` boundaries where Python `round()` is half-to-even (1.62/1.12)
+> and JS `toFixed()` is half-away-from-zero (1.63/1.13). **Standing rule, now stated four times
+> in this file: never verify JS-rendered numbers with Python `round()`. Use explicit
+> half-away-from-zero, or compare with a tolerance wider than one display ulp.**
+
+---
 
 ### C→H 10d — close-to-next-day-high, 10-session average (v623, Jul 25 2026)
 

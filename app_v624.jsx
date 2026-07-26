@@ -22548,7 +22548,7 @@ function ViolentChopScreenerPage(p){
             p7:row.atr7_pct!=null?+row.atr7_pct:null,  d7:row.atr7_dol!=null?+row.atr7_dol:null,
             p3:row.atr3_pct!=null?+row.atr3_pct:null,  d3:row.atr3_dol!=null?+row.atr3_dol:null,
             p1:row.atr1_pct!=null?+row.atr1_pct:null,  d1:row.atr1_dol!=null?+row.atr1_dol:null,
-            c2h:row.c2h10!=null?+row.c2h10:null
+            c2h:row.c2h10!=null?+row.c2h10:null,  c2hd:row.c2h10_dol!=null?+row.c2h10_dol:null
           };
       });
       if(batch.length<1000)break;
@@ -22852,6 +22852,7 @@ function ViolentChopScreenerPage(p){
     r.volExp=(r.atr3Pct!=null&&r.atrPct!=null&&r.atrPct>0)?Math.round((r.atr3Pct/r.atrPct)*100)/100:null;
     // v623: 10-day average close-to-next-day-high %, straight from the row (never the side map).
     r.c2h10=(a14&&a14.c2h!=null)?+a14.c2h:null;
+    r.c2h10Dol=(a14&&a14.c2hd!=null)?+a14.c2hd:null;
   });
 
   rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(typeof av==='string'||typeof bv==='string'){var as=(av==null?'':String(av)),bs=(bv==null?'':String(bv));return sortDesc?bs.localeCompare(as):as.localeCompare(bs);}return sortDesc?bv-av:av-bv;});
@@ -23181,7 +23182,7 @@ function ViolentChopScreenerPage(p){
             {thATR('3d ATR','atr3Pct','atr3Dol')}
             {thATR('Prev day','atr1Pct','atr1Dol')}
             {th('volExp',['Vol',<br key="b"/>,'Exp'])}
-            {th('c2h10',['C\u2192H',<br key="b"/>,'10d'])}
+            {thATR('C\u2192H 10d','c2h10','c2h10Dol')}
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Chart</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>Vol<br/>Prof</th>
             <th style={{padding:'4px 3px',color:C.txtDim,textAlign:'center',fontSize:7,lineHeight:1.15,verticalAlign:'bottom'}}>GEX</th>
@@ -23320,13 +23321,18 @@ function ViolentChopScreenerPage(p){
                         {v.toFixed(2)+'\u00D7'}</td>;
                     })(),
                     (function(){
-                      // v623: 10-day average close-to-next-day-high. Mean of
-                      // (day high - prior close)/prior close % over the last 10 transitions.
-                      var v=r.c2h10;
-                      if(v==null)return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
-                      return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',fontSize:7,fontWeight:600,color:v<0?(C.red||'#ef4444'):(v>=3?C.gold:C.txt)}}
-                        title={'Average close-to-next-day-high over the last 10 sessions: buy at the close, '+v.toFixed(2)+'% average upside to the next session\u2019s high. Negative means the next day\u2019s high was on average below the prior close. This is a MEAN, not a hit rate \u2014 a few large up-days can carry it.'}>
-                        {(v>=0?'+':'')+v.toFixed(2)+'%'}</td>;
+                      // v623/v624: 10-day average close-to-next-day-high, shown % over $ like the
+                      // ATR ladder. Both legs come off the ROW so the sorted value is the shown one.
+                      // pct and dollar are averaged INDEPENDENTLY (each transition divides by a
+                      // different prior close), so dollar != pct/100 * price. Don't derive either.
+                      var v=r.c2h10, d=r.c2h10Dol;
+                      if(v==null&&d==null)return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',color:C.border}}>{'\u2014'}</td>;
+                      var col=(v!=null&&v<0)?(C.red||'#ef4444'):((v!=null&&v>=3)?C.gold:C.txt);
+                      return <td key="c2h" style={{padding:'4px 3px',textAlign:'center',lineHeight:1.2}}
+                        title={'Average close-to-next-day-high over the last 10 sessions \u2014 buy at the close, this is the mean upside to the next session\u2019s high, in percent and in dollars. Negative means the next day\u2019s high averaged below the prior close. This is a MEAN, not a hit rate: a few large up-days can carry it. Percent and dollar are averaged independently, so they are not a fixed ratio of each other.'}>
+                        <div style={{color:col,fontSize:7,fontWeight:600}}>{v!=null?(v>=0?'+':'')+v.toFixed(2)+'%':'\u2014'}</div>
+                        <div style={{color:C.txtDim,fontSize:7,marginTop:2}}>{d!=null?'$'+d.toFixed(2):'\u2014'}</div>
+                      </td>;
                     })()
                   ];
                 })()}
