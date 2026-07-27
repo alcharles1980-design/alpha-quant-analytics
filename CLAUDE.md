@@ -13,6 +13,41 @@ verification block below before writing any code.
 
 ---
 
+## Contents
+
+**Read in this order on a cold start:** §1 → §4/§4a → the last ~10 entries of §9 → §5.
+
+| § | | Why you need it |
+|---|---|---|
+| **1** | **Verify First** | Run before touching anything. Reconciles `git log` against §9 and states the three DB prohibitions. |
+| 2 | What this app is | One paragraph of orientation. |
+| 3 | Stack & deploy | Where things live, how a push reaches production. |
+| **4** | **Full sweep — MANDATORY** | The 8-step version bump. Step 8 (write the §9 entry) is the one that has failed. |
+| **4a** | **Verification gate** | The 7 belief-checks. Pass these before saying anything works. |
+| 5 | Failure modes | The scar tissue. 5.1 truncation · 5.1a behavioural bugs · 5.2 resource limits · 5.7a headless verification. |
+| 6 | Route/menu parity | Stated as an invariant; `npm run preflight` asserts it. |
+| 7 | Core cycle engine | **CRITICAL** — do not alter without reading. |
+| 8 | Backend shape | Tables, crons, Edge Functions. Free plan, 512 MB hard cap. |
+| **9** | **Recent work** | Newest first. One entry per version — no exceptions, or the gap check goes blind. |
+| 9a | Research: persistence testing | What is forecastable and what is not. Read before any metric drives capital. |
+| 10 | Known open items | What is still broken or unfinished. |
+| 11 | How the user works | Terse, empirical, root-cause. |
+| 11a | Context loss in long sessions | Why `git log` beats recollection. |
+| 12 | Sandbox capabilities | Tools and libraries available. |
+
+**Two commands do most of the checking:**
+
+```bash
+./scripts/handoff-gap-check.sh   # any version shipped without a §9 entry
+npm run preflight                # version skew · route parity · duplicate definitions
+```
+
+Both have had **every alarm proven by deliberately breaking the file** — see §6. A check
+that has only ever printed PASS is unproven, and one that cries wolf gets ignored; this
+project has produced both within the same hour.
+
+---
+
 ## 1. Verify First (run before touching anything)
 
 ```bash
@@ -177,14 +212,15 @@ exception, correct-looking UI, wrong data underneath. Assume silence is the dang
 
 ### 5.1 Silent data truncation (the #1 recurring class)
 
-- **PostgREST 1,000-row cap.** Default limit is 1,000 and it does *not* error — it
-  just returns the first 1,000. `optimal_tp_hourly` had 38,400 rows for one ticker;
-  a naive fetch got 1,000, so Correlation Finder ran on **10 data points instead of
-  379** and reported correlations of ±1.000 (meaningless at n=10). Fix: explicit
-  `&limit=`, and paginate.
-- **Batch size must be ≤ 1000 when paginating.** Requesting `limit=10000` silently
-  returns 1,000; the loop then sees `1000 < 10000`, concludes "last partial page",
-  and stops. You lose everything past row 1,000 *while believing you paginated*.
+- **PostgREST 1,000-row cap.** The cap is 1,000 and it does *not* error — it just
+  returns the first 1,000. `optimal_tp_hourly` had 38,400 rows for one ticker; a
+  naive fetch got 1,000, so Correlation Finder ran on **10 data points instead of
+  379** and reported correlations of ±1.000 (meaningless at n=10).
+  **Fix: `Range` headers — NOT `&limit=`. See §5.1b for the evidence.**
+- **`limit=10000` breaks naive pagination.** It silently returns 1,000; the loop
+  then sees `1000 < 10000`, concludes "last partial page", and stops. You lose
+  everything past row 1,000 *while believing you paginated*. Page with `Range`
+  windows and continue until a **short page** returns.
 - **Polygon `next_url` silently drops pre-market trades** on later pages of a
   full-day fetch. Fix: 3 overlapping windows (2–3h overlap), concat, sort by ts,
   dedup on exact nanosecond. Never trust a single-window fetch.
@@ -220,22 +256,40 @@ because they verify **structure**, not **behaviour**.
 5. **Simulate the logic in node with the failure inputs** (`undefined`, `null`, empty), not just
    the happy path.
 
-### 5.1b The three truncation traps — all return HTTP 200
+### 5.1b The truncation traps — all return HTTP 200
 
-Hit all three in one session. Each produces plausible output with missing data.
+Four distinct traps, three of them hit in a single session. Each produces plausible output with missing data.
 
-| Source | Real cap | Can the client raise it? | How to detect |
-|---|---|---|---|
-| Alpaca bars | **~2,000 rows** (not the 10,000 `limit` accepts) | no — send fewer symbols | `next_page_token is null` |
-| PostgREST **RPC** | **1,000 rows, hard** | **NO** — `?limit=`, `Range:` both ignored | `content-range` total vs delivered |
-| PostgREST **REST read** | 1,000 rows | yes — explicit `&limit=N` | row count vs expectation |
+| Source | Real cap | Does `limit=` raise it? | The actual fix | How to detect |
+|---|---|---|---|---|
+| PostgREST **REST read** | **1,000 rows** | **NO** | `Range-Unit: items` + `Range: 0-999`, `1000-1999`, … until a short page | `content-range` total vs delivered |
+| PostgREST **RPC** | **1,000 rows** | **NO** | must be bounded **inside the function** | `content-range` total vs delivered |
+| Alpaca bars | **~2,000 rows** (not the 10,000 `limit` accepts) | no — send fewer symbols | chunk symbols; follow `next_page_token` | `next_page_token is null` |
+| Alpaca 10-sec aggs | **~7,500 bars** (despite `limit=50000`) | no | follow `next_url` | `next_url is null` |
 
-The PostgREST **RPC** case is the nasty one: it is the documented 1,000-row rule in the
-single form where the documented fix does not work. Verified directly — `?limit=10000`
-returned 1000, `Range: 0-4999` returned 1000, and the server replied
-`content-range: 0-999/1305`. **Fix inside the function**: filter to rows the caller can
-actually use, return zero rows early when a global gate fails (rather than emitting 1,300
-nulls), `order by` significance, `limit ~900` for headroom.
+> **`&limit=N` DOES NOT RAISE THE POSTGREST CAP — NOT FOR RPC AND NOT FOR PLAIN READS.**
+> An earlier version of this section said to add `&limit=N` for REST reads. **That advice
+> is wrong and it cost weeks.** Re-verified on live data (Jul 27 2026, `overnight_actives`,
+> 1,618 rows):
+>
+> ```
+> &limit=2000   -> 1000 delivered,  content-range: 0-999/1618   (618 silently dropped)
+> &limit=10000  -> 1000 delivered
+> Range: 0-999  -> 1000    Range: 1000-1999 -> 618              (1,618 complete)
+> ```
+>
+> The server reports the truth only in the `content-range` header. There is no error.
+
+**REST reads:** paginate with `Range` headers in 1,000-row windows until a short page
+returns; cap the loop (say 10 pages). **RPC:** nothing lifts it from the client — `?limit=`
+and `Range:` are both ignored (`content-range: 0-999/1305` observed) — so the bound must be
+enforced *inside* the function: filter to rows the caller can actually use, return zero rows
+early when a global gate fails rather than emitting 1,300 nulls, `order by` significance,
+`limit ~900` for headroom.
+
+**Cheap escape hatch for one-off reads:** aggregate server-side so the answer is a single
+row — `select count(*), string_agg(ticker, ',' order by ticker)` — which sidesteps the cap
+entirely and is how the 2,408-name chop universe is pulled for analysis.
 
 Alpaca practical limits at 5-min bars: **~30 tickers per request, ~20 for RTH**. A
 60-ticker overnight request succeeds only because BOATS is a thin tape — never generalise
@@ -761,6 +815,25 @@ rows matched an independent tape recount exactly.**
 
 ---
 
+### v651 — Most Actives: sub-dollar price precision (Jul 27 2026)
+
+*(Also reconstructed after the fact.)* Found by audit: recomputing SPREAD from the **rendered** bid/ask
+disagreed with the displayed percentage on 24 of 100 rows. The spread itself was right — it is computed
+from raw prices — but BID and ASK rendered with `toFixed(2)`, which destroys the book on sub-dollar
+names:
+
+```
+GSUN  raw 0.22   / 0.2235  -> rendered 0.22 / 0.22   (looks LOCKED)
+OMH   raw 0.6261 / 0.6275  -> rendered 0.63 / 0.63   (looks LOCKED)
+MTNB  raw 0.3757 / 0.3768  -> rendered 0.38 / 0.38   (looks LOCKED)
+```
+
+Those carried real spreads of 1.58%, 0.095% and $0.0011, so SPREAD read wide while the two prices
+beside it read identical — internally contradictory on screen. **Fix:** `fmtQuotePx` — 4 decimals below
+$1, 2 at or above. Principled rather than arbitrary: **Reg NMS Rule 612** permits sub-penny *quoting*
+below $1.00 and requires cent increments above it, so that threshold is exactly where the extra digits
+are needed and exactly where they stop being meaningful.
+
 ### v648–v650 — Most Actives: SPREAD + trailing trade counts (Jul 27 2026)
 
 **v648 — SPREAD column, between BID and ASK** so the cell reads as the book does. Percentage of the
@@ -789,56 +862,6 @@ overnight window. Rides the existing 20s sweep.
   truncation so hard to see. Measured: 8 of 60 rows were affected; after the fix 60/60 populate.
 
 ---
-
-### v644–v645 — Most Actives: blank quote columns on load + quote refresh cadence (Jul 27 2026)
-
-*(Reconstructed into the handoff after the fact — see the context-loss note in §11a. These two shipped
-and were verified but were missing from this document.)*
-
-**Two defects behind a "does not load / does not refresh" report on v643.**
-
-1. **Blank on load — a key-availability race.** The quote fetch lived inside `fetchData`, gated on
-   `p.alpKey && p.alpSecret`. But overnight sets `needsAlpaca=false`, so `fetchData` runs and the table
-   loads **without** keys. If credentials were not yet in state at that moment the table rendered fully
-   populated while the quote columns stayed permanently blank, and nothing retried — the only
-   retrigger was another full load. A working table with two permanently empty columns is exactly the
-   shape of the report.
-2. **No meaningful refresh.** Quotes were tied to the 180s table reload (chosen for the Supabase scan
-   cadence), so top of book was up to three minutes stale despite a full 1,338-symbol sweep measuring
-   0.18s. Instrumenting the live page confirmed quote calls fired once at t=6.9s and not again in the
-   following 46s.
-
-**Fix:** quotes get their own effect, deps `[quoteEpoch, session, alpKey, alpSecret, autoRefresh]`.
-Keys are dependencies, so it **retries the moment credentials arrive**. `QUOTE_REFRESH_MS = 20000`
-while auto-refresh is on, independent of the 180s reload; stops when the toggle is off and skips while
-the tab is hidden. The effect WRITES to `actives`, so it reads rows through `activesRef` rather than
-depending on its own output. A sweep returning nothing leaves the previous quotes on screen rather
-than blanking the columns.
-
-**v645** additionally moved PRICE onto the quote cadence, fetching `trades/latest?feed=boats` alongside
-the quotes. Without it PRICE only moved on the 180s reload while the book moved every 20s, measured
-putting PRICE **outside [BID, ASK] on 34% of rows** (worst 56 bps: AMAT 551.51 against a 554.60/556.00
-book). Only prints ≤12h old are adopted, so a previous session's last trade cannot overwrite tonight's
-close, and MOVE %/GAP % are recomputed from the same anchors so the row stays internally consistent.
-
-### v651 — Most Actives: sub-dollar price precision (Jul 27 2026)
-
-*(Also reconstructed after the fact.)* Found by audit: recomputing SPREAD from the **rendered** bid/ask
-disagreed with the displayed percentage on 24 of 100 rows. The spread itself was right — it is computed
-from raw prices — but BID and ASK rendered with `toFixed(2)`, which destroys the book on sub-dollar
-names:
-
-```
-GSUN  raw 0.22   / 0.2235  -> rendered 0.22 / 0.22   (looks LOCKED)
-OMH   raw 0.6261 / 0.6275  -> rendered 0.63 / 0.63   (looks LOCKED)
-MTNB  raw 0.3757 / 0.3768  -> rendered 0.38 / 0.38   (looks LOCKED)
-```
-
-Those carried real spreads of 1.58%, 0.095% and $0.0011, so SPREAD read wide while the two prices
-beside it read identical — internally contradictory on screen. **Fix:** `fmtQuotePx` — 4 decimals below
-$1, 2 at or above. Principled rather than arbitrary: **Reg NMS Rule 612** permits sub-penny *quoting*
-below $1.00 and requires cent increments above it, so that threshold is exactly where the extra digits
-are needed and exactly where they stop being meaningful.
 
 ### v646–v647 — Most Actives: LAST TRADE column (Jul 27 2026)
 
@@ -873,6 +896,37 @@ Verified on live: 60/60 rows populated, 30/60 changed after a single 20s sweep, 
 prints, tooltips correct ("Last print 7s ago. Live.").
 
 ---
+
+### v644–v645 — Most Actives: blank quote columns on load + quote refresh cadence (Jul 27 2026)
+
+*(Reconstructed into the handoff after the fact — see the context-loss note in §11a. These two shipped
+and were verified but were missing from this document.)*
+
+**Two defects behind a "does not load / does not refresh" report on v643.**
+
+1. **Blank on load — a key-availability race.** The quote fetch lived inside `fetchData`, gated on
+   `p.alpKey && p.alpSecret`. But overnight sets `needsAlpaca=false`, so `fetchData` runs and the table
+   loads **without** keys. If credentials were not yet in state at that moment the table rendered fully
+   populated while the quote columns stayed permanently blank, and nothing retried — the only
+   retrigger was another full load. A working table with two permanently empty columns is exactly the
+   shape of the report.
+2. **No meaningful refresh.** Quotes were tied to the 180s table reload (chosen for the Supabase scan
+   cadence), so top of book was up to three minutes stale despite a full 1,338-symbol sweep measuring
+   0.18s. Instrumenting the live page confirmed quote calls fired once at t=6.9s and not again in the
+   following 46s.
+
+**Fix:** quotes get their own effect, deps `[quoteEpoch, session, alpKey, alpSecret, autoRefresh]`.
+Keys are dependencies, so it **retries the moment credentials arrive**. `QUOTE_REFRESH_MS = 20000`
+while auto-refresh is on, independent of the 180s reload; stops when the toggle is off and skips while
+the tab is hidden. The effect WRITES to `actives`, so it reads rows through `activesRef` rather than
+depending on its own output. A sweep returning nothing leaves the previous quotes on screen rather
+than blanking the columns.
+
+**v645** additionally moved PRICE onto the quote cadence, fetching `trades/latest?feed=boats` alongside
+the quotes. Without it PRICE only moved on the 180s reload while the book moved every 20s, measured
+putting PRICE **outside [BID, ASK] on 34% of rows** (worst 56 bps: AMAT 551.51 against a 554.60/556.00
+book). Only prints ≤12h old are adopted, so a previous session's last trade cannot overwrite tonight's
+close, and MOVE %/GAP % are recomputed from the same anchors so the row stays internally consistent.
 
 ### v643 — Most Actives: live BOATS top-of-book (Jul 27 2026)
 
@@ -914,6 +968,17 @@ ETF (BOXX/SHV/SGOV/SPY/BIL at 0.9–1.1 bps). Material for any overnight grid co
 
 ---
 
+### v642 — remove the MFE warning block from Close → Next High (Jul 26 2026)
+
+Removed at the user's request. The block restated a finding the user produced themselves (§9a), inside
+their own single-operator tool — the audience for that warning was the person who ran the research, so
+it was clutter rather than a safeguard. Nothing else changed: the technical footnote still carries the
+formula, the kept-not-clipped rule for negatives, the zero-boundary note and the ATR-multiple targets,
+and the "Never positive" tile still shows the count and share. The interpretation context lives in the
+v641 entry above.
+
+---
+
 ### v641 — Close → Next High Distribution (Jul 26 2026)
 
 Third histogram in the card. Returns show net travel, true range shows day size, this shows **reachable
@@ -945,17 +1010,6 @@ remain, and this section of the handoff is now where that context lives.
 Verified: bin integrity (bins sum to n, zero on a boundary, no bin mixes signs); edge cases all return
 null without throwing (empty, one row, null high, zero prior close). Live DOM verified against
 independently computed values: **14 assertions, all pass**, including the presence of the warning block.
-
----
-
-### v642 — remove the MFE warning block from Close → Next High (Jul 26 2026)
-
-Removed at the user's request. The block restated a finding the user produced themselves (§9a), inside
-their own single-operator tool — the audience for that warning was the person who ran the research, so
-it was clutter rather than a safeguard. Nothing else changed: the technical footnote still carries the
-formula, the kept-not-clipped rule for negatives, the zero-boundary note and the ATR-multiple targets,
-and the "Never positive" tile still shows the count and share. The interpretation context lives in the
-v641 entry above.
 
 ---
 
@@ -1244,22 +1298,6 @@ space before the separator. Renders correctly; only affects copy-paste and scree
 
 ---
 
-### v631 — Source Code page: Holy Grail metric definitions (Jul 26 2026)
-
-Documentation only, no logic change. New `CollapseStage` on the in-app **Source Code** page
-("Holy Grail Screener — Metric Definitions") covering everything shipped v619–v630, so the
-definitions live where the user actually reads them rather than only in this file:
-ATR ladder (with the Wilder ~2N−1 effective-memory caveat), Vol Exp, the C→H ladder (mean-not-hit-rate,
-and the independently-averaged legs), volume/trades medians + RVol/RTrd (mean-over-median asymmetry,
-and the 3d day-of-week caveat), and the stale-listing guard / minimum-bar requirements /
-`ladder_integrity_check`.
-
-Verified: build clean, route parity 87/88, strings confirmed present in `dist/index.html`, zero page
-errors. Note `CollapseStage` renders children only when expanded, so a DOM-text probe on a collapsed
-section returns nothing — confirm via the bundle or expand the section first.
-
----
-
 ### v632 — MV Charts: TODAY/YESTERDAY selected by trading day (Jul 26 2026) — VWAP BUG RESOLVED
 
 **The reported "VWAP draws nothing" was never a VWAP bug.** `sessionVwap` is correct and always was.
@@ -1309,6 +1347,22 @@ compress into a sliver. Preference is a **minimum leg size as a fraction of visi
 hard-coded timeframe suppression. Separately, the densest panel rendered **zero swing labels** —
 determine whether `detectSwing` found nothing at N=4 on monthly bars, or v618's `MINGAP=12px` thinned
 them all away. If the latter, that is bare unlabelled lines, the exact symptom v613 removed.
+
+---
+
+### v631 — Source Code page: Holy Grail metric definitions (Jul 26 2026)
+
+Documentation only, no logic change. New `CollapseStage` on the in-app **Source Code** page
+("Holy Grail Screener — Metric Definitions") covering everything shipped v619–v630, so the
+definitions live where the user actually reads them rather than only in this file:
+ATR ladder (with the Wilder ~2N−1 effective-memory caveat), Vol Exp, the C→H ladder (mean-not-hit-rate,
+and the independently-averaged legs), volume/trades medians + RVol/RTrd (mean-over-median asymmetry,
+and the 3d day-of-week caveat), and the stale-listing guard / minimum-bar requirements /
+`ladder_integrity_check`.
+
+Verified: build clean, route parity 87/88, strings confirmed present in `dist/index.html`, zero page
+errors. Note `CollapseStage` renders children only when expanded, so a DOM-text probe on a collapsed
+section returns nothing — confirm via the bundle or expand the section first.
 
 ---
 
@@ -1501,55 +1555,6 @@ no ATR. Median helper checked against a manual sort (1405 == 1405) and returns n
 > the container early (`})()}` + `{(function(){`) and the build failed with
 > `Unexpected token, expected ","`. Before inserting next to an IIFE in this file, check whether
 > it sits in a JSX child list or an array literal — they look identical and splice differently.
-
----
-
-### Full data-integrity hunt — findings + `ladder_integrity_check` (Jul 25 2026)
-
-A deliberate sweep for things NOT previously checked. Two real findings, one new safeguard.
-
-**Delivery is complete — verified end to end for the first time.** The RPC return type grew from 9
-to 23 columns this session and paginates in 3 pages under a 30s statement timeout, so truncation
-was a live risk (§5.1). Measured: **2,500/2,500 unique tickers delivered**, matching the server's
-`content-range: 0-0/2500`; latency 2.1s / 5.6s / 1.0s; **0 unpaired legs across the full 2,500**
-(previous checks only covered the visible 500). Only the app consumes this RPC — grepped; the
-widening broke no other caller.
-
-> **FINDING — the scan universe contains DEAD LISTINGS carrying live-looking numbers.** 69 rows
-> had a 14d ATR and a price but no short rungs. Chasing it: NGD, ERJ, SAND, BYON, CIVI, COOP are
-> **absent from Polygon's grouped endpoint entirely** (12,410 tickers returned for 2026-07-24;
-> none of them present), absent from the per-ticker endpoint, and absent from a 13,345-ticker
-> cached series covering May 12 onward. Polygon has no data for these symbols for two months —
-> yet `cached_oscillation_screener` listed NGD at $9.08 with `atr_14d_pct` 9.16. The pipeline's
-> bar window reaches back far enough to pick them up and nothing flagged them.
->
-> The v626 `staleListing` guard nulls their ladders from the next scan. **But the row still
-> appears in the Holy Grail table with a price, a chop score and a Cap Eff rank.** ~87 of 2,500
-> (3.5%) of the universe. Nulling the ladders is a mitigation, not a fix — **the real fix is in
-> universe selection, which is out of scope here and left open deliberately.**
-
-Today's scan_date was aligned to the new semantics: 18 stale listings nulled across all 16 ladder
-fields, then the 69 dead listings' `atr_14d_*` nulled. Post-cleanup counts: atr_14d 2402, short
-rungs 2409, c2h 2407, **`still_mismatched: 0`**. The 7-row gap between 14d and the short rungs is
-legitimate — those tickers have enough bars for a 7-period Wilder but not a 14.
-
-**NEW SAFEGUARD — `ladder_integrity_check(write_log)`, pg_cron job 49 hourly at `:25`.**
-Deliberately offset from `data_integrity_check` at `:07` so the two never contend for the
-free-plan pool (§5.2b). 20 checks in four classes:
-1. **Coverage** per rung — FAIL < 50%, WARN < 80% of scan rows. Calibrated from the observed 96%.
-2. **Paired legs** — `count(pct)` must equal `count(dollar)` for all 8 pairs. This is the
-   Most Actives `excluded.<col>` failure class, which is invisible to any structural check.
-3. **Arithmetic, ATR only** — `pct = dollar/price*100` within 0.5. **Deliberately excludes C→H**,
-   where the two legs are averaged independently and the identity does not hold.
-4. **Guard leak** — no `|c2h| > 100`, no negative ATR.
-
-**Alarms proven to fire** (§5 — an alarm never shown to fire is not a safeguard). Corrupted three
-distinct classes on three tickers: nulled `MXL.atr_14d_dollar` → `paired legs FAIL GAP=1`; set
-`WOLF.c2h_10d_pct=999` → `guard leak FAIL`; set `SMCI.atr_7d_pct=99` → `arithmetic FAIL`. Repaired
-and re-verified **20 OK / 0 not-OK**.
-
-Still open from this hunt: dead listings in universe selection (above), and `integrity_log` still
-has no notification path.
 
 ---
 
@@ -1785,37 +1790,6 @@ tracked. Its name literally contains newlines, so `rm -- ':'` matched nothing; r
 
 ---
 
-### Fib overlay refinements (v616–v618, Jul 25 2026) — written up from the diffs
-
-These three shipped from a parallel session and sat undocumented for several versions. Reconstructed
-from the commits, not from memory — nobody has re-verified the rendered output, so treat the
-behavioural claims as read-from-code rather than observed.
-
-- **v616** (`d4d7837`) — **label the 0% and 100% lines.** They were drawn but deliberately left
-  unlabelled (v612/v613 reasoning: the anchor caption plus the high/low markers covered them). That
-  was wrong for the SWING set: its 0%/100% prices are the *detected pivot* hi/lo, which differ from
-  the chart's visible high/low markers, so those two prices appeared on no labelled line at all.
-  `isEndpoint`/`labelled` gone; every level gets text.
-- **v617** (`3b48406`) — **`drawSet` gains an `xOff` parameter.** When both toggles are on, range
-  and swing can share an anchor price and their labels collided at the same y. Swing labels now
-  shift right by `swXOff = bothOn ? 96 : 0` px (applied to both the level pills and the caption).
-- **v618** (`fc06585`) — two fixes. (a) **Null-bar guard in `detectSwing`**: a bar with null/NaN
-  h/l would pass the pivot comparisons (`null <= x` is false, so it never fails a test) and could be
-  selected as an anchor carrying a null price. Now skipped, both for the candidate bar and its
-  neighbours. (b) **Label de-collision on compressed legs**: a small leg on a long chart (a $16
-  swing on a 10Y chart spanning $200) crushed all 7 labels into ~25px. A pre-pass walks levels
-  top-to-bottom and keeps a text label only if it clears the last kept one by `MINGAP = 12`px;
-  0%/100% are always kept, then key levels (38.2/50/61.8), then 23.6/78.6 are dropped first. Lines
-  still draw for every level — only the text is thinned.
-
-Note (b) partially re-introduces the label suppression that v613 removed, but on a different
-criterion: v613 dropped labels by *timeframe class*, v618 drops them only on *measured pixel
-collision*. That is the right axis — but it does mean a level can again appear as a bare line, the
-exact symptom v613 was fixing. If "some prices aren't shown" is reported again on a long chart with
-a small swing leg, this is the cause and it is by design.
-
----
-
 ### ATR ladder — 14d / 7d / 3d / previous day (v620, Jul 25 2026)
 
 Three columns added beside the existing 14d, each sortable by **both** % and $ (8 sort targets).
@@ -1931,6 +1905,37 @@ diverged most). The 12–20% readings are real; it's a chop screener.
 Note the top-ATR names in the table (WOLF 20.5%) are **not** the DB maxima (AXTX 70.6%, AAOX 50.2%,
 POEL 49.5%, BEX 48.2%) — those are all `ticker_type='ETF'` leveraged single-stock funds, excluded by
 the page's default stocks-only type filter. Expected, pre-existing.
+
+---
+
+### Fib overlay refinements (v616–v618, Jul 25 2026) — written up from the diffs
+
+These three shipped from a parallel session and sat undocumented for several versions. Reconstructed
+from the commits, not from memory — nobody has re-verified the rendered output, so treat the
+behavioural claims as read-from-code rather than observed.
+
+- **v616** (`d4d7837`) — **label the 0% and 100% lines.** They were drawn but deliberately left
+  unlabelled (v612/v613 reasoning: the anchor caption plus the high/low markers covered them). That
+  was wrong for the SWING set: its 0%/100% prices are the *detected pivot* hi/lo, which differ from
+  the chart's visible high/low markers, so those two prices appeared on no labelled line at all.
+  `isEndpoint`/`labelled` gone; every level gets text.
+- **v617** (`3b48406`) — **`drawSet` gains an `xOff` parameter.** When both toggles are on, range
+  and swing can share an anchor price and their labels collided at the same y. Swing labels now
+  shift right by `swXOff = bothOn ? 96 : 0` px (applied to both the level pills and the caption).
+- **v618** (`fc06585`) — two fixes. (a) **Null-bar guard in `detectSwing`**: a bar with null/NaN
+  h/l would pass the pivot comparisons (`null <= x` is false, so it never fails a test) and could be
+  selected as an anchor carrying a null price. Now skipped, both for the candidate bar and its
+  neighbours. (b) **Label de-collision on compressed legs**: a small leg on a long chart (a $16
+  swing on a 10Y chart spanning $200) crushed all 7 labels into ~25px. A pre-pass walks levels
+  top-to-bottom and keeps a text label only if it clears the last kept one by `MINGAP = 12`px;
+  0%/100% are always kept, then key levels (38.2/50/61.8), then 23.6/78.6 are dropped first. Lines
+  still draw for every level — only the text is thinned.
+
+Note (b) partially re-introduces the label suppression that v613 removed, but on a different
+criterion: v613 dropped labels by *timeframe class*, v618 drops them only on *measured pixel
+collision*. That is the right axis — but it does mean a level can again appear as a bare line, the
+exact symptom v613 was fixing. If "some prices aren't shown" is reported again on a long chart with
+a small swing leg, this is the cause and it is by design.
 
 ---
 
@@ -2153,6 +2158,55 @@ has more usable sample — that conflated *measurement confidence* with *predict
 strength*. Each leg is scored on a log scale from a floor (AM 200%, OVN 100%) and
 capped, so no single leg can carry the score alone. Sample sizes are small enough
 (n=10–14) that the exact split is a judgment call; revisit once more sessions accumulate.
+
+### Full data-integrity hunt — findings + `ladder_integrity_check` (Jul 25 2026)
+
+A deliberate sweep for things NOT previously checked. Two real findings, one new safeguard.
+
+**Delivery is complete — verified end to end for the first time.** The RPC return type grew from 9
+to 23 columns this session and paginates in 3 pages under a 30s statement timeout, so truncation
+was a live risk (§5.1). Measured: **2,500/2,500 unique tickers delivered**, matching the server's
+`content-range: 0-0/2500`; latency 2.1s / 5.6s / 1.0s; **0 unpaired legs across the full 2,500**
+(previous checks only covered the visible 500). Only the app consumes this RPC — grepped; the
+widening broke no other caller.
+
+> **FINDING — the scan universe contains DEAD LISTINGS carrying live-looking numbers.** 69 rows
+> had a 14d ATR and a price but no short rungs. Chasing it: NGD, ERJ, SAND, BYON, CIVI, COOP are
+> **absent from Polygon's grouped endpoint entirely** (12,410 tickers returned for 2026-07-24;
+> none of them present), absent from the per-ticker endpoint, and absent from a 13,345-ticker
+> cached series covering May 12 onward. Polygon has no data for these symbols for two months —
+> yet `cached_oscillation_screener` listed NGD at $9.08 with `atr_14d_pct` 9.16. The pipeline's
+> bar window reaches back far enough to pick them up and nothing flagged them.
+>
+> The v626 `staleListing` guard nulls their ladders from the next scan. **But the row still
+> appears in the Holy Grail table with a price, a chop score and a Cap Eff rank.** ~87 of 2,500
+> (3.5%) of the universe. Nulling the ladders is a mitigation, not a fix — **the real fix is in
+> universe selection, which is out of scope here and left open deliberately.**
+
+Today's scan_date was aligned to the new semantics: 18 stale listings nulled across all 16 ladder
+fields, then the 69 dead listings' `atr_14d_*` nulled. Post-cleanup counts: atr_14d 2402, short
+rungs 2409, c2h 2407, **`still_mismatched: 0`**. The 7-row gap between 14d and the short rungs is
+legitimate — those tickers have enough bars for a 7-period Wilder but not a 14.
+
+**NEW SAFEGUARD — `ladder_integrity_check(write_log)`, pg_cron job 49 hourly at `:25`.**
+Deliberately offset from `data_integrity_check` at `:07` so the two never contend for the
+free-plan pool (§5.2b). 20 checks in four classes:
+1. **Coverage** per rung — FAIL < 50%, WARN < 80% of scan rows. Calibrated from the observed 96%.
+2. **Paired legs** — `count(pct)` must equal `count(dollar)` for all 8 pairs. This is the
+   Most Actives `excluded.<col>` failure class, which is invisible to any structural check.
+3. **Arithmetic, ATR only** — `pct = dollar/price*100` within 0.5. **Deliberately excludes C→H**,
+   where the two legs are averaged independently and the identity does not hold.
+4. **Guard leak** — no `|c2h| > 100`, no negative ATR.
+
+**Alarms proven to fire** (§5 — an alarm never shown to fire is not a safeguard). Corrupted three
+distinct classes on three tickers: nulled `MXL.atr_14d_dollar` → `paired legs FAIL GAP=1`; set
+`WOLF.c2h_10d_pct=999` → `guard leak FAIL`; set `SMCI.atr_7d_pct=99` → `arithmetic FAIL`. Repaired
+and re-verified **20 OK / 0 not-OK**.
+
+Still open from this hunt: dead listings in universe selection (above), and `integrity_log` still
+has no notification path.
+
+---
 
 ## 9a. Research: persistence testing (Jul 26 2026)
 
