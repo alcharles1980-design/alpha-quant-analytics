@@ -320,6 +320,31 @@ from the easiest case.
 **Universal rule: after any bulk fetch, verify DELIVERED == EXPECTED before consuming.** A
 count that merely looks reasonable is not evidence.
 
+### 5.1e Alpaca bars: `end` is INCLUSIVE, and bar `n` differs by venue (Jul 27 2026)
+
+**`end` is inclusive on `/v2/stocks/bars`.** Requesting `start=07:52Z&end=08:02Z` returns bars
+at 08:00, 08:01 **and 08:02** — three, where a half-open `[start, end)` reading expects two.
+Any comparison built on the half-open assumption over-counts by one bar. The live sweep is
+unaffected because it passes **`start` only** and filters by minute index client-side; keep it
+that way.
+
+**Bar `n` includes odd lots on SIP but NOT on BOATS.** This is a venue difference, measured, and
+it dictates which source each session tab must use:
+
+| feed | bar `n` vs raw tape | so counts come from |
+|---|---|---|
+| SIP (pre-market) | **+0.00% median** across 8 symbols, exact on 5 of 8, worst −0.93% — despite 68–94% odd-lot share | 1-minute **bars** (cheap) |
+| BOATS (overnight) | **misses a median 37.5%**, p90 100% (COIN: 99 on the tape, 0 in bars) | the raw **tape** (ring buffer) |
+
+The SIP tape is not a viable alternative anyway — 8 symbols over 15 minutes returned 80,650
+trades across 9 pages and 8.2 MB, so a full universe would be gigabytes per sweep.
+
+**Both of these were nearly mis-diagnosed as an app bug.** A first comparison reported SIP bars
+running 13% under the tape and then 200% *over* it — impossible for one window, and the cause was
+entirely in the instrument: a moving `nowMin` anchor between runs plus the inclusive `end`. Fixed
+absolute timestamps and a corrected boundary gave +0.00%. **§5.1c again: prove the comparison
+before declaring a data fault.**
+
 ### 5.1c Prove the comparison before declaring a data fault
 
 My first cross-source audit reported 10/10 mismatches on a healthy pipeline. Three traps:
