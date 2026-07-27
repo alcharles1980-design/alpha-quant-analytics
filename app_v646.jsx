@@ -13906,6 +13906,15 @@ function MostActivesPage(p){
             if(tr&&typeof tr.p==='number'&&tr.p>0){
               var tts=tr.t?Date.parse(tr.t):NaN;
               var tAge=isFinite(tts)?Math.max(0,(qNow-tts)/1000):null;
+              // LAST TRADE column: the raw most recent print, recorded UNCONDITIONALLY with its age.
+              // Deliberately NOT subject to the 12-hour guard below — on a name that has not traded
+              // overnight, "last print was 9h ago" is the useful fact, and suppressing it would leave
+              // the column blank exactly where it is most informative. This is also what keeps LAST
+              // distinct from PRICE rather than a duplicate of it: they agree while a name is
+              // trading tonight and diverge the moment it stops.
+              patch.lastPx=tr.p;
+              patch.lastSz=(typeof tr.s==='number'&&tr.s>0)?tr.s:null;
+              patch.lastAge=tAge;
               // Only adopt a print that could belong to THIS session. The overnight window is
               // 8pm-4am ET, so anything older than 12h is a previous session's last print and must
               // not overwrite tonight's close.
@@ -14001,6 +14010,26 @@ function MostActivesPage(p){
   // strength alongside a 1-second quote would present stale fiction as live depth, so anything past
   // this threshold is dimmed and the exact age goes in the cell tooltip.
   var QUOTE_STALE_S=300;
+  // LAST TRADE cell: price, size and age together. Age is shown INLINE rather than only in a
+  // tooltip, because unlike a quote a trade print can be hours old on a thin overnight name and the
+  // number is meaningless without knowing when it happened. Compact units: s / m / h.
+  var fmtAge=function(sec){
+    if(sec==null)return '?';
+    if(sec<90)return Math.round(sec)+'s';
+    if(sec<5400)return Math.round(sec/60)+'m';
+    return Math.round(sec/3600)+'h';
+  };
+  var lastTradeCell=function(px,sz,age){
+    if(px==null)return <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{'\u2014'}</td>;
+    var stale=(age==null||age>QUOTE_STALE_S);
+    var tip=(age==null?'Trade timestamp unavailable.':'Last print '+fmtAge(age)+' ago.')
+      +(stale?' No recent print — this name has gone quiet, so the price is not current.':' Live.');
+    return <td title={tip} style={{padding:'4px 3px',textAlign:'right',whiteSpace:'nowrap',opacity:stale?0.45:1}}>
+      <span style={{color:C.txtBright,fontWeight:600}}>{px.toFixed(2)}</span>
+      {sz!=null?<span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{'\u00D7'+fmtVol(sz)}</span>:null}
+      <span style={{color:stale?C.warn:C.txtDim,fontSize:6.5,marginLeft:3}}>{fmtAge(age)}</span>
+    </td>;
+  };
   var quoteCell=function(px,sz,age,side){
     if(px==null)return <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{'\u2014'}</td>;
     var stale=(age==null||age>QUOTE_STALE_S);
@@ -14559,6 +14588,7 @@ function MostActivesPage(p){
             {tblTh("price","PRICE",null,4,isOvernightView?"IN SESSION":"LATEST",isOvernightView?"Latest traded price within this session (the most recent print in the session window).":"Latest traded price.")}
             {isBoatsView&&tblTh("bidPx","BID",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book BID \u2014 the best resting buy price on the overnight ATS and the size displayed at it. This is what you would hit selling right now. Dimmed when the quote is more than 5 minutes old: illiquid names often have not quoted overnight at all, and their latest quote can be days stale. Hover a cell for its exact age.")}
             {isBoatsView&&tblTh("askPx","ASK",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book ASK \u2014 the best resting sell price and the size displayed at it. This is what you would pay lifting right now. The gap between BID and ASK is the round-trip cost of entering and exiting immediately; measured across a full overnight universe the MEDIAN was about 171 bps, far wider than regular hours. Dimmed when stale.")}
+            {isBoatsView&&tblTh("lastPx","LAST TRADE",null,null,"PRICE \u00D7 SIZE \u00B7 AGE","The most recent PRINT on the overnight ATS \u2014 an actual execution, not a quote \u2014 with the size that traded and how long ago. Unlike the PRICE column this is never suppressed by age: on a name that has not traded tonight, \"last print 9h ago\" is the useful fact, and it is what tells you the two columns have diverged. Dimmed past 5 minutes.")}
             {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN this session: from the session's first print to the latest print. Shows how the price has drifted during the session, not how far it has gapped.":"Change versus the previous close.")}
             {isOvernightView&&tblTh("gapPct","GAP %",null,null,"SINCE 4PM","Gap versus the REGULAR-SESSION CLOSE at 4PM ET (the prior day's close for overnight and pre-market; the same day's close for after-market). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
             {tblTh("marketCap","MARKET",null,null,"CAP","Market capitalisation \u2014 total value of the company's shares.")}
@@ -14593,6 +14623,7 @@ function MostActivesPage(p){
                 <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 {isBoatsView&&quoteCell(a.bidPx,a.bidSz,a.quoteAge,'bid')}
                 {isBoatsView&&quoteCell(a.askPx,a.askSz,a.quoteAge,'ask')}
+                {isBoatsView&&lastTradeCell(a.lastPx,a.lastSz,a.lastAge)}
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.gapPct>0?C.accent:a.gapPct<0?C.warn:C.txtDim,fontWeight:600}}>{(a.gapPct!=null&&isFinite(a.gapPct))?((a.gapPct>=0?'+':'')+a.gapPct.toFixed(1)+'%'):'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
