@@ -14080,6 +14080,12 @@ function MostActivesPage(p){
     if(sec<5400)return Math.round(sec/60)+'m';
     return Math.round(sec/3600)+'h';
   };
+  // Price precision for the live overnight columns. Reg NMS Rule 612 permits sub-penny QUOTING below
+  // $1.00, so that is exactly where two decimals destroys the book: measured live, GSUN quoted
+  // 0.22/0.2235 and OMH 0.6261/0.6275, both of which rendered as a LOCKED market at toFixed(2) while
+  // the SPREAD column correctly read 1.58% and 0.095%. MTNB rendered 0.38/0.38 on a real $0.0011
+  // spread. Above $1 the minimum increment is a cent, so two decimals is right there.
+  var fmtQuotePx=function(v){return (Math.abs(v)<1)?v.toFixed(4):v.toFixed(2);};
   // SPREAD cell: percentage against the mid, with the dollar figure beneath it. Precision adapts to
   // magnitude — overnight spreads span roughly three orders of magnitude (SPY ~0.011%, thin names
   // past 10%), so a fixed 2 decimals would collapse every liquid name to "0.01%" and throw away the
@@ -14113,7 +14119,7 @@ function MostActivesPage(p){
     var tip=(age==null?'Trade timestamp unavailable.':'Last print '+fmtAge(age)+' ago.')
       +(stale?' No recent print — this name has gone quiet, so the price is not current.':' Live.');
     return <td title={tip} style={{padding:'4px 3px',textAlign:'right',whiteSpace:'nowrap',opacity:stale?0.45:1}}>
-      <span style={{color:C.txtBright,fontWeight:600}}>{px.toFixed(2)}</span>
+      <span style={{color:C.txtBright,fontWeight:600}}>{fmtQuotePx(px)}</span>
       {sz!=null?<span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{'\u00D7'+fmtVol(sz)}</span>:null}
       <span style={{color:stale?C.warn:C.txtDim,fontSize:6.5,marginLeft:3}}>{'\u00B7 '+fmtAge(age)}</span>
     </td>;
@@ -14124,7 +14130,7 @@ function MostActivesPage(p){
     var tip=(age==null?'Quote timestamp unavailable.':'Quote age '+(age<90?Math.round(age)+'s':(age/60<90?Math.round(age/60)+'m':Math.round(age/3600)+'h'))+'.')
       +(stale?' Stale — no recent quote on this side, treat the size as indicative only.':' Live.');
     return <td title={tip} style={{padding:'4px 3px',textAlign:'right',whiteSpace:'nowrap',opacity:stale?0.45:1}}>
-      <span style={{color:side==='bid'?C.accent:C.warn,fontWeight:600}}>{px.toFixed(2)}</span>
+      <span style={{color:side==='bid'?C.accent:C.warn,fontWeight:600}}>{fmtQuotePx(px)}</span>
       {sz!=null?<span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{'\u00D7'+fmtVol(sz)}</span>:null}
     </td>;
   };
@@ -14643,7 +14649,7 @@ function MostActivesPage(p){
                   </td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:C.txt,fontWeight:600}} title="Raw sum of the three sessions. The ranking multiplies this by sqrt of the weakest leg, so a name strong in only one session ranks below one strong across several.">{r.sumTrades!=null?Math.round(r.sumTrades).toLocaleString()+'%':'\u2014'}</td>
                   <td style={{padding:'4px 3px',color:stCol,fontWeight:600,fontSize:7}}>{r.confidence}</td>
-                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{r.price?'$'+r.price.toFixed(2):'\u2014'}</td>
+                  <td style={{padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600}}>{r.price?'$'+fmtQuotePx(r.price):'\u2014'}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.amTrd>=500?C.accent:C.txt,fontWeight:r.amTrd>=500?700:400}}>{pct(r.amTrd)}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.amVol>=200?C.accent:C.txtDim}}>{pct(r.amVol)}</td>
                   <td style={{padding:'4px 3px',textAlign:'right',color:r.amGap>0?C.accent:r.amGap<0?C.warn:C.txtDim}}>{(r.amGap!=null&&isFinite(r.amGap))?((r.amGap>=0?'+':'')+r.amGap.toFixed(1)+'%'):'\u2014'}</td>
@@ -14712,7 +14718,7 @@ function MostActivesPage(p){
                       color:C.blue,fontSize:10,fontFamily:F,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
                 </td>
                 <td style={Object.assign({padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7},fzTd(3,rowBg))}>{a.tickerType||'STK'}</td>
-                <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
+                <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+fmtQuotePx(a.price):'\u2014'}</td>
                 {isBoatsView&&quoteCell(a.bidPx,a.bidSz,a.quoteAge,'bid')}
                 {isBoatsView&&spreadCell(a.spreadPct,a.spreadUsd,a.quoteAge)}
                 {isBoatsView&&quoteCell(a.askPx,a.askSz,a.quoteAge,'ask')}
