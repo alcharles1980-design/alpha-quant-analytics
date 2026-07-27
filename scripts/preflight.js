@@ -36,7 +36,6 @@ if (appV && bannerV && +bannerV === appV) ok(`app_v${appV}.jsx matches build.js 
 else bad(`app_v${appV}.jsx vs build.js banner v${bannerV} — the banner is hardcoded; a missed sed deploys vN+1 displaying vN`);
 if (pkgNum === appV) ok(`package.json ${pkgV} matches v${appV}`);
 else warn(`package.json ${pkgV} does not map to v${appV} (cosmetic, but keep them in step)`);
-const compiled = buildSrc.includes('app_v') ? null : null;
 
 // ── parse once for the checks below ───────────────────────────────────────────
 const src = fs.readFileSync(path.join(root, appFiles[0]), 'utf8');

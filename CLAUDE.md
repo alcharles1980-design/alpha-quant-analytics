@@ -87,6 +87,17 @@ select pg_size_pretty(pg_database_size(current_database())) as db_size,
 select jobid, schedule, active, jobname from cron.job order by jobid;
 ```
 
+```sql
+-- Unread alarms. data_integrity_check() and ladder_integrity_check() write here
+-- hourly and NOTHING notifies — so they only get seen if you look. They were
+-- firing unread for days before anyone did (§10).
+select check_name, severity, count(*) n, max(checked_at) latest,
+       (array_agg(detail order by checked_at desc))[1] as newest
+from integrity_log
+where checked_at > now() - interval '48 hours' and severity in ('WARN','FAIL')
+group by check_name, severity order by severity, n desc;
+```
+
 Also: `list_edge_functions`, and check the menu/route parity (§6) if the change
 touches navigation. **The DB is on the FREE plan — 512 MB hard cap. See §8.**
 
@@ -776,6 +787,8 @@ Daily Returns & Red/Green Day Counts block (v634–v635). TODAY/YESTERDAY select
 which resolved the long-open "VWAP draws nothing" report) and print the real session date (v633).
 **See §9a for persistence results.**
 
+> **Cross-reference entries by VERSION, never by position.** "the entry above/below" breaks the moment §9 is reordered or an entry is archived — which is exactly what happened to the v641/v642 pair when this section was sorted into descending order.
+
 ### AUDIT of the Most Actives overnight work, v643–v652 (Jul 27 2026)
 
 **Verified correct** — 418 assertions comparing every rendered cell against the raw payload the page
@@ -787,7 +800,7 @@ the auto-refresh toggle all confirmed behaviourally.
 
 ### v652 — count trailing trades from the TAPE, not minute bars (Jul 27 2026)
 
-*(Audit finding — full method in the audit entry above.)*
+*(Audit finding — full method in the **AUDIT of the Most Actives overnight work** entry.)*
 
 **1-minute bar `n` EXCLUDES ODD LOTS (trade condition `I`), and overnight flow is overwhelmingly
 odd-lot.** Across 59 names active in the last 15 minutes, bars missed a **median 37.5%** of trades,
@@ -986,7 +999,7 @@ their own single-operator tool — the audience for that warning was the person 
 it was clutter rather than a safeguard. Nothing else changed: the technical footnote still carries the
 formula, the kept-not-clipped rule for negatives, the zero-boundary note and the ATR-multiple targets,
 and the "Never positive" tile still shows the count and share. The interpretation context lives in the
-v641 entry above.
+**v641 entry**.
 
 ---
 
@@ -1008,7 +1021,7 @@ zero-boundary rule is exactly the subtlety that only ever gets fixed in one copy
 verified: the returns histogram reproduces its v637 baseline with zero drift across all seven
 statistics.**
 
-**Interpretation (see the v642 entry below; this record stands).** The figures are
+**Interpretation (see the v642 entry; this record stands).** The figures are
 **maximum favourable excursions, not achievable returns** — a hit rate says price touched that level at
 some point in the session, not that it was exited there, how far it fell first, or where it closed.
 §9a measured the average close→high as **highly persistent (r = +0.848)** while the buy-the-close /
@@ -1279,6 +1292,25 @@ Spearman 0.848 — related to plain volatility but genuinely distinct, so it is 
 ---
 
 ## 10. Known open items
+
+> **Read `integrity_log` before trusting anything (§1).** As of Jul 27 2026 it held
+> **48 WARN and 13 FAIL in 48 hours, entirely unread.** Two distinct issues, both real:
+>
+> **1. Freshness false-FAILs on WEEKENDS, not just holidays.** 13 FAILs across
+> premarket/aftermarket/overnight on Jul 25–26 (Sat/Sun), e.g. *"1144 min since last write
+> (session LIVE)"* — the check believes the session is live at the weekend. This item was
+> previously recorded as affecting only market holidays (~9 days/yr); it is **weekends too**,
+> so roughly 110 days a year, which is why the log is full of noise nobody reads. §5.6 rule 2
+> already says freshness must stay silent when a session is legitimately closed — that rule is
+> not being honoured for Sat/Sun.
+>
+> **2. `pace curve: aftermarket` WARNs hourly and is CURRENT** (48 occurrences, latest 07:07
+> Jul 27): *"wide cross-ticker spread (47 pts), projection unreliable"*. Confirmed in
+> `session_pace_curve` — worst spread by session type: **aftermarket 46.7 pts**, overnight
+> 30.5, premarket 29.6, **rth 16.3**. Aftermarket is nearly 3x RTH, so projecting a partial
+> trade count to a full-session estimate is genuinely unreliable there. **The app still renders
+> ON PACE on the aftermarket tab with no indication of this.** Options: suppress ON PACE for
+> aftermarket, or mark it low-confidence. All four curves were last calibrated **Jul 23**.
 
 ### Resolved Jul 24 2026
 - **Most Actives median columns were blank** (MED TRADES / MED VOL / `rel_*_med`). Root cause
