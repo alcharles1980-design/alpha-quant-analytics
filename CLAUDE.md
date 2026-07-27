@@ -36,6 +36,7 @@ verification block below before writing any code.
 | 11a | Context loss in long sessions | Why `git log` beats recollection. |
 | 11b | Tooling — verify, don't assert | A wrong claim about my own capabilities, and the rule it earned. |
 | 11c | **Connectors & the deploy path** | What is connected, how code reaches production, why `BUILD_TS` misleads. |
+| 11d | **Making context loss harmless** | It will happen. Commit measurements when taken; keep `docs/IN-FLIGHT.md`. |
 | 12 | Sandbox capabilities | Tools and libraries available. |
 
 **Two commands do most of the checking:**
@@ -79,7 +80,9 @@ folding one version into another entry's prose makes it invisible.
 > being unable to account for its own commits (§11a). Two rules follow:
 > 1. **A version in the log and absent from §9 is a gap to fill**, using the
 >    commit message, before starting new work.
-> 2. **Before "discovering" a bug, check it is not already fixed.** The highest
+> 2. **Read `docs/IN-FLIGHT.md`** — anything mid-investigation, with the measurements already
+>    taken. Trust `git log` over it if they disagree.
+> 3. **Before "discovering" a bug, check it is not already fixed.** The highest
 >    `app_vN.jsx` and the last few commit messages answer that in seconds. The
 >    same defect was once diagnosed twice, an hour apart, for exactly this reason.
 
@@ -1894,6 +1897,41 @@ Every Worker reaches production through `.github/workflows/`, using repo secrets
   (data API) or empty (paper trading API). **It 403s any client without a browser User-Agent**
   (Cloudflare error 1010), so an Edge Function or `pg_net` cannot use it — see §5.1f.
 - **`edgar-proxy`** — SEC EDGAR, which rate-limits (429) direct calls.
+
+---
+
+## 11d. Making context loss harmless (Jul 27 2026)
+
+**It cannot be prevented.** Four versions shipped tonight (v644, v645, v651, v656) from windows the
+session had no memory of. Assume it will happen again and make it cost nothing.
+
+**What already worked — do not weaken it.** *No work was lost.* All four commits carry 36–47 line
+messages holding the full diagnosis and evidence; v651's contains the raw quotes that proved the bug,
+written by a session that left no other trace. **Commit messages are the backstop that survives when
+context does not.** Keep writing them as complete write-ups, not one-liners.
+
+**What did get lost:** the §9 entries (now mandatory, §4 step 8) and, more dangerously, *findings
+between measurement and commit*. Tonight's bar-settling curve, stream connection limits and feed
+behaviour sat only in context for long stretches. A drop mid-investigation would have destroyed them.
+
+### The three rules
+
+1. **COMMIT A MEASUREMENT WHEN YOU TAKE IT, not when the task finishes.** An expensive number living
+   only in context is one truncation from gone. A `docs:` or `research:` commit costs seconds. Every
+   durable finding from tonight — §5.1e, §5.1f, §5.1g — should have been committed hours earlier.
+2. **KEEP `docs/IN-FLIGHT.md` CURRENT** for anything non-trivial: what was asked, what is measured,
+   what is decided, the next step. Clear it on ship. It bridges "measured" and "committed".
+3. **NEVER ASSUME AN UNFAMILIAR VERSION IS SOMEONE ELSE'S WORK.** Check the sandbox first — test
+   scripts, file timestamps, git identity. Tonight `pwtest/triple644.js`, named after the user's own
+   phrase, proved authorship in seconds after the assistant had reported being unable to account for
+   its own commits.
+
+### On resuming
+
+Run §1. It reconciles `git log` against §9 and reads `integrity_log`. Then read
+`docs/IN-FLIGHT.md`. **`git log` outranks recollection, and both outrank this file.** Before
+"discovering" a bug, check the last few commits — the same defect was diagnosed twice, an hour
+apart, for want of that check.
 
 ---
 
