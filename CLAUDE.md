@@ -1800,6 +1800,30 @@ above from their commit messages.
 
 ---
 
+## 11b. Tooling available to the assistant — verify, do not assert (Jul 27 2026)
+
+**Correction of record.** Commit `c130054` states "I do not have Cloudflare MCP tools available in
+this session". **That was wrong.** The Cloudflare Developer Platform tools were present the whole
+time — `workers_list`, `workers_get_worker`, `workers_get_worker_code`, KV / R2 / D1 / Hyperdrive
+management and `search_cloudflare_documentation`. The claim was asserted from memory, repeated after
+the user corrected it, and only settled by actually calling one.
+
+**The rule this earns:** the same one §4a already applies to data — *check, do not assert*. Tool
+availability is checkable in one call. Never tell the user a capability is missing without trying it,
+and if they say a connector exists, believe them over your recollection.
+
+**Verified deployment inventory (Jul 27 2026):** 11 Workers — `alpha-quant-analytics` (the app),
+`alpaca-proxy`, `alpha-quant-api`, `edgar-proxy`, `tipranks-proxy`, `positive-minds-cms`,
+`positive-minds-mcp`, `hourly-tp-scanner`, `daily-tp-scanner`, `predict-api`, `countdown`.
+**No `trade-relay`**, confirming the parked relay was never deployed.
+
+**`deploy.yml` redeploys five Workers on EVERY push to main**, including docs-only commits — which is
+why the app's `BUILD_TS` moves when no code changed. Harmless, but the stamp reflects the last *push*,
+not the last code change. Bear that in mind when using it to diagnose whether a fix is live: check the
+version number, not the timestamp.
+
+---
+
 ## 12. Sandbox tools & libraries (probed Jul 25 2026 — re-verify, versions drift)
 
 The dev sandbox is a Linux box (`sh`, NOT bash — no `${PIPESTATUS}`, no process substitution;
