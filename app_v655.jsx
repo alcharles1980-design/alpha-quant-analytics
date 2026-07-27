@@ -13844,7 +13844,10 @@ function MostActivesPage(p){
   //     feed=iex    2.5 DAYS old, ap:0 as:0 one-sided  <- unusable, would show an infinite spread
   // Note the standing "SIP 403s for today's data" rule applies to historical BAR requests, not
   // to the latest-quote/trade endpoints or the intraday tape — both verified working for today.
-  var LIVE_FEED={overnight:'boats',premarket:'sip'};
+  // Which venue IS this session's book. RTH and pre-market are both consolidated-tape sessions, so
+  // both take SIP; overnight is the BOATS ATS. After-market would be 'sip' too but is left off until
+  // its feed can be measured during an actual 4-8pm ET window rather than assumed.
+  var LIVE_FEED={overnight:'boats',premarket:'sip',rth:'sip'};
   var liveFeed=LIVE_FEED[session]||null;
   var isBoatsView=!!liveFeed;   // name kept: every column gate already references it
   // WHERE THE TRAILING TRADE COUNTS COME FROM DIFFERS BY FEED, and the difference is not
