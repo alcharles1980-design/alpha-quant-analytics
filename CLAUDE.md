@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v637 · Jul 26 2026
+**Status at last update:** v638 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,13 +602,50 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v637** (Jul 26 2026) — **Daily Return Probability Distribution** added to the Daily Returns
-card (v637); Fib swing scales its leg to visible range (v636, closed the last MV Charts open item);
-Daily Returns & Red/Green Day Counts (v634) with a fixed-12-month streak distribution (v635);
-TODAY/YESTERDAY select by trading day not calendar day (v632, which resolved the long-open "VWAP draws
-nothing" report) and print the real session date (v633), plus a build-banner DST fix. Preceded by the
-Holy Grail metric docs (v631), volume/trades regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades
-medians + stale-guard fix (v627), ATR ladder (v619–v620). **See also §9a for persistence results.**
+**Current: v638** (Jul 26 2026) — **current streak state** in the Red/Green Day Counts section (v638);
+**Daily Return Probability Distribution** (v637); Fib swing scales its leg to visible range (v636,
+closed the last MV Charts open item); Daily Returns & Red/Green Day Counts (v634) with a fixed-12-month
+streak distribution (v635); TODAY/YESTERDAY select by trading day not calendar day (v632, which
+resolved the long-open "VWAP draws nothing" report) and print the real session date (v633), plus a
+build-banner DST fix. Preceded by the Holy Grail metric docs (v631), volume/trades regroup (v630),
+RTrd/RVol ladders (v628–v629), Vol/Trades medians + stale-guard fix (v627), ATR ladder (v619–v620).
+**See also §9a for persistence results.**
+
+### v638 — current streak state (Jul 26 2026)
+
+Shows the run **in progress** as of the most recent completed session, at the top of the 12-month
+streak subsection, so the distribution below reads as "where are we now" rather than only "what
+happened". Displays length + direction + date range, the continuation rate (how many 12-month runs
+reached this length and how many extended one further), and **the plain up/down-day rate alongside it**.
+
+**Why both percentages appear together.** Under independence, `P(extend | k consecutive)` equals the
+plain day rate. Putting the continuation rate NEXT TO the base rate makes that comparison unavoidable,
+instead of leaving a bare "3 green days" badge to imply momentum. §9a measured streak structure as
+close to what independent days produce (runs-z persistence 0.06; NVDA's run distribution sits inside
+Monte Carlo expectation at every length), so the UI must not suggest an edge the data does not support.
+The in-app footnote states this.
+
+**Implementation notes:**
+- `currentStreak` walks the **full series** (`vtRows`), not the 12-month window, so a run beginning
+  before the window start is measured at true length. A window-truncated streak would under-report
+  exactly when the streak is most notable.
+- A flat day or missing return **ends** the run and starts none, consistent with v635. Verified
+  `[1,0,1,1] -> 2`, not 4.
+- `continuation()` reads the distribution as a **survival function**: "reached k" = count of runs of
+  length >= k.
+
+Verified in node (edge cases return null without throwing; continuation matches an independently
+expanded brute-force list exactly at every k including k=11 -> 0% and k=12 -> null), then on live
+against independently computed values: 8 assertions, all pass. Real NVDA read 2 RED
+(2026-07-23 -> 2026-07-24), continuation 33 reached / 15 extended = 45% against a 49% down-day rate —
+no edge, exactly as §9a predicts.
+
+*Probe lesson (again):* the first live run reported 4 failures that were entirely my regex — `textContent`
+concatenates without spaces (`Current streak2 RED days2026-07-23`), so a pattern expecting spaces
+missed. Traced and fixed rather than dismissed by eye. **A failing assertion must be explained, not
+waved through**, the same way a passing one must not be trusted without a positive control (§5.7a).
+
+---
 
 ### v637 — Daily Return Probability Distribution (Jul 26 2026)
 
