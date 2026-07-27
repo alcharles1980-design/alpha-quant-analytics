@@ -13872,7 +13872,11 @@ function MostActivesPage(p){
       return m?Object.assign({},row,m):row;
     });
   };
-  var LIVE_FEED={overnight:'boats',premarket:'sip',rth:'sip'};
+  // Which venue IS this session's book. Pre-market, RTH and after-market are all consolidated-tape
+  // sessions, so all three take SIP; overnight is the BOATS ATS. Measured with after-market LIVE at
+  // 18:30 ET before enabling it: sip 0.9s old and two-sided, boats 52,242s stale (the overnight
+  // session had long closed), iex one-sided with ap:0 as ever. All four tabs are now covered.
+  var LIVE_FEED={overnight:'boats',premarket:'sip',rth:'sip',aftermarket:'sip'};
   var liveFeed=LIVE_FEED[session]||null;
   var isBoatsView=!!liveFeed;   // name kept: every column gate already references it
   // WHERE THE TRAILING TRADE COUNTS COME FROM DIFFERS BY FEED, and the difference is not

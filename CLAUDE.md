@@ -947,6 +947,32 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v657 — Most Actives: live book columns on the AFTER-MARKET tab (Jul 27 2026)
+
+Completes the set — BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on **all four**
+session tabs. One-line change, the plumbing having been generalised in v653:
+
+```js
+LIVE_FEED = {overnight:'boats', premarket:'sip', rth:'sip', aftermarket:'sip'}
+```
+
+**Held back until it could be measured, not assumed.** After-market was deliberately left off in v653
+and v655 because its feed behaviour was an inference until observed during an actual 16:00–20:00 ET
+window — this project has been bitten before by generalising a feed from the easiest case (BOATS row
+caps, IEX one-sided quotes). Measured live at 18:30 ET:
+
+| feed | age | verdict |
+|---|---|---|
+| `sip` | **0.9s**, two-sided | correct source |
+| `boats` | 52,242s | overnight session long closed — must not be reused |
+| `iex` | one-sided (`ap:0`) | unusable for spread, as always |
+
+`aftermarket_actives` held 2,680 rows for the session. Counts take SIP bars via
+`countsFromTape = (session==='overnight')`, so the **§5.1g** shortfall applies here exactly as it does
+to pre-market and RTH — accepted, not a defect.
+
+---
+
 ### v656 — Most Actives: the table reload was wiping the live columns (Jul 27 2026)
 
 **User-reported:** "columns not populating in pre-market, RTH nothing loading". Both real.
