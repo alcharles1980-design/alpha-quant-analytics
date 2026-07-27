@@ -1,0 +1,25 @@
+name = "trade-relay"
+compatibility_date = "2024-12-01"
+main = "trade-relay-worker.js"
+
+# Durable Objects require the Workers PAID plan ($5/mo). Everything else in this repo runs on
+# Workers alone; this is the one component that needs it.
+[[durable_objects.bindings]]
+name = "TRADE_COUNTER"
+class_name = "TradeCounter"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TradeCounter"]
+
+# Keeps both relays connected outside of client traffic. A Durable Object holding an outbound
+# websocket should stay resident, but it can be evicted; the alarm inside the object plus this
+# cron are the two belts that bring it back.
+[triggers]
+crons = ["*/2 * * * *"]
+
+# Secrets are set OUT OF BAND, never committed:
+#   npx wrangler secret put ALPACA_KEY    --config wrangler-relay.toml
+#   npx wrangler secret put ALPACA_SECRET --config wrangler-relay.toml
+# Deliberately NOT read from Supabase app_config: the relay should not depend on the database
+# being reachable in order to start counting.
