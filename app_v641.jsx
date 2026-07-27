@@ -20783,9 +20783,13 @@ function MultiViewChartsPage(p){
   // Bin edges are aligned so that ZERO IS ALWAYS A BOUNDARY. A bin straddling zero would mix up-days
   // and down-days into one bar, which would make the green/red split meaningless and hide the shape
   // right where it matters most.
-  var retDist=function(rows){
+  // `get` selects the quantity to bin. Defaults to .ret so the returns histogram is unchanged.
+  // Shared rather than duplicated: two near-identical binning/stat routines would drift apart, and
+  // the zero-boundary rule below is the kind of subtlety that only ever gets fixed in one copy.
+  var retDist=function(rows,get){
+    var pick=get||function(r){return r.ret;};
     var v=[];
-    for(var i=0;i<rows.length;i++){var r=rows[i].ret;if(r!=null&&isFinite(r))v.push(r);}
+    for(var i=0;i<rows.length;i++){var r=pick(rows[i]);if(r!=null&&isFinite(r))v.push(r);}
     var n=v.length;
     if(n<2)return null;
     var sorted=v.slice().sort(function(a,b){return a-b;});
@@ -21061,6 +21065,23 @@ function MultiViewChartsPage(p){
         <text x={W-padR-93} y={padT+7} fontSize="10" fontWeight="700" fill={C.gold} fontFamily={F}>lognormal fit</text>
       </g>}
     </svg>;
+  };
+
+  // ---- close -> next high ------------------------------------------------------------------------
+  // (today's high - prior close) / prior close %. This is the SAME definition the C→H ladder and the
+  // "Avg close→high" panel stat already use (closeToHighPct), so the distribution and those figures
+  // describe one quantity rather than three conventions. Negatives are kept, not clipped: a negative
+  // value means the next session's high never got back to the prior close, i.e. a position opened at
+  // that close was never once in profit. That is a real and important category, and clipping it at
+  // zero would flatter every summary statistic.
+  var c2hSeries=function(rows){
+    var out=[];
+    for(var i=1;i<rows.length;i++){
+      var pc=rows[i-1].c,h=rows[i].h;
+      if(pc==null||h==null||!isFinite(pc)||!isFinite(h)||!(pc>0))continue;
+      out.push({d:rows[i].d,c2h:(h-pc)/pc*100});
+    }
+    return out;
   };
 
   var started=sym!=='';
@@ -21363,6 +21384,71 @@ function MultiViewChartsPage(p){
                   </table>
                 </div>
                 <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>True range is Wilder's max(high−low, |high−prior close|, |low−prior close|), so overnight gaps count — a stock that gaps 4% then trades a quiet session genuinely moved, and a grid sitting across that gap is skipped straight through it. Each day is divided by its OWN prior close. Note this differs on purpose from the ATR ladder elsewhere in the app, which divides by the latest close so its recent windows compare at today's price; over a year that convention would understate any day when the stock traded at a very different price, so the ATR figure here can differ slightly from the ladder's. The gold curve is a lognormal fit — the right family for a strictly positive, right-skewed quantity, where the returns histogram above uses a normal. The multiples table reads directly as grid width: a grid spanning 1× ATR is fully worked on the share of sessions shown, and one spanning 2× much less often.</div>
+              </div>;
+            })()}
+
+            {/* --- close -> next high: the reachable-upside distribution --- */}
+            {(function(){
+              var ch=c2hSeries(vis);
+              var D=retDist(ch,function(r){return r.c2h;});
+              if(!D)return null;
+              // reference ATR under the same per-day normalisation used by the range block above
+              var trv=trSeries(vis).map(function(x){return x.pct;});
+              var k=Math.min(14,trv.length),atr=null;
+              if(k>0){var ac=0;for(var a=trv.length-k;a<trv.length;a++)ac+=trv[a];atr=ac/k;}
+              var vals=[];for(var i=0;i<ch.length;i++){var q=ch[i].c2h;if(q!=null&&isFinite(q))vals.push(q);}
+              var nneg=0;for(var b=0;b<vals.length;b++)if(vals[b]<0)nneg++;
+              var targets=(atr!=null)?[0.25,0.5,0.75,1,1.5].map(function(m){
+                var thr=atr*m,cnt=0;
+                for(var c=0;c<vals.length;c++)if(vals[c]>=thr)cnt++;
+                return {m:m,thr:thr,cnt:cnt,pct:vals.length?cnt/vals.length*100:null};
+              }):[];
+              var tile=function(label,value,color,sub){
+                return <div style={{flex:'1 1 88px',minWidth:84,background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8,padding:'7px 9px'}}>
+                  <div style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>{label}</div>
+                  <div style={{fontSize:14,color:color||C.txtBright,fontFamily:F,fontWeight:700,lineHeight:1.25}}>{value}</div>
+                  {sub?<div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,marginTop:1}}>{sub}</div>:null}
+                </div>;
+              };
+              return <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                  <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Close → Next High Distribution</div>
+                  <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{D.n} sessions · reachable upside from the prior close</div>
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10}}>
+                  {tile('Mean',fmtPct(D.mean),D.mean>=0?UP:DN)}
+                  {tile('Median',fmtPct(D.median),D.median>=0?UP:DN)}
+                  {tile('Std dev',D.sd.toFixed(2)+'%',C.txtBright)}
+                  {tile('Never positive',nneg+' ('+(vals.length?(nneg/vals.length*100).toFixed(1):'0')+'%)',nneg>0?DN:C.txtDim,'high < prior close')}
+                  {tile('25th pct',fmtPct(D.p25),C.txtDim)}
+                  {tile('75th pct',fmtPct(D.p75),C.txtBright)}
+                  {tile('95th pct',fmtPct(D.p95),UP,'1 day in 20')}
+                  {tile('Worst / best',fmtPct(D.min)+' / '+fmtPct(D.max),C.txtBright,'range')}
+                </div>
+                <div style={{marginTop:10}}>{distChart(D)}</div>
+                {targets.length>0&&<div style={{marginTop:10,overflowX:'auto'}}>
+                  <table style={{borderCollapse:'collapse',fontFamily:F,fontSize:10,width:'100%',minWidth:340}}>
+                    <thead><tr>
+                      {['Target','Needs','Sessions reached','Hit rate','Roughly'].map(function(h,i){
+                        return <th key={i} style={{textAlign:i<2?'left':'right',padding:'4px 8px',color:C.txtDim,fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>{h}</th>;
+                      })}
+                    </tr></thead>
+                    <tbody>
+                      {targets.map(function(t){
+                        var every=(t.pct!=null&&t.pct>0)?(100/t.pct):null;
+                        return <tr key={t.m}>
+                          <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{t.m+'\u00D7 ATR'}</td>
+                          <td style={{padding:'4px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'55'}}>{'+'+t.thr.toFixed(2)+'%'}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{t.cnt}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:UP,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{t.pct==null?'—':t.pct.toFixed(1)+'%'}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'55'}}>{every==null?'—':('1 day in '+every.toFixed(every<10?1:0))}</td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>}
+                <div style={{fontSize:8,color:C.warn,fontFamily:F,marginTop:9,lineHeight:1.6,border:'1px solid '+C.warn+'55',borderRadius:6,padding:'7px 9px',background:C.warn+'11'}}><b>Read this before sizing anything on it.</b> These are MAXIMUM FAVOURABLE EXCURSIONS, not achievable returns. A hit rate here says price touched that level at some point during the session — it does not say you exited there, and it counts nothing about how far price fell first or where the day closed. This app's own research measured the average close→high as highly persistent (r = +0.848 across non-overlapping periods) and a buy-the-close / sell-the-next-swing-high strategy built on it still lost −0.25% per trade, negative in every metric quintile out of sample. A persistent metric is not a profitable one. Treat this as a description of reachable upside, and pair any target with the downside distributions above before it drives a single order.</div>
+                <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each value is (session high − prior close) / prior close, the same definition as the C→H ladder and the Avg close→high panel stat. Negatives are kept rather than clipped: they are sessions whose high never regained the prior close, so a position opened there was never once in profit, and dropping them would flatter every statistic above. Bin edges put zero on a boundary so no bar mixes the two cases. Targets are expressed in multiples of ATR({k}) so they self-scale across tickers.</div>
               </div>;
             })()}
 
