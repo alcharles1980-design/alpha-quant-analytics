@@ -947,6 +947,33 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v656 — Most Actives: the table reload was wiping the live columns (Jul 27 2026)
+
+**User-reported:** "columns not populating in pre-market, RTH nothing loading". Both real.
+
+**The bug.** The 20s live sweep patches its seven fields onto the row objects. The TABLE RELOAD then
+rebuilds `actives` wholesale from the scan (Supabase) or the screener (Alpaca), **neither of which
+knows anything about the live book** — so every reload dropped all seven columns until the next sweep
+landed. Reload cadences are **RTH 30s · pre/after-market 90s · overnight 180s** against a 20s sweep,
+so RTH sat empty for up to two thirds of every cycle.
+
+**Why it survived four separate verification runs.** Overnight reloads at 180s, so it was blank only
+~11% of the time and every earlier check happened to sample while populated. It was obvious on RTH
+only because the 30s reload makes the blank window the majority of the cycle. **A defect on a FIXED
+CADENCE is invisible to spot checks** — one sample tells you nothing about a periodic fault. This is
+the same shape as the v584 hoisting bug and belongs with it in §5.1a.
+
+**Verification that actually proves it, and the pattern to reuse:** sample the column every 5s across
+several reload boundaries, and log when the reloads fire, so "populated" and "a reload happened" can
+be seen together. Post-fix: `bidFilled=64` at every sample from t=51s to t=161s while screener
+reloads fired at t=56, 85, 115, 145s. The single blank at t=46s is the initial tab-switch gap before
+the first sweep lands (~5s), not the reload bug.
+
+*Residual, accepted:* switching tabs shows the live columns empty for a few seconds until the first
+sweep completes. Could be smoothed by carrying prior values across a tab switch; not worth it yet.
+
+---
+
 ### v655 — Most Actives: live book columns on the RTH tab (Jul 27 2026)
 
 BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on Regular Trading Hours as well as
