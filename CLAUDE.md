@@ -107,7 +107,9 @@ Ask for a **fresh short-lived PAT** and tell the user to revoke it after the ses
    Miss this and the app deploys as N+1 but *displays* N.
 3. `package.json` version
 4. `npm install` if `node_modules` is absent (not committed), then `npm run build`
-5. Verify routes match menu items (§6); check for duplicate Supabase methods
+5. **`npm run preflight`** — version consistency (app_vN vs the `build.js` banner
+   vs `package.json`), route/menu parity, and scope-aware duplicate definitions.
+   All three alarms are proven to fire (§6).
 6. **Pass the verification gate in §4a before believing it works.**
 7. Push with a commit message explaining *why*, not just what
 8. **Write the §9 entry for this version IN THE SAME PASS.** Not "later", not a
@@ -569,8 +571,28 @@ live app and inspect it:
 ## 6. Route/menu parity check
 
 `menuItems` (near the bottom of the JSX) is authoritative. Every non-header,
-non-divider key needs a matching `page==='key'` branch. Expected: **85 nav items,
-85 matched routes, + 2 intentional orphans** (`cheatsheet`, `glanceapi`).
+non-divider key needs a matching `page==='key'` branch.
+
+**State the invariant, never a count.** This section used to read "expected 85 nav
+items"; the real number is now 86 and drifts every time a page is added, so a
+stale figure makes a future session think something broke — or worse, "fix" it to
+match. The invariant is: **zero nav keys without a route, and orphan routes
+exactly `cheatsheet` + `glanceapi`.** `npm run preflight` asserts precisely that.
+
+**The three preflight alarms are proven, not assumed** — each was fired by
+deliberately breaking the file, then repaired and re-verified clean (§5.6):
+- version skew: banner set to v651 against `app_v652.jsx` → caught
+- routing: injected a `ghostpage` menu key with no branch → caught
+- duplicates: injected a second `smaSeries` 1,000 lines away in the same
+  component → caught at both line numbers; the same name across *different*
+  components correctly stays silent
+
+The duplicate check uses **babel scope resolution, not grep**. A grep version
+reported 16 collisions of which 0 were real (it cannot see IIFE boundaries), and
+a first babel draft using `constantViolations` reported 15 phantoms *and missed a
+real duplicate* — found only because the alarm was tested. It now counts
+function-valued declarators per resolved scope, `var` against the function parent
+and `let`/`const` against the block.
 
 ```bash
 grep -o "page===\?'[^']*'" app_vN.jsx | sort -u   # then diff against menuItems keys
