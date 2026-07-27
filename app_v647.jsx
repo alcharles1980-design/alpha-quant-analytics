@@ -14027,7 +14027,7 @@ function MostActivesPage(p){
     return <td title={tip} style={{padding:'4px 3px',textAlign:'right',whiteSpace:'nowrap',opacity:stale?0.45:1}}>
       <span style={{color:C.txtBright,fontWeight:600}}>{px.toFixed(2)}</span>
       {sz!=null?<span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{'\u00D7'+fmtVol(sz)}</span>:null}
-      <span style={{color:stale?C.warn:C.txtDim,fontSize:6.5,marginLeft:3}}>{fmtAge(age)}</span>
+      <span style={{color:stale?C.warn:C.txtDim,fontSize:6.5,marginLeft:3}}>{'\u00B7 '+fmtAge(age)}</span>
     </td>;
   };
   var quoteCell=function(px,sz,age,side){
