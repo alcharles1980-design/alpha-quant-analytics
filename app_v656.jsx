@@ -13641,7 +13641,7 @@ function MostActivesPage(p){
           // from the screener cache, one call each in sequential batches of 10 = ~69 rounds) —
           // roughly 85 sequential round trips before anything rendered, which is where the 8-10s
           // "loading market data" came from. Most of that work was thrown away by the filters.
-          setActives(overnightActives);
+          setActives(function(prev){return carryLiveFields(prev,overnightActives);});
           // Live BOATS top-of-book is fetched by its OWN effect (see quoteEpoch below), not inline
           // here. Two reasons, both of which produced the "columns blank on load" report:
           //   1. This path is gated on p.alpKey/p.alpSecret, but overnight sets needsAlpaca=false so
@@ -13795,7 +13795,7 @@ function MostActivesPage(p){
             }
           }
         }catch(e4){}
-        setActives(rawActives);
+        setActives(function(prev){return carryLiveFields(prev,rawActives);});
       }
       // Movers — needs Alpaca credentials. Overnight reads entirely from Supabase, so skip this
       // when keys are absent rather than throwing: previously this ran unconditionally at the end
@@ -13847,6 +13847,31 @@ function MostActivesPage(p){
   // Which venue IS this session's book. RTH and pre-market are both consolidated-tape sessions, so
   // both take SIP; overnight is the BOATS ATS. After-market would be 'sip' too but is left off until
   // its feed can be measured during an actual 4-8pm ET window rather than assumed.
+  // Fields owned by the 20s live sweep, NOT by the table reload. A reload rebuilds rows from the
+  // scan or the screener, neither of which knows anything about the live book, so replacing the
+  // array wholesale WIPES these until the next sweep lands. Measured on RTH: the table reloads
+  // every 30s against a 20s sweep, so BID/SPREAD/ASK/LAST/TRADES sat empty for up to two thirds of
+  // every cycle, flickering. Present on every tab — overnight reloads at 180s so it blanked ~11%
+  // of the time, which is why spot checks kept catching it populated.
+  // `price` is deliberately NOT carried: the reload's own price is current, and the next sweep
+  // will refresh it anyway.
+  var LIVE_SWEEP_FIELDS=['bidPx','bidSz','askPx','askSz','spreadPct','spreadUsd','quoteAge',
+                         'lastPx','lastSz','lastAge','trd1','trd5','trd15'];
+  var carryLiveFields=function(prev,next){
+    if(!prev||!prev.length||!next||!next.length)return next;
+    var bySym={};
+    for(var i=0;i<prev.length;i++){var r=prev[i];if(r&&r.symbol)bySym[r.symbol]=r;}
+    return next.map(function(row){
+      var old=bySym[row.symbol];
+      if(!old)return row;
+      var m=null;
+      for(var k=0;k<LIVE_SWEEP_FIELDS.length;k++){
+        var f=LIVE_SWEEP_FIELDS[k];
+        if(old[f]!=null){if(!m)m={};m[f]=old[f];}
+      }
+      return m?Object.assign({},row,m):row;
+    });
+  };
   var LIVE_FEED={overnight:'boats',premarket:'sip',rth:'sip'};
   var liveFeed=LIVE_FEED[session]||null;
   var isBoatsView=!!liveFeed;   // name kept: every column gate already references it
