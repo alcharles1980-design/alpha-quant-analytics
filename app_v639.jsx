@@ -20864,6 +20864,92 @@ function MultiViewChartsPage(p){
     </svg>;
   };
 
+  // ---- Moving average structure -----------------------------------------------------------------
+  // NOTE: reuses the existing smaSeries defined with the MA-overlay helpers above. Do NOT add a
+  // second definition here — both would live in MultiViewChartsPage's scope and the later `var`
+  // assignment silently wins. An earlier draft of this section did exactly that with slightly
+  // different semantics (returning null instead of an all-null array for short input), which the
+  // overlay's `if(bars.length<d.n)` guard happened to mask. Callers below check length themselves
+  // before relying on the result.
+  // Slope is measured as the PERCENTAGE change of the average itself over a FIXED 20-session
+  // lookback, identical for all three periods. Fixed rather than scaled-per-period on purpose: it
+  // makes the three directly comparable, so the term structure is readable at a glance (a 50-day
+  // rising 3%/20d while the 200-day rises 0.4%/20d says something a per-period lookback would hide).
+  // Percentage rather than an angle because an angle depends on chart scale and axis range, which
+  // makes it meaningless across tickers and timeframes.
+  var MA_SLOPE_LB=20;
+  var maStats=function(closes,period){
+    var n=closes.length;
+    if(n<period)return {period:period,ok:false,have:n};
+    var s=smaSeries(closes,period);
+    var last=n-1,cur=s[last],px=closes[last];
+    if(cur==null||!(cur>0))return {period:period,ok:false,have:n};
+    var prevI=last-MA_SLOPE_LB;
+    var slope=(prevI>=0&&s[prevI]!=null&&s[prevI]>0)?((cur-s[prevI])/s[prevI]*100):null;
+    var side=px>=cur?1:-1,days=0;
+    for(var k=last;k>=0&&s[k]!=null;k--){
+      var sd=closes[k]>=s[k]?1:-1;
+      if(sd!==side)break;
+      days++;
+    }
+    return {period:period,ok:true,value:cur,px:px,vsPct:(px-cur)/cur*100,
+            slope:slope,side:side,days:days,series:s};
+  };
+  // 50/200 cross state and how long it has held. Walks back only while BOTH averages exist, so the
+  // day count never runs past the start of the 200-day series and overstates itself.
+  var crossState=function(s50,s200){
+    if(!s50||!s200)return null;
+    var last=Math.min(s50.length,s200.length)-1;
+    if(last<0||s50[last]==null||s200[last]==null)return null;
+    var st=s50[last]>s200[last]?1:-1,days=0,capped=true;
+    for(var k=last;k>=0;k--){
+      if(s50[k]==null||s200[k]==null){capped=false;break;}
+      var d=s50[k]>s200[k]?1:-1;
+      if(d!==st){capped=false;break;}
+      days++;
+    }
+    return {golden:st>0,days:days,atStart:capped};
+  };
+  // Percentage distance of price from each average, over time. Deliberately NOT another price chart:
+  // the panels above already draw the averages as overlays. What is not visible anywhere else is how
+  // FAR price stretches from them and how reliably it comes back, which is the mean-reversion picture.
+  var maDistChart=function(sets,dates,lookback){
+    var live=sets.filter(function(s){return s.dist&&s.dist.length;});
+    if(!live.length)return <div style={{height:180,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>Not enough history for the distance series.</div>;
+    var W=900,H=300,padL=52,padR=12,padT=16,padB=34;
+    var innerW=W-padL-padR,innerH=H-padT-padB;
+    var lo=Infinity,hi=-Infinity;
+    live.forEach(function(s){s.dist.forEach(function(v){if(v==null)return;if(v<lo)lo=v;if(v>hi)hi=v;});});
+    if(!isFinite(lo)||!isFinite(hi))return null;
+    lo=Math.min(0,lo);hi=Math.max(0,hi);
+    if(hi===lo)hi=lo+1;
+    var L=lookback;
+    var X=function(i){return padL+(L<=1?0:(i/(L-1))*innerW);};
+    var Y=function(v){return padT+innerH-((v-lo)/(hi-lo))*innerH;};
+    var zeroY=Y(0);
+    var ticks=[0,0.25,0.5,0.75,1].map(function(f){var v=lo+(hi-lo)*f;return {v:v,y:Y(v)};});
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block'}}>
+      {ticks.map(function(t,i){return <g key={'g'+i}>
+        <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity="0.35" strokeDasharray="3 4"/>
+        <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="11" fontWeight="700" fill={C.txtDim} fontFamily={F}>{(t.v>=0?'+':'')+t.v.toFixed(0)+'%'}</text>
+      </g>;})}
+      <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.txtDim} strokeWidth="1.2" opacity="0.9"/>
+      {live.map(function(s){
+        var pts=[];
+        for(var i=0;i<s.dist.length;i++){if(s.dist[i]==null)continue;pts.push(X(i)+','+Y(s.dist[i]));}
+        return <polyline key={s.n} points={pts.join(' ')} fill="none" stroke={s.color} strokeWidth="1.6" opacity="0.95"/>;
+      })}
+      {[0,Math.floor(L/2),L-1].map(function(i){
+        if(!dates[i])return null;
+        return <text key={'x'+i} x={X(i)} y={H-10} textAnchor="middle" fontSize="11" fontWeight="700" fill={C.txtDim} fontFamily={F}>{dates[i].slice(2)}</text>;
+      })}
+      {live.map(function(s,i){return <g key={'lg'+s.n}>
+        <line x1={W-padR-186+i*62} y1={padT+2} x2={W-padR-170+i*62} y2={padT+2} stroke={s.color} strokeWidth="2"/>
+        <text x={W-padR-166+i*62} y={padT+5} fontSize="10" fontWeight="700" fill={s.color} fontFamily={F}>{s.n+'d'}</text>
+      </g>;})}
+    </svg>;
+  };
+
   var started=sym!=='';
   var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
 
@@ -21177,6 +21263,97 @@ function MultiViewChartsPage(p){
           </div>;
         })()}
         <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:10,textAlign:'center',lineHeight:1.6}}>Return = (close − prior session's close) / prior session's close, on split-adjusted daily bars. Green = up, red = down, and a day that closes exactly unchanged is counted separately from both. Sessions with no prior close are excluded from the counts rather than treated as flat, so the percentages always sum across the sessions actually measured. Note these are close-to-close moves and ignore intraday path — a green day can still have traded well below the prior close.</div>
+      </div>
+
+      {/* ===== MOVING AVERAGE STRUCTURE — 50 / 100 / 200 day, position, slope and stretch ===== */}
+      <div style={{marginTop:22,paddingTop:16,borderTop:'2px solid '+C.accent+'44'}}>
+        <div style={{color:C.txtBright,fontSize:14,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Moving Average Structure</div>
+        {(function(){
+          var closes=[],dates=[];
+          for(var i=0;i<vtRows.length;i++){
+            var c=vtRows[i].c;
+            if(c!=null&&isFinite(c)&&c>0){closes.push(c);dates.push(vtRows[i].d);}
+          }
+          if(closes.length<2)return <div style={{fontSize:9,color:C.txtDim,fontFamily:F,marginTop:8}}>No daily close history loaded.</div>;
+          var defs=[{n:50,color:C.blue},{n:100,color:C.gold},{n:200,color:C.purple}];
+          var stats=defs.map(function(d){var m=maStats(closes,d.n);m.color=d.color;return m;});
+          var s50=smaSeries(closes,50),s200=smaSeries(closes,200);
+          var cross=crossState(s50,s200);
+          var okStats=stats.filter(function(m){return m.ok;});
+          // stack alignment: 50 > 100 > 200 (bullish) or the exact inverse (bearish)
+          var stack=null;
+          if(okStats.length===3){
+            var v=stats.map(function(m){return m.value;});
+            stack=(v[0]>v[1]&&v[1]>v[2])?'bullish':((v[0]<v[1]&&v[1]<v[2])?'bearish':'mixed');
+          }
+          // distance series for the chart, over the most recent LOOKBACK sessions
+          var LB=Math.min(252,closes.length);
+          var start=closes.length-LB;
+          var sets=defs.map(function(d,di){
+            var m=stats[di];
+            if(!m.ok)return {n:d.n,color:d.color,dist:null};
+            var arr=[];
+            for(var k=start;k<closes.length;k++){
+              var sv=m.series[k];
+              arr.push((sv!=null&&sv>0)?((closes[k]-sv)/sv*100):null);
+            }
+            return {n:d.n,color:d.color,dist:arr};
+          });
+          var cell={padding:'6px 9px',borderBottom:'1px solid '+C.border+'55',fontFamily:F,fontSize:11};
+          var head={padding:'5px 9px',color:C.txtDim,fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700,fontFamily:F};
+          return <div>
+            <div style={{fontSize:8.5,color:C.txtDim,fontFamily:F,marginTop:3,lineHeight:1.5}}>Simple moving averages of the daily close, computed over {closes.length} sessions ({dates[0]} → {dates[dates.length-1]}). Last close {fmtPx(closes[closes.length-1])}.</div>
+            <div style={{marginTop:10,overflowX:'auto'}}>
+              <table style={{borderCollapse:'collapse',width:'100%',minWidth:520}}>
+                <thead><tr>
+                  <th style={Object.assign({textAlign:'left'},head)}>Average</th>
+                  <th style={Object.assign({textAlign:'right'},head)}>Value</th>
+                  <th style={Object.assign({textAlign:'right'},head)}>Price vs MA</th>
+                  <th style={Object.assign({textAlign:'right'},head)}>Slope / 20 sessions</th>
+                  <th style={Object.assign({textAlign:'left'},head)}>Direction</th>
+                  <th style={Object.assign({textAlign:'right'},head)}>Sessions on side</th>
+                </tr></thead>
+                <tbody>
+                  {stats.map(function(m){
+                    if(!m.ok)return <tr key={m.period}>
+                      <td style={Object.assign({textAlign:'left',color:C.txtBright,fontWeight:700},cell)}>{m.period+'-day'}</td>
+                      <td colSpan="5" style={Object.assign({textAlign:'left',color:C.txtDim},cell)}>{'insufficient history — needs '+m.period+' sessions, have '+m.have}</td>
+                    </tr>;
+                    var vc=m.vsPct>=0?UP:DN, sc=(m.slope==null)?C.txtDim:(m.slope>=0?UP:DN);
+                    return <tr key={m.period}>
+                      <td style={Object.assign({textAlign:'left',color:m.color,fontWeight:700},cell)}>{m.period+'-day'}</td>
+                      <td style={Object.assign({textAlign:'right',color:C.txtBright,fontWeight:700},cell)}>{fmtPx(m.value)}</td>
+                      <td style={Object.assign({textAlign:'right',color:vc,fontWeight:700},cell)}>{fmtPct(m.vsPct)}</td>
+                      <td style={Object.assign({textAlign:'right',color:sc,fontWeight:700},cell)}>{m.slope==null?'—':fmtPct(m.slope)}</td>
+                      <td style={Object.assign({textAlign:'left',color:sc,fontWeight:700},cell)}>{m.slope==null?'—':(m.slope>0?'rising':(m.slope<0?'falling':'flat'))}</td>
+                      <td style={Object.assign({textAlign:'right',color:vc,fontWeight:700},cell)}>{m.days+(m.side>0?' above':' below')}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:10}}>
+              {stack&&<div style={{flex:'1 1 150px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8,padding:'8px 10px'}}>
+                <div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Stack alignment</div>
+                <div style={{fontSize:14,color:stack==='bullish'?UP:(stack==='bearish'?DN:C.txtDim),fontFamily:F,fontWeight:700,lineHeight:1.25}}>{stack==='bullish'?'50 > 100 > 200':(stack==='bearish'?'50 < 100 < 200':'Mixed / interleaved')}</div>
+                <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:1}}>{stack==='mixed'?'no clean ordering':stack+' ordering'}</div>
+              </div>}
+              {cross&&<div style={{flex:'1 1 150px',background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8,padding:'8px 10px'}}>
+                <div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>50 / 200 cross</div>
+                <div style={{fontSize:14,color:cross.golden?UP:DN,fontFamily:F,fontWeight:700,lineHeight:1.25}}>{cross.golden?'Golden':'Death'}</div>
+                <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:1}}>{(cross.atStart?'at least ':'')+cross.days+' session'+(cross.days===1?'':'s')+' held'}</div>
+              </div>}
+            </div>
+            <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Distance From Each Average</div>
+                <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>last {LB} sessions · how far price stretches, and whether it comes back</div>
+              </div>
+              <div style={{marginTop:10}}>{maDistChart(sets,dates.slice(start),LB)}</div>
+            </div>
+            <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Simple (not exponential) averages of the daily close. Slope is the percentage change of the average itself over the last 20 sessions, using the same lookback for all three so they are directly comparable — a percentage rather than an angle, since an angle depends on chart scale and would not compare across tickers. "Sessions on side" counts consecutive sessions closing on the current side of that average. The 50/200 cross day count stops at the start of the 200-day series, and reads "at least" when it reaches that limit rather than implying a longer run than the data supports. These are descriptive measures of where price sits, not signals — the persistence work in this app found direction is not forecastable, and a moving average is a lagging summary of past price, not a prediction of the next move.</div>
+          </div>;
+        })()}
       </div>
     </div>}
   </div>;
