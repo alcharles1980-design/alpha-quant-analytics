@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v636 · Jul 26 2026
+**Status at last update:** v637 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,13 +602,49 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v636** (Jul 26 2026) — Fib swing now scales its leg to the visible range (v636, closes the
-last MV Charts open item); **Daily Returns & Red / Green Day Counts** (v634) with a fixed-12-month
-**consecutive-day streak distribution** (v635); TODAY/YESTERDAY select by **trading day** not calendar
-day (v632, which resolved the long-open "VWAP draws nothing" report) and print the real session date
-(v633), plus a build-banner DST fix. Preceded by the Holy Grail metric docs (v631), volume/trades
-regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades medians + stale-guard fix (v627), ATR ladder
-(v619–v620). Full detail below. **See also §9a for the persistence-test results.**
+**Current: v637** (Jul 26 2026) — **Daily Return Probability Distribution** added to the Daily Returns
+card (v637); Fib swing scales its leg to visible range (v636, closed the last MV Charts open item);
+Daily Returns & Red/Green Day Counts (v634) with a fixed-12-month streak distribution (v635);
+TODAY/YESTERDAY select by trading day not calendar day (v632, which resolved the long-open "VWAP draws
+nothing" report) and print the real session date (v633), plus a build-banner DST fix. Preceded by the
+Holy Grail metric docs (v631), volume/trades regroup (v630), RTrd/RVol ladders (v628–v629), Vol/Trades
+medians + stale-guard fix (v627), ATR ladder (v619–v620). **See also §9a for persistence results.**
+
+### v637 — Daily Return Probability Distribution (Jul 26 2026)
+
+Third subsection in the Daily Returns card, between the return chart and the streak block. Shares the
+lookback dropdown and the same rows the chart plots, so it is the distributional view of exactly the
+series shown above it.
+
+Stat tiles (mean, median, SD, skew, excess kurtosis, 5th/95th percentile, worst/best), a histogram with
+a fitted-normal reference curve, and a **tail table** giving observed vs normal frequency beyond
+1/2/3 sigma with a ratio column flagged above 1.25x.
+
+**Design notes worth preserving:**
+- **Bin edges are aligned so zero is always a boundary.** A bin straddling zero would mix up-days and
+  down-days into one bar and destroy the green/red split exactly where the shape matters most.
+  Asserted in the tests: no bin has `lo<0<hi`.
+- Bin width uses a 1/2/2.5/5 × 10ⁿ nice-number rule and **self-scales** — a 3x ETF moving ±10%/day gets
+  wider bins than a utility, with no hardcoded volatility assumption.
+- The normal curve is a **reference, not a claim** that returns are normal; the footnote says so. The
+  tail table is the actionable part for grid sizing — ratio > 1.0 means large moves happen more often
+  than normal predicts, and those are the moves that carry price out of a grid.
+- `normCdf` via Abramowitz & Stegun 7.1.26, max abs error measured 4.5e-7.
+
+**Verification — cross-implementation, not internal consistency.** All statistics were recomputed in
+**Python** and matched to 6 decimal places (NVDA 251 sessions): mean 0.094839, sd 2.257831, median
+0.043276, skew 0.113456, excess kurtosis 0.350358, p05 −3.692322, p95 3.887867, tail counts 70/10/1.
+Edge cases return null or bin correctly without throwing (empty, single value, all-null, all-identical
+with sd=0, NaN/Infinity excluded from n). Live DOM verified against independently computed values for
+the 3m default: 14 assertions, all pass.
+
+**Observation worth knowing:** NVDA's excess kurtosis is **−0.35 over 3 months but +0.35 over 12
+months** — it flips sign with the window. Kurtosis estimated from a few dozen observations is very
+unstable, so do not treat a single window's tail reading as a stable property of a name. The tails
+themselves sit close to normal for NVDA (27.9% vs 31.7% at 1σ, 4.0% vs 4.6% at 2σ over 12m), i.e. the
+usual fat-tail story is not dramatic for one liquid name over one year.
+
+---
 
 ### v636 — Fib swing scales to visible range (Jul 26 2026)
 
