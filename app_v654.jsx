@@ -14369,7 +14369,13 @@ function MostActivesPage(p){
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
         {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['shortlist','\u2605 AI Predictor']].map(function(s){
-          return <button key={s[0]} onClick={function(){setSession(s[0]);setActives(null);}}
+          // Clicking the tab you are ALREADY on must be a no-op. It used to run
+          // setActives(null) unconditionally, which blanked the table — and because
+          // `session` was unchanged, the loader effect's dependency array never fired,
+          // so nothing refetched and the page stayed empty until you switched away and
+          // back. Same shape as the other bugs in §5.1a: no error, plausible-looking
+          // state, and only visible if you actually click it.
+          return <button key={s[0]} onClick={function(){if(s[0]===session)return;setSession(s[0]);setActives(null);}}
             style={{flex:1,padding:'8px 0',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:700,cursor:'pointer',textAlign:'center',
               border:'1px solid '+(session===s[0]?C.gold:C.border),
               background:session===s[0]?C.gold+'15':'transparent',
