@@ -32,7 +32,10 @@ verification block below before writing any code.
 | 9a | Research: persistence testing | What is forecastable and what is not. Read before any metric drives capital. |
 | 10 | Known open items | What is still broken or unfinished. |
 | 11 | How the user works | Terse, empirical, root-cause. |
+| 9b | **Most Actives — current state** | The page under active development: tabs, feeds, what is exact vs approximate. |
 | 11a | Context loss in long sessions | Why `git log` beats recollection. |
+| 11b | Tooling — verify, don't assert | A wrong claim about my own capabilities, and the rule it earned. |
+| 11c | **Connectors & the deploy path** | What is connected, how code reaches production, why `BUILD_TS` misleads. |
 | 12 | Sandbox capabilities | Tools and libraries available. |
 
 **Two commands do most of the checking:**
@@ -1599,6 +1602,40 @@ Spearman 0.848 — related to plain volatility but genuinely distinct, so it is 
 
 ---
 
+## 9b. Most Actives — current state (Jul 27 2026, v658)
+
+The page under active development. This is the summary; the per-version detail is in §9.
+
+**Four session tabs**, each reading the venue that IS its book:
+
+| tab | rows from | live feed | reload | counts source |
+|---|---|---|---|---|
+| Overnight | `overnight_actives` | `boats` | 180s | **raw tape** (ring buffer) — exact |
+| Pre-Market | `premarket_actives` | `sip` | 90s | SIP bars — see §5.1g |
+| RTH | Alpaca most-actives screener | `sip` | 30s | SIP bars — see §5.1g |
+| After-Market | `aftermarket_actives` | `sip` | 90s | SIP bars — see §5.1g |
+| ★ AI Predictor | `shortlist_signal()` RPC | — | — | — |
+
+**Seven live columns**, inserted after PRICE, refreshed on their own **20s** sweep independent of the
+table reload: **BID · SPREAD · ASK · LAST TRADE · TRADES 1M · 5M · 15M**. PRICE also refreshes on that
+cadence from `trades/latest`, with MOVE % and GAP % recomputed so the row stays self-consistent.
+
+**Accuracy, stated plainly:**
+- **Quotes, spread and last trade are real-time on every tab** (~1–2s).
+- **Overnight counts are exact** — verified 60/60 against an independent tape recount.
+- **SIP-session counts run ~10–19% low** on recent minutes and the error is *not uniform*, so
+  ordering between mid-tier names can be affected. **Known and accepted — see §5.1g, do not "fix"
+  unasked.**
+- **ON PACE carries a confidence band** (v658) and greys itself when the projection could span >2.5x.
+
+**Invariants worth re-checking after any change here:**
+1. `1m ≤ 5m ≤ 15m` on every row — mathematically necessary.
+2. Rendered SPREAD equals `(ask−bid)/mid` recomputed from the rendered prices.
+3. Live values must survive a table reload — v656 shipped with them being wiped every cycle.
+4. Sample **across reload boundaries**, not once. A periodic defect is invisible to spot checks.
+
+---
+
 ## 10. Known open items
 
 > **Read `integrity_log` before trusting anything (§1).** As of Jul 27 2026 it held
@@ -1612,13 +1649,12 @@ Spearman 0.848 — related to plain volatility but genuinely distinct, so it is 
 > already says freshness must stay silent when a session is legitimately closed — that rule is
 > not being honoured for Sat/Sun.
 >
-> **2. `pace curve: aftermarket` WARNs hourly and is CURRENT** (48 occurrences, latest 07:07
-> Jul 27): *"wide cross-ticker spread (47 pts), projection unreliable"*. Confirmed in
-> `session_pace_curve` — worst spread by session type: **aftermarket 46.7 pts**, overnight
-> 30.5, premarket 29.6, **rth 16.3**. Aftermarket is nearly 3x RTH, so projecting a partial
-> trade count to a full-session estimate is genuinely unreliable there. **The app still renders
-> ON PACE on the aftermarket tab with no indication of this.** Options: suppress ON PACE for
-> aftermarket, or mark it low-confidence. All four curves were last calibrated **Jul 23**.
+> **2. ~~`pace curve: aftermarket` projection unreliable~~ — ADDRESSED in v658.** The warning is
+> legitimate and still fires (the dispersion is structural — after-market spread peaks at 46.7 pts
+> around minute 50 vs RTH's 16.3), but the app no longer presents the projection as if it were
+> equally trustworthy everywhere. ON PACE now carries a confidence band derived from `curve_spread`,
+> greying and marking cells when the projection could land in a >2.5x range. See the v658 entry.
+> **The WARN in `integrity_log` is expected and is not a defect to chase.**
 
 ### Resolved Jul 24 2026
 - **Most Actives median columns were blank** (MED TRADES / MED VOL / `rel_*_med`). Root cause
@@ -1674,8 +1710,9 @@ rate reads as unresolved/em-dash until `predictor_outcomes_fill()` runs — expe
   internal consistency, but it must be invoked by hand. It needs a *completed*
   session and an async wait, so it does not fit the `data_integrity_check` pattern.
   Best home: a daily job shortly after each settle run, writing to `integrity_log`.
-- **Integrity results have no notification path.** They land in `integrity_log` and
-  nothing surfaces them. Cheapest fix: show recent non-OK rows on the Settings page.
+- **Integrity results still have no PUSH notification** — but §1 now queries `integrity_log` at
+  session start, so they are no longer invisible. That query is what surfaced 48 WARN and 13 FAIL
+  sitting unread for two days. A real alerting path (email/webhook) remains unbuilt.
 - **Pace curves rest on 1–2 sessions each.** Guarded and monotonic, but thin. Re-run
   `rebuild_pace_curve()` as sessions accumulate; after-market currently WARNs on a
   46.7-pt spread and its first hour is deliberately muted.
@@ -1727,13 +1764,10 @@ left as is** — do not re-investigate without a specific reason.
 
 ### Older, still open
 
-- **Fib swing on 5Y/10Y charts (v615, decision pending):** on weekly/monthly bars (N=4) the
-  detected swing leg is now a *real* adjacent leg but can be large/old — a "recent swing" on a
-  decade of monthly bars isn't actionable. Currently left visible so the toggle isn't a silent
-  no-op. Suppressing swing on 5Y/10Y (or requiring a minimum leg magnitude / recency) is a small
-  change if the user decides it's noise. Also un-actioned from this session: the Fib **range**
-  overlay was never hardened — it's fine; and the Confluence page L26315 12-field extraction RPC
-  is still parked (borderline-not-broken, §ordering).
+- **~~Fib swing on 5Y/10Y charts~~ — RESOLVED in v636.** The leg now scales to a minimum fraction
+  of visible range (`MIN_LEG_FRAC=0.22`), and the diagnosis in the v636 entry corrects the original
+  report: the compression was worst on **3Y (8% of range)**, not 5Y/10Y, and the "zero swing labels"
+  claim was not reproducible.
 - **Change B (queued):** High/Low Levels historical bars still `feed=iex`
   (~line 15571). IEX samples ~2.5% of volume so it can miss a session's true
   high/low — material for a *levels* tool. Changes computed values → verify on a
@@ -1821,6 +1855,45 @@ and if they say a connector exists, believe them over your recollection.
 why the app's `BUILD_TS` moves when no code changed. Harmless, but the stamp reflects the last *push*,
 not the last code change. Bear that in mind when using it to diagnose whether a fix is live: check the
 version number, not the timestamp.
+
+---
+
+## 11c. Connectors and how work actually reaches production (Jul 27 2026)
+
+**Check these, do not assume — §11b exists because that mistake was made.** A connector can be
+installed but not authenticated; call one of its tools to find out.
+
+| Connector | Status | What it is for here |
+|---|---|---|
+| **Supabase** | connected | `execute_sql` for diagnostics, `apply_migration` for DDL/function changes. The `shortlist_signal` fix went through it. |
+| **Cloudflare Developer Platform** | connected | `workers_list`, `workers_get_worker_code` to read what is genuinely running, plus KV / R2 / D1 / Hyperdrive. **Not** how deploys happen. |
+| Netlify, Elicit, alphaXiv, Microsoft Learn | connected | not used by this project |
+
+### The deploy path — GitHub Actions, never a local `wrangler deploy`
+
+Every Worker reaches production through `.github/workflows/`, using repo secrets
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+- **`deploy.yml`** — fires on **every push to main**, builds the app and deploys **five** Workers:
+  `alpha-quant-analytics`, `tipranks-proxy`, `alpha-quant-api`, `alpaca-proxy`, `edgar-proxy`.
+- **`deploy-predict.yml`** — path-filtered to `predict-api.js` / `wrangler-predict.toml`.
+- Others: `pipeline.yml`, `nightly-pipeline.yml`, `tipranks-pipeline.yml`.
+
+> **`BUILD_TS` REFLECTS THE LAST PUSH, NOT THE LAST CODE CHANGE.** Because `deploy.yml` runs on every
+> push including docs-only commits, the banner timestamp moves when nothing shipped. **To judge
+> whether a fix is live, read the VERSION NUMBER, not the timestamp.** This cost real time tonight.
+
+**Deployed inventory, verified Jul 27 2026** (11 Workers): `alpha-quant-analytics` (the app),
+`alpaca-proxy`, `alpha-quant-api`, `edgar-proxy`, `tipranks-proxy`, `predict-api`,
+`hourly-tp-scanner`, `daily-tp-scanner`, `countdown`, `positive-minds-cms`, `positive-minds-mcp`.
+**No `trade-relay`** — the parked relay (§5.1g) was never deployed and must not be assumed live.
+
+### Two proxies exist for a reason
+
+- **`alpaca-proxy`** — all browser Alpaca calls. Headers `X-Alpaca-Path` and `X-Alpaca-Base: 'data'`
+  (data API) or empty (paper trading API). **It 403s any client without a browser User-Agent**
+  (Cloudflare error 1010), so an Edge Function or `pg_net` cannot use it — see §5.1f.
+- **`edgar-proxy`** — SEC EDGAR, which rate-limits (429) direct calls.
 
 ---
 
