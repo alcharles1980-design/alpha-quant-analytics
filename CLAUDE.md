@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v650 · Jul 27 2026
+**Status at last update:** v652 · Jul 27 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -609,6 +609,54 @@ Structure card (v639), current streak state (v638), Fib swing scaled to visible 
 Daily Returns & Red/Green Day Counts block (v634–v635). TODAY/YESTERDAY select by trading day (v632,
 which resolved the long-open "VWAP draws nothing" report) and print the real session date (v633).
 **See §9a for persistence results.**
+
+### AUDIT of the Most Actives overnight work, v643–v652 (Jul 27 2026)
+
+**Verified correct** — 418 assertions comparing every rendered cell against the raw payload the page
+itself consumed (intercepted, so no timing drift): bid price+size, ask price, spread recomputed from
+*raw* prices, last-trade price, and all three trailing counts. **Zero failures.** No truncation
+anywhere: 24/24 requests delivered == asked, no `next_page_token` on the latest-quote/trade calls,
+`feed=boats` throughout, bars `start` advancing correctly each sweep. Sorting, staleness dimming, and
+the auto-refresh toggle all confirmed behaviourally.
+
+#### FINDING — odd lots. The trailing trade counts were systematically wrong (fixed in v652)
+
+**1-minute bar `n` EXCLUDES ODD LOTS (trade condition `I`), and overnight flow is overwhelmingly
+odd-lot.** Across 59 names active in the last 15 minutes, bars missed a **median 37.5%** of trades,
+p90 **100%**:
+
+| | tape | bars | missed |
+|---|---|---|---|
+| COIN | 99 | **0** | 100% |
+| AMZN | 131 | 15 | 88.5% |
+| BE | 102 | 42 | 58.8% |
+
+COIN rendered `0` while trading 99 times. And the TRADES column beside it counts the raw tape, so two
+columns labelled TRADES used different definitions.
+
+**How it surfaced, and the methodology lesson.** A cross-source check of the stored scan against Alpaca
+showed summed 1-minute bars running 25–99% BELOW the stored trades/volume — which reads at first like a
+scan bug. Going to the raw tape settled it the other way: **the scan matches the tape exactly** on all
+four sampled tickers (DIVO 78/593, TTWO 75/604, NIKI 58/629, TSLT 236/50297 — trades *and* volume), and
+O/H/L/C matched exactly on 8/8. The scan was right; the bar comparison was the wrong instrument.
+Condition histograms made it obvious: `DIVO {'@,I':77, '@':1}`. **This is §5.1c's "minute bars != daily
+bars" reappearing as a live product defect rather than a test artifact — the same wrong instrument,
+this time wired into the UI.** Before declaring a data fault, prove the comparison first.
+
+**Fix — per-minute ring buffer over the raw tape.** A full 15-minute tape for the universe costs 2.4 MB
+vs 172 KB for bars, too heavy at 20s, so per-minute counts are cached and only uncovered minutes are
+fetched: ~2.4 MB once, then ~160–300 KB per completed minute. Paginated (a 16-minute full-universe tape
+returns 3 pages). A window is marked covered only when **every** chunk succeeded — marking on partial
+success would bake a permanent undercount in, since covered minutes are never refetched. Counts render
+only when all 15 minutes are covered, so a partial window shows nothing rather than a silent
+undercount. The minute index is anchored once at sweep start so requested and summed minutes cannot
+straddle a boundary. Buckets past 20 minutes are pruned.
+
+Verified by simulation (first sweep 15 minutes then 1 per sweep; exact steady state; a failed fetch
+suppresses rather than undercounts; buffer bounded at 20 keys after 200 sweeps) and on live: **60/60
+rows matched an independent tape recount exactly.**
+
+---
 
 ### v648–v650 — Most Actives: SPREAD + trailing trade counts (Jul 27 2026)
 
