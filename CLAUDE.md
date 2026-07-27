@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v647 · Jul 27 2026
+**Status at last update:** v650 · Jul 27 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -609,6 +609,35 @@ Structure card (v639), current streak state (v638), Fib swing scaled to visible 
 Daily Returns & Red/Green Day Counts block (v634–v635). TODAY/YESTERDAY select by trading day (v632,
 which resolved the long-open "VWAP draws nothing" report) and print the real session date (v633).
 **See §9a for persistence results.**
+
+### v648–v650 — Most Actives: SPREAD + trailing trade counts (Jul 27 2026)
+
+**v648 — SPREAD column, between BID and ASK** so the cell reads as the book does. Percentage of the
+**mid** (the only convention comparable across names — quoting against bid or ask changes the number
+depending which side you pick) with the dollar figure beside it. **Precision adapts to magnitude:**
+overnight spreads span three orders of magnitude (SPY 0.012% → thin names past 11%), so fixed 2
+decimals would collapse every liquid name to "0.01%" and destroy the distinction that matters for grid
+sizing. A **crossed book** (ask < bid) shows negative rather than clamped — real on an ATS, flagged
+gold; a locked book renders 0.0000% without dividing by zero. Coloured by cost, not size.
+Verified live: **all 60 rows' rendered % matched `(ask−bid)/mid` recomputed from the rendered prices.**
+
+**v649–v650 — trailing trade counts, 1m / 5m / 15m,** after LAST TRADE. From 1-minute bars, whose `n`
+is that minute's trade count. **Cost measured before building:** full 1,338-name universe = 3 requests,
+172 KB, 0.40s, no `next_page_token` — cheap because only ~440 names trade at all in a 20-minute
+overnight window. Rides the existing 20s sweep.
+
+- **Complete minutes only.** The in-progress bucket is excluded; including a partial would make the
+  1-minute figure ratchet up and reset between 20s refreshes — noise, not signal. Costs ≤60s lag,
+  stated in the tooltip. Bucket placement verified at 0/1/2/5/6/15/16/20 minutes ago.
+- **Nesting invariant `1m ≤ 5m ≤ 15m`** held on 2000/2000 randomised books and on 60/60 live rows.
+- **v650 fixed a zero-vs-unknown conflation shipped in v649.** Counts were set only when a symbol had
+  bars, so a name that did not trade in 17 minutes rendered a dash — reading as "unknown" when the
+  answer is "zero", and contradicting v649's own stated rule. `pullBars` now records which symbols a
+  **successful** request covered: covered-with-no-bars → 0, failed request → dash. Without that split
+  a dead name and a dropped request look identical, which is the same conflation that makes silent
+  truncation so hard to see. Measured: 8 of 60 rows were affected; after the fix 60/60 populate.
+
+---
 
 ### v646–v647 — Most Actives: LAST TRADE column (Jul 27 2026)
 
