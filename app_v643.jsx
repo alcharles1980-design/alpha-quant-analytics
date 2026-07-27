@@ -13638,6 +13638,50 @@ function MostActivesPage(p){
           // roughly 85 sequential round trips before anything rendered, which is where the 8-10s
           // "loading market data" came from. Most of that work was thrown away by the filters.
           setActives(overnightActives);
+          // Live BOATS top-of-book (bid/ask + displayed size). OVERNIGHT ONLY: BOATS is the
+          // overnight ATS, so it is the live book for this session and this session alone.
+          // Pre-market and after-market would need feed=sip, and IEX is unusable here — measured
+          // returning ap:0/as:0 one-sided outside its own hours, which would render as an infinite
+          // spread. Additive and non-blocking, like the pace block below: a failure here leaves the
+          // quote columns blank and cannot break the main table.
+          // Chunked at 500 even though 1,338 in a single call was measured working (0.18s): the
+          // symbol list travels in the X-Alpaca-Path HEADER, which was 8.9 KB at 1,338 names, and a
+          // busier night would push that toward Cloudflare's header ceiling.
+          if(session==='overnight'&&p.alpKey&&p.alpSecret&&overnightActives.length){
+            (function(){
+              var qSyms=overnightActives.map(function(r){return r.symbol;});
+              var qChunks=[];
+              for(var qi=0;qi<qSyms.length;qi+=500)qChunks.push(qSyms.slice(qi,qi+500));
+              var qm={};
+              Promise.all(qChunks.map(function(ch){
+                return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+                  'X-Alpaca-Path':'/v2/stocks/quotes/latest?feed=boats&symbols='+encodeURIComponent(ch.join(',')),
+                  'X-Alpaca-Base':'data'}})
+                  .then(function(r){return r.ok?r.json():null;})
+                  .then(function(d){if(d&&d.quotes)Object.assign(qm,d.quotes);})
+                  .catch(function(){});
+              })).then(function(){
+                var qNow=Date.now();
+                // Stamp onto each ROW, not a side map: the table's sort comparator reads
+                // row[sortKey], so a value living only in a map is displayed but never sortable.
+                setActives(function(prev){
+                  if(!prev)return prev;
+                  return prev.map(function(row){
+                    var q=qm[row.symbol];
+                    if(!q)return Object.assign({},row,{bidPx:null,bidSz:null,askPx:null,askSz:null,quoteAge:null});
+                    // A zero price means no resting order on that side, not a price of zero.
+                    var bp=(typeof q.bp==='number'&&q.bp>0)?q.bp:null;
+                    var ap=(typeof q.ap==='number'&&q.ap>0)?q.ap:null;
+                    var ts=q.t?Date.parse(q.t):NaN;
+                    return Object.assign({},row,{
+                      bidPx:bp,bidSz:(bp!=null&&typeof q.bs==='number')?q.bs:null,
+                      askPx:ap,askSz:(ap!=null&&typeof q.as==='number')?q.as:null,
+                      quoteAge:isFinite(ts)?Math.max(0,(qNow-ts)/1000):null});
+                  });
+                });
+              });
+            })();
+          }
           // Pace ratio is a SEPARATE, additive metric — fetched independently so a failure here
           // can never break the main table. Overnight only for now; the other session types are
           // not calibrated in session_pace_curve yet.
@@ -13882,6 +13926,25 @@ function MostActivesPage(p){
   // Governs the extended session columns (GAP %, the two x-AVERAGE ratios, SESSIONS/BASIS). Both
   // the overnight and pre-market tables carry these, so both views show them; RTH does not.
   var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='aftermarket');
+  // BOATS is the overnight ATS specifically, so the live top-of-book columns show on that tab only —
+  // isOvernightView covers all three session tabs and would wrongly include pre/after-market.
+  var isBoatsView=(session==='overnight');
+  // Quote age past which the top of book is no longer meaningfully "live". Measured across a full
+  // overnight universe: median quote age 230s, but p90 3,649s and max 246,288s — illiquid names
+  // simply have not quoted overnight, so their "latest quote" is days old. Showing that at full
+  // strength alongside a 1-second quote would present stale fiction as live depth, so anything past
+  // this threshold is dimmed and the exact age goes in the cell tooltip.
+  var QUOTE_STALE_S=300;
+  var quoteCell=function(px,sz,age,side){
+    if(px==null)return <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{'\u2014'}</td>;
+    var stale=(age==null||age>QUOTE_STALE_S);
+    var tip=(age==null?'Quote timestamp unavailable.':'Quote age '+(age<90?Math.round(age)+'s':(age/60<90?Math.round(age/60)+'m':Math.round(age/3600)+'h'))+'.')
+      +(stale?' Stale — no recent quote on this side, treat the size as indicative only.':' Live.');
+    return <td title={tip} style={{padding:'4px 3px',textAlign:'right',whiteSpace:'nowrap',opacity:stale?0.45:1}}>
+      <span style={{color:side==='bid'?C.accent:C.warn,fontWeight:600}}>{px.toFixed(2)}</span>
+      {sz!=null?<span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{'\u00D7'+fmtVol(sz)}</span>:null}
+    </td>;
+  };
 
   // Does THIS session have any usable per-ticker baseline yet? The avg_* columns are built from a
   // stock's OWN prior sessions in the same table, so a newly-created session table (or one whose
@@ -14428,6 +14491,8 @@ function MostActivesPage(p){
             <th style={Object.assign({padding:"4px 3px",textAlign:"center",color:C.txtDim,fontSize:6},fzTh(2))}></th>
             <th style={Object.assign({padding:"4px 3px",textAlign:"left",color:C.txtDim},fzTh(3))}>TYPE</th>
             {tblTh("price","PRICE",null,4,isOvernightView?"IN SESSION":"LATEST",isOvernightView?"Latest traded price within this session (the most recent print in the session window).":"Latest traded price.")}
+            {isBoatsView&&tblTh("bidPx","BID",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book BID \u2014 the best resting buy price on the overnight ATS and the size displayed at it. This is what you would hit selling right now. Dimmed when the quote is more than 5 minutes old: illiquid names often have not quoted overnight at all, and their latest quote can be days stale. Hover a cell for its exact age.")}
+            {isBoatsView&&tblTh("askPx","ASK",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book ASK \u2014 the best resting sell price and the size displayed at it. This is what you would pay lifting right now. The gap between BID and ASK is the round-trip cost of entering and exiting immediately; measured across a full overnight universe the MEDIAN was about 171 bps, far wider than regular hours. Dimmed when stale.")}
             {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN this session: from the session's first print to the latest print. Shows how the price has drifted during the session, not how far it has gapped.":"Change versus the previous close.")}
             {isOvernightView&&tblTh("gapPct","GAP %",null,null,"SINCE 4PM","Gap versus the REGULAR-SESSION CLOSE at 4PM ET (the prior day's close for overnight and pre-market; the same day's close for after-market). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
             {tblTh("marketCap","MARKET",null,null,"CAP","Market capitalisation \u2014 total value of the company's shares.")}
@@ -14460,6 +14525,8 @@ function MostActivesPage(p){
                 </td>
                 <td style={Object.assign({padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7},fzTd(3,rowBg))}>{a.tickerType||'STK'}</td>
                 <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
+                {isBoatsView&&quoteCell(a.bidPx,a.bidSz,a.quoteAge,'bid')}
+                {isBoatsView&&quoteCell(a.askPx,a.askSz,a.quoteAge,'ask')}
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.gapPct>0?C.accent:a.gapPct<0?C.warn:C.txtDim,fontWeight:600}}>{(a.gapPct!=null&&isFinite(a.gapPct))?((a.gapPct>=0?'+':'')+a.gapPct.toFixed(1)+'%'):'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
