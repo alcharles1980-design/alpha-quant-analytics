@@ -789,6 +789,54 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 
 > **Cross-reference entries by VERSION, never by position.** "the entry above/below" breaks the moment §9 is reordered or an entry is archived — which is exactly what happened to the v641/v642 pair when this section was sorted into descending order.
 
+### v653–v654 — Most Actives: live columns on the PRE-MARKET tab (Jul 27 2026)
+
+BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on **pre-market** as well as
+overnight, each from the venue that IS that session's book. Verified live at 04:20 ET with
+pre-market in session: 79 rows, all 7 columns populated, all requests `feed=sip`, nesting
+invariant held on 79/79.
+
+**FEED CHOICE, measured with pre-market live — not assumed:**
+
+| feed | quote age | verdict |
+|---|---|---|
+| `sip` | **1.8–7.8s** | live, two-sided, no 403 |
+| `boats` | 921s | froze at 04:00; residual book is nonsense (AAPL 333.75 / **383.82**) |
+| `iex` | 2.5 days | `ap:0` — one-sided, infinite spread |
+
+**Reusing BOATS on pre-market would have rendered a ~15% spread on AAPL.** The standing
+"SIP 403s for today's data" rule applies to historical **bar** requests, not to
+latest-quote/trade or the intraday tape — both verified serving today's data.
+
+**THE COUNT SOURCE MUST DIFFER BY FEED, and this is the subtle part:**
+- **BOATS 1-min bars EXCLUDE odd lots** — missed a median 37.5% of overnight trades
+  (COIN: 99 on the tape, 0 in bars), so overnight counts the **raw tape** (§v652).
+- **SIP 1-min bars INCLUDE odd lots.** Verified per-minute, like for like: 24/24, 78/78,
+  88/88, 77/77, 49/49 — **exact**, on names whose flow was 66–89% odd lots. So pre-market
+  counts from **bars**, which is both cheap and exact.
+- The SIP tape is infeasible anyway: 8 symbols over 15 minutes returned 80,650 trades across
+  9 pages and 8.2 MB.
+
+Full 1,246-name pre-market sweep using bars: **9 requests, ~583 KB**. Window semantics are
+identical on both paths (complete minutes only), so the columns mean the same thing on either
+tab. The per-minute buffer is dropped on feed change, so overnight counts can never be summed
+into a pre-market row.
+
+**NEW API TRAP — `end=` is INCLUSIVE for bars and EXCLUSIVE for trades.** Comparing the two
+over the same nominal window makes bars look 16% high, or (with an unsettled newest bar) 6–33%
+low. Both are artifacts of the comparison, not the data. Compare **per minute**, never by
+summing a range. This is §5.1c again: prove the comparison before declaring a fault.
+
+**v654 — clicking the ALREADY-ACTIVE tab blanked the table.** The handler ran
+`setSession(s); setActives(null)` unconditionally, so clicking the current tab cleared the rows
+while leaving `session` unchanged — the loader effect's dependency array never fired and nothing
+refetched. Measured 79 rows → 0 rows, 0 headers, no error, no recovery. It survived because every
+test switched *between* tabs; and Most Actives defaults to whichever session is live, so **the
+most likely tab for a user to click is exactly the one that broke.** Now a no-op when already
+selected. Verified: 80 rows after clicking.
+
+---
+
 ### AUDIT of the Most Actives overnight work, v643–v652 (Jul 27 2026)
 
 **Verified correct** — 418 assertions comparing every rendered cell against the raw payload the page
