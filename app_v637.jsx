@@ -20734,6 +20734,110 @@ function MultiViewChartsPage(p){
     </svg>;
   };
 
+  // ---- Daily return probability distribution --------------------------------------------------
+  // Standard normal CDF via Abramowitz & Stegun 7.1.26 (max abs error ~1.5e-7). Used only to draw
+  // the reference curve and to compute what a normal distribution WOULD put in each tail, so the
+  // fat tails that matter for grid risk are visible rather than asserted.
+  var normCdf=function(z){
+    var s=z<0?-1:1, x=Math.abs(z)/Math.SQRT2;
+    var t=1/(1+0.3275911*x);
+    var y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+    return 0.5*(1+s*y);
+  };
+  // "Nice" bin width: 1/2/2.5/5 x a power of ten, so bin edges land on readable percentages.
+  var niceBin=function(raw){
+    if(!(raw>0))return 0.1;
+    var mag=Math.pow(10,Math.floor(Math.log(raw)/Math.LN10));
+    var n=raw/mag;
+    var mult=(n<=1)?1:(n<=2)?2:(n<=2.5)?2.5:(n<=5)?5:10;
+    return mult*mag;
+  };
+  // Bin edges are aligned so that ZERO IS ALWAYS A BOUNDARY. A bin straddling zero would mix up-days
+  // and down-days into one bar, which would make the green/red split meaningless and hide the shape
+  // right where it matters most.
+  var retDist=function(rows){
+    var v=[];
+    for(var i=0;i<rows.length;i++){var r=rows[i].ret;if(r!=null&&isFinite(r))v.push(r);}
+    var n=v.length;
+    if(n<2)return null;
+    var sorted=v.slice().sort(function(a,b){return a-b;});
+    var mean=0;for(var a=0;a<n;a++)mean+=v[a];mean/=n;
+    var s2=0;for(var b2=0;b2<n;b2++)s2+=(v[b2]-mean)*(v[b2]-mean);
+    var sd=Math.sqrt(s2/(n-1));
+    var pct=function(p){
+      if(n===1)return sorted[0];
+      var idx=(n-1)*p, lo=Math.floor(idx), hi=Math.ceil(idx);
+      return lo===hi?sorted[lo]:sorted[lo]+(sorted[hi]-sorted[lo])*(idx-lo);
+    };
+    // moment ratios; standardised by the SAMPLE sd above
+    var m3=0,m4=0;
+    if(sd>0){for(var c=0;c<n;c++){var z=(v[c]-mean)/sd;m3+=z*z*z;m4+=z*z*z*z;}m3/=n;m4/=n;}
+    var lo=sorted[0], hi=sorted[n-1];
+    var bw=niceBin(Math.max(Math.abs(lo),Math.abs(hi))*2/18);
+    var first=Math.floor(lo/bw)*bw, last=Math.ceil(hi/bw)*bw;
+    var nb=Math.max(1,Math.round((last-first)/bw));
+    if(nb>60){bw=niceBin((last-first)/40);first=Math.floor(lo/bw)*bw;last=Math.ceil(hi/bw)*bw;nb=Math.max(1,Math.round((last-first)/bw));}
+    var bins=[];
+    for(var k=0;k<nb;k++)bins.push({lo:first+k*bw,hi:first+(k+1)*bw,c:0,exp:0});
+    for(var d=0;d<n;d++){
+      var bi=Math.floor((v[d]-first)/bw);
+      if(bi<0)bi=0; if(bi>=nb)bi=nb-1;   // clamp guards float error at the outer edges
+      bins[bi].c++;
+    }
+    if(sd>0)for(var e=0;e<nb;e++)bins[e].exp=n*(normCdf((bins[e].hi-mean)/sd)-normCdf((bins[e].lo-mean)/sd));
+    // observed vs normal in the tails — the number that actually matters for grid risk
+    var tail=function(k){
+      var thr=k*sd,cnt=0;
+      for(var f=0;f<n;f++)if(Math.abs(v[f]-mean)>thr)cnt++;
+      return {k:k,obs:cnt,obsPct:cnt/n*100,expPct:2*(1-normCdf(k))*100,thr:thr};
+    };
+    return {n:n,mean:mean,sd:sd,median:pct(0.5),skew:m3,kurt:m4-3,
+            bins:bins,bw:bw,first:first,
+            p01:pct(0.01),p05:pct(0.05),p25:pct(0.25),p75:pct(0.75),p95:pct(0.95),p99:pct(0.99),
+            min:lo,max:hi,tails:[tail(1),tail(2),tail(3)]};
+  };
+
+  // Histogram with a fitted-normal reference curve overlaid.
+  var distChart=function(D){
+    if(!D)return <div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>Not enough data for a distribution.</div>;
+    var W=900,H=340,padL=48,padR=12,padT=18,padB=44;
+    var innerW=W-padL-padR, innerH=H-padT-padB;
+    var nb=D.bins.length, bw=innerW/nb;
+    var mx=0;
+    for(var i=0;i<nb;i++){if(D.bins[i].c>mx)mx=D.bins[i].c;if(D.bins[i].exp>mx)mx=D.bins[i].exp;}
+    if(mx<=0)mx=1;
+    var Y=function(c){return padT+innerH-(c/mx)*innerH;};
+    var X=function(i){return padL+i*bw;};
+    var ticks=[0,0.5,1].map(function(f){return {v:Math.round(mx*f),y:padT+innerH-f*innerH};});
+    // zero boundary sits exactly on a bin edge by construction
+    var zeroIdx=Math.round((0-D.first)/D.bw);
+    var zeroX=padL+zeroIdx*bw;
+    var curve=D.bins.map(function(b,i){return (X(i)+bw/2)+','+Y(b.exp);}).join(' ');
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block'}}>
+      {ticks.map(function(t,ti){return <g key={'t'+ti}>
+        <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity={ti===0?1:0.35} strokeDasharray={ti===0?'':'3 4'}/>
+        <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="11" fontWeight="700" fill={C.txtDim} fontFamily={F}>{t.v}</text>
+      </g>;})}
+      {D.bins.map(function(b,i){
+        var h=innerH-(Y(b.c)-padT);
+        return <rect key={i} x={X(i)+0.5} y={Y(b.c)} width={Math.max(1,bw-1)} height={Math.max(b.c>0?1:0,h)}
+          fill={b.hi<=0?DN:UP} opacity="0.8"/>;
+      })}
+      {zeroIdx>=0&&zeroIdx<=nb&&<line x1={zeroX} y1={padT} x2={zeroX} y2={padT+innerH} stroke={C.txtDim} strokeWidth="1.2" opacity="0.85"/>}
+      <polyline points={curve} fill="none" stroke={C.gold} strokeWidth="2" opacity="0.95"/>
+      {D.bins.map(function(b,i){
+        // label every other edge so the axis stays readable at any bin count
+        if(i%Math.max(1,Math.round(nb/9))!==0)return null;
+        return <text key={'x'+i} x={X(i)} y={H-26} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{(b.lo>0?'+':'')+b.lo.toFixed(Math.abs(D.bw)<1?1:0)+'%'}</text>;
+      })}
+      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>daily return %  ·  bin width {D.bw}%</text>
+      <g>
+        <line x1={W-padR-150} y1={padT+4} x2={W-padR-128} y2={padT+4} stroke={C.gold} strokeWidth="2"/>
+        <text x={W-padR-123} y={padT+7} fontSize="10" fontWeight="700" fill={C.gold} fontFamily={F}>normal, same mean/SD</text>
+      </g>
+    </svg>;
+  };
+
   var started=sym!=='';
   var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
 
@@ -20928,6 +21032,60 @@ function MultiViewChartsPage(p){
               </div>
               <div style={{marginTop:10}}>{retChart(vis)}</div>
             </div>
+
+            {/* --- probability distribution of the SAME series the chart above plots --- */}
+            {(function(){
+              var D=retDist(vis);
+              if(!D)return null;
+              var tile=function(label,value,color,sub){
+                return <div style={{flex:'1 1 88px',minWidth:84,background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8,padding:'7px 9px'}}>
+                  <div style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>{label}</div>
+                  <div style={{fontSize:14,color:color||C.txtBright,fontFamily:F,fontWeight:700,lineHeight:1.25}}>{value}</div>
+                  {sub?<div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,marginTop:1}}>{sub}</div>:null}
+                </div>;
+              };
+              return <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                  <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Daily Return Probability Distribution</div>
+                  <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>same {D.n} sessions as the chart above</div>
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10}}>
+                  {tile('Mean',fmtPct(D.mean),D.mean>=0?UP:DN)}
+                  {tile('Median',fmtPct(D.median),D.median>=0?UP:DN)}
+                  {tile('Std dev',D.sd.toFixed(2)+'%',C.txtBright,'1 sigma')}
+                  {tile('Skew',(D.skew>=0?'+':'')+D.skew.toFixed(2),D.skew>=0?UP:DN,D.skew>=0?'right tail':'left tail')}
+                  {tile('Excess kurtosis',(D.kurt>=0?'+':'')+D.kurt.toFixed(2),D.kurt>0?C.warn:C.txtBright,D.kurt>0?'fatter than normal':'thinner')}
+                  {tile('5th pct',fmtPct(D.p05),DN,'1 day in 20 below')}
+                  {tile('95th pct',fmtPct(D.p95),UP,'1 day in 20 above')}
+                  {tile('Worst / best',fmtPct(D.min)+' / '+fmtPct(D.max),C.txtBright,'range')}
+                </div>
+                <div style={{marginTop:10}}>{distChart(D)}</div>
+                {/* observed vs normal in the tails — the part that matters for grid risk */}
+                <div style={{marginTop:10,overflowX:'auto'}}>
+                  <table style={{borderCollapse:'collapse',fontFamily:F,fontSize:10,width:'100%',minWidth:340}}>
+                    <thead><tr>
+                      {['Move beyond','Threshold','Observed','If normal','Ratio'].map(function(h,i){
+                        return <th key={i} style={{textAlign:i<2?'left':'right',padding:'4px 8px',color:C.txtDim,fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>{h}</th>;
+                      })}
+                    </tr></thead>
+                    <tbody>
+                      {D.tails.map(function(t){
+                        var ratio=t.expPct>0?(t.obsPct/t.expPct):null;
+                        var hot=ratio!=null&&ratio>1.25;
+                        return <tr key={t.k}>
+                          <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{'\u00B1'+t.k+' sigma'}</td>
+                          <td style={{padding:'4px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'55'}}>{'\u00B1'+t.thr.toFixed(2)+'%'}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{t.obs+' ('+t.obsPct.toFixed(1)+'%)'}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'55'}}>{t.expPct.toFixed(1)+'%'}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:hot?C.warn:C.txtDim,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{ratio==null?'—':ratio.toFixed(2)+'x'}</td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>Bars are the observed count per bin; the gold curve is a normal distribution with the same mean and standard deviation, drawn for comparison only — it is a reference, not a claim that returns are normal. Bin edges are aligned so zero is always a boundary, so no bar mixes up-days with down-days. The tail table is the part that matters for grid sizing: a ratio above 1.0 means large moves happen MORE often than a normal distribution would predict, and those are the moves that carry price out of a grid. Excess kurtosis above zero says the same thing in one number. Percentiles are interpolated, and all figures are close-to-close, ignoring intraday path.</div>
+              </div>;
+            })()}
 
             {/* --- fixed 12-month streak subsection: independent of the lookback dropdown above --- */}
             {(function(){
