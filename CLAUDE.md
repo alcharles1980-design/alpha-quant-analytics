@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v641 · Jul 26 2026
+**Status at last update:** v642 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,7 +602,7 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v641** (Jul 26 2026) — **Close → Next High Distribution** (v641), **Daily True Range
+**Current: v642** (Jul 26 2026) — **Close → Next High Distribution** (v641), **Daily True Range
 Distribution** (v640) and **Daily Return Probability Distribution** (v637) now form three stacked
 histograms in the Daily Returns card; Moving Average Structure card (v639); current streak state
 (v638); Fib swing scales to visible range (v636, closed the last MV Charts open item); Daily Returns &
@@ -628,13 +628,15 @@ zero-boundary rule is exactly the subtlety that only ever gets fixed in one copy
 verified: the returns histogram reproduces its v637 baseline with zero drift across all seven
 statistics.**
 
-**The warning block is deliberate and is why this section is safe to ship.** These are **maximum
-favourable excursions, not achievable returns**. A hit rate says price touched that level at some point
-in the session — not that you exited there, not how far it fell first, not where it closed. §9a
-measured the average close→high as **highly persistent (r = +0.848)** and the buy-the-close /
+**Interpretation (v642 removed the in-app warning block; this record stands).** The figures are
+**maximum favourable excursions, not achievable returns** — a hit rate says price touched that level at
+some point in the session, not that it was exited there, how far it fell first, or where it closed.
+§9a measured the average close→high as **highly persistent (r = +0.848)** while the buy-the-close /
 sell-next-swing-high strategy built on it **still lost −0.25%/trade, negative in every metric quintile
-out of sample**. A persistent metric is not a profitable one. Shipping a hit-rate table without that
-warning would invite precisely the mistake this project already ran and disproved.
+out of sample**. A persistent metric is not a profitable one. The in-app warning was removed at the
+user's request in v642 — it restated a finding the user produced themselves, inside a single-operator
+tool, so it was clutter rather than a safeguard. The technical footnote and the "Never positive" tile
+remain, and this section of the handoff is now where that context lives.
 
 Verified: bin integrity (bins sum to n, zero on a boundary, no bin mixes signs); edge cases all return
 null without throwing (empty, one row, null high, zero prior close). Live DOM verified against
