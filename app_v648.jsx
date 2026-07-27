@@ -13902,6 +13902,17 @@ function MostActivesPage(p){
               patch.bidPx=bp;patch.bidSz=(bp!=null&&typeof q.bs==='number')?q.bs:null;
               patch.askPx=ap;patch.askSz=(ap!=null&&typeof q.as==='number')?q.as:null;
               patch.quoteAge=isFinite(ts)?Math.max(0,(qNow-ts)/1000):null;
+              // Spread, computed HERE rather than in the cell so it lands on the row and the sort
+              // comparator can read it (row[sortKey] — the v581 rule). Percentage is quoted against
+              // the MID, the standard convention: against bid or ask it would read differently
+              // depending on which side you picked, and would not be comparable across names.
+              // A crossed book (ask < bid) yields a negative spread and is left NEGATIVE rather than
+              // clamped — it is a real condition on an ATS and hiding it would be misleading.
+              if(bp!=null&&ap!=null){
+                var mid=(bp+ap)/2;
+                patch.spreadUsd=ap-bp;
+                patch.spreadPct=(mid>0)?((ap-bp)/mid*100):null;
+              }else{patch.spreadUsd=null;patch.spreadPct=null;}
             }
             if(tr&&typeof tr.p==='number'&&tr.p>0){
               var tts=tr.t?Date.parse(tr.t):NaN;
@@ -14018,6 +14029,33 @@ function MostActivesPage(p){
     if(sec<90)return Math.round(sec)+'s';
     if(sec<5400)return Math.round(sec/60)+'m';
     return Math.round(sec/3600)+'h';
+  };
+  // SPREAD cell: percentage against the mid, with the dollar figure beneath it. Precision adapts to
+  // magnitude — overnight spreads span roughly three orders of magnitude (SPY ~0.011%, thin names
+  // past 10%), so a fixed 2 decimals would collapse every liquid name to "0.01%" and throw away the
+  // distinction that matters most when sizing a grid.
+  var fmtSpreadPct=function(v){
+    var a=Math.abs(v);
+    return (a<0.01?v.toFixed(4):a<0.1?v.toFixed(3):v.toFixed(2))+'%';
+  };
+  var fmtSpreadUsd=function(v){
+    var a=Math.abs(v);
+    return '$'+(a<0.01?v.toFixed(4):v.toFixed(2));
+  };
+  var spreadCell=function(pct,usd,age){
+    if(pct==null||usd==null)return <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{'\u2014'}</td>;
+    var stale=(age==null||age>QUOTE_STALE_S);
+    var crossed=(usd<0);
+    // Colour by cost, not by prettiness: tight is cheap to trade, wide is where a grid bleeds.
+    var col=crossed?C.gold:(pct<0.1?C.accent:pct<0.5?C.txt:pct<2?C.txtDim:C.warn);
+    var tip=(crossed?'CROSSED BOOK — the ask is below the bid. Real but unusual; treat with suspicion. ':'')
+      +'Spread '+fmtSpreadUsd(usd)+' = '+fmtSpreadPct(pct)+' of mid ('+Math.round(pct*100)+' bps). '
+      +'This is the round-trip cost of entering and exiting immediately at the touch.'
+      +(stale?' Quote is stale, so the spread is not current.':'');
+    return <td title={tip} style={{padding:'4px 3px',textAlign:'right',whiteSpace:'nowrap',opacity:stale?0.45:1}}>
+      <span style={{color:col,fontWeight:700}}>{fmtSpreadPct(pct)}</span>
+      <span style={{color:C.txtDim,fontSize:7,marginLeft:3}}>{'\u00B7 '+fmtSpreadUsd(usd)}</span>
+    </td>;
   };
   var lastTradeCell=function(px,sz,age){
     if(px==null)return <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{'\u2014'}</td>;
@@ -14587,6 +14625,7 @@ function MostActivesPage(p){
             <th style={Object.assign({padding:"4px 3px",textAlign:"left",color:C.txtDim},fzTh(3))}>TYPE</th>
             {tblTh("price","PRICE",null,4,isOvernightView?"IN SESSION":"LATEST",isOvernightView?"Latest traded price within this session (the most recent print in the session window).":"Latest traded price.")}
             {isBoatsView&&tblTh("bidPx","BID",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book BID \u2014 the best resting buy price on the overnight ATS and the size displayed at it. This is what you would hit selling right now. Dimmed when the quote is more than 5 minutes old: illiquid names often have not quoted overnight at all, and their latest quote can be days stale. Hover a cell for its exact age.")}
+            {isBoatsView&&tblTh("spreadPct","SPREAD",null,null,"% OF MID \u00B7 $","ASK minus BID: the round-trip cost of entering and exiting immediately at the touch. Quoted as a percentage of the MID \u2014 the standard convention, and the only one comparable across names, since quoting against bid or ask changes the number depending on which side you pick. Measured across a full overnight universe the MEDIAN was about 1.71% with a 90th percentile past 10%, far wider than regular hours, so this is a material cost for any overnight grid. Coloured by cost, not by size. A negative value means a CROSSED book (ask below bid) and is shown rather than hidden. Dimmed when the quote is stale.")}
             {isBoatsView&&tblTh("askPx","ASK",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book ASK \u2014 the best resting sell price and the size displayed at it. This is what you would pay lifting right now. The gap between BID and ASK is the round-trip cost of entering and exiting immediately; measured across a full overnight universe the MEDIAN was about 171 bps, far wider than regular hours. Dimmed when stale.")}
             {isBoatsView&&tblTh("lastPx","LAST TRADE",null,null,"PRICE \u00D7 SIZE \u00B7 AGE","The most recent PRINT on the overnight ATS \u2014 an actual execution, not a quote \u2014 with the size that traded and how long ago. Unlike the PRICE column this is never suppressed by age: on a name that has not traded tonight, \"last print 9h ago\" is the useful fact, and it is what tells you the two columns have diverged. Dimmed past 5 minutes.")}
             {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN this session: from the session's first print to the latest print. Shows how the price has drifted during the session, not how far it has gapped.":"Change versus the previous close.")}
@@ -14622,6 +14661,7 @@ function MostActivesPage(p){
                 <td style={Object.assign({padding:'4px 3px',color:(a.tickerType==='ETF'||a.tickerType==='ETV'||a.tickerType==='ETS'||a.tickerType==='ETN')?C.blue:C.txtDim,fontSize:7},fzTd(3,rowBg))}>{a.tickerType||'STK'}</td>
                 <td style={Object.assign({padding:'4px 3px',textAlign:'right',color:C.txtBright,fontWeight:600},fzTd(4,rowBg))}>{a.price?'$'+a.price.toFixed(2):'\u2014'}</td>
                 {isBoatsView&&quoteCell(a.bidPx,a.bidSz,a.quoteAge,'bid')}
+                {isBoatsView&&spreadCell(a.spreadPct,a.spreadUsd,a.quoteAge)}
                 {isBoatsView&&quoteCell(a.askPx,a.askSz,a.quoteAge,'ask')}
                 {isBoatsView&&lastTradeCell(a.lastPx,a.lastSz,a.lastAge)}
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
