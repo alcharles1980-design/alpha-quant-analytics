@@ -13848,6 +13848,9 @@ function MostActivesPage(p){
   //   - Reads rows through a REF so `actives` is not a dependency; this effect writes to actives,
   //     and depending on its own output would loop.
   var activesRef=useRef(actives);activesRef.current=actives;
+  // Per-minute trade counts, kept across sweeps so only newly completed minutes are fetched.
+  // { minutes:{minuteIdx:1 covered}, counts:{ symbol:{minuteIdx:count} } }
+  var minBufRef=useRef({minutes:{},counts:{}});
   var QUOTE_REFRESH_MS=20000;
   useEffect(function(){
     if(session!=='overnight')return;
@@ -13855,6 +13858,9 @@ function MostActivesPage(p){
     var cancelled=false;
     var run=function(){
       var rows=activesRef.current;
+      // Anchor the minute index once, at sweep start, so the minutes REQUESTED and the minutes
+      // SUMMED cannot straddle a minute boundary and disagree.
+      var nowMinAtStart=Math.floor(Date.now()/60000);
       if(!rows||!rows.length)return;
       var qSyms=rows.map(function(r){return r.symbol;}).filter(Boolean);
       if(!qSyms.length)return;
@@ -13880,34 +13886,68 @@ function MostActivesPage(p){
       // minute. Measured cost for the full 1,338-name universe: 3 requests, 172 KB, 0.40s, and no
       // next_page_token — cheap because only ~440 names trade at all in a 20-minute overnight window,
       // so the response carries bars for a third of the symbols asked for.
-      var bm={},barSeen={};
-      var barStart=new Date(Date.now()-17*60000).toISOString().slice(0,17)+'00Z';
-      var pullBars=function(ch){
-        var path='/v2/stocks/bars?timeframe=1Min&feed=boats&limit=10000&start='+barStart
-                +'&symbols='+encodeURIComponent(ch.join(','));
-        var once=function(){
-          return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-            'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}}).then(function(r){return r.ok?r.json():null;});
+      // ── TRAILING TRADE COUNTS ────────────────────────────────────────────────────────────────
+      // Counted from the RAW TRADE TAPE, not from 1-minute bars. v649-v651 used bar `n`, which
+      // EXCLUDES ODD LOTS (condition "I"), and overnight flow is overwhelmingly odd-lot: measured
+      // across 59 active names, bars missed a MEDIAN 37.5% of trades, p90 100%. COIN printed 99
+      // trades on the tape and 0 in its bars, so the column called an actively trading name dead.
+      // The TRADES column beside it counts the raw tape, so the two also disagreed by definition.
+      //
+      // Fetching a full 15-minute tape every sweep costs 2.4 MB (vs 172 KB for bars), so instead a
+      // per-minute ring buffer is kept and only the minutes not yet covered are fetched: ~2.4 MB
+      // once on the first sweep, then roughly 160-300 KB as each new minute completes.
+      var buf=minBufRef.current;
+      var wantFrom=nowMinAtStart-15, wantTo=nowMinAtStart-1;   // complete minutes only
+      var missing=[];
+      for(var mi=wantFrom;mi<=wantTo;mi++)if(!buf.minutes[mi])missing.push(mi);
+      var tradeJobs=[];
+      if(missing.length){
+        var fromMin=Math.min.apply(null,missing), toMin=Math.max.apply(null,missing)+1;
+        var isoOf=function(m){return new Date(m*60000).toISOString().slice(0,17)+'00Z';};
+        var pullTape=function(ch){
+          var base='/v2/stocks/trades?feed=boats&limit=10000&start='+isoOf(fromMin)+'&end='+isoOf(toMin)
+                  +'&symbols='+encodeURIComponent(ch.join(','));
+          // MUST paginate: a 16-minute full-universe tape returned 3 pages. Ignoring the token
+          // would silently drop trades — the failure class this project keeps getting bitten by.
+          var step=function(path,guard){
+            return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+              'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}})
+              .then(function(r){return r.ok?r.json():null;})
+              .then(function(d){
+                if(!d)return false;
+                var tr=d.trades||{};
+                for(var sym in tr){
+                  var arr=tr[sym];
+                  var per=(buf.counts[sym]=buf.counts[sym]||{});
+                  for(var ti=0;ti<arr.length;ti++){
+                    var tt2=Date.parse(arr[ti].t);
+                    if(!isFinite(tt2))continue;
+                    var mIdx=Math.floor(tt2/60000);
+                    per[mIdx]=(per[mIdx]||0)+1;
+                  }
+                }
+                if(d.next_page_token&&guard<12)
+                  return step(base+'&page_token='+encodeURIComponent(d.next_page_token),guard+1);
+                return true;
+              }).catch(function(){return false;});
+          };
+          return step(base,0);
         };
-        return once().then(function(d){return d||once();})
-          .then(function(d){
-            if(!d)return;                       // request failed — leave these symbols UNKNOWN
-            if(d.bars)Object.assign(bm,d.bars);
-            // Mark the chunk covered. A symbol in a SUCCESSFUL response that carries no bars traded
-            // zero times; one whose request FAILED is unknown. Without this distinction both render
-            // identically and a dead name is indistinguishable from a dropped request — the same
-            // conflation that makes silent truncation so hard to see.
-            for(var ci=0;ci<ch.length;ci++)barSeen[ch[ci]]=1;
-          })
-          .catch(function(){});
-      };
+        var okAll=[];
+        qChunks.forEach(function(ch){tradeJobs.push(pullTape(ch).then(function(ok){okAll.push(ok);}));});
+        // Only mark the window covered once EVERY chunk succeeded. Marking on partial success would
+        // bake a permanent undercount into the buffer, since covered minutes are never refetched.
+        jobs.push(Promise.all(tradeJobs).then(function(){
+          if(okAll.length&&okAll.every(Boolean))
+            for(var mk=fromMin;mk<=toMin-1;mk++)buf.minutes[mk]=1;
+        }));
+      }
       qChunks.forEach(function(ch){
         jobs.push(pull('quotes',ch,qm,'quotes'));
         // Last trade on the SAME cadence. Without it the PRICE column only moves on the 180s table
         // reload while the book moves every 20s, which was measured putting PRICE outside [BID, ASK]
         // on 34% of rows (worst 56 bps, AMAT 551.51 against a 554.60/556.00 book).
         jobs.push(pull('trades',ch,tm,'trades'));
-        jobs.push(pullBars(ch));
       });
       Promise.all(jobs).then(function(){
         if(cancelled)return;
@@ -13917,31 +13957,37 @@ function MostActivesPage(p){
         // currently in progress is excluded because it is partial, and including it would make the
         // 1-minute figure ratchet up and reset three times between 20s refreshes — noise, not signal.
         // The cost is that these lag by up to 60s, which the column tooltip states.
-        var nowMin=Math.floor(qNow/60000);
+        var nowMin=nowMinAtStart;
+        // Counts render only when EVERY minute in the window is covered; a partially covered window
+        // would understate without any visible sign.
+        var countsReady=true;
+        for(var cm=nowMin-15;cm<=nowMin-1;cm++)if(!minBufRef.current.minutes[cm]){countsReady=false;break;}
+        // Prune anything older than the window so the buffer cannot grow without bound over a
+        // multi-hour session.
+        var bufP=minBufRef.current, cutoff=nowMin-20;
+        for(var mk2 in bufP.minutes)if(+mk2<cutoff)delete bufP.minutes[mk2];
+        for(var sk in bufP.counts){var pc=bufP.counts[sk];
+          for(var mk3 in pc)if(+mk3<cutoff)delete pc[mk3];
+          if(!Object.keys(pc).length)delete bufP.counts[sk];}
         // Stamp onto each ROW, not a side map: the sort comparator reads row[sortKey], so a value
         // living only in a map renders but never sorts (the v581 ON PACE bug).
         setActives(function(prev){
           if(!prev)return prev;
           return prev.map(function(row){
-            var q=qm[row.symbol],tr=tm[row.symbol],bars=bm[row.symbol];
-            var seen=barSeen[row.symbol];
-            if(!q&&!tr&&!bars&&!seen)return row;   // not in this sweep — keep whatever it had rather than blanking it
+            var q=qm[row.symbol],tr=tm[row.symbol];
+            if(!q&&!tr&&!countsReady)return row;   // nothing for this symbol this sweep — keep what it had
             var patch={};
-            if(seen){
-              // A symbol present in the response but with no bar in a window genuinely traded ZERO
-              // times in it, so these start at 0 rather than null — a blank would wrongly read as
-              // "unknown" when the real answer is "none".
+            if(countsReady){
+              // Sum the ring buffer over complete minutes. A symbol with no bucket in a covered
+              // minute genuinely traded ZERO times then — a blank would read as "unknown" when the
+              // answer is "none", and on this universe "none" is the common case.
+              var per=minBufRef.current.counts[row.symbol]||{};
               var t1=0,t5=0,t15=0;
-              var blist=bars||[];   // covered by a successful request but no bars = traded zero times
-              for(var bi2=0;bi2<blist.length;bi2++){
-                var bt=Date.parse(blist[bi2].t);
-                if(!isFinite(bt))continue;
-                var agoMin=nowMin-Math.floor(bt/60000);   // 0 = partial current bucket, excluded
-                if(agoMin<1||agoMin>15)continue;
-                var cnt=(typeof blist[bi2].n==='number')?blist[bi2].n:0;
-                if(agoMin===1)t1+=cnt;
-                if(agoMin<=5)t5+=cnt;
-                t15+=cnt;
+              for(var ago=1;ago<=15;ago++){
+                var n2=per[nowMin-ago]||0;
+                if(ago===1)t1+=n2;
+                if(ago<=5)t5+=n2;
+                t15+=n2;
               }
               patch.trd1=t1;patch.trd5=t5;patch.trd15=t15;
             }
