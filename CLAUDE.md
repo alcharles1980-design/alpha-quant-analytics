@@ -20,6 +20,31 @@ verification block below before writing any code.
 cd <repo> && ls app_v*.jsx | sort -V | tail -1 && git log --oneline -10
 ```
 
+**Reconcile the log against this document before doing anything else:**
+
+```bash
+./scripts/handoff-gap-check.sh          # committed, runnable; expands §9 heading ranges
+# -> "no handoff gaps in window", or a list of versions that shipped with no §9 entry
+```
+
+The script is in the repo rather than pasted here because the obvious one-liner is
+**wrong**: `comm` rejects `sort -n` ordering, and §9 headings use en-dash ranges
+(`### v648–v650`) that a naive `grep -oE '^### v[0-9]+'` truncates to the first
+version, so it reported 26 gaps where only 2 existed. A check that cries wolf gets
+ignored (§5.6), so it was calibrated against real data until it read clean.
+**Every version needs its own `### vNNN` heading** for the check to stay honest —
+folding one version into another entry's prose makes it invisible.
+
+> **`git log` is the source of truth for what shipped — not recollection, and not
+> this file.** Long sessions lose context: three versions were once committed from
+> a sandbox whose session had no memory of the work, and the assistant reported
+> being unable to account for its own commits (§11a). Two rules follow:
+> 1. **A version in the log and absent from §9 is a gap to fill**, using the
+>    commit message, before starting new work.
+> 2. **Before "discovering" a bug, check it is not already fixed.** The highest
+>    `app_vN.jsx` and the last few commit messages answer that in seconds. The
+>    same defect was once diagnosed twice, an hour apart, for exactly this reason.
+
 ```sql
 -- Supabase project haeqzegdlwryvaecanrn ("oscillation-analytics")
 select pg_size_pretty(pg_database_size(current_database())) as db_size,
@@ -83,7 +108,61 @@ Ask for a **fresh short-lived PAT** and tell the user to revoke it after the ses
 3. `package.json` version
 4. `npm install` if `node_modules` is absent (not committed), then `npm run build`
 5. Verify routes match menu items (§6); check for duplicate Supabase methods
-6. Push with a commit message explaining *why*, not just what
+6. **Pass the verification gate in §4a before believing it works.**
+7. Push with a commit message explaining *why*, not just what
+8. **Write the §9 entry for this version IN THE SAME PASS.** Not "later", not a
+   separate docs commit that may never come.
+
+> **Step 8 is not paperwork — it is the step that failed.** v644, v645 and v651
+> all shipped correctly, were verified, and had **zero mentions** in this document
+> because nothing in this list required an entry. Two of them fixed user-reported
+> bugs. When the session that wrote them lost context, the commit messages were
+> the only surviving record and the entries had to be reconstructed from them
+> (§11a). A version that ships without an entry here is a version the next session
+> cannot see.
+>
+> Two consequences, both worth internalising:
+> - **Commit messages must be self-sufficient**, because they are the backstop
+>   when everything else is gone. Write them as full write-ups.
+> - **A docs commit deferred is a docs commit lost.** If the entry cannot be
+>   written yet, the version is not finished.
+
+---
+
+## 4a. Verification gate — pass this before saying it works
+
+Structural checks (it built, routes match, the field is present) say **nothing**
+about behaviour. §5.1a exists because that mistake shipped four times. Before
+claiming a change works:
+
+1. **Trace one real value end to end** — source → fetch → mapping → rendered
+   cell — and confirm the number on screen equals one computed independently.
+   Prefer a **different implementation** (a Python recompute, the app's own
+   existing function) over re-running your own logic, which only proves it agrees
+   with itself.
+2. **Give every probe a positive control.** A probe returning zero proves nothing
+   until it has reported something you already know is there. Census tags and
+   colours and print the table; never ask a yes/no question of one hard-coded
+   selector. Resolve colours from `C.*` in source — never hand-copy a hex.
+   *(Cost so far: two full cycles on the VWAP bug, then again on the Fib swing.)*
+3. **Explain every failing assertion before dismissing it.** A failure is either
+   a real defect or a broken probe, and you do not know which until you look.
+   *(v638: four "failures" were my own regex — `textContent` concatenates without
+   spaces. v652: the "failure" was real and the scan was fine — my instrument was
+   wrong.)*
+4. **Check you are using the right instrument.** Before declaring a data fault,
+   prove the comparison. *(Minute bars exclude odd lots and missed a median 37.5%
+   of overnight trades; the scan they appeared to contradict was exactly right.)*
+5. **"Populated" is not "legible".** Read the rendered output as a human would.
+   *(v646 rendered `315.29×4025s` — price, size 402, age 5s — fully populated,
+   updating, and unreadable.)*
+6. **Verify under non-default settings.** A defect or a guard can be invisible
+   until a filter changes. *(Stale-quote dimming fired 0 times under the default
+   filters and 52 times with them cleared.)*
+7. **Count every call site before fixing any of them**, and after an anchored
+   edit walk back to the enclosing `function ...Page(` to confirm where you
+   landed. A duplicate-definition grep hit inside the **same** component is a real
+   collision; across different components it is not.
 
 ---
 
@@ -619,7 +698,9 @@ anywhere: 24/24 requests delivered == asked, no `next_page_token` on the latest-
 `feed=boats` throughout, bars `start` advancing correctly each sweep. Sorting, staleness dimming, and
 the auto-refresh toggle all confirmed behaviourally.
 
-#### FINDING — odd lots. The trailing trade counts were systematically wrong (fixed in v652)
+### v652 — count trailing trades from the TAPE, not minute bars (Jul 27 2026)
+
+*(Audit finding — full method in the audit entry above.)*
 
 **1-minute bar `n` EXCLUDES ODD LOTS (trade condition `I`), and overnight flow is overwhelmingly
 odd-lot.** Across 59 names active in the last 15 minutes, bars missed a **median 37.5%** of trades,
@@ -829,7 +910,7 @@ zero-boundary rule is exactly the subtlety that only ever gets fixed in one copy
 verified: the returns histogram reproduces its v637 baseline with zero drift across all seven
 statistics.**
 
-**Interpretation (v642 removed the in-app warning block; this record stands).** The figures are
+**Interpretation (see the v642 entry below; this record stands).** The figures are
 **maximum favourable excursions, not achievable returns** — a hit rate says price touched that level at
 some point in the session, not that it was exited there, how far it fell first, or where it closed.
 §9a measured the average close→high as **highly persistent (r = +0.848)** while the buy-the-close /
@@ -842,6 +923,17 @@ remain, and this section of the handoff is now where that context lives.
 Verified: bin integrity (bins sum to n, zero on a boundary, no bin mixes signs); edge cases all return
 null without throwing (empty, one row, null high, zero prior close). Live DOM verified against
 independently computed values: **14 assertions, all pass**, including the presence of the warning block.
+
+---
+
+### v642 — remove the MFE warning block from Close → Next High (Jul 26 2026)
+
+Removed at the user's request. The block restated a finding the user produced themselves (§9a), inside
+their own single-operator tool — the audience for that warning was the person who ran the research, so
+it was clutter rather than a safeguard. Nothing else changed: the technical footnote still carries the
+formula, the kept-not-clipped rule for negatives, the zero-boundary note and the ATR-multiple targets,
+and the "Never positive" tile still shows the count and share. The interpretation context lives in the
+v641 entry above.
 
 ---
 
