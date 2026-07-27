@@ -13876,25 +13876,65 @@ function MostActivesPage(p){
           .catch(function(){});
       };
       var jobs=[];
+      // Trailing trade counts come from 1-MINUTE BARS, whose `n` field is the trade count for that
+      // minute. Measured cost for the full 1,338-name universe: 3 requests, 172 KB, 0.40s, and no
+      // next_page_token — cheap because only ~440 names trade at all in a 20-minute overnight window,
+      // so the response carries bars for a third of the symbols asked for.
+      var bm={};
+      var barStart=new Date(Date.now()-17*60000).toISOString().slice(0,17)+'00Z';
+      var pullBars=function(ch){
+        var path='/v2/stocks/bars?timeframe=1Min&feed=boats&limit=10000&start='+barStart
+                +'&symbols='+encodeURIComponent(ch.join(','));
+        var once=function(){
+          return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}}).then(function(r){return r.ok?r.json():null;});
+        };
+        return once().then(function(d){return d||once();})
+          .then(function(d){if(d&&d.bars)Object.assign(bm,d.bars);})
+          .catch(function(){});
+      };
       qChunks.forEach(function(ch){
         jobs.push(pull('quotes',ch,qm,'quotes'));
         // Last trade on the SAME cadence. Without it the PRICE column only moves on the 180s table
         // reload while the book moves every 20s, which was measured putting PRICE outside [BID, ASK]
         // on 34% of rows (worst 56 bps, AMAT 551.51 against a 554.60/556.00 book).
         jobs.push(pull('trades',ch,tm,'trades'));
+        jobs.push(pullBars(ch));
       });
       Promise.all(jobs).then(function(){
         if(cancelled)return;
-        if(!Object.keys(qm).length&&!Object.keys(tm).length)return; // total failure: leave what is on screen
+        if(!Object.keys(qm).length&&!Object.keys(tm).length&&!Object.keys(bm).length)return; // total failure: leave what is on screen
         var qNow=Date.now();
+        // Minute-bucket index of "now". Windows are counted in COMPLETE minutes only: the bucket
+        // currently in progress is excluded because it is partial, and including it would make the
+        // 1-minute figure ratchet up and reset three times between 20s refreshes — noise, not signal.
+        // The cost is that these lag by up to 60s, which the column tooltip states.
+        var nowMin=Math.floor(qNow/60000);
         // Stamp onto each ROW, not a side map: the sort comparator reads row[sortKey], so a value
         // living only in a map renders but never sorts (the v581 ON PACE bug).
         setActives(function(prev){
           if(!prev)return prev;
           return prev.map(function(row){
-            var q=qm[row.symbol],tr=tm[row.symbol];
-            if(!q&&!tr)return row;   // not in this sweep — keep whatever it had rather than blanking it
+            var q=qm[row.symbol],tr=tm[row.symbol],bars=bm[row.symbol];
+            if(!q&&!tr&&!bars)return row;   // not in this sweep — keep whatever it had rather than blanking it
             var patch={};
+            if(bars&&bars.length){
+              // A symbol present in the response but with no bar in a window genuinely traded ZERO
+              // times in it, so these start at 0 rather than null — a blank would wrongly read as
+              // "unknown" when the real answer is "none".
+              var t1=0,t5=0,t15=0;
+              for(var bi2=0;bi2<bars.length;bi2++){
+                var bt=Date.parse(bars[bi2].t);
+                if(!isFinite(bt))continue;
+                var agoMin=nowMin-Math.floor(bt/60000);   // 0 = partial current bucket, excluded
+                if(agoMin<1||agoMin>15)continue;
+                var cnt=(typeof bars[bi2].n==='number')?bars[bi2].n:0;
+                if(agoMin===1)t1+=cnt;
+                if(agoMin<=5)t5+=cnt;
+                t15+=cnt;
+              }
+              patch.trd1=t1;patch.trd5=t5;patch.trd15=t15;
+            }
             if(q){
               var bp=(typeof q.bp==='number'&&q.bp>0)?q.bp:null;   // 0 = no resting order, not a price
               var ap=(typeof q.ap==='number'&&q.ap>0)?q.ap:null;
@@ -14628,6 +14668,9 @@ function MostActivesPage(p){
             {isBoatsView&&tblTh("spreadPct","SPREAD",null,null,"% OF MID \u00B7 $","ASK minus BID: the round-trip cost of entering and exiting immediately at the touch. Quoted as a percentage of the MID \u2014 the standard convention, and the only one comparable across names, since quoting against bid or ask changes the number depending on which side you pick. Measured across a full overnight universe the MEDIAN was about 1.71% with a 90th percentile past 10%, far wider than regular hours, so this is a material cost for any overnight grid. Coloured by cost, not by size. A negative value means a CROSSED book (ask below bid) and is shown rather than hidden. Dimmed when the quote is stale.")}
             {isBoatsView&&tblTh("askPx","ASK",null,null,"PRICE \u00D7 SIZE","Live BOATS top-of-book ASK \u2014 the best resting sell price and the size displayed at it. This is what you would pay lifting right now. The gap between BID and ASK is the round-trip cost of entering and exiting immediately; measured across a full overnight universe the MEDIAN was about 171 bps, far wider than regular hours. Dimmed when stale.")}
             {isBoatsView&&tblTh("lastPx","LAST TRADE",null,null,"PRICE \u00D7 SIZE \u00B7 AGE","The most recent PRINT on the overnight ATS \u2014 an actual execution, not a quote \u2014 with the size that traded and how long ago. Unlike the PRICE column this is never suppressed by age: on a name that has not traded tonight, \"last print 9h ago\" is the useful fact, and it is what tells you the two columns have diverged. Dimmed past 5 minutes.")}
+            {isBoatsView&&tblTh("trd1","TRADES",null,null,"LAST 1M","Number of TRADES in the last complete minute on the overnight ATS. Counted from 1-minute bars, so it lags by up to 60 seconds — the minute currently in progress is excluded because a partial bucket would make this ratchet up and reset between refreshes. Zero means the name genuinely did not trade in that minute, not that the figure is missing.")}
+            {isBoatsView&&tblTh("trd5","TRADES",null,null,"LAST 5M","Number of TRADES in the last 5 complete minutes. Compare against the 1-minute figure to see whether activity is accelerating: if 1m is materially more than a fifth of this, the name is picking up right now.")}
+            {isBoatsView&&tblTh("trd15","TRADES",null,null,"LAST 15M","Number of TRADES in the last 15 complete minutes. The widest of the three, and the steadiest — use it as the baseline the shorter windows are read against. Most names in the overnight universe trade in only a handful of minutes out of any fifteen.")}
             {tblTh("changePct","MOVE %",null,null,isOvernightView?"IN SESSION":"VS PREV CLOSE",isOvernightView?"Move WITHIN this session: from the session's first print to the latest print. Shows how the price has drifted during the session, not how far it has gapped.":"Change versus the previous close.")}
             {isOvernightView&&tblTh("gapPct","GAP %",null,null,"SINCE 4PM","Gap versus the REGULAR-SESSION CLOSE at 4PM ET (the prior day's close for overnight and pre-market; the same day's close for after-market). This is the conventional 'how much has it moved since the market closed' figure \u2014 the news reaction. A stock can be up big on the gap while drifting down within the overnight session.")}
             {tblTh("marketCap","MARKET",null,null,"CAP","Market capitalisation \u2014 total value of the company's shares.")}
@@ -14664,6 +14707,9 @@ function MostActivesPage(p){
                 {isBoatsView&&spreadCell(a.spreadPct,a.spreadUsd,a.quoteAge)}
                 {isBoatsView&&quoteCell(a.askPx,a.askSz,a.quoteAge,'ask')}
                 {isBoatsView&&lastTradeCell(a.lastPx,a.lastSz,a.lastAge)}
+                {isBoatsView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.trd1?C.txt:C.txtDim,fontWeight:a.trd1?600:400}}>{a.trd1==null?'\u2014':fmtVol(a.trd1)}</td>}
+                {isBoatsView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.trd5?C.txt:C.txtDim,fontWeight:a.trd5?600:400}}>{a.trd5==null?'\u2014':fmtVol(a.trd5)}</td>}
+                {isBoatsView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.trd15?C.txt:C.txtDim,fontWeight:a.trd15?600:400}}>{a.trd15==null?'\u2014':fmtVol(a.trd15)}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.changePct>0?C.accent:a.changePct<0?C.warn:C.txtDim,fontWeight:600}}>{a.changePct?(a.changePct>=0?'+':'')+a.changePct.toFixed(1)+'%':'\u2014'}</td>
                 {isOvernightView&&<td style={{padding:'4px 3px',textAlign:'right',color:a.gapPct>0?C.accent:a.gapPct<0?C.warn:C.txtDim,fontWeight:600}}>{(a.gapPct!=null&&isFinite(a.gapPct))?((a.gapPct>=0?'+':'')+a.gapPct.toFixed(1)+'%'):'\u2014'}</td>}
                 <td style={{padding:'4px 3px',textAlign:'right',color:C.txtDim}}>{a.marketCap?fmtVol(a.marketCap):'\u2014'}</td>
