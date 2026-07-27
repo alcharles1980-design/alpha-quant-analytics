@@ -41,6 +41,7 @@ export class TradeCounter {
     this.retries = 0;
     // counts: Map<symbol, Map<minuteIndex, count>>
     this.counts = new Map();
+    this.lastPruneMin = null;
     // A minute is only reportable if the stream was connected for ALL of it. Without this a
     // reconnect gap silently undercounts, which is the exact failure the bar-based version had.
     this.covered = new Set();
@@ -52,6 +53,10 @@ export class TradeCounter {
     const url = new URL(request.url);
     if (url.pathname.endsWith('/start')) {
       this.feed = url.searchParams.get('feed') || 'sip';
+      // Persist it: alarm() can fire on a COLD wake after eviction, with no request to carry
+      // the feed name. Without this the object would wake, find this.feed null, set status
+      // 'bad-feed' and never reconnect — silently dead until someone hit /start again.
+      await this.state.storage.put('feed', this.feed);
       await this.ensureConnected();
       return this.json({ ok: true, feed: this.feed, status: this.status });
     }
@@ -167,6 +172,8 @@ export class TradeCounter {
   // Alarm does double duty: reconnect after a drop, and keep the object from being evicted
   // while it should be holding a stream.
   async alarm() {
+    if (!this.feed) this.feed = (await this.state.storage.get('feed')) || null;
+    if (!this.feed) return;                    // never started; nothing to restore
     const nm = this.nowMin();
     if (this.status === 'open' && this.lastMsgAt && Date.now() - this.lastMsgAt > STALE_MS) {
       try { this.ws && this.ws.close(); } catch (e) {}
@@ -197,7 +204,9 @@ export class TradeCounter {
     if (this.coverFrom != null) {
       for (let m = this.coverFrom; m < nm; m++) this.covered.add(m);
     }
-    if (nm % 5 === 0) this.prune(nm);
+    // Prune at most once per minute. The previous form ran on every message during minutes
+    // divisible by five, which at RTH print rates is thousands of full map sweeps a minute.
+    if (this.lastPruneMin !== nm) { this.lastPruneMin = nm; this.prune(nm); }
   }
 
   prune(nm) {
