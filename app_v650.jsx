@@ -13880,7 +13880,7 @@ function MostActivesPage(p){
       // minute. Measured cost for the full 1,338-name universe: 3 requests, 172 KB, 0.40s, and no
       // next_page_token — cheap because only ~440 names trade at all in a 20-minute overnight window,
       // so the response carries bars for a third of the symbols asked for.
-      var bm={};
+      var bm={},barSeen={};
       var barStart=new Date(Date.now()-17*60000).toISOString().slice(0,17)+'00Z';
       var pullBars=function(ch){
         var path='/v2/stocks/bars?timeframe=1Min&feed=boats&limit=10000&start='+barStart
@@ -13890,7 +13890,15 @@ function MostActivesPage(p){
             'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}}).then(function(r){return r.ok?r.json():null;});
         };
         return once().then(function(d){return d||once();})
-          .then(function(d){if(d&&d.bars)Object.assign(bm,d.bars);})
+          .then(function(d){
+            if(!d)return;                       // request failed — leave these symbols UNKNOWN
+            if(d.bars)Object.assign(bm,d.bars);
+            // Mark the chunk covered. A symbol in a SUCCESSFUL response that carries no bars traded
+            // zero times; one whose request FAILED is unknown. Without this distinction both render
+            // identically and a dead name is indistinguishable from a dropped request — the same
+            // conflation that makes silent truncation so hard to see.
+            for(var ci=0;ci<ch.length;ci++)barSeen[ch[ci]]=1;
+          })
           .catch(function(){});
       };
       qChunks.forEach(function(ch){
@@ -13916,19 +13924,21 @@ function MostActivesPage(p){
           if(!prev)return prev;
           return prev.map(function(row){
             var q=qm[row.symbol],tr=tm[row.symbol],bars=bm[row.symbol];
-            if(!q&&!tr&&!bars)return row;   // not in this sweep — keep whatever it had rather than blanking it
+            var seen=barSeen[row.symbol];
+            if(!q&&!tr&&!bars&&!seen)return row;   // not in this sweep — keep whatever it had rather than blanking it
             var patch={};
-            if(bars&&bars.length){
+            if(seen){
               // A symbol present in the response but with no bar in a window genuinely traded ZERO
               // times in it, so these start at 0 rather than null — a blank would wrongly read as
               // "unknown" when the real answer is "none".
               var t1=0,t5=0,t15=0;
-              for(var bi2=0;bi2<bars.length;bi2++){
-                var bt=Date.parse(bars[bi2].t);
+              var blist=bars||[];   // covered by a successful request but no bars = traded zero times
+              for(var bi2=0;bi2<blist.length;bi2++){
+                var bt=Date.parse(blist[bi2].t);
                 if(!isFinite(bt))continue;
                 var agoMin=nowMin-Math.floor(bt/60000);   // 0 = partial current bucket, excluded
                 if(agoMin<1||agoMin>15)continue;
-                var cnt=(typeof bars[bi2].n==='number')?bars[bi2].n:0;
+                var cnt=(typeof blist[bi2].n==='number')?blist[bi2].n:0;
                 if(agoMin===1)t1+=cnt;
                 if(agoMin<=5)t5+=cnt;
                 t15+=cnt;
