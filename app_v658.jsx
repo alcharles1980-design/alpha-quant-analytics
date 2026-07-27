@@ -13668,12 +13668,36 @@ function MostActivesPage(p){
               body:JSON.stringify({stype:(amMode?'aftermarket':pmMode?'premarket':'overnight'),sdate:ovnDate})})
               .then(function(pr){return pr.ok?pr.json():[];})
               .then(function(pd){
-                var mp={},mpMed={};
+                var mp={},mpMed={},mpConf={};
                 for(var pi=0;pi<(pd||[]).length;pi++){
                   var pv=Number(pd[pi].pace_ratio);
                   if(isFinite(pv))mp[pd[pi].ticker]=pv;
                   var pvm=Number(pd[pi].pace_ratio_med);
                   if(isFinite(pvm))mpMed[pd[pi].ticker]=pvm;
+                  // HOW TRUSTWORTHY IS THIS PROJECTION? The RPC has always returned curve_spread
+                  // and pct_complete and the app threw both away, so ON PACE rendered identically
+                  // whether the underlying curve was tight or useless.
+                  //
+                  // ON PACE = trades / pct_complete. The error is driven by how much pct_complete
+                  // varies ACROSS TICKERS at this point in the session — that is curve_spread. So
+                  // the honest measure is how wide the projection could be:
+                  //     (pct + spread/2) / (pct - spread/2)
+                  // i.e. the ratio between the projection at the optimistic and pessimistic ends
+                  // of the observed band. A factor, not an absolute, so it is comparable across
+                  // sessions and needs no per-session hardcoding.
+                  //
+                  // Worked from the live curves:
+                  //   after-market min 50: pct 41.8, spread 46.7 -> 65.2/18.5 = 3.5x  UNRELIABLE
+                  //   RTH        min 75: pct 33.0, spread 16.3 -> 41.2/24.9 = 1.7x  moderate
+                  //   after-market min 235: pct 99.0, spread  0.0 ->            1.0x  solid
+                  // This is why a blanket "suppress on after-market" rule would be wrong: the same
+                  // tab is solid at the open and at the close, and only unreliable in the middle.
+                  var pc=Number(pd[pi].pct_complete), sp=Number(pd[pi].curve_spread);
+                  if(isFinite(pc)&&isFinite(sp)&&pc>0){
+                    var lo=pc-sp/2, hi=pc+sp/2;
+                    mpConf[pd[pi].ticker]={fac:(lo>0?hi/lo:Infinity),pct:pc,spread:sp,
+                                           mins:Number(pd[pi].mins_elapsed)};
+                  }
                 }
                 setPaceMap(mp);
                 // Also stamp the value onto each row. The table's sort comparator reads
@@ -13682,10 +13706,11 @@ function MostActivesPage(p){
                 setActives(function(prev){
                   if(!prev)return prev;
                   return prev.map(function(row){
-                    var pv=mp[row.symbol],pvm=mpMed[row.symbol];
+                    var pv=mp[row.symbol],pvm=mpMed[row.symbol],pcf=mpConf[row.symbol];
                     return Object.assign({},row,{
                       paceRatio:(pv!=null&&isFinite(pv))?pv:null,
-                      paceRatioMed:(pvm!=null&&isFinite(pvm))?pvm:null});
+                      paceRatioMed:(pvm!=null&&isFinite(pvm))?pvm:null,
+                      paceConf:pcf||null});
                   });
                 });
               }).catch(function(){setPaceMap({});});
@@ -14373,6 +14398,31 @@ function MostActivesPage(p){
   // volume, i.e. unrelated to the visible order.
   // SYMBOL is non-numeric so it falls back to volume. CHG % can be negative, so magnitude is taken
   // as an absolute value (a -5% move reads as prominent as +5%).
+  // Both ON PACE columns render through this so the confidence marking cannot drift between them.
+  // `fac` is how wide the projection could be given cross-ticker dispersion in the pace curve at
+  // this point in the session (see the pace fetch for the derivation). Bands calibrated against the
+  // live curves rather than guessed: RTH peaks at 1.7x, after-market reaches 3.5x mid-session and
+  // returns to 1.0x by the close.
+  var paceCell=function(v,conf){
+    var shaky=conf&&isFinite(conf.fac)&&conf.fac>=2.5;
+    var soft=conf&&isFinite(conf.fac)&&conf.fac>=1.8&&conf.fac<2.5;
+    var col=(v>200?C.warn:v>120?C.gold:C.txtDim);
+    var tip;
+    if(!conf)tip='Projected share of a full session, from the pace curve for this session type.';
+    else{
+      tip='Projection assumes this name is '+conf.pct.toFixed(0)+'% through its session ('
+        +(isFinite(conf.mins)?conf.mins+' min elapsed':'')+'). Across tickers that figure varies by '
+        +conf.spread.toFixed(0)+' points right now, so the projection could reasonably land anywhere '
+        +'in a '+conf.fac.toFixed(1)+'x band.';
+      if(shaky)tip='LOW CONFIDENCE. '+tip+' Treat the ordering as indicative only.';
+      else if(soft)tip='Moderate confidence. '+tip;
+    }
+    return <td title={tip} style={{padding:'4px 3px',textAlign:'right',color:shaky?C.txtDim:col,
+        fontWeight:(!shaky&&v>150)?700:400,fontStyle:'italic',opacity:shaky?0.5:(soft?0.8:1)}}>
+      {(v!=null&&isFinite(v))?Math.round(v)+'%':'\u2014'}
+      {shaky?<span style={{color:C.warn,fontSize:7,marginLeft:2}}>{'\u00B7?'}</span>:null}
+    </td>;
+  };
   var BAR_NUMERIC={volume:1,trade_count:1,avgVol:1,avgTrades:1,relVol:1,relTrades:1,relTradesMed:1,paceRatio:1,paceRatioMed:1,price:1,marketCap:1,changePct:1,gapPct:1,avgDays:1};
   var barCol=BAR_NUMERIC[tblSort]?tblSort:'volume';
   var barAbs=(barCol==='changePct'||barCol==='gapPct');
@@ -14885,10 +14935,8 @@ function MostActivesPage(p){
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relVol>200?C.warn:a.relVol>120?C.gold:C.txtDim,fontWeight:a.relVol>150?700:400}}>{a.relVol?a.relVol.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relTrades>200?C.warn:a.relTrades>120?C.gold:C.txtDim,fontWeight:a.relTrades>150?700:400}}>{a.relTrades?a.relTrades.toFixed(0)+'%':'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',color:a.relTradesMed>200?C.warn:a.relTradesMed>120?C.gold:C.txtDim,fontWeight:a.relTradesMed>150?700:400}}>{(a.relTradesMed!=null&&isFinite(a.relTradesMed))?Math.round(a.relTradesMed)+'%':'\u2014'}</td>
-                {isOvernightView&&(function(){var pv=(a.paceRatio!=null)?a.paceRatio:paceMap[a.symbol];
-                  return <td style={{padding:'4px 3px',textAlign:'right',color:(pv>200?C.warn:pv>120?C.gold:C.txtDim),fontWeight:(pv>150?700:400),fontStyle:'italic'}}>{(pv!=null&&isFinite(pv))?Math.round(pv)+'%':'\u2014'}</td>;})()}
-                {isOvernightView&&(function(){var pm=a.paceRatioMed;
-                  return <td style={{padding:'4px 3px',textAlign:'right',color:(pm>200?C.warn:pm>120?C.gold:C.txtDim),fontWeight:(pm>150?700:400),fontStyle:'italic'}}>{(pm!=null&&isFinite(pm))?Math.round(pm)+'%':'\u2014'}</td>;})()}
+                {isOvernightView&&paceCell((a.paceRatio!=null)?a.paceRatio:paceMap[a.symbol],a.paceConf)}
+                {isOvernightView&&paceCell(a.paceRatioMed,a.paceConf)}
                 <td style={{padding:'4px 3px',textAlign:'right',color:(a.avgDays!=null&&a.avgDays<5)?C.warn:C.txtDim,fontWeight:(a.avgDays!=null&&a.avgDays<5)?700:400}} title={(a.avgDays!=null&&a.avgDays<5)?'Thin history \u2014 treat the x AVG percentages with caution':''}>{a.avgDays!=null?a.avgDays:'\u2014'}</td>
                 <td style={{padding:'4px 3px',textAlign:'right',width:60}}>
                   <div style={{display:'flex',alignItems:'center',gap:3,justifyContent:'flex-end'}}>

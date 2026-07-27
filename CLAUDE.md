@@ -947,6 +947,51 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v658 — Most Actives: ON PACE now shows how much to trust itself (Jul 27 2026)
+
+`data_integrity_check()` had been warning **hourly, unread**, that the after-market pace curve has a
+wide cross-ticker spread and its projection is unreliable — while the app rendered ON PACE there
+identically to every other tab. Unlike the §5.1g count shortfall, this is a number that can be plainly
+**wrong**, not merely low.
+
+**The RPC was already returning the answer and the app was discarding it.** `session_pace_ratio`
+returns `curve_spread`, `pct_complete` and `mins_elapsed`; the app read only `pace_ratio` and
+`pace_ratio_med`. No new query was needed — just stop throwing the signal away.
+
+**The measure.** ON PACE is `trades / pct_complete`, so its error is driven by how much
+`pct_complete` varies **across tickers** at this point in the session — exactly what `curve_spread`
+records. The honest statement of that is how wide the projection could be:
+
+```
+band = (pct + spread/2) / (pct − spread/2)
+```
+
+a ratio rather than an absolute, so it is comparable across session types and needs no per-session
+hardcoding. Bands: **≥2.5x low confidence** (greyed, `·?` marker), 1.8–2.5x moderate (dimmed), below
+that unmarked. Calibrated from the live curves, not guessed.
+
+**Why a blanket "suppress ON PACE on after-market" rule would have been wrong** — the same tab is
+*moderate* at the open and *solid* by the close, and only unreliable in the middle:
+
+| session | min | pct | spread | band | |
+|---|---|---|---|---|---|
+| after-market | 0 | 11.9 | 10.0 | 2.45x | moderate |
+| after-market | 25 | 29.1 | 40.1 | **5.43x** | low confidence |
+| after-market | 50 | 41.8 | 46.7 | **3.53x** | low confidence |
+| after-market | 120 | 76.9 | 28.1 | 1.45x | solid |
+| after-market | 235 | 99.0 | 0.0 | 1.00x | solid |
+| RTH | 75 | 33.0 | 16.3 | 1.66x | solid |
+
+After-market peaks around 50 minutes in — roughly 16:50 ET, when earnings reactions dominate. A name
+reporting at 16:05 does most of its volume immediately while a quiet name trickles, so dispersion is
+structural, **not a calibration fault**. RTH never exceeds 1.66x and is therefore never marked.
+
+Both ON PACE columns render through one shared `paceCell`, so the marking cannot drift between them.
+Degenerate inputs (spread ≥ 2×pct, pct ≤ 0) yield `Infinity` and **fail safe to low confidence**.
+The tooltip states the elapsed minutes, the assumed % complete, the observed spread and the band.
+
+---
+
 ### v657 — Most Actives: live book columns on the AFTER-MARKET tab (Jul 27 2026)
 
 Completes the set — BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on **all four**
