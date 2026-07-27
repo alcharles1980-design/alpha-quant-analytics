@@ -947,6 +947,39 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v655 — Most Actives: live book columns on the RTH tab (Jul 27 2026)
+
+BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on Regular Trading Hours as well as
+overnight and pre-market. **One-line change**, because v653 had already generalised the plumbing:
+
+```js
+LIVE_FEED = {overnight:'boats', premarket:'sip', rth:'sip'}
+```
+
+Everything follows from it — the column gate is `!!liveFeed`, and the count source is
+`countsFromTape = (session==='overnight')`, so RTH automatically takes SIP bars.
+
+RTH needed no other work: its rows come from Alpaca's most-actives screener rather than Supabase but
+carry `.symbol` exactly like the Supabase path, which is all the quote merge needs; it is ~100 names
+so the sweep is a single chunk; and although RTH already calls `/v2/stocks/snapshots?feed=sip` for
+price it never displayed bid/ask, so there is no collision. Price now additionally refreshes on the
+20s live cadence rather than only the 180s reload.
+
+**After-market deliberately left off** — it would also be `'sip'`, but that was an assumption until
+measured during an actual 4–8pm ET window, and this project has been bitten before by generalising a
+feed's behaviour from the easiest case (BOATS row caps, IEX one-sided quotes).
+
+Verified on live: all seven columns present, 64 rows all with a book, **BID reconciled to the
+captured payload 64/64**, all requests `feed=sip`. Note the book shown at the time was after-market's,
+because RTH had closed — correct behaviour, and the 5s–20s quote ages confirmed it was live rather
+than stale.
+
+*Correction to the v655 commit message:* it states "it is 04:50 ET". That was wrong — the deploy ran
+at **17:25 ET**. The verification limit it describes still stands: RTH's own session was closed, so
+behaviour during RTH hours remains unobserved.
+
+---
+
 ### DB fix — `shortlist_signal()` empty every Monday (Jul 27 2026)
 
 The **AI Predictor** tab on Most Actives showed no data. The RPC returned 0 rows because it joined
