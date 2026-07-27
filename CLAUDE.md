@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v639 · Jul 26 2026
+**Status at last update:** v640 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,12 +602,44 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v639** (Jul 26 2026) — **Moving Average Structure** card at the bottom of MV Charts (v639);
-current streak state (v638); Daily Return Probability Distribution (v637); Fib swing scales to visible
-range (v636, closed the last MV Charts open item); Daily Returns & Red/Green Day Counts (v634) with a
-fixed-12-month streak distribution (v635); TODAY/YESTERDAY select by trading day not calendar day
-(v632, which resolved the long-open "VWAP draws nothing" report) and print the real session date
-(v633), plus a build-banner DST fix. **See also §9a for persistence results.**
+**Current: v640** (Jul 26 2026) — **Daily True Range Distribution** below the returns histogram (v640);
+Moving Average Structure card (v639); current streak state (v638); Daily Return Probability
+Distribution (v637); Fib swing scales to visible range (v636, closed the last MV Charts open item);
+Daily Returns & Red/Green Day Counts (v634) with a fixed-12-month streak distribution (v635);
+TODAY/YESTERDAY select by trading day not calendar day (v632, which resolved the long-open "VWAP draws
+nothing" report) and print the real session date (v633), plus a build-banner DST fix. **See §9a for
+persistence results.**
+
+### v640 — Daily True Range Distribution (Jul 26 2026)
+
+Second distribution, directly below the returns histogram, sharing the lookback dropdown. The returns
+histogram shows **direction and net travel**; this shows **size** — how big a day actually is. Tiles
+(ATR(14), median, mean, SD, 25th/75th/95th, narrowest/widest), a histogram with a **lognormal** fit and
+a dashed marker at the current ATR(14), and a multiples table (how often the range reaches
+0.5/1/1.5/2/3× ATR, with a "1 day in N" column).
+
+**Three definition decisions, all stated in the in-app footnote:**
+- **True range, not high−low.** Wilder's `max(h−l, |h−prevClose|, |l−prevClose|)`, so **overnight gaps
+  count**. A stock that gaps 4% then trades a quiet session genuinely moved, and a grid sitting across
+  that gap is skipped straight through it — plain high−low would hide exactly the days that hurt.
+  Verified: prevClose 100 with h=110/l=108 gives **TR=10, not 2**.
+- **Normalised by each day's OWN prior close** — deliberately different from the ATR ladder, which
+  divides by `lastClose` (v204) so its six recent windows compare at today's price. Right there, wrong
+  here: over 12 months that would understate any day when the stock traded at a very different price.
+  The reference ATR(14) marker is recomputed under **this** convention so marker and distribution share
+  units, which means **the ATR figure here can differ slightly from the ladder's**. Intended.
+- **Lognormal fit**, not the normal used on the returns histogram — true range is strictly positive and
+  right-skewed, so the normal is the wrong family. Fitted on `ln(pct)`, zero-range days excluded.
+
+`vtRows` gains `h` and `l` (was close only). No extra network call.
+
+Verified: gap handling correct (7 / 10 / 10 for normal / gap-up / gap-down); edge cases all return null
+without throwing (empty, single row, null high, zero prior close, NaN close); bins sum to n with every
+`lo >= 0`. All statistics cross-checked against an **independent Python implementation**, exact match
+(NVDA 12m: ATR 3.6998%, median 3.0700%, mean 3.2865%, sd 1.3295%, multiples 224/89/18/2/0). Live DOM
+verified against independently computed values: **19 assertions, all pass**.
+
+---
 
 ### v639 — Moving Average Structure (Jul 26 2026)
 
