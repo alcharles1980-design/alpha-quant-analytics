@@ -19736,6 +19736,8 @@ function MultiViewChartsPage(p){
             v: shares,
             dollars: (shares!=null&&vwap!=null)?vwap*shares:null,
             c: close,
+            h: (typeof b.h==='number'&&isFinite(b.h))?b.h:null,
+            l: (typeof b.l==='number'&&isFinite(b.l))?b.l:null,
             // Close-to-close daily return vs the PRIOR session's close — the standard definition,
             // and the one that matches how a day is called red or green. acc is sort=asc so bi-1 is
             // genuinely the previous session. null on the first row (no prior close) and whenever
@@ -20950,6 +20952,117 @@ function MultiViewChartsPage(p){
     </svg>;
   };
 
+  // ---- Daily true-range distribution ------------------------------------------------------------
+  // TRUE RANGE, Wilder: max(h-l, |h-prevClose|, |l-prevClose|). Using true range rather than plain
+  // high-low means overnight gaps are counted — a stock that gaps 4% and then trades a quiet 1%
+  // intraday session genuinely moved 4%+, and a grid sitting across that gap gets skipped through it.
+  //
+  // NORMALISATION: each day is divided by ITS OWN prior close, not by the latest close. The ATR
+  // ladder elsewhere in this app deliberately uses lastClose as the denominator (v204) so its six
+  // recent windows compare directly at today's price — correct there, wrong here: over 12 months a
+  // day when the stock traded at half today's price would have its range understated by half. The
+  // reference ATR(14) marker below is recomputed under THIS convention so the marker and the
+  // distribution are in the same units. The two figures can therefore differ slightly from the
+  // ladder's; that is intended, and the footnote says so.
+  var trSeries=function(rows){
+    var out=[];
+    for(var i=1;i<rows.length;i++){
+      var h=rows[i].h,l=rows[i].l,pc=rows[i-1].c;
+      if(h==null||l==null||pc==null||!isFinite(h)||!isFinite(l)||!isFinite(pc)||!(pc>0))continue;
+      var tr=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));
+      if(!isFinite(tr)||tr<0)continue;
+      out.push({d:rows[i].d,tr:tr,pct:tr/pc*100});
+    }
+    return out;
+  };
+  var rangeDist=function(tr,atrN){
+    var n=tr.length;
+    if(n<2)return null;
+    var v=tr.map(function(x){return x.pct;});
+    var sorted=v.slice().sort(function(a,b){return a-b;});
+    var mean=0;for(var i=0;i<n;i++)mean+=v[i];mean/=n;
+    var s2=0;for(var j=0;j<n;j++)s2+=(v[j]-mean)*(v[j]-mean);
+    var sd=Math.sqrt(s2/(n-1));
+    var pct=function(p){var idx=(n-1)*p,lo=Math.floor(idx),hi=Math.ceil(idx);
+      return lo===hi?sorted[lo]:sorted[lo]+(sorted[hi]-sorted[lo])*(idx-lo);};
+    // reference ATR: simple mean of the most recent atrN true ranges, same normalisation
+    var k=Math.min(atrN,n),acc=0;
+    for(var a=n-k;a<n;a++)acc+=v[a];
+    var atr=k>0?acc/k:null;
+    // lognormal reference: ranges are strictly positive and right-skewed, so the normal curve used
+    // on the returns histogram is the wrong family here. Fit on ln(pct), ignoring any zero-range day.
+    var ln=[],lm=0;
+    for(var b=0;b<n;b++)if(v[b]>0)ln.push(Math.log(v[b]));
+    var lnOk=ln.length>=2;
+    if(lnOk){for(var c=0;c<ln.length;c++)lm+=ln[c];lm/=ln.length;}
+    var ls=0;
+    if(lnOk){for(var e=0;e<ln.length;e++)ls+=(ln[e]-lm)*(ln[e]-lm);ls=Math.sqrt(ls/(ln.length-1));}
+    var bw=niceBin((sorted[n-1]-0)/18);
+    var last=Math.ceil(sorted[n-1]/bw)*bw;
+    var nb=Math.max(1,Math.round(last/bw));
+    if(nb>60){bw=niceBin(last/40);nb=Math.max(1,Math.round(Math.ceil(sorted[n-1]/bw)*bw/bw));}
+    var bins=[];
+    for(var f=0;f<nb;f++)bins.push({lo:f*bw,hi:(f+1)*bw,c:0,exp:0});
+    for(var g=0;g<n;g++){
+      var bi=Math.floor(v[g]/bw);
+      if(bi<0)bi=0; if(bi>=nb)bi=nb-1;
+      bins[bi].c++;
+    }
+    if(lnOk&&ls>0)for(var q=0;q<nb;q++){
+      var loZ=bins[q].lo>0?normCdf((Math.log(bins[q].lo)-lm)/ls):0;
+      var hiZ=bins[q].hi>0?normCdf((Math.log(bins[q].hi)-lm)/ls):0;
+      bins[q].exp=ln.length*(hiZ-loZ);
+    }
+    // how often the day's range reaches a multiple of the reference ATR — self-scaling across
+    // tickers, and directly readable as "how often a grid this wide gets fully worked"
+    var mult=[0.5,1,1.5,2,3].map(function(m){
+      var thr=(atr!=null)?atr*m:null,cnt=0;
+      if(thr!=null)for(var z=0;z<n;z++)if(v[z]>=thr)cnt++;
+      return {m:m,thr:thr,cnt:cnt,pct:thr!=null?(cnt/n*100):null};
+    });
+    return {n:n,mean:mean,sd:sd,median:pct(0.5),atr:atr,atrN:k,
+            p25:pct(0.25),p75:pct(0.75),p90:pct(0.90),p95:pct(0.95),
+            min:sorted[0],max:sorted[n-1],bins:bins,bw:bw,mult:mult,lnOk:lnOk};
+  };
+
+  var rangeChart=function(D){
+    if(!D)return <div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>Not enough data for a range distribution.</div>;
+    var W=900,H=340,padL=48,padR=12,padT=18,padB=44;
+    var innerW=W-padL-padR,innerH=H-padT-padB;
+    var nb=D.bins.length,bw=innerW/nb,mx=0;
+    for(var i=0;i<nb;i++){if(D.bins[i].c>mx)mx=D.bins[i].c;if(D.bins[i].exp>mx)mx=D.bins[i].exp;}
+    if(mx<=0)mx=1;
+    var Y=function(c){return padT+innerH-(c/mx)*innerH;};
+    var X=function(i){return padL+i*bw;};
+    var ticks=[0,0.5,1].map(function(f){return {v:Math.round(mx*f),y:padT+innerH-f*innerH};});
+    var curve=D.bins.map(function(b,i){return (X(i)+bw/2)+','+Y(b.exp);}).join(' ');
+    var atrX=(D.atr!=null)?padL+(D.atr/D.bw)*bw:null;
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block'}}>
+      {ticks.map(function(t,ti){return <g key={'t'+ti}>
+        <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity={ti===0?1:0.35} strokeDasharray={ti===0?'':'3 4'}/>
+        <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="11" fontWeight="700" fill={C.txtDim} fontFamily={F}>{t.v}</text>
+      </g>;})}
+      {D.bins.map(function(b,i){
+        var h=innerH-(Y(b.c)-padT);
+        return <rect key={i} x={X(i)+0.5} y={Y(b.c)} width={Math.max(1,bw-1)} height={Math.max(b.c>0?1:0,h)} fill={C.blue} opacity="0.72"/>;
+      })}
+      {D.lnOk&&<polyline points={curve} fill="none" stroke={C.gold} strokeWidth="2" opacity="0.95"/>}
+      {atrX!=null&&atrX<=W-padR&&<g>
+        <line x1={atrX} y1={padT} x2={atrX} y2={padT+innerH} stroke={C.warn} strokeWidth="1.8" strokeDasharray="4 3"/>
+        <text x={Math.min(atrX+4,W-padR-92)} y={padT+11} fontSize="10" fontWeight="700" fill={C.warn} fontFamily={F}>{'ATR('+D.atrN+') '+D.atr.toFixed(2)+'%'}</text>
+      </g>}
+      {D.bins.map(function(b,i){
+        if(i%Math.max(1,Math.round(nb/9))!==0)return null;
+        return <text key={'x'+i} x={X(i)} y={H-26} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{b.lo.toFixed(D.bw<1?1:0)+'%'}</text>;
+      })}
+      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>daily true range, % of prior close  ·  bin width {D.bw}%</text>
+      {D.lnOk&&<g>
+        <line x1={W-padR-118} y1={padT+4} x2={W-padR-98} y2={padT+4} stroke={C.gold} strokeWidth="2"/>
+        <text x={W-padR-93} y={padT+7} fontSize="10" fontWeight="700" fill={C.gold} fontFamily={F}>lognormal fit</text>
+      </g>}
+    </svg>;
+  };
+
   var started=sym!=='';
   var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
 
@@ -21196,6 +21309,60 @@ function MultiViewChartsPage(p){
                   </table>
                 </div>
                 <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>Bars are the observed count per bin; the gold curve is a normal distribution with the same mean and standard deviation, drawn for comparison only — it is a reference, not a claim that returns are normal. Bin edges are aligned so zero is always a boundary, so no bar mixes up-days with down-days. The tail table is the part that matters for grid sizing: a ratio above 1.0 means large moves happen MORE often than a normal distribution would predict, and those are the moves that carry price out of a grid. Excess kurtosis above zero says the same thing in one number. Percentiles are interpolated, and all figures are close-to-close, ignoring intraday path.</div>
+              </div>;
+            })()}
+
+            {/* --- daily true-range distribution: the volatility twin of the returns histogram --- */}
+            {(function(){
+              var tr=trSeries(vis);
+              var D=rangeDist(tr,14);
+              if(!D)return null;
+              var tile=function(label,value,color,sub){
+                return <div style={{flex:'1 1 88px',minWidth:84,background:C.bgDeep,border:'1px solid '+C.border,borderRadius:8,padding:'7px 9px'}}>
+                  <div style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>{label}</div>
+                  <div style={{fontSize:14,color:color||C.txtBright,fontFamily:F,fontWeight:700,lineHeight:1.25}}>{value}</div>
+                  {sub?<div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,marginTop:1}}>{sub}</div>:null}
+                </div>;
+              };
+              var pc=function(x){return x.toFixed(2)+'%';};
+              return <div style={{marginTop:12,border:'1px solid '+C.border,borderRadius:10,background:C.bgCard,padding:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                  <div style={{color:C.txtBright,fontSize:13,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Daily True Range Distribution</div>
+                  <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{D.n} sessions · how big a day actually is</div>
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10}}>
+                  {tile('ATR ('+D.atrN+')',D.atr==null?'—':pc(D.atr),C.warn,'mean of last '+D.atrN)}
+                  {tile('Median',pc(D.median),C.txtBright,'typical day')}
+                  {tile('Mean',pc(D.mean),C.txtBright,null)}
+                  {tile('Std dev',pc(D.sd),C.txtBright,null)}
+                  {tile('25th pct',pc(D.p25),C.txtDim,'quiet day')}
+                  {tile('75th pct',pc(D.p75),C.txtBright,'busy day')}
+                  {tile('95th pct',pc(D.p95),C.blue,'1 day in 20')}
+                  {tile('Narrowest / widest',pc(D.min)+' / '+pc(D.max),C.txtBright,'range')}
+                </div>
+                <div style={{marginTop:10}}>{rangeChart(D)}</div>
+                <div style={{marginTop:10,overflowX:'auto'}}>
+                  <table style={{borderCollapse:'collapse',fontFamily:F,fontSize:10,width:'100%',minWidth:340}}>
+                    <thead><tr>
+                      {['Day reaches','Threshold','Sessions','Frequency','Roughly'].map(function(h,i){
+                        return <th key={i} style={{textAlign:i<2?'left':'right',padding:'4px 8px',color:C.txtDim,fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>{h}</th>;
+                      })}
+                    </tr></thead>
+                    <tbody>
+                      {D.mult.map(function(m){
+                        var every=(m.pct!=null&&m.pct>0)?(100/m.pct):null;
+                        return <tr key={m.m}>
+                          <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{m.m+'\u00D7 ATR'}</td>
+                          <td style={{padding:'4px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'55'}}>{m.thr==null?'—':pc(m.thr)}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{m.cnt}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'55'}}>{m.pct==null?'—':m.pct.toFixed(1)+'%'}</td>
+                          <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'55'}}>{every==null?'—':('1 day in '+every.toFixed(every<10?1:0))}</td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>True range is Wilder's max(high−low, |high−prior close|, |low−prior close|), so overnight gaps count — a stock that gaps 4% then trades a quiet session genuinely moved, and a grid sitting across that gap is skipped straight through it. Each day is divided by its OWN prior close. Note this differs on purpose from the ATR ladder elsewhere in the app, which divides by the latest close so its recent windows compare at today's price; over a year that convention would understate any day when the stock traded at a very different price, so the ATR figure here can differ slightly from the ladder's. The gold curve is a lognormal fit — the right family for a strictly positive, right-skewed quantity, where the returns histogram above uses a normal. The multiples table reads directly as grid width: a grid spanning 1× ATR is fully worked on the share of sessions shown, and one spanning 2× much less often.</div>
               </div>;
             })()}
 
