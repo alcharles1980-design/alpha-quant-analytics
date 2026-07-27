@@ -515,6 +515,40 @@ inside a statement. Do the waiting in the client.
   locations because the offset math was scattered.
 - Anchor "Today"/"Yesterday" to the ET *trading* day, not local/UTC midnight (v482).
 
+### 5.3a Trading days are not calendar days — `date - 1` is a bug
+
+**This has now bitten twice, in two different layers**, which is why it lives here and not only in
+a changelog entry.
+
+- **v632 (app):** MV Charts' TODAY/YESTERDAY panels selected by calendar date, so on Mondays and
+  after holidays they requested a non-session day, Polygon returned empty, and the chart silently
+  drew nothing. It was misdiagnosed as a VWAP bug for weeks.
+- **Jul 27 2026 (database):** `shortlist_signal()` joined the after-market leg with
+  `a.session_date = d.dt - 1`. On a Monday that is Sunday, which has no after-market session, and
+  because it fed an **INNER JOIN** the entire result collapsed to **zero rows** — the AI Predictor
+  tab was simply empty every Monday and after every holiday, roughly 20% of sessions. The data was
+  never missing: after-market had 2,613 rows on the Friday and pre-market had 1,448 that morning.
+
+**The rule:** to step back one session, take the most recent date that **actually exists** in the
+session table, strictly before the anchor — never the anchor minus one day.
+
+```sql
+-- WRONG: assumes yesterday was a trading day
+join aftermarket_actives a on a.session_date = d.dt - 1
+-- RIGHT: most recent completed session before the anchor, with a staleness bound
+am as (select max(session_date) adt from aftermarket_actives
+        where session_date < (select dt from d)
+          and session_date >= (select dt from d) - 7)
+```
+
+Bound the lookback (7 days above) so a genuinely stale scan cannot be silently paired with fresh
+data — without it, a broken upstream job degrades into wrong answers instead of no answers.
+
+**Two things make this class hard to see.** It fails on a *schedule* rather than randomly, so it
+looks fine every day you happen to check mid-week. And an inner join turns it into an empty result
+rather than a wrong one, which reads as "no data yet" instead of "bug". **Prefer a left join plus an
+explicit leg-count when a leg is genuinely optional.**
+
 ### 5.4 Silent write failures
 
 - **Supabase writes can fail silently under rapid sequential load.** 11 of 22 days
@@ -859,6 +893,25 @@ refetched. Measured 79 rows → 0 rows, 0 headers, no error, no recovery. It sur
 test switched *between* tabs; and Most Actives defaults to whichever session is live, so **the
 most likely tab for a user to click is exactly the one that broke.** Now a no-op when already
 selected. Verified: 80 rows after clicking.
+
+---
+
+### DB fix — `shortlist_signal()` empty every Monday (Jul 27 2026)
+
+The **AI Predictor** tab on Most Actives showed no data. The RPC returned 0 rows because it joined
+the after-market leg on `d.dt - 1`: with the chain date Monday 2026-07-27 it looked for an
+after-market session on **Sunday 2026-07-26**, which does not exist, and the inner join collapsed
+everything. After-market actually had **2,613 rows on Friday 07-24** and pre-market **1,448** that
+morning — no data was missing.
+
+Fixed to take the most recent after-market session strictly before the chain date, bounded to 7
+days. **Regression-checked across a full week: Tue–Sat identical, only Sun/Mon changed** (from a
+date with 0 rows to Friday's). RPC now returns 52 rows, all three legs present; the tab renders 34
+after its own liquidity filters.
+
+Scanned the whole schema for the same pattern — `shortlist_signal` was the only function using
+calendar-day arithmetic against the session tables. Lesson promoted to **§5.3a**; it had previously
+existed only as a v632 changelog line, which is why it recurred in a second layer.
 
 ---
 
