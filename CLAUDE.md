@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v643 · Jul 27 2026
+**Status at last update:** v647 · Jul 27 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -609,6 +609,40 @@ Structure card (v639), current streak state (v638), Fib swing scaled to visible 
 Daily Returns & Red/Green Day Counts block (v634–v635). TODAY/YESTERDAY select by trading day (v632,
 which resolved the long-open "VWAP draws nothing" report) and print the real session date (v633).
 **See §9a for persistence results.**
+
+### v646–v647 — Most Actives: LAST TRADE column (Jul 27 2026)
+
+Column after ASK on the overnight tab: the most recent **print** on the overnight ATS — an actual
+execution, not a quote — with the size that traded and how long ago. Reuses the
+`trades/latest?feed=boats` sweep already running on the 20s cadence, so no new request.
+
+**Why it is not a duplicate of PRICE.** PRICE only adopts a print if it is ≤12h old, so a previous
+session's last trade cannot overwrite tonight's close. LAST TRADE records the raw print
+**unconditionally** with its age. The two agree while a name is trading tonight and **diverge the
+moment it stops** — and on a name that has not traded overnight, "last print 9h ago" is exactly the
+useful fact. Suppressing it by age would blank the column where it carries the most information.
+
+**Age is shown inline, not only in a tooltip.** Unlike a quote, a trade print can be hours old on a
+thin overnight name, and the price is meaningless without knowing when. Compact s/m/h units, dimmed
+past `QUOTE_STALE_S` with the age turned warn-coloured.
+
+Payload verified against the live endpoint before building:
+`{"c":["@"],"p":209.07,"s":250,"t":"2026-07-27T05:47:27.553Z","x":"B","z":"N"}` — `p` price, `s` size,
+`t` timestamp. `c` is an **array** here, consistent with the standing `Array.isArray` rule for Alpaca
+trade conditions.
+
+**v647 fixed a readability defect caught by reading the rendered output rather than just checking the
+column populated.** A 3px CSS margin between size and age is too subtle a separator between two
+adjacent digit strings: the cell rendered as `315.29×4025s` (price 315.29, size 402, age 5s), which
+reads as one meaningless number. Same class as the v633 heading nit but materially worse — both parts
+are numeric, so it is genuinely ambiguous to a reader, not merely in `textContent`. An explicit middot
+now separates them, matching the column's own `PRICE × SIZE · AGE` subhead. **Lesson: "the column is
+populated" is not the same check as "the column is legible".**
+
+Verified on live: 60/60 rows populated, 30/60 changed after a single 20s sweep, 21 dimmed for stale
+prints, tooltips correct ("Last print 7s ago. Live.").
+
+---
 
 ### v643 — Most Actives: live BOATS top-of-book (Jul 27 2026)
 
