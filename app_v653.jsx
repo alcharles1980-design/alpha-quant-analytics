@@ -13837,6 +13837,27 @@ function MostActivesPage(p){
     return function(){clearInterval(iv);};
   },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
 
+  // Live top-of-book is available on the sessions below, each from the venue that IS that
+  // session's book. Measured 2026-07-27 with pre-market live at 04:04 ET:
+  //     feed=sip    quotes 0.2s old, trades 0.8s old   <- live during pre-market
+  //     feed=boats  quotes 300s old                    <- overnight book, went quiet at 04:00
+  //     feed=iex    2.5 DAYS old, ap:0 as:0 one-sided  <- unusable, would show an infinite spread
+  // Note the standing "SIP 403s for today's data" rule applies to historical BAR requests, not
+  // to the latest-quote/trade endpoints or the intraday tape — both verified working for today.
+  var LIVE_FEED={overnight:'boats',premarket:'sip'};
+  var liveFeed=LIVE_FEED[session]||null;
+  var isBoatsView=!!liveFeed;   // name kept: every column gate already references it
+  // WHERE THE TRAILING TRADE COUNTS COME FROM DIFFERS BY FEED, and the difference is not
+  // cosmetic — it was measured:
+  //   BOATS 1-min bars EXCLUDE odd lots (condition "I"), missing a MEDIAN 37.5% of overnight
+  //     trades (COIN: 99 on the tape, 0 in bars). Overnight must therefore count the raw tape.
+  //   SIP 1-min bars INCLUDE odd lots — bar `n` matched the tape to within 0.5% (median 0.0%)
+  //     across 8 symbols, even though >90% of those trades were odd lots.
+  // And the SIP tape is not an option anyway: 8 symbols over 15 minutes returned 80,650 trades
+  // across 9 pages and 8.2 MB, so a full universe would be gigabytes per sweep. Bars for the
+  // whole 1,246-name pre-market universe cost 3 requests and 305 KB.
+  var countsFromTape=(session==='overnight');
+
   // ── LIVE BOATS TOP-OF-BOOK ────────────────────────────────────────────────────────────────────
   // Owns its own fetch and its own cadence, deliberately separate from fetchData.
   //   - Retries when keys arrive: p.alpKey/p.alpSecret are dependencies, so if the page mounted
@@ -13853,8 +13874,11 @@ function MostActivesPage(p){
   var minBufRef=useRef({minutes:{},counts:{}});
   var QUOTE_REFRESH_MS=20000;
   useEffect(function(){
-    if(session!=='overnight')return;
+    if(!liveFeed)return;
     if(!p.alpKey||!p.alpSecret)return;
+    // The per-minute buffer is keyed by minute only, so it MUST be dropped when the session
+    // changes — otherwise overnight counts would be summed into a pre-market row.
+    if(minBufRef.current.feed!==liveFeed)minBufRef.current={minutes:{},counts:{},feed:liveFeed};
     var cancelled=false;
     var run=function(){
       var rows=activesRef.current;
@@ -13872,7 +13896,7 @@ function MostActivesPage(p){
       // One retry per chunk: a full-universe trades/latest call was observed returning a transient
       // 503 that succeeded immediately on retry, so a single failure must not blank a sweep.
       var pull=function(kind,ch,sink,key){
-        var path='/v2/stocks/'+kind+'/latest?feed=boats&symbols='+encodeURIComponent(ch.join(','));
+        var path='/v2/stocks/'+kind+'/latest?feed='+liveFeed+'&symbols='+encodeURIComponent(ch.join(','));
         var once=function(){
           return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
             'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}}).then(function(r){return r.ok?r.json():null;});
@@ -13901,7 +13925,7 @@ function MostActivesPage(p){
       var missing=[];
       for(var mi=wantFrom;mi<=wantTo;mi++)if(!buf.minutes[mi])missing.push(mi);
       var tradeJobs=[];
-      if(missing.length){
+      if(countsFromTape&&missing.length){
         var fromMin=Math.min.apply(null,missing), toMin=Math.max.apply(null,missing)+1;
         var isoOf=function(m){return new Date(m*60000).toISOString().slice(0,17)+'00Z';};
         var pullTape=function(ch){
@@ -13942,6 +13966,31 @@ function MostActivesPage(p){
             for(var mk=fromMin;mk<=toMin-1;mk++)buf.minutes[mk]=1;
         }));
       }
+      // SIP path: 1-minute bars carry an odd-lot-inclusive trade count, so they are both correct
+      // and ~25x cheaper than the tape here. barSeen records which symbols a SUCCESSFUL request
+      // covered, so "covered but no bars" renders 0 while a failed request stays unknown.
+      var bm={},barSeen={};
+      if(!countsFromTape){
+        var barStart=new Date((nowMinAtStart-16)*60000).toISOString().slice(0,17)+'00Z';
+        qChunks.forEach(function(ch){
+          var bpath='/v2/stocks/bars?timeframe=1Min&feed='+liveFeed+'&limit=10000&start='+barStart
+                   +'&symbols='+encodeURIComponent(ch.join(','));
+          var stepB=function(path,guard){
+            return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+              'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}})
+              .then(function(r){return r.ok?r.json():null;})
+              .then(function(d){
+                if(!d)return false;
+                if(d.bars)for(var sym in d.bars){bm[sym]=(bm[sym]||[]).concat(d.bars[sym]);}
+                if(d.next_page_token&&guard<12)
+                  return stepB(bpath+'&page_token='+encodeURIComponent(d.next_page_token),guard+1);
+                for(var ci=0;ci<ch.length;ci++)barSeen[ch[ci]]=1;
+                return true;
+              }).catch(function(){return false;});
+          };
+          jobs.push(stepB(bpath,0));
+        });
+      }
       qChunks.forEach(function(ch){
         jobs.push(pull('quotes',ch,qm,'quotes'));
         // Last trade on the SAME cadence. Without it the PRICE column only moves on the 180s table
@@ -13960,8 +14009,8 @@ function MostActivesPage(p){
         var nowMin=nowMinAtStart;
         // Counts render only when EVERY minute in the window is covered; a partially covered window
         // would understate without any visible sign.
-        var countsReady=true;
-        for(var cm=nowMin-15;cm<=nowMin-1;cm++)if(!minBufRef.current.minutes[cm]){countsReady=false;break;}
+        var countsReady=countsFromTape;
+        if(countsFromTape)for(var cm=nowMin-15;cm<=nowMin-1;cm++)if(!minBufRef.current.minutes[cm]){countsReady=false;break;}
         // Prune anything older than the window so the buffer cannot grow without bound over a
         // multi-hour session.
         var bufP=minBufRef.current, cutoff=nowMin-20;
@@ -13975,8 +14024,27 @@ function MostActivesPage(p){
           if(!prev)return prev;
           return prev.map(function(row){
             var q=qm[row.symbol],tr=tm[row.symbol];
-            if(!q&&!tr&&!countsReady)return row;   // nothing for this symbol this sweep — keep what it had
+            var barsFor=countsFromTape?null:bm[row.symbol];
+            var seenBars=countsFromTape?false:!!barSeen[row.symbol];
+            if(!q&&!tr&&!countsReady&&!seenBars)return row;   // nothing for this symbol this sweep — keep what it had
             var patch={};
+            if(seenBars){
+              // SIP bars path. Same window semantics as the tape path: COMPLETE minutes only, the
+              // in-progress bucket excluded, so the two sessions' columns mean the same thing.
+              var blist=barsFor||[];   // covered by a successful request but no bars = traded zero times
+              var b1=0,b5=0,b15=0;
+              for(var bx=0;bx<blist.length;bx++){
+                var bt2=Date.parse(blist[bx].t);
+                if(!isFinite(bt2))continue;
+                var ago2=nowMin-Math.floor(bt2/60000);
+                if(ago2<1||ago2>15)continue;
+                var cn=(typeof blist[bx].n==='number')?blist[bx].n:0;
+                if(ago2===1)b1+=cn;
+                if(ago2<=5)b5+=cn;
+                b15+=cn;
+              }
+              patch.trd1=b1;patch.trd5=b5;patch.trd15=b15;
+            }
             if(countsReady){
               // Sum the ring buffer over complete minutes. A symbol with no bucket in a covered
               // minute genuinely traded ZERO times then — a blank would read as "unknown" when the
@@ -14108,9 +14176,6 @@ function MostActivesPage(p){
   // Governs the extended session columns (GAP %, the two x-AVERAGE ratios, SESSIONS/BASIS). Both
   // the overnight and pre-market tables carry these, so both views show them; RTH does not.
   var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='aftermarket');
-  // BOATS is the overnight ATS specifically, so the live top-of-book columns show on that tab only —
-  // isOvernightView covers all three session tabs and would wrongly include pre/after-market.
-  var isBoatsView=(session==='overnight');
   // Quote age past which the top of book is no longer meaningfully "live". Measured across a full
   // overnight universe: median quote age 230s, but p90 3,649s and max 246,288s — illiquid names
   // simply have not quoted overnight, so their "latest quote" is days old. Showing that at full
