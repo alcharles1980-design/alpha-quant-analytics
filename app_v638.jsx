@@ -20689,6 +20689,32 @@ function MultiViewChartsPage(p){
             greenRuns:countRuns(green),redRuns:countRuns(red)};
   };
 
+  // The run IN PROGRESS as of the most recent completed session. Walks backwards from the end until
+  // the sign changes or a break appears. Computed over the FULL series rather than the 12-month
+  // window so a run that began before the window start is still measured at its true length — a
+  // window-truncated streak would silently under-report exactly when the streak is most notable.
+  var currentStreak=function(rows){
+    var sign=0,len=0,startD=null,endD=null;
+    for(var i=rows.length-1;i>=0;i--){
+      var v=rows[i].ret;
+      var s=(v==null||!isFinite(v)||v===0)?0:(v>0?1:-1);
+      if(s===0)break;                       // flat day or missing return ends the run
+      if(sign===0){sign=s;endD=rows[i].d;}
+      else if(s!==sign)break;
+      len++;startD=rows[i].d;
+    }
+    return len?{sign:sign,len:len,startD:startD,endD:endD}:null;
+  };
+  // Given the run-length distribution, how often did a run that REACHED length k go on to k+1?
+  // Runs are stored by exact length, so "reached k" is the count of all runs of length >= k.
+  // This is a survival rate, and it is the honest way to read a current streak: compare it against
+  // the base rate (the plain up-day or down-day frequency), which is what independence predicts.
+  var continuation=function(dist,k){
+    var atLeast=function(m){var t=0;for(var key in dist){if(+key>=m)t+=dist[key];}return t;};
+    var a=atLeast(k),b=atLeast(k+1);
+    return a>0?{reached:a,extended:b,rate:b/a}:null;
+  };
+
   // Grouped bars: one x-slot per streak length, green run-count beside red run-count. Counts are
   // small integers, so the value is printed above each bar — far more useful than reading a bar
   // against a y-axis. Empty when the window contains no runs at all.
@@ -21120,6 +21146,28 @@ function MultiViewChartsPage(p){
                   {' · longest run '}<span style={{color:UP,fontWeight:700}}>{sk.longestGreen+'G'}</span>{' / '}
                   <span style={{color:DN,fontWeight:700}}>{sk.longestRed+'R'}</span>
                 </div>
+                {(function(){
+                  var cs=currentStreak(vtRows);
+                  if(!cs)return null;
+                  var isG=cs.sign>0;
+                  var col=isG?UP:DN;
+                  var dist=isG?sk.green:sk.red;
+                  var cont=continuation(dist,cs.len);
+                  var base=isG?ys.greenPct:ys.redPct;   // what independence predicts for the next day
+                  return <div style={{marginTop:10,border:'1px solid '+col+'66',borderRadius:9,background:col+'11',padding:'10px 12px'}}>
+                    <div style={{display:'flex',alignItems:'baseline',flexWrap:'wrap',gap:10}}>
+                      <div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase'}}>Current streak</div>
+                      <div style={{fontSize:20,color:col,fontFamily:F,fontWeight:700,lineHeight:1.1}}>{cs.len+(isG?' GREEN':' RED')+' day'+(cs.len===1?'':'s')}</div>
+                      <div style={{fontSize:9,color:C.txtDim,fontFamily:F}}>{cs.startD===cs.endD?cs.endD:(cs.startD+' \u2192 '+cs.endD)}</div>
+                    </div>
+                    <div style={{fontSize:9,color:C.txtDim,fontFamily:F,marginTop:6,lineHeight:1.6}}>
+                      {cont&&cont.reached>0
+                        ? <span>Over the last 12 months a {isG?'green':'red'} run reached <b style={{color:C.txtBright}}>{cs.len}</b> day{cs.len===1?'':'s'} <b style={{color:C.txtBright}}>{cont.reached}</b> time{cont.reached===1?'':'s'}, and extended to {cs.len+1} on <b style={{color:col}}>{cont.extended}</b> of those — <b style={{color:col}}>{(cont.rate*100).toFixed(0)}%</b>. Plain {isG?'up':'down'}-day rate over the same window: <b style={{color:C.txtBright}}>{base==null?'—':base.toFixed(0)+'%'}</b>.</span>
+                        : <span>No {isG?'green':'red'} run of this length occurred in the last 12 months, so there is no continuation rate to compare against.</span>}
+                    </div>
+                    <div style={{fontSize:7.5,color:C.txtDim,fontFamily:F,marginTop:5,lineHeight:1.5}}>These two percentages are the whole point: if the continuation rate sits near the plain day rate, the streak carries no information about tomorrow. Measured across the universe, streak structure is close to what independent days produce — treat any gap as a small sample, not a signal.</div>
+                  </div>;
+                })()}
                 <div style={{marginTop:10}}>{streakChart(sk)}</div>
                 {runRow('Consecutive green runs',sk.green,sk.greenRuns,UP)}
                 {runRow('Consecutive red runs',sk.red,sk.redRuns,DN)}
