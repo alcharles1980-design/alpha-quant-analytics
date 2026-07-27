@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v640 · Jul 26 2026
+**Status at last update:** v641 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,13 +602,45 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v640** (Jul 26 2026) — **Daily True Range Distribution** below the returns histogram (v640);
-Moving Average Structure card (v639); current streak state (v638); Daily Return Probability
-Distribution (v637); Fib swing scales to visible range (v636, closed the last MV Charts open item);
-Daily Returns & Red/Green Day Counts (v634) with a fixed-12-month streak distribution (v635);
-TODAY/YESTERDAY select by trading day not calendar day (v632, which resolved the long-open "VWAP draws
-nothing" report) and print the real session date (v633), plus a build-banner DST fix. **See §9a for
-persistence results.**
+**Current: v641** (Jul 26 2026) — **Close → Next High Distribution** (v641), **Daily True Range
+Distribution** (v640) and **Daily Return Probability Distribution** (v637) now form three stacked
+histograms in the Daily Returns card; Moving Average Structure card (v639); current streak state
+(v638); Fib swing scales to visible range (v636, closed the last MV Charts open item); Daily Returns &
+Red/Green Day Counts (v634) with a fixed-12-month streak distribution (v635); TODAY/YESTERDAY select by
+trading day (v632, which resolved the long-open "VWAP draws nothing" report) and print the real session
+date (v633), plus a build-banner DST fix. **See §9a for persistence results.**
+
+### v641 — Close → Next High Distribution (Jul 26 2026)
+
+Third histogram in the card. Returns show net travel, true range shows day size, this shows **reachable
+upside** from the prior close.
+
+**Definition reuses the app's existing convention — it does not invent a third.** `(session high −
+prior close) / prior close %`, identical to `closeToHighPct`, which already backs the C→H ladder and
+the "Avg close→high" panel stat. **Verified by running both implementations on the same 251 sessions:
+means agree to 9 decimal places (1.517742826).** Negatives are **kept, not clipped** — they are sessions
+whose high never regained the prior close, so a position opened there was never once in profit. On NVDA
+that is 49 of 251 sessions, **19.5%**. Clipping would flatter every statistic in the block.
+
+**Shared implementation, not a copy.** `retDist` now takes an optional accessor defaulting to `.ret`,
+so existing callers are untouched. Two near-identical binning routines would have drifted, and the
+zero-boundary rule is exactly the subtlety that only ever gets fixed in one copy. **Regression
+verified: the returns histogram reproduces its v637 baseline with zero drift across all seven
+statistics.**
+
+**The warning block is deliberate and is why this section is safe to ship.** These are **maximum
+favourable excursions, not achievable returns**. A hit rate says price touched that level at some point
+in the session — not that you exited there, not how far it fell first, not where it closed. §9a
+measured the average close→high as **highly persistent (r = +0.848)** and the buy-the-close /
+sell-next-swing-high strategy built on it **still lost −0.25%/trade, negative in every metric quintile
+out of sample**. A persistent metric is not a profitable one. Shipping a hit-rate table without that
+warning would invite precisely the mistake this project already ran and disproved.
+
+Verified: bin integrity (bins sum to n, zero on a boundary, no bin mixes signs); edge cases all return
+null without throwing (empty, one row, null high, zero prior close). Live DOM verified against
+independently computed values: **14 assertions, all pass**, including the presence of the warning block.
+
+---
 
 ### v640 — Daily True Range Distribution (Jul 26 2026)
 
