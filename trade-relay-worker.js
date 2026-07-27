@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// PARKED — NOT DEPLOYED, NOT WIRED TO THE APP. Do not treat this as live infrastructure.
+//
+// Built Jul 27 2026 while investigating why trailing trade counts read low on the SIP session
+// tabs, then shelved by decision: the shortfall was judged acceptable and an always-on
+// component was not worth the failure surface. The deploy workflow was REMOVED so this cannot
+// deploy by accident.
+//
+// The measurements below are the durable part and are why this file is kept rather than
+// deleted. If the counts ever need to be exact, this is a working starting point — but it has
+// NEVER RUN, and its RTH message volume is unmeasured.
+// ─────────────────────────────────────────────────────────────────────────────────────────
+
 // Cloudflare Worker + Durable Object: Alpaca trade-count relay.
 //
 // WHY THIS EXISTS
