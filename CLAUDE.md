@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v642 · Jul 26 2026
+**Status at last update:** v643 · Jul 27 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,13 +602,53 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v642** (Jul 26 2026) — **Close → Next High Distribution** (v641), **Daily True Range
-Distribution** (v640) and **Daily Return Probability Distribution** (v637) now form three stacked
-histograms in the Daily Returns card; Moving Average Structure card (v639); current streak state
-(v638); Fib swing scales to visible range (v636, closed the last MV Charts open item); Daily Returns &
-Red/Green Day Counts (v634) with a fixed-12-month streak distribution (v635); TODAY/YESTERDAY select by
-trading day (v632, which resolved the long-open "VWAP draws nothing" report) and print the real session
-date (v633), plus a build-banner DST fix. **See §9a for persistence results.**
+**Current: v643** (Jul 27 2026) — **live BOATS bid/ask + sizes on the Most Actives overnight tab**
+(v643). Before that, MV Charts gained three stacked distributions — Close → Next High (v641, MFE
+warning block removed in v642), Daily True Range (v640), Daily Return (v637) — plus the Moving Average
+Structure card (v639), current streak state (v638), Fib swing scaled to visible range (v636), and the
+Daily Returns & Red/Green Day Counts block (v634–v635). TODAY/YESTERDAY select by trading day (v632,
+which resolved the long-open "VWAP draws nothing" report) and print the real session date (v633).
+**See §9a for persistence results.**
+
+### v643 — Most Actives: live BOATS top-of-book (Jul 27 2026)
+
+BID and ASK columns (price × displayed size) immediately after PRICE, **overnight tab only**.
+
+**ALPACA FEED BEHAVIOUR — measured with the overnight session live, worth keeping:**
+
+| feed | age | quote | usable |
+|---|---|---|---|
+| `boats` | **1.2s** | 208.67×178 / 208.90×202 | yes — real-time overnight |
+| `sip` | 188,588s | Friday's close | RTH shut |
+| `iex` | 202,984s | **ap:0 as:0** | **no — one-sided, spread uncomputable** |
+
+`isBoatsView` is `session==='overnight'` specifically; `isOvernightView` covers all three session tabs
+and would wrongly include pre/after-market, which need `feed=sip`.
+
+**THE PROXY 403s ANY NON-BROWSER CLIENT.** `alpaca-proxy...workers.dev` returns **Cloudflare error
+1010** without a browser `User-Agent` — including for paths the app already uses successfully. Not a
+credential or path fault. **Anything server-side (Edge Function, pg_net) calling this proxy will be
+blocked.** With a UA it delivered 1,338/1,338 in 0.18s.
+
+**Batching:** all 1,338 symbols in one call works (154 KB, 0.10s direct, no `next_page_token`), but the
+symbol list travels in the **`X-Alpaca-Path` header** — 8.9 KB at 1,338 names — so it is chunked at 500
+for headroom against Cloudflare's header ceiling.
+
+**Staleness is the real trap and is guarded.** Quote age across the universe: median 230s, p90 3,649s,
+**max 246,288s (2.8 days)** — illiquid names have not quoted overnight at all. Past `QUOTE_STALE_S`
+(300s) the cell dims and the tooltip carries the exact age; a zero price is treated as "no resting
+order on that side", not a price of zero. **Proven to fire:** under default filters 58 rows / 0 stale,
+but with the trade-count filters cleared, **52 of 100 rows dim** with correct ages. This is the
+documented pattern where a defect (or a guard) is invisible under default settings.
+
+**Sortability:** values are stamped onto each ROW via `setActives(prev.map(...))`, not a side map —
+the comparator reads `row[sortKey]` and v581 shipped a header that looked sortable while sorting by
+null. Verified on live: both columns monotonic DESC then ASC, order genuinely changes.
+
+**Overnight spreads are wide** — median **171 bps**, p90 **1,027 bps**. Every tight name is a cash/bond
+ETF (BOXX/SHV/SGOV/SPY/BIL at 0.9–1.1 bps). Material for any overnight grid costing.
+
+---
 
 ### v641 — Close → Next High Distribution (Jul 26 2026)
 
