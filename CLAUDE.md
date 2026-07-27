@@ -687,6 +687,56 @@ overnight window. Rides the existing 20s sweep.
 
 ---
 
+### v644–v645 — Most Actives: blank quote columns on load + quote refresh cadence (Jul 27 2026)
+
+*(Reconstructed into the handoff after the fact — see the context-loss note in §11a. These two shipped
+and were verified but were missing from this document.)*
+
+**Two defects behind a "does not load / does not refresh" report on v643.**
+
+1. **Blank on load — a key-availability race.** The quote fetch lived inside `fetchData`, gated on
+   `p.alpKey && p.alpSecret`. But overnight sets `needsAlpaca=false`, so `fetchData` runs and the table
+   loads **without** keys. If credentials were not yet in state at that moment the table rendered fully
+   populated while the quote columns stayed permanently blank, and nothing retried — the only
+   retrigger was another full load. A working table with two permanently empty columns is exactly the
+   shape of the report.
+2. **No meaningful refresh.** Quotes were tied to the 180s table reload (chosen for the Supabase scan
+   cadence), so top of book was up to three minutes stale despite a full 1,338-symbol sweep measuring
+   0.18s. Instrumenting the live page confirmed quote calls fired once at t=6.9s and not again in the
+   following 46s.
+
+**Fix:** quotes get their own effect, deps `[quoteEpoch, session, alpKey, alpSecret, autoRefresh]`.
+Keys are dependencies, so it **retries the moment credentials arrive**. `QUOTE_REFRESH_MS = 20000`
+while auto-refresh is on, independent of the 180s reload; stops when the toggle is off and skips while
+the tab is hidden. The effect WRITES to `actives`, so it reads rows through `activesRef` rather than
+depending on its own output. A sweep returning nothing leaves the previous quotes on screen rather
+than blanking the columns.
+
+**v645** additionally moved PRICE onto the quote cadence, fetching `trades/latest?feed=boats` alongside
+the quotes. Without it PRICE only moved on the 180s reload while the book moved every 20s, measured
+putting PRICE **outside [BID, ASK] on 34% of rows** (worst 56 bps: AMAT 551.51 against a 554.60/556.00
+book). Only prints ≤12h old are adopted, so a previous session's last trade cannot overwrite tonight's
+close, and MOVE %/GAP % are recomputed from the same anchors so the row stays internally consistent.
+
+### v651 — Most Actives: sub-dollar price precision (Jul 27 2026)
+
+*(Also reconstructed after the fact.)* Found by audit: recomputing SPREAD from the **rendered** bid/ask
+disagreed with the displayed percentage on 24 of 100 rows. The spread itself was right — it is computed
+from raw prices — but BID and ASK rendered with `toFixed(2)`, which destroys the book on sub-dollar
+names:
+
+```
+GSUN  raw 0.22   / 0.2235  -> rendered 0.22 / 0.22   (looks LOCKED)
+OMH   raw 0.6261 / 0.6275  -> rendered 0.63 / 0.63   (looks LOCKED)
+MTNB  raw 0.3757 / 0.3768  -> rendered 0.38 / 0.38   (looks LOCKED)
+```
+
+Those carried real spreads of 1.58%, 0.095% and $0.0011, so SPREAD read wide while the two prices
+beside it read identical — internally contradictory on screen. **Fix:** `fmtQuotePx` — 4 decimals below
+$1, 2 at or above. Principled rather than arbitrary: **Reg NMS Rule 612** permits sub-penny *quoting*
+below $1.00 and requires cent increments above it, so that threshold is exactly where the extra digits
+are needed and exactly where they stop being meaningful.
+
 ### v646–v647 — Most Actives: LAST TRADE column (Jul 27 2026)
 
 Column after ASK on the overnight tab: the most recent **print** on the overnight ATS — an actual
@@ -2065,6 +2115,42 @@ Spearman 0.848 — related to plain volatility but genuinely distinct, so it is 
   relative to a random draw. The direction of the result is safe; treat 0.95 as an upper bound.
 - Polygon **10-second aggregates truncate near ~7,500 bars despite `limit=50000`** and set `next_url`.
   Pagination is mandatory — another instance of §5.1b on an endpoint not previously documented for it.
+
+---
+
+## 11a. Context loss during long sessions — what it looks like and what to do (Jul 27 2026)
+
+**Observed:** three versions (v644, v645, v651) were committed from this sandbox, with the session's git
+identity, in windows where the assistant had no record of the work. Investigated rather than assumed.
+
+**Evidence it was the same worker, not a second one.** The sandbox holds test scripts filling exactly
+those windows — `diag643.js` 04:48, `triple644.js` 04:56, `check3.js` 04:59, `verify644.js` 05:03,
+`audit644.js` 05:08, `toggle644.js` 05:10, `pricelag.js` 05:17, then v645 at 05:21; and
+`sortall.js`/`sortdiag.js`/`sortall2.js`/`xsrc.js` 06:36–06:40 before v651 at 06:43. They are byte-for-byte
+in the same house style (same playwright boilerplate, same `glob`/`b`/`pg`/`t0`/`errs` names, the `BT`
+access code). `triple644.js` is named after the user's phrase "Triple check everything". **Conclusion:
+the same session did the work; the intervening turns were dropped from context.**
+
+**What it cost.** The same defect was diagnosed twice — the v643 key-race was found at 04:48–04:53 and
+then re-investigated from scratch at 05:28–05:44 — and the assistant reported being unable to account
+for its own commits. No code was damaged: **all three fixes verified present in v652** (`quoteEpoch`
+effect with key deps, `trades/latest` price with the 12h guard, `fmtQuotePx`). The habit that prevented
+damage was mechanical: always `cp app_vN.jsx app_vN+1.jsx` from the **current highest** file and read
+the region before editing, so each pass built on whatever was actually there rather than on memory.
+
+**What it did damage: the handoff.** v644, v645 and v651 had **zero** mentions in this document — three
+versions, two of them fixing user-reported bugs, absent from the only durable record. Reconstructed
+above from their commit messages.
+
+**Rules going forward:**
+1. **`git log` is the source of truth for what shipped, not recollection.** At the start of any session,
+   and after any gap, run `git log --format='%ad | %s' --date=format:'%H:%M:%S'` and reconcile against
+   this document. A version present in the log and absent here is a handoff gap to fill.
+2. **Commit messages must be self-sufficient.** They survived when context did not, and were the only
+   reason v644/v645/v651 could be reconstructed at all. Keep writing them as full write-ups.
+3. **Before "discovering" a problem, check whether it was already fixed.** The highest `app_vN.jsx` and
+   the last few commits answer that in seconds and prevent redoing work.
+4. **Never assume a version you do not remember is someone else's.** Check the sandbox artifacts first.
 
 ---
 
