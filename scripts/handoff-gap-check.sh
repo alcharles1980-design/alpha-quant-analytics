@@ -5,7 +5,11 @@ WINDOW=${1:-25}
 git log --format='%s' | grep -oE '^v[0-9]+' | tr -d v | sort -n -u > /tmp/_ship
 # Normalise en-dash to hyphen FIRST (it is multi-byte; awk -F mishandles it),
 # then expand heading ranges like "### v648-v650" into 648 649 650.
-grep -oE '^### v[0-9]+(–|-)?v?[0-9]*' CLAUDE.md \
+# Scan the handoff AND the archive: entries older than ~15 versions live in
+# docs/CHANGELOG-ARCHIVE.md, and reading only CLAUDE.md would report every archived
+# version as a gap — a check that cries wolf gets ignored (§5.6).
+cat CLAUDE.md docs/CHANGELOG-ARCHIVE.md 2>/dev/null \
+ | grep -oE '^### v[0-9]+(–|-)?v?[0-9]*' \
  | sed 's/–/-/g; s/^### v//; s/-v/-/' \
  | awk -F- '{ if (NF>1 && $2!="") { for(i=$1+0;i<=$2+0;i++) print i } else print $1+0 }' \
  | sort -n -u > /tmp/_doc
