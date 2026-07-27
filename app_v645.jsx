@@ -13862,32 +13862,67 @@ function MostActivesPage(p){
       // Chunked at 500: the symbol list travels in the X-Alpaca-Path HEADER (8.9 KB at 1,338 names),
       // so a busier night in one call would approach Cloudflare's header ceiling.
       for(var qi=0;qi<qSyms.length;qi+=500)qChunks.push(qSyms.slice(qi,qi+500));
-      var qm={};
-      Promise.all(qChunks.map(function(ch){
-        return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-          'X-Alpaca-Path':'/v2/stocks/quotes/latest?feed=boats&symbols='+encodeURIComponent(ch.join(',')),
-          'X-Alpaca-Base':'data'}})
-          .then(function(r){return r.ok?r.json():null;})
-          .then(function(d){if(d&&d.quotes)Object.assign(qm,d.quotes);})
+      var qm={},tm={};
+      // One retry per chunk: a full-universe trades/latest call was observed returning a transient
+      // 503 that succeeded immediately on retry, so a single failure must not blank a sweep.
+      var pull=function(kind,ch,sink,key){
+        var path='/v2/stocks/'+kind+'/latest?feed=boats&symbols='+encodeURIComponent(ch.join(','));
+        var once=function(){
+          return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}}).then(function(r){return r.ok?r.json():null;});
+        };
+        return once().then(function(d){return d||once();})
+          .then(function(d){if(d&&d[key])Object.assign(sink,d[key]);})
           .catch(function(){});
-      })).then(function(){
+      };
+      var jobs=[];
+      qChunks.forEach(function(ch){
+        jobs.push(pull('quotes',ch,qm,'quotes'));
+        // Last trade on the SAME cadence. Without it the PRICE column only moves on the 180s table
+        // reload while the book moves every 20s, which was measured putting PRICE outside [BID, ASK]
+        // on 34% of rows (worst 56 bps, AMAT 551.51 against a 554.60/556.00 book).
+        jobs.push(pull('trades',ch,tm,'trades'));
+      });
+      Promise.all(jobs).then(function(){
         if(cancelled)return;
-        if(!Object.keys(qm).length)return;   // total failure: leave the previous quotes on screen
+        if(!Object.keys(qm).length&&!Object.keys(tm).length)return; // total failure: leave what is on screen
         var qNow=Date.now();
         // Stamp onto each ROW, not a side map: the sort comparator reads row[sortKey], so a value
         // living only in a map renders but never sorts (the v581 ON PACE bug).
         setActives(function(prev){
           if(!prev)return prev;
           return prev.map(function(row){
-            var q=qm[row.symbol];
-            if(!q)return row;   // not in this sweep — keep whatever it had rather than blanking it
-            var bp=(typeof q.bp==='number'&&q.bp>0)?q.bp:null;   // 0 = no resting order, not a price
-            var ap=(typeof q.ap==='number'&&q.ap>0)?q.ap:null;
-            var ts=q.t?Date.parse(q.t):NaN;
-            return Object.assign({},row,{
-              bidPx:bp,bidSz:(bp!=null&&typeof q.bs==='number')?q.bs:null,
-              askPx:ap,askSz:(ap!=null&&typeof q.as==='number')?q.as:null,
-              quoteAge:isFinite(ts)?Math.max(0,(qNow-ts)/1000):null});
+            var q=qm[row.symbol],tr=tm[row.symbol];
+            if(!q&&!tr)return row;   // not in this sweep — keep whatever it had rather than blanking it
+            var patch={};
+            if(q){
+              var bp=(typeof q.bp==='number'&&q.bp>0)?q.bp:null;   // 0 = no resting order, not a price
+              var ap=(typeof q.ap==='number'&&q.ap>0)?q.ap:null;
+              var ts=q.t?Date.parse(q.t):NaN;
+              patch.bidPx=bp;patch.bidSz=(bp!=null&&typeof q.bs==='number')?q.bs:null;
+              patch.askPx=ap;patch.askSz=(ap!=null&&typeof q.as==='number')?q.as:null;
+              patch.quoteAge=isFinite(ts)?Math.max(0,(qNow-ts)/1000):null;
+            }
+            if(tr&&typeof tr.p==='number'&&tr.p>0){
+              var tts=tr.t?Date.parse(tr.t):NaN;
+              var tAge=isFinite(tts)?Math.max(0,(qNow-tts)/1000):null;
+              // Only adopt a print that could belong to THIS session. The overnight window is
+              // 8pm-4am ET, so anything older than 12h is a previous session's last print and must
+              // not overwrite tonight's close.
+              if(tAge!=null&&tAge<=43200){
+                patch.price=tr.p;patch.priceAge=tAge;
+                // Recompute the two derived columns from the SAME anchors the scan used, verified
+                // against the table: pct_move=(close-open)/open*100 and
+                // gap_pct=(close-prev_rth_close)/prev_rth_close*100. Updating price without these
+                // would leave the row internally inconsistent.
+                if(row.prevClose>0){
+                  patch.change=tr.p-row.prevClose;
+                  patch.changePct=(tr.p-row.prevClose)/row.prevClose*100;
+                }
+                if(row.prevRthClose>0)patch.gapPct=(tr.p-row.prevRthClose)/row.prevRthClose*100;
+              }
+            }
+            return Object.assign({},row,patch);
           });
         });
       });
