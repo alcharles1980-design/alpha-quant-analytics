@@ -549,6 +549,57 @@ looks fine every day you happen to check mid-week. And an inner join turns it in
 rather than a wrong one, which reads as "no data yet" instead of "bug". **Prefer a left join plus an
 explicit leg-count when a leg is genuinely optional.**
 
+### 5.1f Alpaca live-data capabilities, measured (Jul 27 2026)
+
+Mapped while investigating trade-count accuracy. Kept because it answers "what can this account
+actually do" without re-probing.
+
+| feed | REST | stream | notes |
+|---|---|---|---|
+| `sip` | real-time | `wss://…/v2/sip` | consolidated tape |
+| `boats` | real-time | `wss://…/**v1beta1**/boats` | overnight ATS — **v2 returns 404** |
+| `overnight` | real-time | `…/v1beta1/overnight` | |
+| `delayed_sip` | 15-min | `…/v2/delayed_sip` | |
+| `iex` | real-time | `…/v2/iex` | **quotes come back one-sided (`ap:0`) outside its own hours — unusable for spread** |
+| `otc` | **403** | — | "subscription does not permit querying OTC data" |
+
+**Streaming limits — the ones that shape any design:**
+- **ONE connection per account PER FEED.** A second on the same feed gets `406 connection limit
+  exceeded`. It is *per feed*, verified: `sip`, `iex`, `delayed_sip`, `boats` and `overnight` were
+  held open simultaneously.
+- **The TRADING stream (`wss://paper-api.alpaca.markets/stream`) is a SEPARATE pool** — held at the
+  same time as market-data `sip`, both authorised. mbot's order feed does not compete with market data.
+- **The wildcard `trades:['*']` is accepted** — the entire tape, no per-symbol subscription. 1,338
+  explicit symbols also subscribe fine.
+- Every AlphaQuant browser authenticates with the **same** `app_config` credentials, so a
+  browser-side stream would serve exactly one tab, for one user, and 406 everyone else.
+
+**`/v2/stocks/bars` `end` is INCLUSIVE** — `start=07:52Z&end=08:02Z` returns bars at 08:00, 08:01
+**and** 08:02. See §5.1e.
+
+**Endpoints worth knowing:** `/v2/stocks/auctions` (opening/closing prints),
+`/v1beta1/screener/stocks/movers`, `/v2/stocks/meta/conditions/trade` (official condition-code
+definitions — better than hardcoding `I` for odd lot), `/v2/stocks/meta/exchanges`.
+
+### 5.1g DECIDED: SIP-session trade counts stay bar-derived and slightly low
+
+**Known, accepted, do not "fix" without asking.** The TRADES 1m/5m/15m columns on **pre-market and
+RTH** come from SIP 1-minute bars, which settle slowly — against the raw tape they run ~19% low at 2
+minutes old, ~9–11% at 5–20 minutes, and only converge at 40–90 minutes. The shortfall is **not
+uniform**: in one after-market sample NVDA and TSLA were exact while PLTR showed 35 against 90 actual
+(−61%), so *ordering* between mid-tier names can be wrong, not just magnitudes.
+
+**Overnight is NOT affected** — it counts the raw tape via the v652 ring buffer and matched an
+independent recount 60/60 exactly. Quotes, spread and last trade are real-time on **every** tab
+(~1–2s); only the count columns are involved.
+
+Two alternatives were built or costed and **rejected on 27 Jul 2026**:
+- Raw SIP tape per sweep — infeasible: 8 symbols over 15 minutes returned 80,650 trades and 8.2 MB,
+  so a full universe is gigabytes per sweep.
+- A Durable Object stream relay — written and logic-tested (`trade-relay-worker.js`, **parked, never
+  deployed**), rejected as not worth an always-on component and a new failure surface for this
+  margin of error.
+
 ### 5.4 Silent write failures
 
 - **Supabase writes can fail silently under rapid sequential load.** 11 of 22 days
