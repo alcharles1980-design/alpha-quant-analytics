@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v638 · Jul 26 2026
+**Status at last update:** v639 · Jul 26 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -602,14 +602,50 @@ this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be
 
 ## 9. Recent work
 
-**Current: v638** (Jul 26 2026) — **current streak state** in the Red/Green Day Counts section (v638);
-**Daily Return Probability Distribution** (v637); Fib swing scales its leg to visible range (v636,
-closed the last MV Charts open item); Daily Returns & Red/Green Day Counts (v634) with a fixed-12-month
-streak distribution (v635); TODAY/YESTERDAY select by trading day not calendar day (v632, which
-resolved the long-open "VWAP draws nothing" report) and print the real session date (v633), plus a
-build-banner DST fix. Preceded by the Holy Grail metric docs (v631), volume/trades regroup (v630),
-RTrd/RVol ladders (v628–v629), Vol/Trades medians + stale-guard fix (v627), ATR ladder (v619–v620).
-**See also §9a for persistence results.**
+**Current: v639** (Jul 26 2026) — **Moving Average Structure** card at the bottom of MV Charts (v639);
+current streak state (v638); Daily Return Probability Distribution (v637); Fib swing scales to visible
+range (v636, closed the last MV Charts open item); Daily Returns & Red/Green Day Counts (v634) with a
+fixed-12-month streak distribution (v635); TODAY/YESTERDAY select by trading day not calendar day
+(v632, which resolved the long-open "VWAP draws nothing" report) and print the real session date
+(v633), plus a build-banner DST fix. **See also §9a for persistence results.**
+
+### v639 — Moving Average Structure (Jul 26 2026)
+
+Card at the bottom of the page. **No extra network call** — computed from the 10y daily close series
+`vtRows` already holds. Table of 50 / 100 / 200-day SMAs (value, price vs MA %, slope, direction,
+consecutive sessions on the current side), stack-alignment and 50/200-cross tiles, and a chart of
+percentage distance from each average over the last 252 sessions.
+
+**Design decisions worth preserving:**
+- **Slope is a percentage, not an angle.** An angle depends on chart scale and axis range, so it cannot
+  be compared across tickers or timeframes. The % change of the average itself is scale-free.
+- The slope lookback is **fixed at 20 sessions for all three periods**, not scaled per period, so the
+  three are directly comparable and the term structure is readable — "50d falling 0.5%/20d while 200d
+  rises 1.2%/20d" is a statement a per-period lookback would hide.
+- The distance chart is **deliberately not another price chart with MA overlays** — the panels above
+  already draw those. What is not visible anywhere else is how far price stretches and whether it returns.
+- The cross day count stops at the start of the 200-day series and renders "at least N" at that limit
+  rather than implying a longer run than the data supports.
+- Footnote states these are descriptive, not signals (§9a: direction is not forecastable).
+
+**CAUGHT IN THE SWEEP — DUPLICATE DEFINITION.** The first draft added its own `smaSeries`.
+`MultiViewChartsPage` **already has one** (with the MA-overlay helpers), so both sat in one function
+scope and the later `var` assignment silently won. They differed: the existing returns an **all-null
+array** for short input, the new one returned **null**. No live crash, because the overlay guards with
+`if(bars.length<d.n)return null;` before calling — but remove that guard or add an unguarded caller and
+the chart throws on `.map` of null. Duplicate removed, existing function reused, warning comment left
+at the site. **A duplicate-definition grep hit inside the SAME component is a real collision** — unlike
+the `fmtPct` case (§v634) where all four were in separate components. Always resolve the enclosing
+`function ...Page(` before deciding which it is. Full scan run across all ten helpers added this
+session: each exactly 1.
+
+Verified: `smaSeries` on a known series ([1..10] period 3 → [null,null,2,…,9]); `maStats` edge cases
+(empty / too-short → ok:false; exactly-period → value with slope null); `crossState` null and partial
+inputs handled. All figures cross-checked against an **independent Python implementation** on 2,511
+NVDA sessions, exact match. Live DOM verified against independently computed values: **23 assertions,
+all pass**.
+
+---
 
 ### v638 — current streak state (Jul 26 2026)
 
