@@ -13402,6 +13402,10 @@ function MostActivesPage(p){
   var s11f=useState(false),avgTouched=s11f[0],setAvgTouched=s11f[1];
   var s11e=useState(''),maxAvgTrades=s11e[0],setMaxAvgTrades=s11e[1];
   var s12=useState(true),autoRefresh=s12[0],setAutoRefresh=s12[1];
+  // Bumped by the loader once a new row set is in state. The quote effect keys off this rather than
+  // off `actives` itself, because the effect WRITES to actives — depending on it directly would
+  // re-trigger on its own output and loop forever.
+  var s12c=useState(0),quoteEpoch=s12c[0],setQuoteEpoch=s12c[1];
   var s12b=useState(0),refreshTrigger=s12b[0],setRefreshTrigger=s12b[1];
   // Default session: whichever is LIVE right now, by ET clock. Only the initial value — once the
   // user picks a tab, their choice stands for the rest of the visit.
@@ -13638,50 +13642,16 @@ function MostActivesPage(p){
           // roughly 85 sequential round trips before anything rendered, which is where the 8-10s
           // "loading market data" came from. Most of that work was thrown away by the filters.
           setActives(overnightActives);
-          // Live BOATS top-of-book (bid/ask + displayed size). OVERNIGHT ONLY: BOATS is the
-          // overnight ATS, so it is the live book for this session and this session alone.
-          // Pre-market and after-market would need feed=sip, and IEX is unusable here — measured
-          // returning ap:0/as:0 one-sided outside its own hours, which would render as an infinite
-          // spread. Additive and non-blocking, like the pace block below: a failure here leaves the
-          // quote columns blank and cannot break the main table.
-          // Chunked at 500 even though 1,338 in a single call was measured working (0.18s): the
-          // symbol list travels in the X-Alpaca-Path HEADER, which was 8.9 KB at 1,338 names, and a
-          // busier night would push that toward Cloudflare's header ceiling.
-          if(session==='overnight'&&p.alpKey&&p.alpSecret&&overnightActives.length){
-            (function(){
-              var qSyms=overnightActives.map(function(r){return r.symbol;});
-              var qChunks=[];
-              for(var qi=0;qi<qSyms.length;qi+=500)qChunks.push(qSyms.slice(qi,qi+500));
-              var qm={};
-              Promise.all(qChunks.map(function(ch){
-                return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
-                  'X-Alpaca-Path':'/v2/stocks/quotes/latest?feed=boats&symbols='+encodeURIComponent(ch.join(',')),
-                  'X-Alpaca-Base':'data'}})
-                  .then(function(r){return r.ok?r.json():null;})
-                  .then(function(d){if(d&&d.quotes)Object.assign(qm,d.quotes);})
-                  .catch(function(){});
-              })).then(function(){
-                var qNow=Date.now();
-                // Stamp onto each ROW, not a side map: the table's sort comparator reads
-                // row[sortKey], so a value living only in a map is displayed but never sortable.
-                setActives(function(prev){
-                  if(!prev)return prev;
-                  return prev.map(function(row){
-                    var q=qm[row.symbol];
-                    if(!q)return Object.assign({},row,{bidPx:null,bidSz:null,askPx:null,askSz:null,quoteAge:null});
-                    // A zero price means no resting order on that side, not a price of zero.
-                    var bp=(typeof q.bp==='number'&&q.bp>0)?q.bp:null;
-                    var ap=(typeof q.ap==='number'&&q.ap>0)?q.ap:null;
-                    var ts=q.t?Date.parse(q.t):NaN;
-                    return Object.assign({},row,{
-                      bidPx:bp,bidSz:(bp!=null&&typeof q.bs==='number')?q.bs:null,
-                      askPx:ap,askSz:(ap!=null&&typeof q.as==='number')?q.as:null,
-                      quoteAge:isFinite(ts)?Math.max(0,(qNow-ts)/1000):null});
-                  });
-                });
-              });
-            })();
-          }
+          // Live BOATS top-of-book is fetched by its OWN effect (see quoteEpoch below), not inline
+          // here. Two reasons, both of which produced the "columns blank on load" report:
+          //   1. This path is gated on p.alpKey/p.alpSecret, but overnight sets needsAlpaca=false so
+          //      the table loads WITHOUT keys. If keys were not yet in state at this moment, the
+          //      table rendered fully populated while the quote columns stayed permanently blank.
+          //   2. Quotes cost ~0.18s for the whole universe, but were tied to this reload, which runs
+          //      every 180s on overnight. Top of book was up to three minutes stale.
+          // Bumping the epoch hands off to the effect, which owns retry-on-key-arrival and its own
+          // much faster refresh cadence.
+          setQuoteEpoch(function(e){return e+1;});
           // Pace ratio is a SEPARATE, additive metric — fetched independently so a failure here
           // can never break the main table. Overnight only for now; the other session types are
           // not calibrated in session_pace_curve yet.
@@ -13866,6 +13836,67 @@ function MostActivesPage(p){
     var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},everyMs);
     return function(){clearInterval(iv);};
   },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
+
+  // ── LIVE BOATS TOP-OF-BOOK ────────────────────────────────────────────────────────────────────
+  // Owns its own fetch and its own cadence, deliberately separate from fetchData.
+  //   - Retries when keys arrive: p.alpKey/p.alpSecret are dependencies, so if the page mounted
+  //     before app_config credentials landed, this re-runs the moment they do. The previous inline
+  //     version simply skipped, leaving a fully loaded table with permanently blank quote columns.
+  //   - Refreshes far faster than the table: the overnight reload runs every 180s, but a full-
+  //     universe quote sweep measured 0.18s, so there is no reason for top of book to be three
+  //     minutes stale. QUOTE_REFRESH_MS is the cadence while auto-refresh is on.
+  //   - Reads rows through a REF so `actives` is not a dependency; this effect writes to actives,
+  //     and depending on its own output would loop.
+  var activesRef=useRef(actives);activesRef.current=actives;
+  var QUOTE_REFRESH_MS=20000;
+  useEffect(function(){
+    if(session!=='overnight')return;
+    if(!p.alpKey||!p.alpSecret)return;
+    var cancelled=false;
+    var run=function(){
+      var rows=activesRef.current;
+      if(!rows||!rows.length)return;
+      var qSyms=rows.map(function(r){return r.symbol;}).filter(Boolean);
+      if(!qSyms.length)return;
+      var qChunks=[];
+      // Chunked at 500: the symbol list travels in the X-Alpaca-Path HEADER (8.9 KB at 1,338 names),
+      // so a busier night in one call would approach Cloudflare's header ceiling.
+      for(var qi=0;qi<qSyms.length;qi+=500)qChunks.push(qSyms.slice(qi,qi+500));
+      var qm={};
+      Promise.all(qChunks.map(function(ch){
+        return fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':'/v2/stocks/quotes/latest?feed=boats&symbols='+encodeURIComponent(ch.join(',')),
+          'X-Alpaca-Base':'data'}})
+          .then(function(r){return r.ok?r.json():null;})
+          .then(function(d){if(d&&d.quotes)Object.assign(qm,d.quotes);})
+          .catch(function(){});
+      })).then(function(){
+        if(cancelled)return;
+        if(!Object.keys(qm).length)return;   // total failure: leave the previous quotes on screen
+        var qNow=Date.now();
+        // Stamp onto each ROW, not a side map: the sort comparator reads row[sortKey], so a value
+        // living only in a map renders but never sorts (the v581 ON PACE bug).
+        setActives(function(prev){
+          if(!prev)return prev;
+          return prev.map(function(row){
+            var q=qm[row.symbol];
+            if(!q)return row;   // not in this sweep — keep whatever it had rather than blanking it
+            var bp=(typeof q.bp==='number'&&q.bp>0)?q.bp:null;   // 0 = no resting order, not a price
+            var ap=(typeof q.ap==='number'&&q.ap>0)?q.ap:null;
+            var ts=q.t?Date.parse(q.t):NaN;
+            return Object.assign({},row,{
+              bidPx:bp,bidSz:(bp!=null&&typeof q.bs==='number')?q.bs:null,
+              askPx:ap,askSz:(ap!=null&&typeof q.as==='number')?q.as:null,
+              quoteAge:isFinite(ts)?Math.max(0,(qNow-ts)/1000):null});
+          });
+        });
+      });
+    };
+    run();
+    if(!autoRefresh)return function(){cancelled=true;};
+    var iv=setInterval(function(){if(!document.hidden)run();},QUOTE_REFRESH_MS);
+    return function(){cancelled=true;clearInterval(iv);};
+  },[quoteEpoch,session,p.alpKey,p.alpSecret,autoRefresh]);
 
   // ── SHORTLIST fetch ──────────────────────────────────────────────────────────
   // Calls the shortlist_signal RPC, which joins after-market (prior day) + overnight + pre-market
