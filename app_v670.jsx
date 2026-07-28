@@ -13365,6 +13365,9 @@ function CompoundTrackerPage(p){
   // reading the current value without making load() a dependency of itself.
   var perBucketTargetRef=useRef(100000);perBucketTargetRef.current=perBucketTarget;
   var s7=useState({}),addF=s7[0],setAddF=s7[1];
+  var s8=useState(null),chain=s8[0],setChain=s8[1];
+  var s9=useState(null),confirm=s9[0],setConfirm=s9[1];      // pending destructive action
+  var s10=useState({n:10,seed:100}),resetF=s10[0],setResetF=s10[1];
 
   var load=async function(){
     try{
@@ -13377,6 +13380,9 @@ function CompoundTrackerPage(p){
       var t=await fetch(SB_URL+'/rest/v1/compound_trades?select=*&order=opened_at.desc',
         {headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Range-Unit':'items','Range':'0-999'}});
       if(t.ok)setTrades(await t.json());
+      var ch=await fetch(SB_URL+'/rest/v1/rpc/compound_chain_check',
+        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:'{}'});
+      if(ch.ok)setChain(await ch.json());
       setErr(null);
     }catch(e){setErr(String(e.message||e));}
   };
@@ -13444,6 +13450,41 @@ function CompoundTrackerPage(p){
       portGrowth:inj>0?now/inj:null};
   })();
 
+  var rpc=async function(fn,body){
+    setBusy(true);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify(body||{})});
+      if(!r.ok)throw new Error((await r.text()).slice(0,160));
+      await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);setConfirm(null);
+  };
+  var delTrade=async function(id){
+    setBusy(true);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/compound_trades?id=eq.'+id,{method:'DELETE',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+      if(!r.ok)throw new Error((await r.text()).slice(0,160));
+      await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);setConfirm(null);
+  };
+  var exportCsv=function(){
+    var rows=[['bucket','ticker','entry','target','exit','capital_in','return_pct','pnl','opened','closed']];
+    (trades||[]).forEach(function(t){
+      var ret=t.exit_price!=null?((t.exit_price-t.entry_price)/t.entry_price*100):null;
+      rows.push([t.bucket_id,t.ticker,t.entry_price,t.target_price||'',t.exit_price||'',t.capital_in,
+                 ret==null?'':ret.toFixed(4),ret==null?'':(t.capital_in*ret/100).toFixed(2),
+                 t.opened_at,t.closed_at||'']);
+    });
+    var csv=rows.map(function(r){return r.join(',');}).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download='compound_trades_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
+  };
   var addBucket=async function(){
     var amt=Number(addF.amt||100);
     if(!(amt>0)){setErr('Enter a starting amount.');return;}
@@ -13518,19 +13559,50 @@ function CompoundTrackerPage(p){
       <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>These are ten separate books, so there is no meaningful average growth — a bucket at 4× and one at 0.4× average to 2.2×, which describes neither. The spread is what tells you whether the result came from the method or from one lucky stream. If a single bucket carries the portfolio, that is variance rather than edge.</div>
     </div>}
 
-    <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'11px 13px',marginBottom:14,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-      <span style={{fontSize:9,color:C.txtDim,fontFamily:F}}>Target per bucket</span>
-      <input type="number" value={perBucketTarget} onChange={function(e){setPerBucketTarget(Number(e.target.value)||0);}}
-        style={Object.assign({},inp,{width:120})}/>
-      <span style={{fontSize:9,color:C.txtDim,fontFamily:F}}>{st?('\u00D7 '+st.length+' streams = $'+(perBucketTarget*st.length).toLocaleString()+' total'):''}</span>
-      <span style={{fontSize:8,color:C.txtDim,fontFamily:F,flex:'1 1 260px'}}>Each card below shows the trades <b>that bucket</b> needs from <b>its own</b> balance at <b>its own</b> realised rate. Nothing is averaged across streams.</span>
-    </div>
+    {chain&&chain.length>0&&<div style={{padding:'8px 11px',background:C.warn+'12',border:'1px solid '+C.warn+'44',borderRadius:7,marginBottom:12}}>
+      <div style={{color:C.warn,fontSize:10,fontFamily:F,fontWeight:700}}>Chain break on {chain.length} trade{chain.length===1?'':'s'}</div>
+      <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:3,lineHeight:1.6}}>The capital recorded on these trades is not what the bucket held when they opened — usually because an earlier trade was edited or deleted. The recorded figure is left alone on purpose: it is what was actually deployed, and rewriting it would destroy the record of what was really risked.</div>
+      <div style={{marginTop:5}}>{chain.slice(0,6).map(function(c){
+        return <div key={c.trade_id} style={{color:C.txtDim,fontSize:8,fontFamily:F}}>
+          {'Bucket '+c.bucket_id+' \u00B7 '+c.ticker+' \u00B7 recorded $'+Number(c.recorded_capital).toFixed(2)+' vs expected $'+Number(c.expected_capital).toFixed(2)+' ('+(Number(c.drift)>=0?'+':'')+Number(c.drift).toFixed(2)+')'}
+        </div>;})}</div>
+    </div>}
 
-    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-      <input placeholder="new bucket label" value={addF.label||''} onChange={function(e){var n={};for(var k in addF)n[k]=addF[k];n.label=e.target.value;setAddF(n);}} style={Object.assign({},inp,{width:170})}/>
-      <input placeholder="starting capital (100)" value={addF.amt||''} onChange={function(e){var n={};for(var k in addF)n[k]=addF[k];n.amt=e.target.value;setAddF(n);}} style={Object.assign({},inp,{width:170})}/>
-      <button disabled={busy} onClick={addBucket} style={{background:C.blue+'22',border:'1px solid '+C.blue+'66',color:C.blue,borderRadius:5,padding:'5px 13px',cursor:'pointer',fontFamily:F,fontSize:11,fontWeight:700}}>+ Add stream</button>
-      <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>New capital is logged as an injection, so it never shows up as profit.</span>
+    <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'11px 13px',marginBottom:14}}>
+      <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap'}}>
+        <span style={{fontSize:9,color:C.txtDim,fontFamily:F,fontWeight:700}}>TARGET / BUCKET</span>
+        <input type="number" value={perBucketTarget} onChange={function(e){setPerBucketTarget(Number(e.target.value)||0);}} style={Object.assign({},inp,{width:110})}/>
+        <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F}}>{st?('\u00D7 '+st.length+' = $'+(perBucketTarget*st.length).toLocaleString()):''}</span>
+        <div style={{flex:1}}></div>
+        <button onClick={exportCsv} disabled={!trades||!trades.length}
+          style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:10}}>Export CSV</button>
+        <button onClick={function(){setConfirm('clear');}}
+          style={{background:'transparent',border:'1px solid '+C.gold+'55',color:C.gold,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:10}}>Clear trades</button>
+        <button onClick={function(){setConfirm('reset');}}
+          style={{background:'transparent',border:'1px solid '+C.warn+'55',color:C.warn,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:10}}>Reset everything</button>
+      </div>
+      {confirm==='clear'&&<div style={{marginTop:9,padding:'9px 11px',background:C.gold+'10',border:'1px solid '+C.gold+'44',borderRadius:6}}>
+        <div style={{color:C.gold,fontSize:10,fontFamily:F,fontWeight:700}}>Delete all {trades?trades.length:0} trades?</div>
+        <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:3}}>Streams and the capital put into them are kept; only the trade history goes. Export first if you want it.</div>
+        <div style={{display:'flex',gap:6,marginTop:7}}>
+          <button disabled={busy} onClick={function(){rpc('compound_clear_trades');}} style={{background:C.gold+'22',border:'1px solid '+C.gold+'66',color:C.gold,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10,fontWeight:700}}>Yes, clear trades</button>
+          <button onClick={function(){setConfirm(null);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10}}>Cancel</button>
+        </div>
+      </div>}
+      {confirm==='reset'&&<div style={{marginTop:9,padding:'9px 11px',background:C.warn+'10',border:'1px solid '+C.warn+'44',borderRadius:6}}>
+        <div style={{color:C.warn,fontSize:10,fontFamily:F,fontWeight:700}}>Reset everything and start again?</div>
+        <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:3}}>Deletes every trade, every capital injection and every stream, then rebuilds from scratch. Not undoable.</div>
+        <div style={{display:'flex',gap:6,marginTop:7,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F}}>streams</span>
+          <input type="number" value={resetF.n} onChange={function(e){setResetF({n:Number(e.target.value)||0,seed:resetF.seed});}} style={Object.assign({},inp,{width:70})}/>
+          <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F}}>each seeded</span>
+          <input type="number" value={resetF.seed} onChange={function(e){setResetF({n:resetF.n,seed:Number(e.target.value)||0});}} style={Object.assign({},inp,{width:90})}/>
+          <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F}}>{'= $'+((resetF.n||0)*(resetF.seed||0)).toLocaleString()+' total'}</span>
+          <button disabled={busy} onClick={function(){rpc('compound_reset',{n_buckets:resetF.n,seed:resetF.seed});}} style={{background:C.warn+'22',border:'1px solid '+C.warn+'66',color:C.warn,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10,fontWeight:700}}>Yes, reset</button>
+          <button onClick={function(){setConfirm(null);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10}}>Cancel</button>
+        </div>
+      </div>}
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each card shows the trades <b>that stream</b> needs from <b>its own</b> balance at <b>its own</b> realised rate. Nothing is averaged across streams.</div>
     </div>
 
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(310px,1fr))',gap:10}}>
@@ -13587,7 +13659,7 @@ function CompoundTrackerPage(p){
       <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,marginBottom:7}}>Trade log</div>
       <div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
-          <thead><tr>{['Bucket','Ticker','Entry','Target','Exit','Capital','Return','P&L','Opened','Closed'].map(function(h,i){
+          <thead><tr>{['Bucket','Ticker','Entry','Target','Exit','Capital','Return','P&L','Opened','Closed',''].map(function(h,i){
             return <th key={i} style={{textAlign:i<2?'left':'right',padding:'4px 8px',color:C.txtDim,fontSize:7,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>{h}</th>;})}
           </tr></thead>
           <tbody>
@@ -13605,6 +13677,13 @@ function CompoundTrackerPage(p){
                 <td style={{padding:'3px 8px',textAlign:'right',color:pnl==null?C.txtDim:(pnl>=0?C.accent:C.warn),fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{pnl==null?'\u2014':(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2)}</td>
                 <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,fontSize:8,borderBottom:'1px solid '+C.border+'44'}}>{String(t.opened_at).slice(0,10)}</td>
                 <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,fontSize:8,borderBottom:'1px solid '+C.border+'44'}}>{t.closed_at?String(t.closed_at).slice(0,10):'\u2014'}</td>
+                <td style={{padding:'3px 6px',textAlign:'right',borderBottom:'1px solid '+C.border+'44'}}>
+                  {confirm==='del'+t.id
+                    ? <span><button disabled={busy} onClick={function(){delTrade(t.id);}} style={{background:C.warn+'22',border:'1px solid '+C.warn+'66',color:C.warn,borderRadius:4,padding:'1px 7px',cursor:'pointer',fontFamily:F,fontSize:9,fontWeight:700}}>delete</button>
+                        <button onClick={function(){setConfirm(null);}} style={{marginLeft:4,background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:4,padding:'1px 6px',cursor:'pointer',fontFamily:F,fontSize:9}}>no</button></span>
+                    : <button onClick={function(){setConfirm('del'+t.id);}} title="Delete this trade. Later trades keep the capital they actually deployed; any resulting mismatch is reported as a chain break rather than silently rewritten."
+                        style={{background:'transparent',border:'none',color:C.txtDim,cursor:'pointer',fontFamily:F,fontSize:11,padding:'0 4px'}}>{'\u00D7'}</button>}
+                </td>
               </tr>;
             })}
           </tbody>
