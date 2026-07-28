@@ -1,40 +1,67 @@
 # Alpha Quant Analytics
 
 Quantitative tick-level analysis web app for the Beta Proprietary Trading Algorithm.
+Single-file React 18, built to a static bundle, deployed on Cloudflare Workers, backed by Supabase.
 
-**Version:** v261 | **Last Updated:** May 3, 2026
+**Live:** https://alpha-quant-analytics.alcharles1980.workers.dev
 
-## Features
-- Stage 1: Cycles, trends, daily optimal TP%, volume profile (with chart-overlay POC/VAH/VAL labels)
-- Stage 2: Adaptive optimization, hourly optimal TP% scanner
-- Stage 3: Correlation analysis (255-feature, hourly + daily modes), Build Data Set pipeline
-- Stage 4: ML model finder, hourly TP% predictor
-- Stage 5: RL & AI agents (overview)
-- Stage 6: Oscillation/ATR/swing/regime/cycle screeners (~20 screeners)
-- Stage 7: Live analytics (MFE dashboard, true swing analyzer, grid scanner)
-- Stage 8: Forecasting (range, vol concentration, cycle density/speed, grid planner, hourly returns, vol stability)
-- Stage 9: Dollar Volume Time (calibration, dollar-bar builder, comparison, features, dataset, correlation)
-- Stage A: Stock classification (vol × trend regime grid)
-- Stage B: Live oscillation (minute-bar optimal TP%)
-- 64 routes, ~29 Supabase tables, single-file React 18 app (~21,800 lines), JetBrains Mono dark terminal aesthetic
+---
 
-## Build
+## → Start with [`CLAUDE.md`](CLAUDE.md), not this file
+
+`CLAUDE.md` is the working handoff and is kept current. **This README is a signpost only.**
+
+The previous version of this file claimed **v261, May 2026, 64 routes, ~21,800 lines** while the app
+was at **v658 with 86 routes and ~36,900 lines** — 397 versions of drift. That is exactly why the
+detail lives in one maintained document with an automated staleness check, and why specific numbers
+are kept out of here.
+
+| If you are… | Read |
+|---|---|
+| a new session in a **brand-new environment** | `CLAUDE.md` **§0** — clone → install → checks → build, verified cold |
+| a new session in an **existing sandbox** | `CLAUDE.md` **§1** — reconcile `git log` against §9, read `integrity_log` |
+| about to **ship a change** | **§4** (the 9-step sweep) and **§4a** (the verification gate) |
+| debugging something that "should work" | **§5** — the failure modes, all paid for in production |
+| picking up **Most Actives** (active area) | **§9b** — current state of all four session tabs |
+
+---
+
+## Quick start
+
 ```bash
+git clone https://github.com/alcharles1980-design/alpha-quant-analytics.git
+cd alpha-quant-analytics
+./scripts/handoff-gap-check.sh   # works immediately — pure bash, no dependencies
 npm install
-npm run build
+npm run preflight                # version skew · route parity · duplicate definitions
+npm run build                    # → dist/index.html
 ```
-Output: `dist/index.html`
 
-## Infrastructure
-- **Frontend:** Cloudflare Pages (auto-deploy via GitHub Actions)
-- **Database:** Supabase (PostgreSQL)
-- **Compute:** Cloudflare Workers (hourly TP% scanner)
-- **Data:** Polygon.io (trade ticks)
+The build is **reproducible**: a cold clone yields a `dist/index.html` byte-identical to the
+committed one once the `BUILD_TS` stamp is normalised.
 
+## Repo layout
 
-<!-- deployed -->
+| Path | What |
+|---|---|
+| `app_vN.jsx` | The entire app, one file. **Exactly one exists** — the sweep renames it. |
+| `build.js` | Babel build → `dist/index.html`. Hardcodes the version banner; §4 step 2. |
+| `scripts/preflight.js` | Pre-push checks. Every alarm proven by deliberately breaking the file. |
+| `scripts/handoff-gap-check.sh` | Any version shipped without a `CLAUDE.md` §9 entry. |
+| `scripts/verify-app.js` | Headless verification harness with the §4a disciplines built in. |
+| `*-worker.js` + `wrangler-*.toml` | Cloudflare Workers. Deployed by **GitHub Actions only**. |
+| `pipeline.js`, `chop_pipeline.js`, `*-scanner.js` | Data pipelines, run by Actions / pg_cron. |
+| `docs/CHANGELOG-ARCHIVE.md` | Version entries below v637, verbatim. |
+| `docs/IN-FLIGHT.md` | What is mid-investigation right now. |
 
-Thu Apr  2 06:44:21 UTC 2026
-Thu Apr  2 06:52:29 UTC 2026
-Thu Apr  2 06:54:37 UTC 2026
-<!-- Thu Apr  2 07:49:02 UTC 2026 -->
+## Deploys
+
+Push to `main`. `deploy.yml` builds and deploys five Workers on **every** push, including docs-only
+commits — so **`BUILD_TS` reflects the last push, not the last code change**. To tell whether a fix
+is live, read the **version number**, not the timestamp. Details in `CLAUDE.md` §11c.
+
+## Credentials
+
+None are in this repo. Supabase URL and anon key are embedded in the app (public by design); Alpaca,
+Polygon and the GitHub PAT live in the Supabase `app_config` table; Cloudflare and GitHub deploy
+tokens are repo secrets. See `CLAUDE.md` §0.
