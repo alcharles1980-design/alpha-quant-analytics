@@ -996,6 +996,28 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v662 — Most Traded Now: every column sortable (Jul 28 2026)
+
+Click any header to sort, click again to reverse; active column marked gold with a direction arrow.
+
+**Sorting runs over the FULL result set, not the displayed 100.** The fetch previously sliced to the
+top 100 by 60-minute before storing, so sorting within that slice would have made "top by 1 minute"
+actually mean *"top by 1 minute among the top 100 by 60 minutes"* — a different and wrong question
+that would have looked entirely plausible on screen. All ~600 active names are now held in state and
+the slice happens **after** the sort. That is why this needed more than an `onClick`.
+
+**A window column sorts by whichever quantity is on top.** Each cell shows both, and the rank toggle
+decides which leads, so the sort resolves to the same one — clicking 15 MIN while ranking by shares
+sorts by shares. Sorting by a number the user cannot see would be indefensible.
+
+**Nulls sort last in both directions** — a missing value is not "smallest", and a name with no session
+row should not lead an ascending sort ahead of names that genuinely traded once.
+
+Values live on the row objects (`t60`/`v60`/`sessT`/`sessV`/`avgSize`), so the comparator can read
+them — the v581 failure was a header that *looked* sortable while its values sat only in a side map.
+
+---
+
 ### v661 — Most Traded Now: session totals + auto-refresh countdown (Jul 28 2026)
 
 **SESSION column** — cumulative trades and shares for **whichever session is currently open**. It
