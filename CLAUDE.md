@@ -996,6 +996,47 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v659 — Most Actives: ⚡ Most Traded Now tab (Jul 27 2026)
+
+A live leaderboard of what is trading heaviest right now, ranked by **trades in the last 60 complete
+minutes**, with 30 / 15 / 3 / 1-minute columns beside it.
+
+**The feed follows the CLOCK, not the tab.** BOATS between 20:00–04:00 ET, the consolidated tape
+otherwise, because "right now" means whichever venue is actually open. Found the hard way: a first
+scan at 23:53 ET returned **zero bars** on `sip` because every SIP session had closed hours earlier.
+
+**Candidate pool** is the live session's own actives table (already activity-screened), pulled with
+**Range-header pagination** — `&limit=N` does not lift the PostgREST cap (§5.1b). During RTH there is
+no scan table, so Alpaca's most-actives screener is the pool instead.
+
+**`ltSessionDate()` handles the overnight date roll.** The BOATS session beginning 20:00 ET is stamped
+the **following** calendar date (§5.1c), so between 20:00 and midnight the correct `session_date` is
+tomorrow's. A naive "today in ET" returns an empty pool and the tab silently shows nothing — the same
+shape as the `shortlist_signal` `dt-1` bug. Verified across all four session windows.
+
+**Why bar-derived counts are acceptable here, measured rather than assumed.** BOATS bars exclude odd
+lots, so thin names undercount — but a *ranking* is driven by the heaviest names, and there bars match
+the raw tape exactly. Over the same 15-minute window:
+
+```
+rank by BARS : SOXL KORU SOXS DRAM SKHY MU SNDK NVDA
+rank by TAPE : SOXL KORU SOXS DRAM SKHY MU SNDK NVDA
+13/15 identical positions · 1 pairwise inversion out of 105
+SOXL/KORU/SOXS/DRAM/MU all 0% missed; the gaps are COIN (0 vs 77) and AMD (42%), both far down
+```
+
+**Cost measured before building** (§5.2): 3,135 symbols over 60 minutes = **7 requests, 506 KB, 0.9s**.
+Pagination tokens are followed, and a failed page or a hit pagination guard sets `truncated`, which
+renders an explicit warning rather than a quietly short ranking.
+
+**`isPanelTab`** replaces eleven separate `session!=='shortlist'` render gates. A tab that renders its
+own panel now flips one flag instead of requiring someone to find all eleven and miss one — the
+"fixed two of three call sites" failure in §5.1a.
+
+Complete minutes only, refreshed every 60s while auto-refresh is on.
+
+---
+
 ### v658 — Most Actives: ON PACE now shows how much to trust itself (Jul 27 2026)
 
 `data_integrity_check()` had been warning **hourly, unread**, that the after-market pace curve has a

@@ -13843,8 +13843,12 @@ function MostActivesPage(p){
   // sortBy is a constant now (the By Volume / By Trades toggle was removed), so it is no longer a
   // refetch trigger — dropping it from the dep array keeps RTH from re-running the whole
   // market-cap enrichment for no reason.
+  // Tabs that render their OWN panel instead of the shared actives table. Kept as one flag so a new
+  // tab does not have to hunt down eleven separate `session!=='shortlist'` gates and miss one —
+  // exactly the 'fixed two of three call sites' failure §5.1a warns about.
+  var isPanelTab=(session==='shortlist'||session==='livetrade');
   var needsAlpaca=(session!=='overnight'&&session!=='premarket'&&session!=='aftermarket'&&session!=='shortlist');
-  useEffect(function(){if(session==='shortlist')return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[topN,autoRefresh,p.alpKey,p.alpSecret,session,refreshTrigger]);
+  useEffect(function(){if(isPanelTab)return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[topN,autoRefresh,p.alpKey,p.alpSecret,session,refreshTrigger]);
 
   // Keep a ref to the latest fetchData so the interval always calls current state.
   var fetchRef=useRef(fetchData);fetchRef.current=fetchData;
@@ -13852,7 +13856,7 @@ function MostActivesPage(p){
   // keys are present. (Previously the toggle gated fetches but never ran a timer.)
   useEffect(function(){
     if(!autoRefresh)return;
-    if(session==='shortlist')return; // shortlist has its own poller above
+    if(isPanelTab)return; // these tabs have their own pollers
     if(needsAlpaca&&(!p.alpKey||!p.alpSecret))return;
     // Poll a little under each scanner's cadence so new rankings surface promptly without
     // hammering Supabase: overnight-actives runs every 10 min, premarket-actives every 3 min
@@ -13901,6 +13905,36 @@ function MostActivesPage(p){
   // sessions, so all three take SIP; overnight is the BOATS ATS. Measured with after-market LIVE at
   // 18:30 ET before enabling it: sip 0.9s old and two-sided, boats 52,242s stale (the overnight
   // session had long closed), iex one-sided with ap:0 as ever. All four tabs are now covered.
+  // ---- MOST TRADED NOW -------------------------------------------------------------------------
+  // A leaderboard of what is trading heaviest at this moment, independent of which session tab you
+  // are on. The feed is chosen by the ET CLOCK rather than by the tab, because "right now" means
+  // whichever venue is actually open: BOATS runs 20:00-04:00, the consolidated tape the rest.
+  // Verified the hard way — a first scan at 23:53 ET returned ZERO bars on sip because the SIP
+  // sessions had all closed hours earlier.
+  var liveNowFeed=function(){
+    var h=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(new Date()));
+    return (h>=20||h<4)?'boats':'sip';
+  };
+  // Which session table holds the right candidate pool for the venue that is open now.
+  var liveNowTable=function(){
+    var h=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(new Date()));
+    if(h>=20||h<4)return 'overnight_actives';
+    if(h<9)return 'premarket_actives';
+    if(h<16)return null;                 // RTH: the screener is the pool, not a scan table
+    return 'aftermarket_actives';
+  };
+  // Which session_date the live venue's rows are stamped with. NOT simply "today in ET": the BOATS
+  // overnight session beginning 20:00 ET is stamped the FOLLOWING calendar date (§5.1c), so between
+  // 20:00 and midnight the correct date is tomorrow's. Getting this wrong returns an empty pool and
+  // the tab silently shows nothing — the same shape as the shortlist_signal dt-1 bug.
+  var ltSessionDate=function(){
+    var f=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+    var now=new Date();
+    var h=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(now));
+    if(h>=20)return f.format(new Date(now.getTime()+86400000));   // overnight rolls to tomorrow
+    return f.format(now);
+  };
+  var LIVE_WINDOWS=[60,30,15,3,1];
   var LIVE_FEED={overnight:'boats',premarket:'sip',rth:'sip',aftermarket:'sip'};
   var liveFeed=LIVE_FEED[session]||null;
   var isBoatsView=!!liveFeed;   // name kept: every column gate already references it
@@ -14202,6 +14236,84 @@ function MostActivesPage(p){
     }catch(e){setSlErr(e&&e.message?e.message:'failed');setShortlist([]);}
     setSlLoading(false);
   };
+  // ---- MOST TRADED NOW: scan + rank -------------------------------------------------------------
+  var s_lt=useState(null),ltRows=s_lt[0],setLtRows=s_lt[1];
+  var s_lte=useState(null),ltErr=s_lte[0],setLtErr=s_lte[1];
+  var s_ltm=useState(null),ltMeta=s_ltm[0],setLtMeta=s_ltm[1];
+  var fetchLiveTraded=async function(){
+    if(!p.alpKey||!p.alpSecret){setLtErr('Alpaca keys not loaded yet.');return;}
+    setLtErr(null);
+    try{
+      var feed=liveNowFeed(), tbl=liveNowTable();
+      // Candidate pool. During RTH there is no scan table, so Alpaca's own most-actives screener is
+      // the pool; otherwise the session's actives table already holds everything trading in it.
+      var pool=[];
+      if(tbl){
+        // Range-header pagination — `&limit=N` does NOT lift the PostgREST cap (§5.1b).
+        for(var pg=0;pg<6;pg++){
+          var rr=await fetch(SB_URL+'/rest/v1/'+tbl+'?session_date=eq.'+ltSessionDate()+'&select=ticker&order=ticker.asc',
+            {headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Range-Unit':'items','Range':(pg*1000)+'-'+(pg*1000+999)}});
+          if(!rr.ok)break;
+          var pj=await rr.json();
+          for(var pi=0;pi<pj.length;pi++)pool.push(pj[pi].ticker);
+          if(pj.length<1000)break;
+        }
+      }else{
+        var sr=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by=trades&top=300','X-Alpaca-Base':'data'}});
+        if(sr.ok){var sj=await sr.json();pool=((sj||{}).most_actives||[]).map(function(x){return x.symbol;});}
+      }
+      if(!pool.length){setLtErr('No candidate universe for the current session.');setLtRows([]);return;}
+      // Anchor the minute index ONCE so the minutes requested and the minutes summed cannot straddle
+      // a boundary (same rule as the 20s sweep).
+      var nowMin=Math.floor(Date.now()/60000);
+      var startIso=new Date((nowMin-61)*60000).toISOString().slice(0,17)+'00Z';
+      var bars={},reqs=0,truncated=false;
+      for(var ci=0;ci<pool.length;ci+=500){
+        var chunk=pool.slice(ci,ci+500);
+        var path='/v2/stocks/bars?timeframe=1Min&feed='+feed+'&limit=10000&start='+startIso
+                +'&symbols='+encodeURIComponent(chunk.join(','));
+        var guard=0;
+        while(path&&guard<12){
+          var br=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+          reqs++;guard++;
+          if(!br.ok){truncated=true;break;}
+          var bj=await br.json();
+          var bb=bj.bars||{};
+          for(var sym in bb){(bars[sym]=bars[sym]||[]).push.apply(bars[sym],bb[sym]);}
+          // MUST follow the token: a 60-minute full-universe scan paginates, and ignoring it would
+          // silently drop bars — the failure class this project keeps getting bitten by.
+          path=bj.next_page_token?(path.split('&page_token')[0]+'&page_token='+encodeURIComponent(bj.next_page_token)):null;
+          if(guard>=12&&path)truncated=true;
+        }
+      }
+      var out=[];
+      for(var sy in bars){
+        var w={};for(var wi=0;wi<LIVE_WINDOWS.length;wi++)w[LIVE_WINDOWS[wi]]=0;
+        var list=bars[sy];
+        for(var bi=0;bi<list.length;bi++){
+          var bt=Date.parse(list[bi].t);if(!isFinite(bt))continue;
+          var ago=nowMin-Math.floor(bt/60000);
+          if(ago<1||ago>60)continue;            // complete minutes only, same rule as the sweep
+          var n=(typeof list[bi].n==='number')?list[bi].n:0;
+          for(var wj=0;wj<LIVE_WINDOWS.length;wj++)if(ago<=LIVE_WINDOWS[wj])w[LIVE_WINDOWS[wj]]+=n;
+        }
+        if(w[60]>0)out.push({symbol:sy,t60:w[60],t30:w[30],t15:w[15],t3:w[3],t1:w[1]});
+      }
+      out.sort(function(a,b){return b.t60-a.t60;});
+      setLtRows(out.slice(0,100));
+      setLtMeta({feed:feed,pool:pool.length,scanned:Object.keys(bars).length,active:out.length,
+                 reqs:reqs,truncated:truncated,at:Date.now()});
+    }catch(e){setLtErr(String(e&&e.message||e));}
+  };
+  useEffect(function(){if(session==='livetrade')fetchLiveTraded();},[session,refreshTrigger]);
+  useEffect(function(){
+    if(session!=='livetrade'||!autoRefresh)return;
+    var id=setInterval(function(){if(!document.hidden)fetchLiveTraded();},60000);
+    return function(){clearInterval(id);};
+  },[session,autoRefresh,p.alpKey,p.alpSecret]);
+
   useEffect(function(){if(session==='shortlist')fetchShortlist();},[session,refreshTrigger,slDate]);
   // Available chain dates + the rolling accuracy summary. Loaded once when the tab opens.
   useEffect(function(){
@@ -14450,7 +14562,7 @@ function MostActivesPage(p){
     <div style={card}>
       {/* Session toggle */}
       <div style={{display:'flex',gap:4,marginBottom:8}}>
-        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['shortlist','\u2605 AI Predictor']].map(function(s){
+        {[['premarket','Pre-Market'],['rth','RTH'],['aftermarket','After-Market'],['overnight','Overnight (BOATS)'],['livetrade','\u26A1 Most Traded Now'],['shortlist','\u2605 AI Predictor']].map(function(s){
           // Clicking the tab you are ALREADY on must be a no-op. It used to run
           // setActives(null) unconditionally, which blanked the table — and because
           // `session` was unchanged, the loader effect's dependency array never fired,
@@ -14469,7 +14581,7 @@ function MostActivesPage(p){
           in the flex row, which forced it onto a line of its own on narrow screens and wasted a
           full row. Everything now packs left and wraps only when genuinely out of width. */}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        {session!=='shortlist'&&<div style={{display:'flex',gap:4}}>
+        {!isPanelTab&&<div style={{display:'flex',gap:4}}>
           {[10,20,50,100].map(function(n){
             return <button key={n} onClick={function(){setTopN(n);}}
               style={{padding:'5px 8px',borderRadius:6,fontSize:9,fontFamily:F,fontWeight:600,cursor:'pointer',
@@ -14480,7 +14592,7 @@ function MostActivesPage(p){
         </div>}
         {/* Label + buttons wrapped together so "Type:" can never wrap away from the buttons it
             labels, which is what left it orphaned at the end of the Top-N row. */}
-        {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:4}}>
+        {!isPanelTab&&<div style={{display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Type:</span>
           {[['all','All'],['stocks','Stocks'],['etf','ETFs']].map(function(t){
             return <button key={t[0]} onClick={function(){setAssetType(t[0]);}}
@@ -14509,7 +14621,7 @@ function MostActivesPage(p){
       {err&&<div style={{marginTop:6,padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F}}>{err}</div>}
 
       {/* Price filter */}
-      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
+      {!isPanelTab&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Price:</span>
         <input value={minPrice} onChange={function(e){setMinPrice(e.target.value);}} placeholder="Min" type="number" step="0.01"
           style={{width:60,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -14519,7 +14631,7 @@ function MostActivesPage(p){
       </div>}
 
       {/* Market Cap filter */}
-      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+      {!isPanelTab&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Mkt Cap:</span>
         <input value={minCap} onChange={function(e){setMinCap(e.target.value);}} placeholder="Min (B)" type="number" step="0.1"
           style={{width:65,background:C.bgInput,border:'1px solid '+C.border,borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -14530,7 +14642,7 @@ function MostActivesPage(p){
       </div>}
 
       {/* Trade count filter */}
-      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+      {!isPanelTab&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Trades:</span>
         <input value={minTrades} onChange={function(e){setMinTrades(e.target.value);}} placeholder="Min" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((minTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -14541,7 +14653,7 @@ function MostActivesPage(p){
       </div>}
 
       {/* Average trade count filter (typical per session, not this session) */}
-      {session!=='shortlist'&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+      {!isPanelTab&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
         <span style={{fontSize:8,fontFamily:F,color:C.txtDim,fontWeight:600}}>Avg Trades:</span>
         <input value={minAvgTrades} onChange={function(e){setAvgTouched(true);setMinAvgTrades(e.target.value);}} placeholder="Min" type="number" step="1"
           style={{width:65,background:C.bgInput,border:'1px solid '+((minAvgTrades!=='')?C.blue+'66':C.border),borderRadius:4,color:C.txtBright,fontFamily:F,fontSize:9,padding:'4px 6px',outline:'none'}}/>
@@ -14555,7 +14667,7 @@ function MostActivesPage(p){
     {/* Baseline-building notice: explains empty AVERAGE / VS AVERAGE columns on a session table
         that hasn't accumulated prior sessions yet, and states that the Avg Trades filter is
         inactive so the row count isn't mistaken for a filter result. */}
-    {session!=='shortlist'&&actives&&actives.length>0&&!hasAnyBaseline&&<div style={{marginBottom:14,padding:'8px 12px',background:C.blue+'12',border:'1px solid '+C.blue+'35',borderRadius:8,color:C.blue,fontSize:8.5,fontFamily:F,lineHeight:1.5}}>
+    {!isPanelTab&&actives&&actives.length>0&&!hasAnyBaseline&&<div style={{marginBottom:14,padding:'8px 12px',background:C.blue+'12',border:'1px solid '+C.blue+'35',borderRadius:8,color:C.blue,fontSize:8.5,fontFamily:F,lineHeight:1.5}}>
       Baseline still building for this session. The AVERAGE and VS AVERAGE columns compare each stock against its own prior sessions, and none are on record yet, so they show {'\u2014'}. The Avg Trades filter is inactive until a baseline exists (otherwise it would hide every row). Averages appear from the next session onward.
     </div>}
 
@@ -14566,6 +14678,44 @@ function MostActivesPage(p){
         Either leg ALONE is near baseline (27-36%), which is why both are scored.
         Scored 0-100 rather than hard-filtered: the winning cohort was only n=10, so a hard
         cutoff would imply more precision than the sample supports. */}
+    {session==='livetrade'&&<div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8,marginBottom:8}}>
+        <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F}}>{'\u26A1'} Most Traded Now</div>
+        {ltMeta&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>
+          {ltMeta.active+' names traded in the last 60 min \u00B7 feed '+ltMeta.feed
+           +' \u00B7 '+ltMeta.pool+' scanned \u00B7 '+ltMeta.reqs+' requests'}
+        </div>}
+      </div>
+      {ltErr&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Most Traded Now unavailable: {ltErr}</div>}
+      {ltMeta&&ltMeta.truncated&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Scan was incomplete \u2014 some pages failed or hit the pagination guard, so this ranking may be missing names.</div>}
+      {!ltRows&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Scanning\u2026</div>}
+      {ltRows&&ltRows.length===0&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Nothing has traded in the last 60 minutes on the venue that is open now.</div>}
+      {ltRows&&ltRows.length>0&&<div style={{overflowX:'auto'}}>
+        <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F}}>
+          <thead><tr>
+            {[['#',''],['SYMBOL',''],['60 MIN','trades'],['30 MIN','trades'],['15 MIN','trades'],['3 MIN','trades'],['1 MIN','trades']].map(function(h,i){
+              return <th key={i} style={{textAlign:i<2?'left':'right',padding:'5px 9px',color:i===2?C.gold:C.txtDim,
+                fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>
+                {h[0]}{h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;
+            })}
+          </tr></thead>
+          <tbody>
+            {ltRows.map(function(r,i){
+              return <tr key={r.symbol}>
+                <td style={{padding:'4px 9px',color:C.txtDim,fontSize:9}}>{i+1}</td>
+                <td style={{padding:'4px 9px',color:C.txtBright,fontSize:10,fontWeight:700}}>{r.symbol}</td>
+                <td style={{padding:'4px 9px',textAlign:'right',color:C.gold,fontSize:10,fontWeight:700}}>{fmtVol(r.t60)}</td>
+                <td style={{padding:'4px 9px',textAlign:'right',color:C.txt,fontSize:10}}>{fmtVol(r.t30)}</td>
+                <td style={{padding:'4px 9px',textAlign:'right',color:C.txt,fontSize:10}}>{fmtVol(r.t15)}</td>
+                <td style={{padding:'4px 9px',textAlign:'right',color:r.t3?C.txt:C.txtDim,fontSize:10}}>{fmtVol(r.t3)}</td>
+                <td style={{padding:'4px 9px',textAlign:'right',color:r.t1?C.accent:C.txtDim,fontSize:10,fontWeight:r.t1?700:400}}>{fmtVol(r.t1)}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Trade counts over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes, ranked by the 60-minute column. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
+    </div>}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
         <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F,marginBottom:6}}>{'\u2605'} AI Predictor</div>
@@ -14868,7 +15018,7 @@ function MostActivesPage(p){
     </div>}
 
     {/* Most Actives Table */}
-    {session!=='shortlist'&&filteredCapped&&filteredCapped.length>0&&<div style={card}>
+    {!isPanelTab&&filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
         {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':'Most Active Stocks'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>
       <div style={{overflowX:'auto'}}>
@@ -14988,18 +15138,18 @@ function MostActivesPage(p){
       </div>
     </div>}
 
-    {session!=='shortlist'&&!loading&&actives&&filtered.length===0&&<div style={card}>
+    {!isPanelTab&&!loading&&actives&&filtered.length===0&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
         No stocks match the current filters{actives.length?' ('+actives.length+' in this session)':''}.
         <div style={{marginTop:6,fontSize:8.5,opacity:0.8}}>Try clearing Avg Trades, Trades, or Mkt Cap {'\u2014'} the defaults (min 500 trades, min 100 avg trades, min $0.5B cap, stocks only) are tuned for the Overnight tab and can be restrictive on other sessions.</div>
       </div>
     </div>}
 
-    {session!=='shortlist'&&loading&&(!actives||actives.length===0)&&<div style={card}>
+    {!isPanelTab&&loading&&(!actives||actives.length===0)&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.gold,fontSize:10,fontFamily:F}}>Loading market data...</div>
     </div>}
 
-    {session!=='shortlist'&&!loading&&!actives&&!err&&<div style={card}>
+    {!isPanelTab&&!loading&&!actives&&!err&&<div style={card}>
       <div style={{textAlign:'center',padding:20,color:C.txtDim,fontSize:10,fontFamily:F}}>
         {!p.alpKey?'Waiting for Alpaca API keys...':'Tap Refresh to load data.'}
       </div>
