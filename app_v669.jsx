@@ -13360,12 +13360,17 @@ function CompoundTrackerPage(p){
   var s3=useState(null),trades=s3[0],setTrades=s3[1];
   var s4=useState({}),form=s4[0],setForm=s4[1];
   var s5=useState(false),busy=s5[0],setBusy=s5[1];
-  var s6=useState(1000000),target=s6[0],setTarget=s6[1];
+  var s6=useState(100000),perBucketTarget=s6[0],setPerBucketTarget=s6[1];
+  // The RPC is called from load(), which is not re-created when the target changes; a ref keeps it
+  // reading the current value without making load() a dependency of itself.
+  var perBucketTargetRef=useRef(100000);perBucketTargetRef.current=perBucketTarget;
+  var s7=useState({}),addF=s7[0],setAddF=s7[1];
 
   var load=async function(){
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/compound_bucket_state',
-        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:'{}'});
+        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+         body:JSON.stringify({target_per_bucket:perBucketTargetRef.current})});
       if(!r.ok)throw new Error('bucket state '+r.status);
       setSt(await r.json());
       // Range headers, not &limit= — the cap is not liftable by limit (§5.1b).
@@ -13375,7 +13380,7 @@ function CompoundTrackerPage(p){
       setErr(null);
     }catch(e){setErr(String(e.message||e));}
   };
-  useEffect(function(){load();},[]);
+  useEffect(function(){load();},[perBucketTarget]);
 
   var post=async function(path,body,method){
     setBusy(true);
@@ -13411,24 +13416,65 @@ function CompoundTrackerPage(p){
   var setF=function(key,field,val){var nf={};for(var k in form)nf[k]=form[k];nf[key]=Object.assign({},nf[key]||{});nf[key][field]=val;setForm(nf);};
   var inp={background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:11,border:'1px solid '+C.border,borderRadius:5,padding:'4px 6px',width:'100%'};
 
+  // Portfolio figures are a SUM, never an average. Ten independent books do not have "an" average
+  // growth — bucket 3 at 4x and bucket 7 at 0.4x average to 2.2x, which describes neither. The
+  // spread is the informative statistic, so it is what gets shown.
   var totals=(function(){
-    if(!st)return null;
-    var seed=0,now=0,closed=0,wins=0,pnl=0,rets=[];
-    st.forEach(function(b){seed+=Number(b.seed_capital);now+=Number(b.capital_now);
-      closed+=b.closed_trades;wins+=b.wins;pnl+=Number(b.realised_pnl);
-      if(b.avg_return_pct!=null)rets.push(Number(b.avg_return_pct));});
-    var avg=rets.length?rets.reduce(function(a,x){return a+x;},0)/rets.length:null;
-    // Trades needed per bucket to reach the target, at the realised average return.
-    // n = ln(target/current) / ln(1+r). Stated per BUCKET because each compounds separately.
-    var perBucketTarget=target/(st.length||1);
-    var need=null;
-    if(avg!=null&&avg>0){
-      var perNow=now/(st.length||1);
-      need=Math.ceil(Math.log(perBucketTarget/perNow)/Math.log(1+avg/100));
-    }
-    return {seed:seed,now:now,closed:closed,wins:wins,pnl:pnl,avg:avg,need:need,
-            perBucketTarget:perBucketTarget,growth:seed>0?now/seed:1};
+    if(!st||!st.length)return null;
+    var inj=0,now=0,pnl=0,closed=0,wins=0,live=0;
+    var growths=[],expect=[];
+    st.forEach(function(b){
+      inj+=Number(b.injected);now+=Number(b.capital_now);pnl+=Number(b.realised_pnl);
+      closed+=b.closed_trades;wins+=b.wins;
+      if(b.open_ticker)live++;
+      if(b.growth_x!=null)growths.push({id:b.bucket_id,g:Number(b.growth_x)});
+      if(b.avg_return_pct!=null)expect.push({id:b.bucket_id,r:Number(b.avg_return_pct)});
+    });
+    growths.sort(function(a,b2){return a.g-b2.g;});
+    var med=growths.length?(growths.length%2?growths[(growths.length-1)/2].g
+             :(growths[growths.length/2-1].g+growths[growths.length/2].g)/2):null;
+    var traded=st.filter(function(b){return b.closed_trades>0;});
+    return {inj:inj,now:now,pnl:pnl,closed:closed,wins:wins,live:live,
+      best:growths.length?growths[growths.length-1]:null,
+      worst:growths.length?growths[0]:null, med:med,
+      spread:growths.length>1?(growths[growths.length-1].g-growths[0].g):null,
+      profitable:expect.filter(function(x){return x.r>0;}).length,
+      losing:expect.filter(function(x){return x.r<=0;}).length,
+      tradedCount:traded.length,
+      portGrowth:inj>0?now/inj:null};
   })();
+
+  var addBucket=async function(){
+    var amt=Number(addF.amt||100);
+    if(!(amt>0)){setErr('Enter a starting amount.');return;}
+    setBusy(true);
+    try{
+      var nextId=1;(st||[]).forEach(function(b){if(b.bucket_id>=nextId)nextId=b.bucket_id+1;});
+      var r=await fetch(SB_URL+'/rest/v1/compound_buckets',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=representation'},
+        body:JSON.stringify({id:nextId,label:(addF.label||('Bucket '+nextId)),seed_capital:amt})});
+      if(!r.ok)throw new Error((await r.text()).slice(0,160));
+      // Capital arrives as an EVENT so growth stays honest — new money must not read as profit.
+      await fetch(SB_URL+'/rest/v1/compound_capital_events',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({bucket_id:nextId,amount:amt,note:'initial seed'})});
+      setAddF({});await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);
+  };
+  var reseed=async function(b){
+    var amt=Number((form['r'+b.bucket_id]||{}).amt);
+    if(!(amt>0)){setErr('Enter an amount to add.');return;}
+    setBusy(true);
+    try{
+      await fetch(SB_URL+'/rest/v1/compound_capital_events',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({bucket_id:b.bucket_id,amount:amt,note:'added capital'})});
+      var nf={};for(var k in form)nf[k]=form[k];nf['r'+b.bucket_id]={};setForm(nf);
+      await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);
+  };
 
   return <div style={{padding:'18px 20px 60px',maxWidth:1500,margin:'0 auto'}}>
     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
@@ -13438,37 +13484,54 @@ function CompoundTrackerPage(p){
     <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:14}}>Ten independent streams. Each rolls its own realised profit into its next trade; a loss is taken on the rolled balance, not the seed.</div>
     {err&&<div style={{padding:'7px 11px',background:C.warn+'15',border:'1px solid '+C.warn+'40',borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
 
-    {totals&&<div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
-      {[['Seed','$'+totals.seed.toFixed(2),C.txtDim],
-        ['Capital now','$'+totals.now.toFixed(2),totals.now>=totals.seed?C.accent:C.warn],
-        ['Realised P&L',(totals.pnl>=0?'+$':'-$')+Math.abs(totals.pnl).toFixed(2),totals.pnl>=0?C.accent:C.warn],
-        ['Growth',totals.growth.toFixed(3)+'\u00D7',C.gold],
-        ['Closed trades',String(totals.closed),C.txtBright],
-        ['Win rate',totals.closed?((totals.wins/totals.closed*100).toFixed(0)+'%'):'\u2014',C.txtBright],
-        ['Avg return/trade',totals.avg==null?'\u2014':(totals.avg>=0?'+':'')+totals.avg.toFixed(2)+'%',totals.avg>=0?C.accent:C.warn]
-      ].map(function(t,i){
-        return <div key={i} style={{flex:'1 1 130px',minWidth:118,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'8px 11px'}}>
+    {totals&&<div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
+      {[['Capital in','$'+totals.inj.toFixed(2),C.txtDim,'total injected, incl. reseeds'],
+        ['Value now','$'+totals.now.toFixed(2),totals.now>=totals.inj?C.accent:C.warn,'sum of '+st.length+' separate books'],
+        ['Realised P&L',(totals.pnl>=0?'+$':'-$')+Math.abs(totals.pnl).toFixed(2),totals.pnl>=0?C.accent:C.warn,null],
+        ['Portfolio growth',totals.portGrowth==null?'\u2014':totals.portGrowth.toFixed(3)+'\u00D7',C.gold,'value \u00F7 capital in'],
+        ['Closed trades',String(totals.closed),C.txtBright,totals.closed?((totals.wins/totals.closed*100).toFixed(0)+'% win'):null],
+        ['Open now',String(totals.live)+' / '+st.length,C.txtBright,'streams with a live trade']
+      ].map(function(t,i2){
+        return <div key={i2} style={{flex:'1 1 140px',minWidth:126,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'8px 11px'}}>
           <div style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>{t[0]}</div>
           <div style={{fontSize:15,color:t[2],fontFamily:F,fontWeight:700,lineHeight:1.3}}>{t[1]}</div>
+          {t[3]?<div style={{fontSize:7,color:C.txtDim,fontFamily:F,marginTop:1}}>{t[3]}</div>:null}
         </div>;
       })}
     </div>}
 
-    {totals&&<div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'11px 13px',marginBottom:16}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        <span style={{fontSize:9,color:C.txtDim,fontFamily:F}}>Target</span>
-        <input type="number" value={target} onChange={function(e){setTarget(Number(e.target.value)||0);}}
-          style={Object.assign({},inp,{width:120})}/>
-        <span style={{fontSize:9,color:C.txtDim,fontFamily:F}}>{'= $'+Math.round(totals.perBucketTarget).toLocaleString()+' per bucket'}</span>
+    {totals&&totals.tradedCount>0&&<div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'11px 13px',marginBottom:12}}>
+      <div style={{color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:700,marginBottom:6}}>Dispersion across {st.length} streams</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:14}}>
+        {[['Best',totals.best?('Bucket '+totals.best.id+' \u00B7 '+totals.best.g.toFixed(3)+'\u00D7'):'\u2014',C.accent],
+          ['Median',totals.med==null?'\u2014':totals.med.toFixed(3)+'\u00D7',C.txtBright],
+          ['Worst',totals.worst?('Bucket '+totals.worst.id+' \u00B7 '+totals.worst.g.toFixed(3)+'\u00D7'):'\u2014',C.warn],
+          ['Spread',totals.spread==null?'\u2014':totals.spread.toFixed(3)+'\u00D7',C.gold],
+          ['Positive expectancy',totals.profitable+' of '+totals.tradedCount+' traded',totals.profitable>totals.losing?C.accent:C.warn]
+        ].map(function(d,i3){
+          return <div key={i3}>
+            <div style={{fontSize:7,color:C.txtDim,fontFamily:F,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>{d[0]}</div>
+            <div style={{fontSize:12,color:d[2],fontFamily:F,fontWeight:700}}>{d[1]}</div>
+          </div>;
+        })}
       </div>
-      <div style={{fontSize:10,color:C.txt,fontFamily:F,marginTop:8,lineHeight:1.7}}>
-        {totals.avg==null?'Log some closed trades and this will show what the target actually requires.'
-         :(totals.avg<=0
-           ? <span style={{color:C.warn}}>Average return per trade is {totals.avg.toFixed(2)}%. At a negative expectancy the target is not reachable by compounding — more trades make it worse, not better.</span>
-           : <span>At your realised average of <b style={{color:C.accent}}>{totals.avg.toFixed(2)}%</b> per trade, each bucket needs about <b style={{color:C.gold}}>{totals.need}</b> more winning-on-average trades to reach ${Math.round(totals.perBucketTarget).toLocaleString()}. That is <b>{totals.need}</b> per stream, not in total.</span>)}
-      </div>
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:6,lineHeight:1.6}}>The count assumes every future trade returns the average, which no sequence does. Because losses compound too, a single {'\u2212'}50% trade needs fourteen consecutive +5% trades just to recover. Sizing the number honestly is the point of showing it.</div>
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>These are ten separate books, so there is no meaningful average growth — a bucket at 4× and one at 0.4× average to 2.2×, which describes neither. The spread is what tells you whether the result came from the method or from one lucky stream. If a single bucket carries the portfolio, that is variance rather than edge.</div>
     </div>}
+
+    <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'11px 13px',marginBottom:14,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+      <span style={{fontSize:9,color:C.txtDim,fontFamily:F}}>Target per bucket</span>
+      <input type="number" value={perBucketTarget} onChange={function(e){setPerBucketTarget(Number(e.target.value)||0);}}
+        style={Object.assign({},inp,{width:120})}/>
+      <span style={{fontSize:9,color:C.txtDim,fontFamily:F}}>{st?('\u00D7 '+st.length+' streams = $'+(perBucketTarget*st.length).toLocaleString()+' total'):''}</span>
+      <span style={{fontSize:8,color:C.txtDim,fontFamily:F,flex:'1 1 260px'}}>Each card below shows the trades <b>that bucket</b> needs from <b>its own</b> balance at <b>its own</b> realised rate. Nothing is averaged across streams.</span>
+    </div>
+
+    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+      <input placeholder="new bucket label" value={addF.label||''} onChange={function(e){var n={};for(var k in addF)n[k]=addF[k];n.label=e.target.value;setAddF(n);}} style={Object.assign({},inp,{width:170})}/>
+      <input placeholder="starting capital (100)" value={addF.amt||''} onChange={function(e){var n={};for(var k in addF)n[k]=addF[k];n.amt=e.target.value;setAddF(n);}} style={Object.assign({},inp,{width:170})}/>
+      <button disabled={busy} onClick={addBucket} style={{background:C.blue+'22',border:'1px solid '+C.blue+'66',color:C.blue,borderRadius:5,padding:'5px 13px',cursor:'pointer',fontFamily:F,fontSize:11,fontWeight:700}}>+ Add stream</button>
+      <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>New capital is logged as an injection, so it never shows up as profit.</span>
+    </div>
 
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(310px,1fr))',gap:10}}>
       {(st||[]).map(function(b){
@@ -13480,9 +13543,17 @@ function CompoundTrackerPage(p){
             <div style={{color:g>=1?C.accent:C.warn,fontSize:13,fontFamily:F,fontWeight:700}}>{'$'+Number(b.capital_now).toFixed(2)}</div>
           </div>
           <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>
-            {'seed $'+Number(b.seed_capital).toFixed(2)+' \u00B7 '+g.toFixed(3)+'\u00D7 \u00B7 '+b.closed_trades+' closed'
-             +(b.closed_trades?(' \u00B7 '+b.wins+'W/'+b.losses+'L'):'')
-             +(b.avg_return_pct!=null?(' \u00B7 avg '+Number(b.avg_return_pct).toFixed(2)+'%'):'')}
+            {'in $'+Number(b.injected).toFixed(2)+' · '+(b.growth_x==null?'—':Number(b.growth_x).toFixed(3)+'×')
+             +' · P&L '+(Number(b.realised_pnl)>=0?'+':'')+Number(b.realised_pnl).toFixed(2)
+             +' · '+b.closed_trades+' closed'+(b.closed_trades?(' '+b.wins+'W/'+b.losses+'L'):'')}
+          </div>
+          <div style={{marginTop:5,padding:'5px 7px',background:C.bgDeep,borderRadius:5}}>
+            {b.avg_return_pct==null
+              ? <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>No closed trades yet — this stream has no expectancy of its own to project from.</span>
+              : (Number(b.avg_return_pct)>0
+                 ? <span style={{fontSize:8.5,color:C.txt,fontFamily:F}}>Its own avg <b style={{color:C.accent}}>{(Number(b.avg_return_pct)>=0?'+':'')+Number(b.avg_return_pct).toFixed(2)}%</b>/trade {'→'} <b style={{color:C.gold}}>{b.trades_to_target==null?'target reached':b.trades_to_target+' more trades'}</b> to ${Number(perBucketTarget).toLocaleString()}</span>
+                 : <span style={{fontSize:8.5,color:C.warn,fontFamily:F}}>Its own avg <b>{Number(b.avg_return_pct).toFixed(2)}%</b>/trade — negative expectancy, so compounding moves this stream away from the target, not toward it.</span>)}
+            {b.best_pct!=null&&<span style={{fontSize:7.5,color:C.txtDim,fontFamily:F,display:'block',marginTop:2}}>{'best '+Number(b.best_pct).toFixed(2)+'% · worst '+Number(b.worst_pct).toFixed(2)+'%'}</span>}
           </div>
           {b.open_ticker
             ? <div style={{marginTop:9,padding:'8px 9px',background:C.gold+'11',border:'1px solid '+C.gold+'44',borderRadius:6}}>
@@ -13504,6 +13575,10 @@ function CompoundTrackerPage(p){
                 </div>
                 <button disabled={busy} onClick={function(){openTrade(b);}} style={{marginTop:6,width:'100%',background:C.gold+'22',border:'1px solid '+C.gold+'66',color:C.gold,borderRadius:5,padding:'5px 0',cursor:'pointer',fontFamily:F,fontSize:11,fontWeight:700}}>Open trade</button>
               </div>}
+          <div style={{display:'flex',gap:5,marginTop:6,alignItems:'center'}}>
+            <input placeholder="add capital" value={(form['r'+b.bucket_id]||{}).amt||''} onChange={function(e){setF('r'+b.bucket_id,'amt',e.target.value);}} style={Object.assign({},inp,{fontSize:10,padding:'3px 5px'})}/>
+            <button disabled={busy} onClick={function(){reseed(b);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'3px 9px',cursor:'pointer',fontFamily:F,fontSize:9,whiteSpace:'nowrap'}}>Inject</button>
+          </div>
         </div>;
       })}
     </div>
