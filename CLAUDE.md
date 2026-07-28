@@ -1827,7 +1827,9 @@ left as is** — do not re-investigate without a specific reason.
   greeks** (would light up already-built-but-dark greeks/GEX UI).
 - `get_app_client_keys()` / `set_app_client_key()` are anon-executable SECURITY
   DEFINER — confirm intended if they touch credentials.
-- README pinned at v261.
+- ~~README pinned at v261~~ — **fixed Jul 27 2026.** It had claimed v261 / 64 routes / ~21,800 lines
+  while the app was at v658 / 86 routes / ~36,917. Rewritten as a signpost into this file with
+  specific numbers deliberately omitted, because the README has no staleness check and §9 does.
 
 *(Resolved since last edit: the stale "pre/after-market not wired up" comment was
 fixed in v558. The stray `:` file was NOT actually gone — this line claimed it was while the
@@ -1978,7 +1980,12 @@ apart, for want of that check.
 
 ---
 
-## 12. Sandbox tools & libraries (probed Jul 25 2026 — re-verify, versions drift)
+## 12. Sandbox tools & libraries (re-verified Jul 27 2026 — re-probe if in doubt)
+
+> **This section is the SANDBOX (what the assistant can run locally). For MCP CONNECTORS —
+> Supabase, Cloudflare, Netlify — and for how code actually reaches production, see §11c.**
+> Spot-checked Jul 27 2026 and accurate: default shell is `sh` not bash, Chromium is
+> `chromium-1194`, pandas 3.0.2 / numpy 2.4.4 / scipy 1.17.1.
 
 The dev sandbox is a Linux box (`sh`, NOT bash — no `${PIPESTATUS}`, no process substitution;
 write node/py scripts to `/tmp/*.js`|`.py` via heredoc). It has full network egress (curl, pip
