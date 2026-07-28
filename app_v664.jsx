@@ -21803,6 +21803,44 @@ function MultiViewChartsPage(p){
             min:sorted[0],max:sorted[n-1],bins:bins,bw:bw,mult:mult,lnOk:lnOk};
   };
 
+  // Bars = average true range % per ET hour, coloured by session so the shape of the day reads at a
+  // glance. Dollar amount is printed on each bar because "1% of $900" and "1% of $9" are very
+  // different grid decisions.
+  var hourTRChart=function(rows){
+    if(!rows||!rows.length)return <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No hourly bars for this window.</div>;
+    var W=900,H=300,padL=46,padR=12,padT=16,padB=44;
+    var innerW=W-padL-padR,innerH=H-padT-padB;
+    var mx=0;rows.forEach(function(r){if(r.avgPct>mx)mx=r.avgPct;});
+    if(mx<=0)mx=1;
+    var bw=innerW/rows.length;
+    var Y=function(v){return padT+innerH-(v/mx)*innerH;};
+    var sessOf=function(h){return (h>=9&&h<16)?'rth':(h>=4&&h<9)?'pre':'post';};
+    var colOf=function(h){var t=sessOf(h);return t==='rth'?C.accent:(t==='pre'?C.blue:C.purple);};
+    var ticks=[0,0.5,1].map(function(f){return {v:mx*f,y:padT+innerH-f*innerH};});
+    return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block'}}>
+      {ticks.map(function(t,i){return <g key={'t'+i}>
+        <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity={i===0?1:0.35} strokeDasharray={i===0?'':'3 4'}/>
+        <text x={padL-6} y={t.y+4} textAnchor="end" fontSize="10.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{t.v.toFixed(2)+'%'}</text>
+      </g>;})}
+      {rows.map(function(r,i){
+        var x=padL+i*bw, y=Y(r.avgPct), h2=padT+innerH-y;
+        return <g key={r.hour}>
+          <rect x={x+1.5} y={y} width={Math.max(1,bw-3)} height={Math.max(1,h2)} fill={colOf(r.hour)} opacity="0.85">
+            <title>{('%02d'.replace('%02d',(r.hour<10?'0':'')+r.hour))+':00 ET \u00B7 '+r.n+' hours sampled \u00B7 avg '+r.avgPct.toFixed(3)+'% ($'+r.avgUsd.toFixed(3)+') \u00B7 median '+r.medPct.toFixed(3)+'%'}</title>
+          </rect>
+          <text x={x+bw/2} y={y-3} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{'$'+(r.avgUsd>=10?r.avgUsd.toFixed(1):r.avgUsd.toFixed(2))}</text>
+          <text x={x+bw/2} y={H-28} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={colOf(r.hour)} fontFamily={F}>{(r.hour<10?'0':'')+r.hour}</text>
+        </g>;
+      })}
+      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>hour of day, ET \u00B7 bar height = average true range %, label = average $</text>
+      {[['pre-market',C.blue],['regular hours',C.accent],['after-market',C.purple]].map(function(l,i){
+        return <g key={l[0]}>
+          <rect x={W-padR-250+i*86} y={padT+1} width={8} height={8} fill={l[1]} opacity="0.85"/>
+          <text x={W-padR-239+i*86} y={padT+8} fontSize="8" fontWeight="700" fill={l[1]} fontFamily={F}>{l[0]}</text>
+        </g>;
+      })}
+    </svg>;
+  };
   var rangeChart=function(D){
     if(!D)return <div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>Not enough data for a range distribution.</div>;
     var W=900,H=340,padL=48,padR=12,padT=18,padB=44;
@@ -21858,7 +21896,75 @@ function MultiViewChartsPage(p){
     return out;
   };
 
+  // ---- Hourly true range by TIME OF DAY ---------------------------------------------------------
+  // The daily TR distribution answers "how big is a day". This answers "WHEN in the day", which is
+  // the question that actually bears on grid timing. Needs HOURLY bars, which the page does not
+  // otherwise load, so it fetches its own series keyed to the same lookback dropdown.
+  var s_hb=useState({}),hourCache=s_hb[0],setHourCache=s_hb[1];
+  var s_hbl=useState(false),hourLoading=s_hbl[0],setHourLoading=s_hbl[1];
+  // ET hour of a UTC ms timestamp. Intl, not a fixed offset — a hardcoded -4/-5 is wrong for
+  // ~8 months of the year and was the v633 build-banner bug.
+  var etHourOf=function(ms){
+    try{return Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(new Date(ms)));}
+    catch(e){return null;}
+  };
+  var fetchHourly=async function(periodKey){
+    if(!sym||!p.apiKey)return;
+    var key=sym+'|'+periodKey;
+    if(hourCache[key])return;                       // cached per ticker+period; the dropdown flips freely
+    setHourLoading(true);
+    try{
+      var def=null;VT_PERIODS.forEach(function(pp){if(pp.k===periodKey)def=pp;});
+      if(!def)def=VT_PERIODS[2];
+      var to=new Date(), from=new Date();
+      if(def.days!=null)from.setUTCDate(from.getUTCDate()-def.days);
+      else from.setUTCMonth(from.getUTCMonth()-def.months);
+      var iso=function(d){return d.toISOString().slice(0,10);};
+      var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(sym)
+             +'/range/1/hour/'+iso(from)+'/'+iso(to)+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+      var bars=[],guard=0;
+      while(url&&guard<12){
+        var r=await fetch(url);
+        if(!r.ok)break;
+        var j=await r.json();
+        bars=bars.concat(j.results||[]);
+        guard++;
+        // MUST follow next_url. Measured: 12 months of hourly bars is 4,006 bars across FIVE pages
+        // despite limit=50000 — Polygon truncates near ~7,500 and paginates (§5.1b). Ignoring it
+        // silently drops most of the year.
+        url=j.next_url?(j.next_url+'&apiKey='+p.apiKey):null;
+      }
+      // True range against the PRIOR HOUR's close, so the first bar of each day carries the
+      // overnight gap — which is why the 04:00 bucket runs high and is worth seeing, not hiding.
+      var byHour={};
+      for(var i=1;i<bars.length;i++){
+        var pc=bars[i-1].c,b=bars[i];
+        if(!(pc>0))continue;
+        var tr=Math.max(b.h-b.l,Math.abs(b.h-pc),Math.abs(b.l-pc));
+        if(!isFinite(tr)||tr<0)continue;
+        var h=etHourOf(b.t);
+        if(h==null)continue;
+        (byHour[h]=byHour[h]||[]).push({d:tr,pct:tr/pc*100});
+      }
+      var out=[];
+      for(var hk in byHour){
+        var v=byHour[hk];
+        var sp=0,sd=0;for(var k2=0;k2<v.length;k2++){sp+=v[k2].pct;sd+=v[k2].d;}
+        var ps=v.map(function(x){return x.pct;}).sort(function(a,b2){return a-b2;});
+        out.push({hour:+hk,n:v.length,avgPct:sp/v.length,avgUsd:sd/v.length,
+                  medPct:ps.length%2?ps[(ps.length-1)/2]:(ps[ps.length/2-1]+ps[ps.length/2])/2});
+      }
+      out.sort(function(a,b3){return a.hour-b3.hour;});
+      var nc={};for(var ck in hourCache)nc[ck]=hourCache[ck];
+      nc[key]={rows:out,bars:bars.length};
+      setHourCache(nc);
+    }catch(e){/* additive — the rest of the card must survive */}
+    setHourLoading(false);
+  };
+  useEffect(function(){if(sym&&p.apiKey)fetchHourly(drPeriod);},[sym,drPeriod,p.apiKey]);
+
   var started=sym!=='';
+
   var etNow=asof?fullStamp(asof.getTime(),'intraday'):'';
 
   return <div style={{maxWidth:920,margin:'0 auto',padding:'0 4px'}}>
@@ -22157,6 +22263,18 @@ function MultiViewChartsPage(p){
                     </tbody>
                   </table>
                 </div>
+                {(function(){
+                  var hc=hourCache[sym+'|'+drPeriod];
+                  return <div style={{marginTop:12,borderTop:'1px solid '+C.border,paddingTop:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
+                      <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>True Range by Hour of Day</div>
+                      <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{hc?(hc.bars+' hourly bars \u00B7 same lookback as above'):(hourLoading?'loading hourly bars\u2026':'')}</div>
+                    </div>
+                    <div style={{marginTop:8}}>{hc?hourTRChart(hc.rows):
+                      <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>{hourLoading?'Loading hourly bars\u2026':'No hourly data.'}</div>}</div>
+                    <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each bar is the average true range for that clock hour across the selected lookback, computed on 1-hour bars against the PRIOR hour's close. The dollar figure above each bar is the same quantity in cash, because 1% of a $900 stock and 1% of a $9 one are very different grid decisions; hover a bar for the median as well, which is the more robust figure when a single session dominates. <b>The 04:00 bar runs high by construction</b> \u2014 it is the first hour after the overnight break, so its true range absorbs the gap from the prior evening's close. That is real risk rather than an artefact, but it is gap risk, not intraday churn.</div>
+                  </div>;
+                })()}
                 <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>True range is Wilder's max(high−low, |high−prior close|, |low−prior close|), so overnight gaps count — a stock that gaps 4% then trades a quiet session genuinely moved, and a grid sitting across that gap is skipped straight through it. Each day is divided by its OWN prior close. Note this differs on purpose from the ATR ladder elsewhere in the app, which divides by the latest close so its recent windows compare at today's price; over a year that convention would understate any day when the stock traded at a very different price, so the ATR figure here can differ slightly from the ladder's. The gold curve is a lognormal fit — the right family for a strictly positive, right-skewed quantity, where the returns histogram above uses a normal. The multiples table reads directly as grid width: a grid spanning 1× ATR is fully worked on the share of sessions shown, and one spanning 2× much less often.</div>
               </div>;
             })()}
