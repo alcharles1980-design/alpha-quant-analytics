@@ -13440,7 +13440,11 @@ function CompoundTrackerPage(p){
       inj+=Number(b.injected);now+=Number(b.capital_now);pnl+=Number(b.realised_pnl);
       closed+=b.closed_trades;wins+=b.wins;
       if(b.open_ticker)live++;
-      if(b.growth_x!=null)growths.push({id:b.bucket_id,g:Number(b.growth_x)});
+      // DISPERSION IS OVER TRADED STREAMS ONLY. An untouched bucket sits at exactly 1.000x by
+      // definition, so including the nine that have never traded made "worst" name a bucket that
+      // had done nothing, dragged the median to 1.000x, and produced a spread that measured how
+      // many buckets were idle rather than how differently they performed.
+      if(b.closed_trades>0&&b.growth_x!=null)growths.push({id:b.bucket_id,g:Number(b.growth_x)});
       if(b.avg_return_pct!=null)expect.push({id:b.bucket_id,r:Number(b.avg_return_pct)});
     });
     growths.sort(function(a,b2){return a.g-b2.g;});
@@ -13573,7 +13577,10 @@ function CompoundTrackerPage(p){
     </div>}
 
     {totals&&totals.tradedCount>0&&<div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,padding:'11px 13px',marginBottom:12}}>
-      <div style={{color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:700,marginBottom:6}}>Dispersion across {st.length} streams</div>
+      <div style={{color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:700,marginBottom:6}}>
+        {'Dispersion across '+totals.tradedCount+' traded stream'+(totals.tradedCount===1?'':'s')
+         +(totals.tradedCount<st.length?(' \u00B7 '+(st.length-totals.tradedCount)+' still untouched'):'')}
+      </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:14}}>
         {[['Best',totals.best?('Bucket '+totals.best.id+' \u00B7 '+totals.best.g.toFixed(3)+'\u00D7'):'\u2014',C.accent],
           ['Median',totals.med==null?'\u2014':totals.med.toFixed(3)+'\u00D7',C.txtBright],
@@ -13587,7 +13594,8 @@ function CompoundTrackerPage(p){
           </div>;
         })}
       </div>
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>These are ten separate books, so there is no meaningful average growth — a bucket at 4× and one at 0.4× average to 2.2×, which describes neither. The spread is what tells you whether the result came from the method or from one lucky stream. If a single bucket carries the portfolio, that is variance rather than edge.</div>
+      {totals.tradedCount<2&&<div style={{fontSize:8.5,color:C.gold,fontFamily:F,marginTop:6,lineHeight:1.6}}>Only {totals.tradedCount} stream has traded, so there is no dispersion to measure yet — best, median and worst are all the same bucket. These become meaningful once several streams have a few closed trades each.</div>}
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>Untouched streams are excluded: a bucket that has never traded sits at exactly 1.000{'\u00D7'} and would otherwise be reported as the "worst" performer. These are separate books, so there is no meaningful average growth — a bucket at 4× and one at 0.4× average to 2.2×, which describes neither. The spread is what tells you whether the result came from the method or from one lucky stream. If a single bucket carries the portfolio, that is variance rather than edge.</div>
     </div>}
 
     {chain&&chain.length>0&&<div style={{padding:'8px 11px',background:C.warn+'12',border:'1px solid '+C.warn+'44',borderRadius:7,marginBottom:12}}>
