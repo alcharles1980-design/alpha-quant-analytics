@@ -13368,6 +13368,10 @@ function CompoundTrackerPage(p){
   var s8=useState(null),chain=s8[0],setChain=s8[1];
   var s9=useState(null),confirm=s9[0],setConfirm=s9[1];      // pending destructive action
   var s10=useState({n:10,seed:100}),resetF=s10[0],setResetF=s10[1];
+  var s11=useState({}),expanded=s11[0],setExpanded=s11[1];   // which bucket cards are open
+  var s12=useState(null),timeline=s12[0],setTimeline=s12[1];
+  var s13=useState(null),editId=s13[0],setEditId=s13[1];     // trade being edited inline
+  var s14=useState({}),editF=s14[0],setEditF=s14[1];
 
   var load=async function(){
     try{
@@ -13383,6 +13387,9 @@ function CompoundTrackerPage(p){
       var ch=await fetch(SB_URL+'/rest/v1/rpc/compound_chain_check',
         {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:'{}'});
       if(ch.ok)setChain(await ch.json());
+      var tl=await fetch(SB_URL+'/rest/v1/rpc/compound_bucket_timeline',
+        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:'{}'});
+      if(tl.ok)setTimeline(await tl.json());
       setErr(null);
     }catch(e){setErr(String(e.message||e));}
   };
@@ -13470,6 +13477,30 @@ function CompoundTrackerPage(p){
       await load();setErr(null);
     }catch(e){setErr(String(e.message||e));}
     setBusy(false);setConfirm(null);
+  };
+  var saveEdit=async function(t){
+    var f=editF||{};
+    var body={};
+    if(f.ticker!=null&&f.ticker!=='')body.ticker=String(f.ticker).toUpperCase().trim();
+    if(f.entry!=null&&f.entry!=='')body.entry_price=Number(f.entry);
+    if(f.tgt!=null)body.target_price=(f.tgt===''?null:Number(f.tgt));
+    if(f.cap!=null&&f.cap!=='')body.capital_in=Number(f.cap);
+    if(f.exit!=null){
+      // exit and closed_at move together — the DB constraint requires it, and a trade that is
+      // "closed" without a price would corrupt every figure downstream.
+      if(f.exit===''){body.exit_price=null;body.closed_at=null;}
+      else{body.exit_price=Number(f.exit);body.closed_at=t.closed_at||new Date().toISOString();}
+    }
+    if(!Object.keys(body).length){setEditId(null);return;}
+    setBusy(true);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/compound_trades?id=eq.'+t.id,{method:'PATCH',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify(body)});
+      if(!r.ok)throw new Error((await r.text()).slice(0,170));
+      setEditId(null);setEditF({});await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);
   };
   var exportCsv=function(){
     var rows=[['bucket','ticker','entry','target','exit','capital_in','return_pct','pnl','opened','closed']];
@@ -13651,6 +13682,62 @@ function CompoundTrackerPage(p){
             <input placeholder="add capital" value={(form['r'+b.bucket_id]||{}).amt||''} onChange={function(e){setF('r'+b.bucket_id,'amt',e.target.value);}} style={Object.assign({},inp,{fontSize:10,padding:'3px 5px'})}/>
             <button disabled={busy} onClick={function(){reseed(b);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'3px 9px',cursor:'pointer',fontFamily:F,fontSize:9,whiteSpace:'nowrap'}}>Inject</button>
           </div>
+          {(function(){
+            var tl=(timeline||[]).filter(function(x){return x.bucket_id===b.bucket_id;});
+            var isOpen=!!expanded['b'+b.bucket_id];
+            var events=tl.filter(function(x){return x.kind!=='inject';}).length;
+            return <div style={{marginTop:7,borderTop:'1px solid '+C.border,paddingTop:6}}>
+              <div onClick={function(){var n={};for(var k in expanded)n[k]=expanded[k];n['b'+b.bucket_id]=!isOpen;setExpanded(n);}}
+                style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:8.5,color:C.txtDim,fontFamily:F,fontWeight:700}}>
+                  {(isOpen?'\u25BC':'\u25B6')+' History ('+events+' event'+(events===1?'':'s')+')'}
+                </span>
+                {tl.length>1&&<span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>
+                  {'$'+Number(tl[0].balance_after).toFixed(2)+' \u2192 $'+Number(tl[tl.length-1].balance_after).toFixed(2)}
+                </span>}
+              </div>
+              {isOpen&&<div style={{marginTop:6}}>
+                {/* balance path: the compounding made visible, which a table of returns is not */}
+                {tl.length>1&&(function(){
+                  var vals=tl.map(function(x){return Number(x.balance_after);});
+                  var lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals);
+                  if(hi===lo){lo=lo*0.98;hi=hi*1.02;}
+                  var W2=260,H2=44;
+                  var pts=vals.map(function(v,k){
+                    return (vals.length===1?W2/2:(k/(vals.length-1))*W2)+','+(H2-((v-lo)/(hi-lo))*H2);
+                  }).join(' ');
+                  var seed=Number(tl[0].injected_to_date)||vals[0];
+                  var seedY=H2-((seed-lo)/(hi-lo))*H2;
+                  return <svg viewBox={'0 0 '+W2+' '+H2} style={{width:'100%',height:44,display:'block',marginBottom:5}}>
+                    <line x1="0" y1={seedY} x2={W2} y2={seedY} stroke={C.txtDim} strokeWidth="1" strokeDasharray="3 3" opacity="0.6"/>
+                    <polyline points={pts} fill="none" stroke={vals[vals.length-1]>=seed?C.accent:C.warn} strokeWidth="1.8"/>
+                  </svg>;
+                })()}
+                <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:8.5}}>
+                  <tbody>
+                    {tl.map(function(x){
+                      var isInj=(x.kind==='inject'),isOpenT=(x.kind==='open');
+                      return <tr key={x.seq}>
+                        <td style={{padding:'2px 4px',color:C.txtDim,width:18}}>{x.seq}</td>
+                        <td style={{padding:'2px 4px',color:isInj?C.blue:(isOpenT?C.gold:C.txtBright),fontWeight:700}}>
+                          {isInj?'+ capital':(x.ticker||'')}
+                        </td>
+                        <td style={{padding:'2px 4px',textAlign:'right',color:x.return_pct==null?C.txtDim:(Number(x.return_pct)>=0?C.accent:C.warn)}}>
+                          {isInj?('$'+Number(x.amount).toFixed(2)):(x.return_pct==null?'open':(Number(x.return_pct)>=0?'+':'')+Number(x.return_pct).toFixed(2)+'%')}
+                        </td>
+                        <td style={{padding:'2px 4px',textAlign:'right',color:Number(x.pnl)>0?C.accent:(Number(x.pnl)<0?C.warn:C.txtDim)}}>
+                          {Number(x.pnl)===0?'':((Number(x.pnl)>=0?'+':'')+Number(x.pnl).toFixed(2))}
+                        </td>
+                        <td style={{padding:'2px 4px',textAlign:'right',color:C.txtBright,fontWeight:700}}>{'$'+Number(x.balance_after).toFixed(2)}</td>
+                        <td style={{padding:'2px 4px',textAlign:'right',color:C.txtDim}}>{x.growth_after==null?'':Number(x.growth_after).toFixed(3)+'\u00D7'}</td>
+                        <td style={{padding:'2px 4px',textAlign:'right',color:C.txtDim,fontSize:7.5}}>{String(x.at_time).slice(5,10)}</td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
+              </div>}
+            </div>;
+          })()}
         </div>;
       })}
     </div>
@@ -13666,23 +13753,41 @@ function CompoundTrackerPage(p){
             {trades.map(function(t){
               var ret=t.exit_price!=null?((t.exit_price-t.entry_price)/t.entry_price*100):null;
               var pnl=ret!=null?(t.capital_in*ret/100):null;
+              var ed=(editId===t.id);
+              var ei={background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:9,border:'1px solid '+C.accent+'66',borderRadius:4,padding:'1px 4px',width:'100%'};
+              var cell={padding:'3px 8px',borderBottom:'1px solid '+C.border+'44'};
+              if(ed) return <tr key={t.id} style={{background:C.accent+'08'}}>
+                <td style={Object.assign({textAlign:'left',color:C.txtDim},cell)}>{t.bucket_id}</td>
+                <td style={cell}><input value={editF.ticker!=null?editF.ticker:t.ticker} onChange={function(e){var n={};for(var k in editF)n[k]=editF[k];n.ticker=e.target.value;setEditF(n);}} style={ei}/></td>
+                <td style={cell}><input value={editF.entry!=null?editF.entry:t.entry_price} onChange={function(e){var n={};for(var k in editF)n[k]=editF[k];n.entry=e.target.value;setEditF(n);}} style={ei}/></td>
+                <td style={cell}><input value={editF.tgt!=null?editF.tgt:(t.target_price||'')} onChange={function(e){var n={};for(var k in editF)n[k]=editF[k];n.tgt=e.target.value;setEditF(n);}} style={ei}/></td>
+                <td style={cell}><input placeholder="blank = reopen" value={editF.exit!=null?editF.exit:(t.exit_price||'')} onChange={function(e){var n={};for(var k in editF)n[k]=editF[k];n.exit=e.target.value;setEditF(n);}} style={ei}/></td>
+                <td style={cell}><input value={editF.cap!=null?editF.cap:t.capital_in} onChange={function(e){var n={};for(var k in editF)n[k]=editF[k];n.cap=e.target.value;setEditF(n);}} style={ei}/></td>
+                <td colSpan="4" style={Object.assign({textAlign:'right',color:C.txtDim,fontSize:8},cell)}>Clearing exit reopens the trade. Changing capital may raise a chain break — that is reported, not hidden.</td>
+                <td style={Object.assign({textAlign:'right'},cell)}>
+                  <button disabled={busy} onClick={function(){saveEdit(t);}} style={{background:C.accent+'22',border:'1px solid '+C.accent+'66',color:C.accent,borderRadius:4,padding:'1px 8px',cursor:'pointer',fontFamily:F,fontSize:9,fontWeight:700}}>save</button>
+                  <button onClick={function(){setEditId(null);setEditF({});}} style={{marginLeft:4,background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:4,padding:'1px 6px',cursor:'pointer',fontFamily:F,fontSize:9}}>cancel</button>
+                </td>
+              </tr>;
               return <tr key={t.id}>
-                <td style={{padding:'3px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'44'}}>{t.bucket_id}</td>
-                <td style={{padding:'3px 8px',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{t.ticker}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{Number(t.entry_price).toFixed(4)}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'44'}}>{t.target_price?Number(t.target_price).toFixed(4):'\u2014'}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{t.exit_price?Number(t.exit_price).toFixed(4):'\u2014'}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'44'}}>{'$'+Number(t.capital_in).toFixed(2)}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:ret==null?C.txtDim:(ret>=0?C.accent:C.warn),fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{ret==null?'open':(ret>=0?'+':'')+ret.toFixed(2)+'%'}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:pnl==null?C.txtDim:(pnl>=0?C.accent:C.warn),fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{pnl==null?'\u2014':(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2)}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,fontSize:8,borderBottom:'1px solid '+C.border+'44'}}>{String(t.opened_at).slice(0,10)}</td>
-                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,fontSize:8,borderBottom:'1px solid '+C.border+'44'}}>{t.closed_at?String(t.closed_at).slice(0,10):'\u2014'}</td>
-                <td style={{padding:'3px 6px',textAlign:'right',borderBottom:'1px solid '+C.border+'44'}}>
+                <td style={Object.assign({textAlign:'left',color:C.txtDim},cell)}>{t.bucket_id}</td>
+                <td style={Object.assign({textAlign:'left',color:C.txtBright,fontWeight:700},cell)}>{t.ticker}</td>
+                <td style={Object.assign({textAlign:'right',color:C.txt},cell)}>{Number(t.entry_price).toFixed(4)}</td>
+                <td style={Object.assign({textAlign:'right',color:C.txtDim},cell)}>{t.target_price?Number(t.target_price).toFixed(4):'\u2014'}</td>
+                <td style={Object.assign({textAlign:'right',color:C.txt},cell)}>{t.exit_price?Number(t.exit_price).toFixed(4):'\u2014'}</td>
+                <td style={Object.assign({textAlign:'right',color:C.txtDim},cell)}>{'$'+Number(t.capital_in).toFixed(2)}</td>
+                <td style={Object.assign({textAlign:'right',color:ret==null?C.txtDim:(ret>=0?C.accent:C.warn),fontWeight:700},cell)}>{ret==null?'open':(ret>=0?'+':'')+ret.toFixed(2)+'%'}</td>
+                <td style={Object.assign({textAlign:'right',color:pnl==null?C.txtDim:(pnl>=0?C.accent:C.warn),fontWeight:700},cell)}>{pnl==null?'\u2014':(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2)}</td>
+                <td style={Object.assign({textAlign:'right',color:C.txtDim,fontSize:8},cell)}>{String(t.opened_at).slice(0,10)}</td>
+                <td style={Object.assign({textAlign:'right',color:C.txtDim,fontSize:8},cell)}>{t.closed_at?String(t.closed_at).slice(0,10):'\u2014'}</td>
+                <td style={Object.assign({textAlign:'right'},cell)}>
                   {confirm==='del'+t.id
                     ? <span><button disabled={busy} onClick={function(){delTrade(t.id);}} style={{background:C.warn+'22',border:'1px solid '+C.warn+'66',color:C.warn,borderRadius:4,padding:'1px 7px',cursor:'pointer',fontFamily:F,fontSize:9,fontWeight:700}}>delete</button>
                         <button onClick={function(){setConfirm(null);}} style={{marginLeft:4,background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:4,padding:'1px 6px',cursor:'pointer',fontFamily:F,fontSize:9}}>no</button></span>
-                    : <button onClick={function(){setConfirm('del'+t.id);}} title="Delete this trade. Later trades keep the capital they actually deployed; any resulting mismatch is reported as a chain break rather than silently rewritten."
-                        style={{background:'transparent',border:'none',color:C.txtDim,cursor:'pointer',fontFamily:F,fontSize:11,padding:'0 4px'}}>{'\u00D7'}</button>}
+                    : <span>
+                        <button onClick={function(){setEditId(t.id);setEditF({});}} title="Edit this trade" style={{background:'transparent',border:'none',color:C.txtDim,cursor:'pointer',fontFamily:F,fontSize:10,padding:'0 3px'}}>{'\u270E'}</button>
+                        <button onClick={function(){setConfirm('del'+t.id);}} title="Delete this trade" style={{background:'transparent',border:'none',color:C.txtDim,cursor:'pointer',fontFamily:F,fontSize:11,padding:'0 3px'}}>{'\u00D7'}</button>
+                      </span>}
                 </td>
               </tr>;
             })}
