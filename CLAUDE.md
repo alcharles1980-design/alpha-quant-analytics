@@ -996,6 +996,25 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v663 — Most Traded Now: LAST trade price column (Jul 28 2026)
+
+Final column: the most recent **print** on whichever venue is open, from `trades/latest` on the
+tab's current feed.
+
+**Fetched for the whole pool, not the displayed 100.** The column is sortable, and pricing only the
+visible rows would silently mean *"highest price among the top 100 by trades"* — the same trap v662
+fixed for the window columns. Costs ~3 extra requests per 60s refresh, chunked at 500 like the bars.
+
+**A real print, not the bar close.** The rest of the tab is complete-minutes-only and bar-derived; a
+price is the one figure where the last *aggregate* is a poor substitute for the last *trade*. It dims
+past `QUOTE_STALE_S`, because on a thin overnight name the last print is often hours old and a bright
+price would imply it is current. Uses `fmtQuotePx`, so sub-dollar names keep 4 decimals (v651).
+
+The fetch is wrapped so a price failure cannot lose the ranking — the column blanks, the leaderboard
+survives.
+
+---
+
 ### v662 — Most Traded Now: every column sortable (Jul 28 2026)
 
 Click any header to sort, click again to reverse; active column marked gold with a direction arrow.

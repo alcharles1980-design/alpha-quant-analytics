@@ -14330,6 +14330,29 @@ function MostActivesPage(p){
           if(guard>=12&&path)truncated=true;
         }
       }
+      // Last PRINT for the whole pool, not just the 100 displayed — the column is sortable, and
+      // sorting over a subset would silently mean "highest price among the top 100 by trades".
+      // Same 500-chunking as the bars; ~3 extra requests per 60s refresh.
+      var lastPx={};
+      for(var li=0;li<pool.length;li+=500){
+        var lch=pool.slice(li,li+500);
+        try{
+          var lr=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+            'X-Alpaca-Path':'/v2/stocks/trades/latest?feed='+feed+'&symbols='+encodeURIComponent(lch.join(',')),
+            'X-Alpaca-Base':'data'}});
+          reqs++;
+          if(lr.ok){
+            var lj=await lr.json(), lt=lj.trades||{};
+            for(var lsym in lt){
+              var tp=lt[lsym];
+              if(tp&&typeof tp.p==='number'&&tp.p>0){
+                var lts=tp.t?Date.parse(tp.t):NaN;
+                lastPx[lsym]={p:tp.p,age:isFinite(lts)?Math.max(0,(Date.now()-lts)/1000):null};
+              }
+            }
+          }
+        }catch(e){/* price is additive — a failure must not lose the ranking */}
+      }
       var out=[];
       for(var sy in bars){
         // TWO accumulators per window: `n` is the TRADE COUNT, `v` is SHARE VOLUME. Both arrive in
@@ -14352,6 +14375,8 @@ function MostActivesPage(p){
         if(w[60]>0)out.push({symbol:sy,
           t60:w[60],t30:w[30],t15:w[15],t3:w[3],t1:w[1],
           v60:sv[60],v30:sv[30],v15:sv[15],v3:sv[3],v1:sv[1],
+          lastPx:(lastPx[sy]?lastPx[sy].p:null),
+          lastAge:(lastPx[sy]?lastPx[sy].age:null),
           sessT:(sessTot[sy]&&isFinite(sessTot[sy].t))?sessTot[sy].t:null,
           sessV:(sessTot[sy]&&isFinite(sessTot[sy].v))?sessTot[sy].v:null,
           avgSize:w[60]>0?(sv[60]/w[60]):null});
@@ -14778,6 +14803,7 @@ function MostActivesPage(p){
         var fieldOf=function(colKey){
           if(colKey==='sym')return null;
           if(colKey==='avg')return 'avgSize';
+          if(colKey==='px')return 'lastPx';
           if(colKey==='sess')return shares?'sessV':'sessT';
           var n=colKey.slice(1);
           return (shares?'v':'t')+n;
@@ -14792,7 +14818,7 @@ function MostActivesPage(p){
           if(bv==null)return -1;
           return dir*(av-bv);
         }).slice(0,100);
-        var COLS=[['#','',null],['SYMBOL','','sym'],['60 MIN','trades / shares','w60'],['30 MIN','trades / shares','w30'],['15 MIN','trades / shares','w15'],['3 MIN','trades / shares','w3'],['1 MIN','trades / shares','w1'],['SESSION','trades / shares','sess'],['AVG SIZE','shares per trade','avg']];
+        var COLS=[['#','',null],['SYMBOL','','sym'],['60 MIN','trades / shares','w60'],['30 MIN','trades / shares','w30'],['15 MIN','trades / shares','w15'],['3 MIN','trades / shares','w3'],['1 MIN','trades / shares','w1'],['SESSION','trades / shares','sess'],['AVG SIZE','shares per trade','avg'],['LAST','trade price','px']];
         return <div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F}}>
           <thead><tr>
@@ -14832,13 +14858,24 @@ function MostActivesPage(p){
                   <div style={{color:C.txtDim,fontSize:7.5}}>{r.sessV==null?'':fmtVol(ltRank==='shares'?r.sessT:r.sessV)}</div>
                 </td>
                 <td style={{padding:'4px 9px',textAlign:'right',color:C.txtDim,fontSize:9}}>{r.avgSize==null?'\u2014':Math.round(r.avgSize)}</td>
+                {(function(){
+                  // Dim a print older than QUOTE_STALE_S, same rule as the session tabs — on a thin
+                  // name the last trade can be hours old and a bright price would imply it is current.
+                  var stale=(r.lastAge==null||r.lastAge>QUOTE_STALE_S);
+                  var tip=r.lastPx==null?'No print on this venue.'
+                    :('Last print '+(r.lastAge==null?'age unknown':fmtAge(r.lastAge)+' ago')+(stale?' — stale, not a current price.':'.'));
+                  return <td title={tip} style={{padding:'4px 9px',textAlign:'right',whiteSpace:'nowrap',
+                      color:r.lastPx==null?C.txtDim:C.txtBright,fontSize:10,fontWeight:600,opacity:stale?0.45:1}}>
+                    {r.lastPx==null?'\u2014':fmtQuotePx(r.lastPx)}
+                  </td>;
+                })()}
               </tr>;
             })}
           </tbody>
         </table>
       </div>;
       })()}
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open \u2014 overnight, pre-market, regular hours or after-market \u2014 so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Every column sorts \u2014 click a header, click again to reverse. A window column sorts by whichever quantity is on top, so it always sorts by the number you can see. Sorting runs over ALL names that traded in the last 60 minutes, not just the 100 displayed, so \u201Ctop by 1 minute\u201D really is the top by 1 minute. Rows with no value sort last in both directions, because missing is not the same as zero. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open \u2014 overnight, pre-market, regular hours or after-market \u2014 so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Every column sorts \u2014 click a header, click again to reverse. A window column sorts by whichever quantity is on top, so it always sorts by the number you can see. Sorting runs over ALL names that traded in the last 60 minutes, not just the 100 displayed, so \u201Ctop by 1 minute\u201D really is the top by 1 minute. Rows with no value sort last in both directions, because missing is not the same as zero. LAST is the most recent print on the venue that is open, fetched for every ranked name rather than only the visible 100 so the column sorts honestly; it dims when the print is more than five minutes old, which on a thin name it often is. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
     </div>}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
