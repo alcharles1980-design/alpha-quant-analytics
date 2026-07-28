@@ -14,8 +14,19 @@
  */
 const fs = require('fs');
 const path = require('path');
-const parser = require('@babel/parser');
-const traverse = require('@babel/traverse').default;
+// Fail with an instruction, not a stack trace. A brand-new environment clones the repo and runs
+// the §4 checks BEFORE `npm install` — node_modules is not committed — and a raw
+// "Cannot find module '@babel/parser'" reads like the repo is broken rather than like a missing
+// step. Verified by cold-cloning to a fresh directory.
+let parser, traverse;
+try {
+  parser = require('@babel/parser');
+  traverse = require('@babel/traverse').default;
+} catch (e) {
+  console.error('\n  preflight needs dependencies. Run:  npm install\n' +
+                '  (node_modules is not committed; the handoff gap check works without it)\n');
+  process.exit(2);
+}
 
 const root = path.resolve(__dirname, '..');
 let failures = 0, warnings = 0;

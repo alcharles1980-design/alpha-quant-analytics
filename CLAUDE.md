@@ -15,10 +15,11 @@ verification block below before writing any code.
 
 ## Contents
 
-**Read in this order on a cold start:** §1 → §4/§4a → the last ~10 entries of §9 → §5.
+**Read in this order on a cold start:** §0 (new environment only) → §1 → §4/§4a → the last ~10 entries of §9 → §5.
 
 | § | | Why you need it |
 |---|---|---|
+| **0** | **Bootstrap a new environment** | Clone → install → checks → build. Verified cold; the build is reproducible. |
 | **1** | **Verify First** | Run before touching anything. Reconciles `git log` against §9 and states the three DB prohibitions. |
 | 2 | What this app is | One paragraph of orientation. |
 | 3 | Stack & deploy | Where things live, how a push reaches production. |
@@ -49,6 +50,48 @@ npm run preflight                # version skew · route parity · duplicate def
 Both have had **every alarm proven by deliberately breaking the file** — see §6. A check
 that has only ever printed PASS is unproven, and one that cries wolf gets ignored; this
 project has produced both within the same hour.
+
+---
+
+## 0. Bootstrap a brand-new environment (verified cold, Jul 27 2026)
+
+Every step below was run against a fresh `git clone` into an empty directory.
+
+```bash
+# 1. Clone. The repo is PUBLIC — no credentials needed.
+git clone https://github.com/alcharles1980-design/alpha-quant-analytics.git && cd alpha-quant-analytics
+
+# 2. This works IMMEDIATELY, before any install — it is pure bash:
+./scripts/handoff-gap-check.sh          # any version shipped without a §9 entry
+
+# 3. node_modules is NOT committed. Install before anything else:
+npm install                              # ~30s
+npm run preflight                        # version skew · route parity · duplicate definitions
+npm run build                            # writes dist/index.html
+
+# 4. Headless verification, once per sandbox:
+mkdir -p ~/pwtest && cd ~/pwtest && npm install playwright-core
+#    then use scripts/verify-app.js — it resolves playwright from ~/pwtest automatically
+```
+
+**The build is reproducible.** A cold clone produced a `dist/index.html` **byte-identical** to the
+committed one once the `BUILD_TS` stamp is normalised. If yours differs by more than the timestamp,
+something is genuinely wrong.
+
+**Where credentials live** — none are in the repo:
+- **Supabase URL + anon key** are embedded in the app source (`SB_URL` / `SB_KEY`); the anon key is
+  public by design and all `cached_*` tables are anon-readable.
+- **Alpaca, Polygon, GitHub PAT** live in the Supabase `app_config` table, fetched by the app through
+  the `get_app_client_keys` RPC. Read them with the Supabase connector, never commit them.
+- **App access code:** `BT`.
+- **Cloudflare / GitHub deploy** credentials are GitHub repo secrets (`CLOUDFLARE_API_TOKEN`,
+  `CLOUDFLARE_ACCOUNT_ID`); deploys run through Actions, never locally. See §11c.
+
+**What does NOT survive a new environment:** the scratch `~/pwtest` directory and every ad-hoc probe
+in it. That is deliberate — the probes were throwaway, but their boilerplate was rewritten ~82 times
+in one session, so it is committed as `scripts/verify-app.js` with the disciplines from §4a baked in
+(`capturePayloads` for drift-free reconciliation, `sampleOverTime` because a periodic defect is
+invisible to a spot check, and `clickButton` returning what it actually clicked).
 
 ---
 
