@@ -996,6 +996,19 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v666 — MV Charts: taller hour-of-day chart, % labelled per bar (Jul 28 2026)
+
+Height **300 → 600**, and each bar now carries its **average true range %** above the dollar amount.
+
+`padT` went 16 → 34 in the same change: each bar carries two stacked labels and the tallest bar
+reaches the plot top, so the upper label would have clipped at the old padding. Gridlines 3 → 5,
+since three references over a 540px plot leave too much unreferenced space to read a bar against.
+
+The percentage was the one number the chart *encoded* (bar height) but never *stated* — the dollar
+figure alone forced mental division by the share price.
+
+---
+
 ### v665 — JSX text does not process `\uXXXX` escapes (Jul 28 2026)
 
 **User-reported:** the hour chart's axis read literally `hour of day, ET \u00B7 bar height = ...`.
