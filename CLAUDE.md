@@ -996,6 +996,33 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v665 — JSX text does not process `\uXXXX` escapes (Jul 28 2026)
+
+**User-reported:** the hour chart's axis read literally `hour of day, ET \u00B7 bar height = ...`.
+
+**The rule:** `\u00B7` is an escape **inside a JS string literal**, not inside **JSX text**. In JSX
+text it is five literal characters. `<text>a \u00B7 b</text>` renders the backslash; `{'a \u00B7 b'}`
+renders the middot. Easy to get wrong because the same sequence works two lines away.
+
+**Checked the CLASS, not the instance** (§5.1a). A regex for `\uXXXX` between `>` and `<`, excluding
+anything inside quotes, found **five** occurrences — and **one predated this session** (line 12822,
+the scan-history header), so it was not purely a new mistake. All five replaced with the real
+characters. Re-scan: **zero remaining**.
+
+*Note on verifying this:* the built bundle still contains `\u2014` sequences and that is **correct** —
+Babel escapes non-ASCII when emitting **string literals**, where the escape resolves at runtime.
+Grepping the bundle proves nothing either way; only the rendered text does.
+
+**Also in v665, both requested:**
+- **The hour chart gets its own lookback dropdown**, no longer tied to the daily one. The shape of the
+  day and the size of a day are different questions — you may want 12 months of hour structure while
+  looking at 1 month of daily ranges — so sharing one control forced a false choice. Cache key is
+  `ticker|hourPeriod`.
+- **It now states plainly that it is computed on 1-hour bars**, in gold under the heading and again in
+  the footnote, since nothing else on the page uses anything but daily bars.
+
+---
+
 ### v664 — MV Charts: True Range by Hour of Day (Jul 28 2026)
 
 New block inside the Daily True Range card, on the same lookback dropdown. The daily distribution

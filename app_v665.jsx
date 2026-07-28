@@ -12819,7 +12819,7 @@ function StockClassificationPage(p){
         <button onClick={loadHist} disabled={!histTicker||loadingHist} style={{padding:'8px 16px',border:'none',borderRadius:6,background:loadingHist?C.bgInput:C.accent,color:loadingHist?C.txtDim:'#000',fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1,cursor:loadingHist?'default':'pointer'}}>{loadingHist?'Loading...':'View'}</button>
       </div>
       {tickerHist&&tickerHist.length>0&&<div style={{marginTop:10}}>
-        <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,marginBottom:6}}>{histTicker.toUpperCase()} \u2014 {tickerHist.length} scans</div>
+        <div style={{color:C.txtBright,fontSize:10,fontFamily:F,fontWeight:700,marginBottom:6}}>{histTicker.toUpperCase()} — {tickerHist.length} scans</div>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontFamily:F,fontSize:8}}>
             <thead><tr style={{background:C.bgInput,color:C.txtDim,fontSize:7}}>
@@ -14792,8 +14792,8 @@ function MostActivesPage(p){
         })}
       </div>
       {ltErr&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Most Traded Now unavailable: {ltErr}</div>}
-      {ltMeta&&ltMeta.truncated&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Scan was incomplete \u2014 some pages failed or hit the pagination guard, so this ranking may be missing names.</div>}
-      {!ltRows&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Scanning\u2026</div>}
+      {ltMeta&&ltMeta.truncated&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Scan was incomplete — some pages failed or hit the pagination guard, so this ranking may be missing names.</div>}
+      {!ltRows&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Scanning…</div>}
       {ltRows&&ltRows.length===0&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Nothing has traded in the last 60 minutes on the venue that is open now.</div>}
       {ltRows&&ltRows.length>0&&(function(){
         // Resolve the sort column to an actual row field. A WINDOW column resolves to trades or
@@ -14875,7 +14875,7 @@ function MostActivesPage(p){
         </table>
       </div>;
       })()}
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open \u2014 overnight, pre-market, regular hours or after-market \u2014 so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Every column sorts \u2014 click a header, click again to reverse. A window column sorts by whichever quantity is on top, so it always sorts by the number you can see. Sorting runs over ALL names that traded in the last 60 minutes, not just the 100 displayed, so \u201Ctop by 1 minute\u201D really is the top by 1 minute. Rows with no value sort last in both directions, because missing is not the same as zero. LAST is the most recent print on the venue that is open, fetched for every ranked name rather than only the visible 100 so the column sorts honestly; it dims when the print is more than five minutes old, which on a thin name it often is. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open — overnight, pre-market, regular hours or after-market — so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Every column sorts — click a header, click again to reverse. A window column sorts by whichever quantity is on top, so it always sorts by the number you can see. Sorting runs over ALL names that traded in the last 60 minutes, not just the 100 displayed, so “top by 1 minute” really is the top by 1 minute. Rows with no value sort last in both directions, because missing is not the same as zero. LAST is the most recent print on the venue that is open, fetched for every ranked name rather than only the visible 100 so the column sorts honestly; it dims when the print is more than five minutes old, which on a thin name it often is. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
     </div>}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
@@ -21832,7 +21832,7 @@ function MultiViewChartsPage(p){
           <text x={x+bw/2} y={H-28} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={colOf(r.hour)} fontFamily={F}>{(r.hour<10?'0':'')+r.hour}</text>
         </g>;
       })}
-      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>hour of day, ET \u00B7 bar height = average true range %, label = average $</text>
+      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>hour of day, ET · bar height = average true range %, label = average $</text>
       {[['pre-market',C.blue],['regular hours',C.accent],['after-market',C.purple]].map(function(l,i){
         return <g key={l[0]}>
           <rect x={W-padR-250+i*86} y={padT+1} width={8} height={8} fill={l[1]} opacity="0.85"/>
@@ -21900,6 +21900,10 @@ function MultiViewChartsPage(p){
   // The daily TR distribution answers "how big is a day". This answers "WHEN in the day", which is
   // the question that actually bears on grid timing. Needs HOURLY bars, which the page does not
   // otherwise load, so it fetches its own series keyed to the same lookback dropdown.
+  // The hour profile gets its OWN lookback. The daily distribution above and the time-of-day shape
+  // are different questions — you may want 12 months of hour structure while looking at 1 month of
+  // daily ranges — so tying them to one dropdown would force a false choice.
+  var s_hp=useState('3m'),hourPeriod=s_hp[0],setHourPeriod=s_hp[1];
   var s_hb=useState({}),hourCache=s_hb[0],setHourCache=s_hb[1];
   var s_hbl=useState(false),hourLoading=s_hbl[0],setHourLoading=s_hbl[1];
   // ET hour of a UTC ms timestamp. Intl, not a fixed offset — a hardcoded -4/-5 is wrong for
@@ -21961,7 +21965,7 @@ function MultiViewChartsPage(p){
     }catch(e){/* additive — the rest of the card must survive */}
     setHourLoading(false);
   };
-  useEffect(function(){if(sym&&p.apiKey)fetchHourly(drPeriod);},[sym,drPeriod,p.apiKey]);
+  useEffect(function(){if(sym&&p.apiKey)fetchHourly(hourPeriod);},[sym,hourPeriod,p.apiKey]);
 
   var started=sym!=='';
 
@@ -22264,15 +22268,25 @@ function MultiViewChartsPage(p){
                   </table>
                 </div>
                 {(function(){
-                  var hc=hourCache[sym+'|'+drPeriod];
+                  var hc=hourCache[sym+'|'+hourPeriod];
                   return <div style={{marginTop:12,borderTop:'1px solid '+C.border,paddingTop:12}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:8}}>
-                      <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>True Range by Hour of Day</div>
-                      <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{hc?(hc.bars+' hourly bars \u00B7 same lookback as above'):(hourLoading?'loading hourly bars\u2026':'')}</div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                      <div>
+                        <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>True Range by Hour of Day</div>
+                        <div style={{color:C.gold,fontSize:8,fontFamily:F,marginTop:2,fontWeight:700}}>Computed on 1-HOUR bars — independent of the daily lookback above</div>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{hc?(hc.bars+' hourly bars'):(hourLoading?'loading…':'')}</span>
+                        <select value={hourPeriod} onChange={function(e){setHourPeriod(e.target.value);}}
+                          style={{background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:700,
+                            border:'1px solid '+C.accent+'88',borderRadius:5,padding:'3px 7px',cursor:'pointer'}}>
+                          {VT_PERIODS.map(function(pp){return <option key={pp.k} value={pp.k}>{pp.label}</option>;})}
+                        </select>
+                      </div>
                     </div>
                     <div style={{marginTop:8}}>{hc?hourTRChart(hc.rows):
                       <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>{hourLoading?'Loading hourly bars\u2026':'No hourly data.'}</div>}</div>
-                    <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each bar is the average true range for that clock hour across the selected lookback, computed on 1-hour bars against the PRIOR hour's close. The dollar figure above each bar is the same quantity in cash, because 1% of a $900 stock and 1% of a $9 one are very different grid decisions; hover a bar for the median as well, which is the more robust figure when a single session dominates. <b>The 04:00 bar runs high by construction</b> \u2014 it is the first hour after the overnight break, so its true range absorbs the gap from the prior evening's close. That is real risk rather than an artefact, but it is gap risk, not intraday churn.</div>
+                    <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each bar is the average true range for that clock hour, computed on <b>1-hour bars</b> against the <b>prior hour's close</b>, across the lookback selected in this section's own dropdown — which is deliberately separate from the daily dropdown above, since the shape of the day and the size of a day are different questions. The dollar figure above each bar is the same quantity in cash, because 1% of a $900 stock and 1% of a $9 one are very different grid decisions; hover a bar for the median as well, which is the more robust figure when a single session dominates. <b>The 04:00 bar runs high by construction</b> \u2014 it is the first hour after the overnight break, so its true range absorbs the gap from the prior evening's close. That is real risk rather than an artefact, but it is gap risk, not intraday churn.</div>
                   </div>;
                 })()}
                 <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>True range is Wilder's max(high−low, |high−prior close|, |low−prior close|), so overnight gaps count — a stock that gaps 4% then trades a quiet session genuinely moved, and a grid sitting across that gap is skipped straight through it. Each day is divided by its OWN prior close. Note this differs on purpose from the ATR ladder elsewhere in the app, which divides by the latest close so its recent windows compare at today's price; over a year that convention would understate any day when the stock traded at a very different price, so the ATR figure here can differ slightly from the ladder's. The gold curve is a lognormal fit — the right family for a strictly positive, right-skewed quantity, where the returns histogram above uses a normal. The multiples table reads directly as grid width: a grid spanning 1× ATR is fully worked on the share of sessions shown, and one spanning 2× much less often.</div>
