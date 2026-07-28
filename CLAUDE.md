@@ -996,6 +996,25 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v660 — Most Traded Now: shares as well as trades (Jul 27 2026)
+
+v659 showed **trade counts** only (bar `n`). Every cell now carries **both** quantities — trades and
+**share volume** (bar `v`) — plus an **AVG SIZE** column (shares per trade over 60 minutes) and a
+**Rank by: Trades | Shares** toggle.
+
+**No extra request.** `v` was already in every bar payload and was simply being discarded.
+
+**Why both matter rather than one being a proxy for the other:** 400 trades of 10 shares and 40 trades
+of 100 shares move identical volume but are completely different flow, and a grid cares which. AVG
+SIZE makes the distinction visible without arithmetic. Whichever quantity drives the ranking is
+rendered bright and first, with the other beneath it, so the column ordering the list is the one the
+eye lands on.
+
+`ltRank` is declared **before** the fetch that reads it and is in that effect's dependency array —
+`var` hoists but its value does not, which is exactly what broke v584.
+
+---
+
 ### v659 — Most Actives: ⚡ Most Traded Now tab (Jul 27 2026)
 
 A live leaderboard of what is trading heaviest right now, ranked by **trades in the last 60 complete

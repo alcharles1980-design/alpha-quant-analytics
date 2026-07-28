@@ -14237,6 +14237,7 @@ function MostActivesPage(p){
     setSlLoading(false);
   };
   // ---- MOST TRADED NOW: scan + rank -------------------------------------------------------------
+  var s_ltr=useState('trades'),ltRank=s_ltr[0],setLtRank=s_ltr[1];
   var s_lt=useState(null),ltRows=s_lt[0],setLtRows=s_lt[1];
   var s_lte=useState(null),ltErr=s_lte[0],setLtErr=s_lte[1];
   var s_ltm=useState(null),ltMeta=s_ltm[0],setLtMeta=s_ltm[1];
@@ -14290,24 +14291,36 @@ function MostActivesPage(p){
       }
       var out=[];
       for(var sy in bars){
-        var w={};for(var wi=0;wi<LIVE_WINDOWS.length;wi++)w[LIVE_WINDOWS[wi]]=0;
+        // TWO accumulators per window: `n` is the TRADE COUNT, `v` is SHARE VOLUME. Both arrive in
+        // the same bar payload, so tracking shares costs no extra request — it was simply discarded
+        // before. They answer different questions: 400 trades of 10 shares is retail churn, 40
+        // trades of 100 shares is not, and a grid cares about which one it is.
+        var w={},sv={};
+        for(var wi=0;wi<LIVE_WINDOWS.length;wi++){w[LIVE_WINDOWS[wi]]=0;sv[LIVE_WINDOWS[wi]]=0;}
         var list=bars[sy];
         for(var bi=0;bi<list.length;bi++){
           var bt=Date.parse(list[bi].t);if(!isFinite(bt))continue;
           var ago=nowMin-Math.floor(bt/60000);
           if(ago<1||ago>60)continue;            // complete minutes only, same rule as the sweep
           var n=(typeof list[bi].n==='number')?list[bi].n:0;
-          for(var wj=0;wj<LIVE_WINDOWS.length;wj++)if(ago<=LIVE_WINDOWS[wj])w[LIVE_WINDOWS[wj]]+=n;
+          var vv=(typeof list[bi].v==='number')?list[bi].v:0;
+          for(var wj=0;wj<LIVE_WINDOWS.length;wj++)if(ago<=LIVE_WINDOWS[wj]){
+            w[LIVE_WINDOWS[wj]]+=n; sv[LIVE_WINDOWS[wj]]+=vv;
+          }
         }
-        if(w[60]>0)out.push({symbol:sy,t60:w[60],t30:w[30],t15:w[15],t3:w[3],t1:w[1]});
+        if(w[60]>0)out.push({symbol:sy,
+          t60:w[60],t30:w[30],t15:w[15],t3:w[3],t1:w[1],
+          v60:sv[60],v30:sv[30],v15:sv[15],v3:sv[3],v1:sv[1],
+          avgSize:w[60]>0?(sv[60]/w[60]):null});
       }
-      out.sort(function(a,b){return b.t60-a.t60;});
+      // Rank by whichever the user is looking at, so the leaderboard answers the question on screen.
+      out.sort(function(a,b){return ltRank==='shares'?(b.v60-a.v60):(b.t60-a.t60);});
       setLtRows(out.slice(0,100));
       setLtMeta({feed:feed,pool:pool.length,scanned:Object.keys(bars).length,active:out.length,
                  reqs:reqs,truncated:truncated,at:Date.now()});
     }catch(e){setLtErr(String(e&&e.message||e));}
   };
-  useEffect(function(){if(session==='livetrade')fetchLiveTraded();},[session,refreshTrigger]);
+  useEffect(function(){if(session==='livetrade')fetchLiveTraded();},[session,refreshTrigger,ltRank]);
   useEffect(function(){
     if(session!=='livetrade'||!autoRefresh)return;
     var id=setInterval(function(){if(!document.hidden)fetchLiveTraded();},60000);
@@ -14686,6 +14699,16 @@ function MostActivesPage(p){
            +' \u00B7 '+ltMeta.pool+' scanned \u00B7 '+ltMeta.reqs+' requests'}
         </div>}
       </div>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+        <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Rank by</span>
+        {[['trades','Trades'],['shares','Shares']].map(function(m){
+          var on=(ltRank===m[0]);
+          return <div key={m[0]} onClick={function(){setLtRank(m[0]);}}
+            style={{cursor:'pointer',padding:'3px 9px',borderRadius:6,fontSize:8.5,fontFamily:F,fontWeight:700,
+              background:on?C.gold+'22':'transparent',border:'1px solid '+(on?C.gold+'66':C.border),
+              color:on?C.gold:C.txtDim}}>{m[1]}</div>;
+        })}
+      </div>
       {ltErr&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Most Traded Now unavailable: {ltErr}</div>}
       {ltMeta&&ltMeta.truncated&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Scan was incomplete \u2014 some pages failed or hit the pagination guard, so this ranking may be missing names.</div>}
       {!ltRows&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Scanning\u2026</div>}
@@ -14693,7 +14716,7 @@ function MostActivesPage(p){
       {ltRows&&ltRows.length>0&&<div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F}}>
           <thead><tr>
-            {[['#',''],['SYMBOL',''],['60 MIN','trades'],['30 MIN','trades'],['15 MIN','trades'],['3 MIN','trades'],['1 MIN','trades']].map(function(h,i){
+            {[['#',''],['SYMBOL',''],['60 MIN','trades / shares'],['30 MIN','trades / shares'],['15 MIN','trades / shares'],['3 MIN','trades / shares'],['1 MIN','trades / shares'],['AVG SIZE','shares per trade']].map(function(h,i){
               return <th key={i} style={{textAlign:i<2?'left':'right',padding:'5px 9px',color:i===2?C.gold:C.txtDim,
                 fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>
                 {h[0]}{h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;
@@ -14704,17 +14727,25 @@ function MostActivesPage(p){
               return <tr key={r.symbol}>
                 <td style={{padding:'4px 9px',color:C.txtDim,fontSize:9}}>{i+1}</td>
                 <td style={{padding:'4px 9px',color:C.txtBright,fontSize:10,fontWeight:700}}>{r.symbol}</td>
-                <td style={{padding:'4px 9px',textAlign:'right',color:C.gold,fontSize:10,fontWeight:700}}>{fmtVol(r.t60)}</td>
-                <td style={{padding:'4px 9px',textAlign:'right',color:C.txt,fontSize:10}}>{fmtVol(r.t30)}</td>
-                <td style={{padding:'4px 9px',textAlign:'right',color:C.txt,fontSize:10}}>{fmtVol(r.t15)}</td>
-                <td style={{padding:'4px 9px',textAlign:'right',color:r.t3?C.txt:C.txtDim,fontSize:10}}>{fmtVol(r.t3)}</td>
-                <td style={{padding:'4px 9px',textAlign:'right',color:r.t1?C.accent:C.txtDim,fontSize:10,fontWeight:r.t1?700:400}}>{fmtVol(r.t1)}</td>
+                {[[r.t60,r.v60,true],[r.t30,r.v30,false],[r.t15,r.v15,false],[r.t3,r.v3,false],[r.t1,r.v1,'live']].map(function(cw,ci){
+                  var trd=cw[0],shr=cw[1],lead=cw[2];
+                  // Whichever quantity the ranking uses is shown BRIGHT and first, so the column
+                  // driving the order is the one the eye lands on.
+                  var rankShares=(ltRank==='shares');
+                  var top=rankShares?shr:trd, bot=rankShares?trd:shr;
+                  var topCol=lead===true?C.gold:(lead==='live'&&trd?C.accent:C.txt);
+                  return <td key={ci} style={{padding:'4px 9px',textAlign:'right',whiteSpace:'nowrap'}}>
+                    <div style={{color:trd?topCol:C.txtDim,fontSize:10,fontWeight:lead?700:400}}>{fmtVol(top)}</div>
+                    <div style={{color:C.txtDim,fontSize:7.5}}>{fmtVol(bot)}</div>
+                  </td>;
+                })}
+                <td style={{padding:'4px 9px',textAlign:'right',color:C.txtDim,fontSize:9}}>{r.avgSize==null?'\u2014':Math.round(r.avgSize)}</td>
               </tr>;
             })}
           </tbody>
         </table>
       </div>}
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Trade counts over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes, ranked by the 60-minute column. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. Ranked by the 60-minute column of the selected quantity. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
     </div>}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
