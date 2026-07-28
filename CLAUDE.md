@@ -996,6 +996,33 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v667 — MV Charts: hour-of-day true range in 5-MINUTE bins (Jul 28 2026)
+
+Two stacked sections sharing one lookback dropdown:
+- **1-hour bins** — one 1-hour bar per hour: how far the hour travelled in total.
+- **5-minute bins** — average of the **twelve** 5-minute bars inside that hour: the size of a typical
+  move within it.
+
+The existing chart was relabelled in heading, subtitle and axis caption, because "true range by hour"
+alone does not distinguish the two.
+
+**One chart function and one fetch, parameterised.** `hourTRChart` takes a caption; `fetchBinned`
+takes `mult`/`span` plus its cache setters. Everything downstream — true range against the prior
+bar's close, grouping by ET hour — is identical, and two copies would drift the first time one was
+edited.
+
+**The retrace-ratio table is the point:** twelve 5-minute ranges summed, divided by the hour's own
+range. Near 1 means price went one way and stayed; high means it covered the same ground repeatedly —
+the condition a grid is paid for. On NVDA over 3 months it sits around **2.9–3.3× at every hour**, so
+intraday churn is substantial and fairly uniform even though the *absolute* range varies ~5× between
+09:00 and 17:00.
+
+**Cost measured first (§5.2):** 5-minute bars are 11,904 for 3 months (2 pages, 1.5s) and 48,050 for
+12 months (5 pages, 4.3s). Polygon paginates via `next_url` well before `limit=50000`, so the page
+guard went 12 → 20.
+
+---
+
 ### v666 — MV Charts: taller hour-of-day chart, % labelled per bar (Jul 28 2026)
 
 Height **300 → 600**, and each bar now carries its **average true range %** above the dollar amount.
