@@ -21808,7 +21808,9 @@ function MultiViewChartsPage(p){
   // different grid decisions.
   var hourTRChart=function(rows){
     if(!rows||!rows.length)return <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No hourly bars for this window.</div>;
-    var W=900,H=300,padL=46,padR=12,padT=16,padB=44;
+    // Height doubled (300 -> 600). padT raised from 16 to 34 because each bar now carries TWO
+    // stacked labels above it, and the tallest bar reaches the plot top — at padT=16 they clipped.
+    var W=900,H=600,padL=46,padR=12,padT=34,padB=44;
     var innerW=W-padL-padR,innerH=H-padT-padB;
     var mx=0;rows.forEach(function(r){if(r.avgPct>mx)mx=r.avgPct;});
     if(mx<=0)mx=1;
@@ -21816,7 +21818,8 @@ function MultiViewChartsPage(p){
     var Y=function(v){return padT+innerH-(v/mx)*innerH;};
     var sessOf=function(h){return (h>=9&&h<16)?'rth':(h>=4&&h<9)?'pre':'post';};
     var colOf=function(h){var t=sessOf(h);return t==='rth'?C.accent:(t==='pre'?C.blue:C.purple);};
-    var ticks=[0,0.5,1].map(function(f){return {v:mx*f,y:padT+innerH-f*innerH};});
+    // Five gridlines now the plot is 540px tall; three left too much unreferenced space.
+    var ticks=[0,0.25,0.5,0.75,1].map(function(f){return {v:mx*f,y:padT+innerH-f*innerH};});
     return <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto',display:'block'}}>
       {ticks.map(function(t,i){return <g key={'t'+i}>
         <line x1={padL} y1={t.y} x2={W-padR} y2={t.y} stroke={C.border} strokeWidth="1" opacity={i===0?1:0.35} strokeDasharray={i===0?'':'3 4'}/>
@@ -21828,11 +21831,12 @@ function MultiViewChartsPage(p){
           <rect x={x+1.5} y={y} width={Math.max(1,bw-3)} height={Math.max(1,h2)} fill={colOf(r.hour)} opacity="0.85">
             <title>{('%02d'.replace('%02d',(r.hour<10?'0':'')+r.hour))+':00 ET \u00B7 '+r.n+' hours sampled \u00B7 avg '+r.avgPct.toFixed(3)+'% ($'+r.avgUsd.toFixed(3)+') \u00B7 median '+r.medPct.toFixed(3)+'%'}</title>
           </rect>
+          <text x={x+bw/2} y={y-13} textAnchor="middle" fontSize="9" fontWeight="700" fill={colOf(r.hour)} fontFamily={F}>{r.avgPct.toFixed(2)+'%'}</text>
           <text x={x+bw/2} y={y-3} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={C.txtDim} fontFamily={F}>{'$'+(r.avgUsd>=10?r.avgUsd.toFixed(1):r.avgUsd.toFixed(2))}</text>
           <text x={x+bw/2} y={H-28} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={colOf(r.hour)} fontFamily={F}>{(r.hour<10?'0':'')+r.hour}</text>
         </g>;
       })}
-      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>hour of day, ET · bar height = average true range %, label = average $</text>
+      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>hour of day, ET · bar height = average true range % · labels = average % and average $</text>
       {[['pre-market',C.blue],['regular hours',C.accent],['after-market',C.purple]].map(function(l,i){
         return <g key={l[0]}>
           <rect x={W-padR-250+i*86} y={padT+1} width={8} height={8} fill={l[1]} opacity="0.85"/>
