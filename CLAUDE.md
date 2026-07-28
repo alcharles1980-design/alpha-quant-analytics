@@ -996,6 +996,35 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v664 — MV Charts: True Range by Hour of Day (Jul 28 2026)
+
+New block inside the Daily True Range card, on the same lookback dropdown. The daily distribution
+answers *how big* a day is; this answers **when** in the day.
+
+**Measured before building:**
+- **12 months of 1-hour bars = 4,006 bars across FIVE pages** despite `limit=50000`. Polygon
+  truncates near ~7,500 and sets `next_url` (§5.1b) — the fetch follows it; ignoring the token drops
+  most of the year.
+- Coverage is **all 16 ET hours, 04:00–19:00**, so the chart shows the full extended day.
+- The shape is a clear U (NVDA / SOXL, 3 months): **09:00 2.05% / 6.72%** peak, 13:00 0.85% / 3.09%
+  trough, 15:00 1.04% / 3.73% close ramp, 04:00 1.50% / 7.17%.
+
+Bar height is average TR %, with the **cash amount printed on each bar** — 1% of a $900 stock and 1%
+of a $9 one are very different grid decisions. Hover gives the median, more robust when one session
+dominates.
+
+**The 04:00 bar is high by construction** and the footnote says so: it is the first hour after the
+overnight break, so its true range absorbs the gap from the prior evening's close. Real risk, but
+*gap* risk rather than intraday churn.
+
+ET hour via `Intl` with `America/New_York`, never a fixed offset (the v633 banner bug).
+
+**Caught before shipping:** I wrote `p.polyKey` for the Polygon key but this page receives it as
+`p.apiKey`. It would have failed **silently** — no error, just a section that never populated.
+Checking a prop against its call site costs one grep.
+
+---
+
 ### v663 — Most Traded Now: LAST trade price column (Jul 28 2026)
 
 Final column: the most recent **print** on whichever venue is open, from `trades/latest` on the
