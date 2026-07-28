@@ -472,6 +472,24 @@ function SectionHead(p){
   </div>;
 }
 
+function RefreshCountdown(p){
+  // Owns its own 1-second tick. Deliberately a separate component: putting the tick in
+  // MostActivesPage would re-render a 100+ row table every second for the sake of one number.
+  // Same pattern as LiveClock below.
+  var s=useState(0),setT=s[1];
+  useEffect(function(){
+    if(!p.nextAt)return;
+    var id=setInterval(function(){setT(function(x){return x+1;});},1000);
+    return function(){clearInterval(id);};
+  },[p.nextAt]);
+  if(!p.nextAt)return null;
+  var left=Math.max(0,Math.ceil((p.nextAt-Date.now())/1000));
+  // At zero the fetch is in flight; say so rather than sitting on "0s", which reads as stalled.
+  var txt=left>0?(left+'s'):'now';
+  return <span style={{fontSize:8,fontFamily:p.font,color:left<=5?p.hot:p.dim,fontWeight:left<=5?700:400}}>
+    {'next '+txt}
+  </span>;
+}
 function LiveClock(){var s=useState(new Date()),now=s[0],setNow=s[1];useEffect(function(){var id=setInterval(function(){setNow(new Date());},1000);return function(){clearInterval(id);};},[]);var days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var d=days[now.getDay()]+' '+months[now.getMonth()]+' '+now.getDate()+', '+now.getFullYear();var h=now.getHours(),m=now.getMinutes(),sec=now.getSeconds();var ampm=h>=12?'PM':'AM';h=h%12;if(h===0)h=12;var t=h+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+' '+ampm;return <div style={{textAlign:'right'}}><div style={{color:C.txtBright,fontSize:11,fontWeight:700,fontFamily:F}}>{t}</div><div style={{color:C.txtDim,fontSize:8,fontFamily:F,color:'#c8d8e8'}}>{d}</div></div>;}
 function MenuIcon(p){return <div onClick={p.onClick} style={{cursor:'pointer',padding:8}}><div style={{width:20,height:2,background:C.txtBright,marginBottom:4,borderRadius:1}}></div><div style={{width:14,height:2,background:C.txtBright,marginBottom:4,borderRadius:1}}></div><div style={{width:18,height:2,background:C.txtBright,borderRadius:1}}></div></div>;}
 function MenuDropdown(p){var ref=useRef(null);useEffect(function(){function h(e){if(ref.current&&!ref.current.contains(e.target))p.onClose();}document.addEventListener('touchstart',h);document.addEventListener('mousedown',h);return function(){document.removeEventListener('touchstart',h);document.removeEventListener('mousedown',h);};},[]);if(!p.open)return null;return <div ref={ref} style={{position:'absolute',top:44,right:12,background:C.bgCard,border:'1px solid '+C.border,borderRadius:8,boxShadow:CURRENT_THEME==='dark'?'0 8px 32px rgba(0,0,0,0.6)':'0 8px 32px rgba(0,0,0,0.15)',zIndex:100,minWidth:180,overflow:'hidden',maxHeight:'80vh',overflowY:'auto'}}>{p.items.map(function(item){if(item.type==='divider')return <div key={item.key} style={{height:1,background:C.accent,opacity:0.2,margin:'0 12px'}}></div>;if(item.type==='header')return <div key={item.key} style={{padding:'10px 16px 4px',color:C.gold,fontSize:8,fontFamily:F,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,background:C.gold+'0d'}}>{item.label}</div>;return <div key={item.key} onClick={function(){p.onSelect(item.key);p.onClose();}} style={{padding:(item.indent?'10px 16px 10px 32px':'12px 16px'),color:C.txtBright,fontSize:item.indent?10:11,fontFamily:F,fontWeight:600,letterSpacing:0.8,textTransform:'uppercase',cursor:'pointer',borderBottom:'1px solid '+C.border,display:'flex',alignItems:'center',gap:10}}><span style={{color:item.indent?C.accent:C.accent,fontSize:item.indent?12:14}}>{item.icon}</span>{item.label}</div>;})}</div>;}
@@ -13847,6 +13865,10 @@ function MostActivesPage(p){
   // tab does not have to hunt down eleven separate `session!=='shortlist'` gates and miss one —
   // exactly the 'fixed two of three call sites' failure §5.1a warns about.
   var isPanelTab=(session==='shortlist'||session==='livetrade');
+  // When the next auto-refresh is due, so the UI can count down to it. Set wherever an interval is
+  // scheduled AND again after each fire, because the cadence differs per tab (30s RTH / 90s
+  // pre+after / 180s overnight / 60s Most Traded Now / 90s AI Predictor).
+  var s_nra=useState(0),nextRefreshAt=s_nra[0],setNextRefreshAt=s_nra[1];
   var needsAlpaca=(session!=='overnight'&&session!=='premarket'&&session!=='aftermarket'&&session!=='shortlist');
   useEffect(function(){if(isPanelTab)return;if((autoRefresh||refreshTrigger>0)&&(!needsAlpaca||(p.alpKey&&p.alpSecret)))fetchData();},[topN,autoRefresh,p.alpKey,p.alpSecret,session,refreshTrigger]);
 
@@ -13862,7 +13884,11 @@ function MostActivesPage(p){
     // hammering Supabase: overnight-actives runs every 10 min, premarket-actives every 3 min
     // (its scan is ~2s now that prior closes are cached, so it can afford to be tight).
     var everyMs=(session==='overnight')?180000:(session==='premarket'||session==='aftermarket')?90000:30000;
-    var iv=setInterval(function(){if(!document.hidden&&fetchRef.current)fetchRef.current();},everyMs);
+    setNextRefreshAt(Date.now()+everyMs);
+    var iv=setInterval(function(){
+      if(!document.hidden&&fetchRef.current)fetchRef.current();
+      setNextRefreshAt(Date.now()+everyMs);
+    },everyMs);
     return function(){clearInterval(iv);};
   },[autoRefresh,p.alpKey,p.alpSecret,session,needsAlpaca]);
 
@@ -14248,21 +14274,33 @@ function MostActivesPage(p){
       var feed=liveNowFeed(), tbl=liveNowTable();
       // Candidate pool. During RTH there is no scan table, so Alpaca's own most-actives screener is
       // the pool; otherwise the session's actives table already holds everything trading in it.
-      var pool=[];
+      var pool=[],sessTot={};
       if(tbl){
         // Range-header pagination — `&limit=N` does NOT lift the PostgREST cap (§5.1b).
         for(var pg=0;pg<6;pg++){
-          var rr=await fetch(SB_URL+'/rest/v1/'+tbl+'?session_date=eq.'+ltSessionDate()+'&select=ticker&order=ticker.asc',
+          // Select the session CUMULATIVE totals alongside the ticker — same request, and it is what
+          // the SESSION column shows. Which session that is follows the venue that is open now, so
+          // the totals change meaning across the day exactly as the rest of the tab does.
+          var rr=await fetch(SB_URL+'/rest/v1/'+tbl+'?session_date=eq.'+ltSessionDate()+'&select=ticker,trades,volume&order=ticker.asc',
             {headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Range-Unit':'items','Range':(pg*1000)+'-'+(pg*1000+999)}});
           if(!rr.ok)break;
           var pj=await rr.json();
-          for(var pi=0;pi<pj.length;pi++)pool.push(pj[pi].ticker);
+          for(var pi=0;pi<pj.length;pi++){
+            pool.push(pj[pi].ticker);
+            sessTot[pj[pi].ticker]={t:Number(pj[pi].trades),v:Number(pj[pi].volume)};
+          }
           if(pj.length<1000)break;
         }
       }else{
         var sr=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
           'X-Alpaca-Path':'/v1beta1/screener/stocks/most-actives?by=trades&top=300','X-Alpaca-Base':'data'}});
-        if(sr.ok){var sj=await sr.json();pool=((sj||{}).most_actives||[]).map(function(x){return x.symbol;});}
+        if(sr.ok){
+          var sj=await sr.json();
+          var ma=(sj||{}).most_actives||[];
+          pool=ma.map(function(x){return x.symbol;});
+          // Screener returns the same two session cumulatives, so RTH is not a special case here.
+          for(var mi=0;mi<ma.length;mi++)sessTot[ma[mi].symbol]={t:Number(ma[mi].trade_count),v:Number(ma[mi].volume)};
+        }
       }
       if(!pool.length){setLtErr('No candidate universe for the current session.');setLtRows([]);return;}
       // Anchor the minute index ONCE so the minutes requested and the minutes summed cannot straddle
@@ -14311,19 +14349,26 @@ function MostActivesPage(p){
         if(w[60]>0)out.push({symbol:sy,
           t60:w[60],t30:w[30],t15:w[15],t3:w[3],t1:w[1],
           v60:sv[60],v30:sv[30],v15:sv[15],v3:sv[3],v1:sv[1],
+          sessT:(sessTot[sy]&&isFinite(sessTot[sy].t))?sessTot[sy].t:null,
+          sessV:(sessTot[sy]&&isFinite(sessTot[sy].v))?sessTot[sy].v:null,
           avgSize:w[60]>0?(sv[60]/w[60]):null});
       }
       // Rank by whichever the user is looking at, so the leaderboard answers the question on screen.
       out.sort(function(a,b){return ltRank==='shares'?(b.v60-a.v60):(b.t60-a.t60);});
       setLtRows(out.slice(0,100));
       setLtMeta({feed:feed,pool:pool.length,scanned:Object.keys(bars).length,active:out.length,
-                 reqs:reqs,truncated:truncated,at:Date.now()});
+                 reqs:reqs,truncated:truncated,at:Date.now(),
+                 sessName:tbl?tbl.replace('_actives',''):'rth'});
     }catch(e){setLtErr(String(e&&e.message||e));}
   };
   useEffect(function(){if(session==='livetrade')fetchLiveTraded();},[session,refreshTrigger,ltRank]);
   useEffect(function(){
     if(session!=='livetrade'||!autoRefresh)return;
-    var id=setInterval(function(){if(!document.hidden)fetchLiveTraded();},60000);
+    setNextRefreshAt(Date.now()+60000);
+    var id=setInterval(function(){
+      if(!document.hidden)fetchLiveTraded();
+      setNextRefreshAt(Date.now()+60000);
+    },60000);
     return function(){clearInterval(id);};
   },[session,autoRefresh,p.alpKey,p.alpSecret]);
 
@@ -14351,7 +14396,11 @@ function MostActivesPage(p){
   // tables refresh every 3 min, so anything tighter just re-reads the same rows.
   useEffect(function(){
     if(session!=='shortlist'||!autoRefresh)return;
-    var iv=setInterval(function(){if(!document.hidden)fetchShortlist();},90000);
+    setNextRefreshAt(Date.now()+90000);
+    var iv=setInterval(function(){
+      if(!document.hidden)fetchShortlist();
+      setNextRefreshAt(Date.now()+90000);
+    },90000);
     return function(){clearInterval(iv);};
   },[session,autoRefresh]);
 
@@ -14622,6 +14671,7 @@ function MostActivesPage(p){
         </button>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontSize:8,fontFamily:F,color:C.txtDim}}>Auto-refresh</span>
+          {autoRefresh&&<RefreshCountdown nextAt={nextRefreshAt} font={F} dim={C.txtDim} hot={C.gold}/>}
           <div onClick={function(){setAutoRefresh(!autoRefresh);}}
             style={{width:32,height:16,borderRadius:8,cursor:'pointer',position:'relative',transition:'background 0.2s',
               background:autoRefresh?C.accent+'80':C.border+'60'}}>
@@ -14696,6 +14746,7 @@ function MostActivesPage(p){
         <div style={{color:C.gold,fontSize:11,fontWeight:700,fontFamily:F}}>{'\u26A1'} Most Traded Now</div>
         {ltMeta&&<div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>
           {ltMeta.active+' names traded in the last 60 min \u00B7 feed '+ltMeta.feed
+           +' \u00B7 session totals: '+ltMeta.sessName
            +' \u00B7 '+ltMeta.pool+' scanned \u00B7 '+ltMeta.reqs+' requests'}
         </div>}
       </div>
@@ -14716,7 +14767,7 @@ function MostActivesPage(p){
       {ltRows&&ltRows.length>0&&<div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F}}>
           <thead><tr>
-            {[['#',''],['SYMBOL',''],['60 MIN','trades / shares'],['30 MIN','trades / shares'],['15 MIN','trades / shares'],['3 MIN','trades / shares'],['1 MIN','trades / shares'],['AVG SIZE','shares per trade']].map(function(h,i){
+            {[['#',''],['SYMBOL',''],['60 MIN','trades / shares'],['30 MIN','trades / shares'],['15 MIN','trades / shares'],['3 MIN','trades / shares'],['1 MIN','trades / shares'],['SESSION','trades / shares'],['AVG SIZE','shares per trade']].map(function(h,i){
               return <th key={i} style={{textAlign:i<2?'left':'right',padding:'5px 9px',color:i===2?C.gold:C.txtDim,
                 fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>
                 {h[0]}{h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;
@@ -14739,13 +14790,17 @@ function MostActivesPage(p){
                     <div style={{color:C.txtDim,fontSize:7.5}}>{fmtVol(bot)}</div>
                   </td>;
                 })}
+                <td style={{padding:'4px 9px',textAlign:'right',whiteSpace:'nowrap',borderLeft:'1px solid '+C.border+'55'}}>
+                  <div style={{color:r.sessT==null?C.txtDim:C.blue,fontSize:10,fontWeight:600}}>{r.sessT==null?'\u2014':fmtVol(ltRank==='shares'?r.sessV:r.sessT)}</div>
+                  <div style={{color:C.txtDim,fontSize:7.5}}>{r.sessV==null?'':fmtVol(ltRank==='shares'?r.sessT:r.sessV)}</div>
+                </td>
                 <td style={{padding:'4px 9px',textAlign:'right',color:C.txtDim,fontSize:9}}>{r.avgSize==null?'\u2014':Math.round(r.avgSize)}</td>
               </tr>;
             })}
           </tbody>
         </table>
       </div>}
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. Ranked by the 60-minute column of the selected quantity. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open \u2014 overnight, pre-market, regular hours or after-market \u2014 so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Ranked by the 60-minute column of the selected quantity. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
     </div>}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>

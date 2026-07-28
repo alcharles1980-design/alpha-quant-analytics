@@ -996,6 +996,29 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v661 — Most Traded Now: session totals + auto-refresh countdown (Jul 28 2026)
+
+**SESSION column** — cumulative trades and shares for **whichever session is currently open**. It
+means something different at 02:00 than at 14:00, so the header line names which one is in force
+(`session totals: overnight`). **No extra request:** the candidate-pool query already hits the
+session's actives table, so it now selects `trades, volume` alongside `ticker`. On RTH there is no
+scan table, but the most-actives screener returns `trade_count` and `volume`, so it is not a special
+case. Like the window columns, it follows the rank toggle — the selected quantity on top.
+
+**Auto-refresh countdown** beside the toggle, turning gold in the last five seconds and reading
+"now" while a fetch is in flight rather than sitting at "0s", which looks stalled.
+
+**`RefreshCountdown` is a separate component on purpose.** Ticking once a second inside
+`MostActivesPage` would re-render a 100+ row table every second for the sake of one number; owning
+its own interval confines the re-render to the countdown. Same pattern as the existing `LiveClock`.
+
+`nextRefreshAt` is set **both when an interval is scheduled and after each fire**, in all three
+pollers, because the cadence differs per tab — 30s RTH, 90s pre/after-market, 180s overnight, 60s
+Most Traded Now, 90s AI Predictor. Setting it only at schedule time would leave the countdown
+frozen after the first fire.
+
+---
+
 ### v660 — Most Traded Now: shares as well as trades (Jul 27 2026)
 
 v659 showed **trade counts** only (bar `n`). Every cell now carries **both** quantities — trades and
