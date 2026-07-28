@@ -21806,7 +21806,7 @@ function MultiViewChartsPage(p){
   // Bars = average true range % per ET hour, coloured by session so the shape of the day reads at a
   // glance. Dollar amount is printed on each bar because "1% of $900" and "1% of $9" are very
   // different grid decisions.
-  var hourTRChart=function(rows){
+  var hourTRChart=function(rows,caption){
     if(!rows||!rows.length)return <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>No hourly bars for this window.</div>;
     // Height doubled (300 -> 600). padT raised from 16 to 34 because each bar now carries TWO
     // stacked labels above it, and the tallest bar reaches the plot top — at padT=16 they clipped.
@@ -21836,7 +21836,7 @@ function MultiViewChartsPage(p){
           <text x={x+bw/2} y={H-28} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={colOf(r.hour)} fontFamily={F}>{(r.hour<10?'0':'')+r.hour}</text>
         </g>;
       })}
-      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>hour of day, ET · bar height = average true range % · labels = average % and average $</text>
+      <text x={padL+innerW/2} y={H-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.txtDim} fontFamily={F}>{caption}</text>
       {[['pre-market',C.blue],['regular hours',C.accent],['after-market',C.purple]].map(function(l,i){
         return <g key={l[0]}>
           <rect x={W-padR-250+i*86} y={padT+1} width={8} height={8} fill={l[1]} opacity="0.85"/>
@@ -21916,11 +21916,16 @@ function MultiViewChartsPage(p){
     try{return Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',hour12:false}).format(new Date(ms)));}
     catch(e){return null;}
   };
-  var fetchHourly=async function(periodKey){
+  var s_5m=useState({}),min5Cache=s_5m[0],setMin5Cache=s_5m[1];
+  var s_5ml=useState(false),min5Loading=s_5ml[0],setMin5Loading=s_5ml[1];
+  // One implementation for both bar sizes. `mult`/`span` pick the Polygon timeframe; everything
+  // downstream — true range against the prior bar's close, grouping by ET hour — is identical, and
+  // two copies of it would drift.
+  var fetchBinned=async function(periodKey,mult,span,cache,setCache,setLoading){
     if(!sym||!p.apiKey)return;
     var key=sym+'|'+periodKey;
-    if(hourCache[key])return;                       // cached per ticker+period; the dropdown flips freely
-    setHourLoading(true);
+    if(cache[key])return;                           // cached per ticker+period; the dropdown flips freely
+    setLoading(true);
     try{
       var def=null;VT_PERIODS.forEach(function(pp){if(pp.k===periodKey)def=pp;});
       if(!def)def=VT_PERIODS[2];
@@ -21929,9 +21934,9 @@ function MultiViewChartsPage(p){
       else from.setUTCMonth(from.getUTCMonth()-def.months);
       var iso=function(d){return d.toISOString().slice(0,10);};
       var url='https://api.polygon.io/v2/aggs/ticker/'+encodeURIComponent(sym)
-             +'/range/1/hour/'+iso(from)+'/'+iso(to)+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
+             +'/range/'+mult+'/'+span+'/'+iso(from)+'/'+iso(to)+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey;
       var bars=[],guard=0;
-      while(url&&guard<12){
+      while(url&&guard<20){
         var r=await fetch(url);
         if(!r.ok)break;
         var j=await r.json();
@@ -21963,13 +21968,16 @@ function MultiViewChartsPage(p){
                   medPct:ps.length%2?ps[(ps.length-1)/2]:(ps[ps.length/2-1]+ps[ps.length/2])/2});
       }
       out.sort(function(a,b3){return a.hour-b3.hour;});
-      var nc={};for(var ck in hourCache)nc[ck]=hourCache[ck];
+      var nc={};for(var ck in cache)nc[ck]=cache[ck];
       nc[key]={rows:out,bars:bars.length};
-      setHourCache(nc);
+      setCache(nc);
     }catch(e){/* additive — the rest of the card must survive */}
-    setHourLoading(false);
+    setLoading(false);
   };
-  useEffect(function(){if(sym&&p.apiKey)fetchHourly(hourPeriod);},[sym,hourPeriod,p.apiKey]);
+  // Both views share ONE lookback control: they are meant to be read against each other, and a
+  // second dropdown would invite comparing 3 months of hourly against 12 months of 5-minute.
+  useEffect(function(){if(sym&&p.apiKey)fetchBinned(hourPeriod,1,'hour',hourCache,setHourCache,setHourLoading);},[sym,hourPeriod,p.apiKey]);
+  useEffect(function(){if(sym&&p.apiKey)fetchBinned(hourPeriod,5,'minute',min5Cache,setMin5Cache,setMin5Loading);},[sym,hourPeriod,p.apiKey]);
 
   var started=sym!=='';
 
@@ -22276,8 +22284,8 @@ function MultiViewChartsPage(p){
                   return <div style={{marginTop:12,borderTop:'1px solid '+C.border,paddingTop:12}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
                       <div>
-                        <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>True Range by Hour of Day</div>
-                        <div style={{color:C.gold,fontSize:8,fontFamily:F,marginTop:2,fontWeight:700}}>Computed on 1-HOUR bars — independent of the daily lookback above</div>
+                        <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>True Range by Hour of Day — 1-Hour Bins</div>
+                        <div style={{color:C.gold,fontSize:8,fontFamily:F,marginTop:2,fontWeight:700}}>One 1-HOUR bar per hour: the full range of the whole hour. Independent of the daily lookback above.</div>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:6}}>
                         <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{hc?(hc.bars+' hourly bars'):(hourLoading?'loading…':'')}</span>
@@ -22288,9 +22296,45 @@ function MultiViewChartsPage(p){
                         </select>
                       </div>
                     </div>
-                    <div style={{marginTop:8}}>{hc?hourTRChart(hc.rows):
+                    <div style={{marginTop:8}}>{hc?hourTRChart(hc.rows,'hour of day, ET · ONE 1-HOUR BAR per hour · bar height = average true range % · labels = average % and average $'):
                       <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>{hourLoading?'Loading hourly bars\u2026':'No hourly data.'}</div>}</div>
                     <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each bar is the average true range for that clock hour, computed on <b>1-hour bars</b> against the <b>prior hour's close</b>, across the lookback selected in this section's own dropdown — which is deliberately separate from the daily dropdown above, since the shape of the day and the size of a day are different questions. The dollar figure above each bar is the same quantity in cash, because 1% of a $900 stock and 1% of a $9 one are very different grid decisions; hover a bar for the median as well, which is the more robust figure when a single session dominates. <b>The 04:00 bar runs high by construction</b> — it is the first hour after the overnight break, so its true range absorbs the gap from the prior evening's close. That is real risk rather than an artefact, but it is gap risk, not intraday churn.</div>
+                  </div>;
+                })()}
+                {(function(){
+                  var mc=min5Cache[sym+'|'+hourPeriod];
+                  var hcRef=hourCache[sym+'|'+hourPeriod];
+                  return <div style={{marginTop:12,borderTop:'1px solid '+C.border,paddingTop:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                      <div>
+                        <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>True Range by Hour of Day — 5-Minute Bins</div>
+                        <div style={{color:C.blue,fontSize:8,fontFamily:F,marginTop:2,fontWeight:700}}>Average of the TWELVE 5-minute bars inside each hour — the typical small move, not the hour's full span.</div>
+                      </div>
+                      <span style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{mc?(mc.bars+' five-minute bars'):(min5Loading?'loading…':'')}</span>
+                    </div>
+                    <div style={{marginTop:8}}>{mc?hourTRChart(mc.rows,'hour of day, ET · average of the 5-MINUTE bars within that hour · labels = average % and average $'):
+                      <div style={{height:170,display:'flex',alignItems:'center',justifyContent:'center',color:C.txtDim,fontFamily:F,fontSize:12,background:C.bgDeep,borderRadius:8}}>{min5Loading?'Loading 5-minute bars…':'No 5-minute data.'}</div>}</div>
+                    {mc&&hcRef&&<div style={{marginTop:10,overflowX:'auto'}}>
+                      <table style={{borderCollapse:'collapse',fontFamily:F,fontSize:9,width:'100%',minWidth:420}}>
+                        <thead><tr>{['Hour','5-min TR%','×12','1-hour TR%','Retrace ratio'].map(function(h,i){
+                          return <th key={i} style={{textAlign:i?'right':'left',padding:'3px 8px',color:C.txtDim,fontSize:7,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>{h}</th>;})}
+                        </tr></thead>
+                        <tbody>
+                          {mc.rows.map(function(r){
+                            var hr=null;hcRef.rows.forEach(function(x){if(x.hour===r.hour)hr=x;});
+                            var ratio=(hr&&hr.avgPct>0)?((r.avgPct*12)/hr.avgPct):null;
+                            return <tr key={r.hour}>
+                              <td style={{padding:'3px 8px',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{(r.hour<10?'0':'')+r.hour+':00'}</td>
+                              <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{r.avgPct.toFixed(3)+'%'}</td>
+                              <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'44'}}>{(r.avgPct*12).toFixed(2)+'%'}</td>
+                              <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{hr?hr.avgPct.toFixed(3)+'%':'—'}</td>
+                              <td style={{padding:'3px 8px',textAlign:'right',color:ratio==null?C.txtDim:(ratio>=3?C.accent:ratio>=2?C.gold:C.warn),fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{ratio==null?'—':ratio.toFixed(2)+'×'}</td>
+                            </tr>;
+                          })}
+                        </tbody>
+                      </table>
+                    </div>}
+                    <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>Each bar is the average true range of the <b>5-minute</b> bars inside that clock hour, computed against the prior 5-minute close. Read it against the 1-hour chart above: that one measures how far the hour travelled in total, this one measures the size of a typical move within it. <b>The retrace ratio is the useful part</b> — twelve 5-minute ranges summed, divided by the hour's own range. A ratio near 1 means price went one way and stayed; a high ratio means it covered the same ground repeatedly, which is the condition a grid is paid for. Both views share the lookback dropdown above so they always describe the same window.</div>
                   </div>;
                 })()}
                 <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:9,lineHeight:1.6}}>True range is Wilder's max(high−low, |high−prior close|, |low−prior close|), so overnight gaps count — a stock that gaps 4% then trades a quiet session genuinely moved, and a grid sitting across that gap is skipped straight through it. Each day is divided by its OWN prior close. Note this differs on purpose from the ATR ladder elsewhere in the app, which divides by the latest close so its recent windows compare at today's price; over a year that convention would understate any day when the stock traded at a very different price, so the ATR figure here can differ slightly from the ladder's. The gold curve is a lognormal fit — the right family for a strictly positive, right-skewed quantity, where the returns histogram above uses a normal. The multiples table reads directly as grid width: a grid spanning 1× ATR is fully worked on the share of sessions shown, and one spanning 2× much less often.</div>
