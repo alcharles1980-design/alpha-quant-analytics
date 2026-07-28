@@ -13506,6 +13506,28 @@ function CompoundTrackerPage(p){
     }catch(e){setErr(String(e.message||e));}
     setBusy(false);
   };
+  var patchBucket=async function(id,body){
+    setBusy(true);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/compound_buckets?id=eq.'+id,{method:'PATCH',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify(body)});
+      if(!r.ok)throw new Error((await r.text()).slice(0,160));
+      await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);
+  };
+  var delBucket=async function(id){
+    setBusy(true);
+    try{
+      // Trades and capital events cascade on delete, so the stream leaves no orphans behind.
+      var r=await fetch(SB_URL+'/rest/v1/compound_buckets?id=eq.'+id,{method:'DELETE',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+      if(!r.ok)throw new Error((await r.text()).slice(0,160));
+      await load();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);setConfirm(null);
+  };
   var exportCsv=function(){
     var rows=[['bucket','ticker','entry','target','exit','capital_in','return_pct','pnl','opened','closed']];
     (trades||[]).forEach(function(t){
@@ -13649,10 +13671,33 @@ function CompoundTrackerPage(p){
         var openF=form['b'+b.bucket_id]||{},closeF=form['c'+b.bucket_id]||{};
         var g=Number(b.growth_x);
         return <div key={b.bucket_id} style={{background:C.bgCard,border:'1px solid '+(b.open_ticker?C.gold+'55':C.border),borderRadius:9,padding:'11px 12px'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-            <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700}}>{b.label}</div>
-            <div style={{color:g>=1?C.accent:C.warn,fontSize:13,fontFamily:F,fontWeight:700}}>{'$'+Number(b.capital_now).toFixed(2)}</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:6}}>
+            {editId==='lbl'+b.bucket_id
+              ? <input autoFocus defaultValue={b.label}
+                  onKeyDown={function(e){if(e.key==='Enter'){patchBucket(b.bucket_id,{label:e.target.value});setEditId(null);}if(e.key==='Escape')setEditId(null);}}
+                  onBlur={function(e){patchBucket(b.bucket_id,{label:e.target.value});setEditId(null);}}
+                  style={Object.assign({},inp,{fontSize:12,fontWeight:700,padding:'2px 5px'})}/>
+              : <div onClick={function(){setEditId('lbl'+b.bucket_id);}} title="Click to rename"
+                  style={{color:b.active===false?C.txtDim:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700,cursor:'pointer',
+                    textDecoration:b.active===false?'line-through':'none'}}>{b.label}</div>}
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <div style={{color:g>=1?C.accent:C.warn,fontSize:13,fontFamily:F,fontWeight:700}}>{'$'+Number(b.capital_now).toFixed(2)}</div>
+              <button onClick={function(){patchBucket(b.bucket_id,{active:!(b.active!==false)});}}
+                title={b.active===false?'Resume this stream':'Pause this stream (keeps its history)'}
+                style={{background:'transparent',border:'none',color:b.active===false?C.gold:C.txtDim,cursor:'pointer',fontSize:11,padding:'0 2px'}}>
+                {b.active===false?'\u25B6':'\u23F8'}</button>
+              <button onClick={function(){setConfirm('delb'+b.bucket_id);}} title="Delete this stream and all its history"
+                style={{background:'transparent',border:'none',color:C.txtDim,cursor:'pointer',fontSize:12,padding:'0 2px'}}>{'\u00D7'}</button>
+            </div>
           </div>
+          {confirm==='delb'+b.bucket_id&&<div style={{marginTop:6,padding:'7px 9px',background:C.warn+'12',border:'1px solid '+C.warn+'44',borderRadius:6}}>
+            <div style={{color:C.warn,fontSize:9.5,fontFamily:F,fontWeight:700}}>Delete {b.label}?</div>
+            <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>Removes the stream, its {b.closed_trades} trade{b.closed_trades===1?'':'s'} and its ${Number(b.injected).toFixed(2)} of injected capital. Not undoable.</div>
+            <div style={{display:'flex',gap:5,marginTop:6}}>
+              <button disabled={busy} onClick={function(){delBucket(b.bucket_id);}} style={{background:C.warn+'22',border:'1px solid '+C.warn+'66',color:C.warn,borderRadius:4,padding:'2px 9px',cursor:'pointer',fontFamily:F,fontSize:9,fontWeight:700}}>Delete</button>
+              <button onClick={function(){setConfirm(null);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:4,padding:'2px 9px',cursor:'pointer',fontFamily:F,fontSize:9}}>Cancel</button>
+            </div>
+          </div>}
           <div style={{color:C.txtDim,fontSize:8,fontFamily:F,marginTop:2}}>
             {'in $'+Number(b.injected).toFixed(2)+' · '+(b.growth_x==null?'—':Number(b.growth_x).toFixed(3)+'×')
              +' · P&L '+(Number(b.realised_pnl)>=0?'+':'')+Number(b.realised_pnl).toFixed(2)
