@@ -996,6 +996,57 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v668–v673 — Compounding Tracker (Jul 28 2026)
+
+New page: a manual trade journal where **each stream keeps its own books** and rolls its own realised
+profit into its next trade. Seeded as ten $100 streams; the next trade can be any ticker.
+
+**Schema.** `compound_buckets` · `compound_trades` · `compound_capital_events`, with two constraints
+that exist to stop the rolling maths being corrupted: a trade has `closed_at` **iff** it has an
+`exit_price`, and a partial unique index enforces **one open trade per bucket** (the whole balance is
+deployed, so a second position would double-count it).
+
+**Everything derived is computed, never stored** — `compound_bucket_state(target)` calculates realised
+P&L, capital, growth, W/L and expectancy from the rows on read. A stored capital column drifts the
+moment a trade is edited.
+
+**Capital injections are events (v669).** This is what keeps growth honest: a bucket seeded $100, down
+15%, then reseeded $50 shows $135 against $150 injected = **0.900×**, correctly *below* a bucket
+holding $111 on $100 in. Without the events table, new money would have read as profit.
+
+**`capital_in` is a snapshot, never recomputed (v670).** If an earlier trade is edited or deleted,
+later deployments do not retroactively change — that is the historical truth of what was risked. The
+cost is that the chain can disagree with the roll, so `compound_chain_check()` reports every trade
+whose recorded capital differs from the balance its bucket actually held. **Silently reconciling would
+have been easier and would have destroyed the record.**
+
+**v671** added inline trade editing (clearing the exit reopens the trade, since `exit_price` and
+`closed_at` must move together) and an expandable per-stream history from
+`compound_bucket_timeline()` — injections and trades interleaved with the running balance after each,
+plus a balance-path sparkline against a dashed line at injected capital. Server-side so it shares its
+definition of "balance" with the other two functions.
+
+**v672 — dispersion is over TRADED streams only.** Spotted from a screenshot: the panel named
+"Bucket 2 · 1.000×" as *worst* when bucket 2 had never traded. An untouched stream sits at exactly
+1.000× by definition, so including nine idle buckets made the spread measure *how many buckets were
+idle*. Same class as the §9b caution about averaging independent books.
+
+**v673 — per-stream rename / pause / delete**, then all 17 controls driven through the UI against the
+live API role. **Two bugs that only execution could find:**
+- `compound_bucket_state` had **two overloads** — `create or replace` does not replace across
+  differing signatures, it *adds* one. PostgREST returned `PGRST203` for any call without the named
+  argument; the page worked only because it always passes it.
+- `compound_reset` and `compound_clear_trades` used **unqualified DELETEs**, which Supabase's
+  safe-update guard rejects for the API role (`21000`). Both buttons existed, looked correct and did
+  **nothing** — while the identical SQL succeeded through MCP, which is how they passed every earlier
+  check. All deletes now carry `where id is not null`.
+
+**The lesson, and it is §4a item 1 in a new setting: a control that has never been EXECUTED is
+unverified.** Rendering the button proved nothing; calling the function from a privileged session
+proved nothing about the path the app takes. 17/17 pass after the fixes.
+
+---
+
 ### v667 — MV Charts: hour-of-day true range in 5-MINUTE bins (Jul 28 2026)
 
 Two stacked sections sharing one lookback dropdown:
