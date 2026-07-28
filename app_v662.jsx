@@ -14264,6 +14264,9 @@ function MostActivesPage(p){
   };
   // ---- MOST TRADED NOW: scan + rank -------------------------------------------------------------
   var s_ltr=useState('trades'),ltRank=s_ltr[0],setLtRank=s_ltr[1];
+  // {col,dir}. `col` is the WINDOW (or 'sym'/'sess'/'avg'); which quantity it resolves to
+  // follows the rank toggle, so clicking 15 MIN sorts by whatever that column is showing on top.
+  var s_lts=useState({col:'w60',dir:'desc'}),ltSort=s_lts[0],setLtSort=s_lts[1];
   var s_lt=useState(null),ltRows=s_lt[0],setLtRows=s_lt[1];
   var s_lte=useState(null),ltErr=s_lte[0],setLtErr=s_lte[1];
   var s_ltm=useState(null),ltMeta=s_ltm[0],setLtMeta=s_ltm[1];
@@ -14354,8 +14357,11 @@ function MostActivesPage(p){
           avgSize:w[60]>0?(sv[60]/w[60]):null});
       }
       // Rank by whichever the user is looking at, so the leaderboard answers the question on screen.
+      // Store EVERY active name, not the top 100. Sorting is applied at render, and slicing here
+      // would mean "top by 1 minute" was really "top by 1 minute among the top 100 by 60 minutes"
+      // — a different and wrong question. ~600 rows in state is nothing.
       out.sort(function(a,b){return ltRank==='shares'?(b.v60-a.v60):(b.t60-a.t60);});
-      setLtRows(out.slice(0,100));
+      setLtRows(out);
       setLtMeta({feed:feed,pool:pool.length,scanned:Object.keys(bars).length,active:out.length,
                  reqs:reqs,truncated:truncated,at:Date.now(),
                  sessName:tbl?tbl.replace('_actives',''):'rth'});
@@ -14764,17 +14770,48 @@ function MostActivesPage(p){
       {ltMeta&&ltMeta.truncated&&<div style={{padding:'6px 10px',background:C.warn+'15',border:'1px solid '+C.warn+'30',borderRadius:6,color:C.warn,fontSize:9,fontFamily:F,marginBottom:8}}>Scan was incomplete \u2014 some pages failed or hit the pagination guard, so this ranking may be missing names.</div>}
       {!ltRows&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Scanning\u2026</div>}
       {ltRows&&ltRows.length===0&&!ltErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'14px 0'}}>Nothing has traded in the last 60 minutes on the venue that is open now.</div>}
-      {ltRows&&ltRows.length>0&&<div style={{overflowX:'auto'}}>
+      {ltRows&&ltRows.length>0&&(function(){
+        // Resolve the sort column to an actual row field. A WINDOW column resolves to trades or
+        // shares according to the rank toggle, so clicking it sorts by the number displayed on top —
+        // anything else would sort by a value the user cannot see.
+        var shares=(ltRank==='shares');
+        var fieldOf=function(colKey){
+          if(colKey==='sym')return null;
+          if(colKey==='avg')return 'avgSize';
+          if(colKey==='sess')return shares?'sessV':'sessT';
+          var n=colKey.slice(1);
+          return (shares?'v':'t')+n;
+        };
+        var f=fieldOf(ltSort.col), dir=(ltSort.dir==='asc')?1:-1;
+        var view=ltRows.slice().sort(function(a,b){
+          if(ltSort.col==='sym')return dir*String(a.symbol).localeCompare(String(b.symbol));
+          // Nulls always sort last regardless of direction — a missing value is not "smallest".
+          var av=a[f],bv=b[f];
+          if(av==null&&bv==null)return 0;
+          if(av==null)return 1;
+          if(bv==null)return -1;
+          return dir*(av-bv);
+        }).slice(0,100);
+        var COLS=[['#','',null],['SYMBOL','','sym'],['60 MIN','trades / shares','w60'],['30 MIN','trades / shares','w30'],['15 MIN','trades / shares','w15'],['3 MIN','trades / shares','w3'],['1 MIN','trades / shares','w1'],['SESSION','trades / shares','sess'],['AVG SIZE','shares per trade','avg']];
+        return <div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F}}>
           <thead><tr>
-            {[['#',''],['SYMBOL',''],['60 MIN','trades / shares'],['30 MIN','trades / shares'],['15 MIN','trades / shares'],['3 MIN','trades / shares'],['1 MIN','trades / shares'],['SESSION','trades / shares'],['AVG SIZE','shares per trade']].map(function(h,i){
-              return <th key={i} style={{textAlign:i<2?'left':'right',padding:'5px 9px',color:i===2?C.gold:C.txtDim,
-                fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>
-                {h[0]}{h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;
+            {COLS.map(function(h,i){
+              var key=h[2],active=(key&&ltSort.col===key);
+              return <th key={i} onClick={key?function(){
+                  // Same column -> flip direction. New column -> start descending, because every
+                  // measure here is "how much", and largest-first is what you want first.
+                  setLtSort(active?{col:key,dir:(ltSort.dir==='desc'?'asc':'desc')}:{col:key,dir:'desc'});
+                }:null}
+                style={{textAlign:i<2?'left':'right',padding:'5px 9px',color:active?C.gold:C.txtDim,
+                fontSize:7.5,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+(active?C.gold+'66':C.border),
+                fontWeight:700,cursor:key?'pointer':'default',userSelect:'none'}}>
+                {h[0]}{active?<span style={{marginLeft:3}}>{ltSort.dir==='desc'?'\u25BC':'\u25B2'}</span>:null}
+                {h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;
             })}
           </tr></thead>
           <tbody>
-            {ltRows.map(function(r,i){
+            {view.map(function(r,i){
               return <tr key={r.symbol}>
                 <td style={{padding:'4px 9px',color:C.txtDim,fontSize:9}}>{i+1}</td>
                 <td style={{padding:'4px 9px',color:C.txtBright,fontSize:10,fontWeight:700}}>{r.symbol}</td>
@@ -14799,8 +14836,9 @@ function MostActivesPage(p){
             })}
           </tbody>
         </table>
-      </div>}
-      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open \u2014 overnight, pre-market, regular hours or after-market \u2014 so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Ranked by the 60-minute column of the selected quantity. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
+      </div>;
+      })()}
+      <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:10,lineHeight:1.6}}>Each cell shows BOTH quantities over the last 60 / 30 / 15 / 3 / 1 <b>complete</b> minutes: the <b>number of trades</b> and the <b>shares</b> that changed hands. Whichever one the ranking uses is shown bright and first; the other sits beneath it. AVG SIZE is shares per trade over 60 minutes — 400 trades of 10 shares and 40 trades of 100 shares move the same volume but are very different flow, and a grid cares which. SESSION is the cumulative total for the session currently open \u2014 overnight, pre-market, regular hours or after-market \u2014 so it means something different at 02:00 than at 14:00, and the header line names which one is in force. Every column sorts \u2014 click a header, click again to reverse. A window column sorts by whichever quantity is on top, so it always sorts by the number you can see. Sorting runs over ALL names that traded in the last 60 minutes, not just the 100 displayed, so \u201Ctop by 1 minute\u201D really is the top by 1 minute. Rows with no value sort last in both directions, because missing is not the same as zero. The minute in progress is excluded, so figures lag by up to 60s rather than flickering between refreshes. The feed follows the clock, not the tab: BOATS between 20:00 and 04:00 ET, the consolidated tape otherwise — so this shows whatever venue is actually open. Counts come from 1-minute bars. On the overnight tape those exclude odd lots, which undercounts thin names; the ranking is unaffected because it is driven by the heaviest names, where bars were measured to match the raw tape exactly (top 8 identical, 1 inversion in 105 pairs). Refreshes every 60s while auto-refresh is on.</div>
     </div>}
     {session==='shortlist'&&<div>
       <div style={Object.assign({},card,{borderColor:C.gold+'40'})}>
