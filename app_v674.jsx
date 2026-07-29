@@ -13372,28 +13372,46 @@ function CompoundTrackerPage(p){
   var s12=useState(null),timeline=s12[0],setTimeline=s12[1];
   var s13=useState(null),editId=s13[0],setEditId=s13[1];     // trade being edited inline
   var s14=useState({}),editF=s14[0],setEditF=s14[1];
+  var s15=useState(null),profiles=s15[0],setProfiles=s15[1];
+  var s16=useState(null),pid=s16[0],setPid=s16[1];          // selected profile id
+  var s17=useState({}),profF=s17[0],setProfF=s17[1];        // new-profile form
+  var pidRef=useRef(null);pidRef.current=pid;
 
   var load=async function(){
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/compound_bucket_state',
         {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
-         body:JSON.stringify({target_per_bucket:perBucketTargetRef.current})});
+         body:JSON.stringify({p_profile:pidRef.current,target_per_bucket:perBucketTargetRef.current})});
       if(!r.ok)throw new Error('bucket state '+r.status);
-      setSt(await r.json());
+      var stJson=await r.json(); setSt(stJson);
       // Range headers, not &limit= — the cap is not liftable by limit (§5.1b).
-      var t=await fetch(SB_URL+'/rest/v1/compound_trades?select=*&order=opened_at.desc',
+      var ids=(stJson||[]).map(function(x){return x.bucket_id;});
+      var t=await fetch(SB_URL+'/rest/v1/compound_trades?select=*&order=opened_at.desc'
+            +(ids.length?('&bucket_id=in.('+ids.join(',')+')'):'&bucket_id=eq.-1'),
         {headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Range-Unit':'items','Range':'0-999'}});
       if(t.ok)setTrades(await t.json());
       var ch=await fetch(SB_URL+'/rest/v1/rpc/compound_chain_check',
-        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:'{}'});
+        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+         body:JSON.stringify({p_profile:pidRef.current})});
       if(ch.ok)setChain(await ch.json());
       var tl=await fetch(SB_URL+'/rest/v1/rpc/compound_bucket_timeline',
-        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:'{}'});
+        {method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+         body:JSON.stringify({p_profile:pidRef.current})});
       if(tl.ok)setTimeline(await tl.json());
       setErr(null);
     }catch(e){setErr(String(e.message||e));}
   };
-  useEffect(function(){load();},[perBucketTarget]);
+  var loadProfiles=async function(){
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/compound_profiles?select=*&order=id',
+        {headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+      if(!r.ok)throw new Error('profiles '+r.status);
+      var pr=await r.json(); setProfiles(pr);
+      if(pr.length&&pid==null){setPid(pr[0].id);pidRef.current=pr[0].id;}
+    }catch(e){setErr(String(e.message||e));}
+  };
+  useEffect(function(){loadProfiles();},[]);
+  useEffect(function(){if(pid!=null)load();},[pid,perBucketTarget]);
 
   var post=async function(path,body,method){
     setBusy(true);
@@ -13462,6 +13480,7 @@ function CompoundTrackerPage(p){
   })();
 
   var rpc=async function(fn,body){
+    body=Object.assign({p_profile:pid},body||{});
     setBusy(true);
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',
@@ -13542,20 +13561,47 @@ function CompoundTrackerPage(p){
     a.download='compound_trades_'+new Date().toISOString().slice(0,10)+'.csv';
     a.click();
   };
+  var createProfile=async function(){
+    var nm=(profF.name||'').trim();
+    if(!nm){setErr('Give the profile a name.');return;}
+    setBusy(true);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/rpc/compound_create_profile',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({p_name:nm,p_note:profF.note||null,
+          n_buckets:Number(profF.n||10),seed:Number(profF.seed||100)})});
+      if(!r.ok)throw new Error((await r.text()).slice(0,170));
+      var newId=await r.json();
+      setProfF({});await loadProfiles();setPid(newId);pidRef.current=newId;setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);setConfirm(null);
+  };
+  var deleteProfile=async function(){
+    if(profiles&&profiles.length<2){setErr('Cannot delete the only profile.');setConfirm(null);return;}
+    setBusy(true);
+    try{
+      // buckets cascade from the profile, and trades/events cascade from buckets, so one delete
+      // removes the whole setup with no orphans.
+      var r=await fetch(SB_URL+'/rest/v1/compound_profiles?id=eq.'+pid,{method:'DELETE',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+      if(!r.ok)throw new Error((await r.text()).slice(0,170));
+      var rest=(profiles||[]).filter(function(x){return x.id!==pid;});
+      var nx=rest.length?rest[0].id:null;
+      setPid(nx);pidRef.current=nx;await loadProfiles();setErr(null);
+    }catch(e){setErr(String(e.message||e));}
+    setBusy(false);setConfirm(null);
+  };
   var addBucket=async function(){
     var amt=Number(addF.amt||100);
     if(!(amt>0)){setErr('Enter a starting amount.');return;}
     setBusy(true);
     try{
-      var nextId=1;(st||[]).forEach(function(b){if(b.bucket_id>=nextId)nextId=b.bucket_id+1;});
-      var r=await fetch(SB_URL+'/rest/v1/compound_buckets',{method:'POST',
-        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=representation'},
-        body:JSON.stringify({id:nextId,label:(addF.label||('Bucket '+nextId)),seed_capital:amt})});
-      if(!r.ok)throw new Error((await r.text()).slice(0,160));
-      // Capital arrives as an EVENT so growth stays honest — new money must not read as profit.
-      await fetch(SB_URL+'/rest/v1/compound_capital_events',{method:'POST',
+      // Slot allocation happens SERVER-side: two clients (or two clicks) picking max(slot)+1
+      // locally would collide on the unique (profile_id, slot) index.
+      var r=await fetch(SB_URL+'/rest/v1/rpc/compound_add_bucket',{method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
-        body:JSON.stringify({bucket_id:nextId,amount:amt,note:'initial seed'})});
+        body:JSON.stringify({p_profile:pid,p_label:addF.label||null,p_seed:amt})});
+      if(!r.ok)throw new Error((await r.text()).slice(0,170));
       setAddF({});await load();setErr(null);
     }catch(e){setErr(String(e.message||e));}
     setBusy(false);
@@ -13579,7 +13625,40 @@ function CompoundTrackerPage(p){
       <button onClick={p.onBack} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:F,fontSize:11}}>{'\u2190'} Back</button>
       <div style={{color:C.txtBright,fontSize:16,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>Compounding Tracker</div>
     </div>
-    <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:14}}>Ten independent streams. Each rolls its own realised profit into its next trade; a loss is taken on the rolled balance, not the seed.</div>
+    <div style={{background:C.bgCard,border:'1px solid '+C.accent+'33',borderRadius:8,padding:'9px 12px',marginBottom:12}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:9,color:C.txtDim,fontFamily:F,fontWeight:700}}>PROFILE</span>
+        <select value={pid==null?'':pid} onChange={function(e){var v=Number(e.target.value);setPid(v);pidRef.current=v;}}
+          style={{background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:12,fontWeight:700,
+            border:'1px solid '+C.accent+'88',borderRadius:5,padding:'4px 8px',cursor:'pointer',minWidth:150}}>
+          {(profiles||[]).map(function(pr){return <option key={pr.id} value={pr.id}>{pr.name}</option>;})}
+        </select>
+        <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>{profiles?(profiles.length+' profile'+(profiles.length===1?'':'s')):''}</span>
+        <div style={{flex:1}}></div>
+        <button onClick={function(){setConfirm(confirm==='newprof'?null:'newprof');}}
+          style={{background:'transparent',border:'1px solid '+C.accent+'55',color:C.accent,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:10}}>+ New profile</button>
+        <button onClick={function(){setConfirm('delprof');}} disabled={!profiles||profiles.length<2}
+          title={profiles&&profiles.length<2?'Cannot delete the only profile':'Delete this profile and everything in it'}
+          style={{background:'transparent',border:'1px solid '+C.warn+'55',color:(profiles&&profiles.length<2)?C.txtDim:C.warn,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:10}}>Delete profile</button>
+      </div>
+      {confirm==='newprof'&&<div style={{marginTop:8,padding:'9px 11px',background:C.accent+'10',border:'1px solid '+C.accent+'44',borderRadius:6,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+        <input placeholder="profile name" value={profF.name||''} onChange={function(e){var n=Object.assign({},profF);n.name=e.target.value;setProfF(n);}} style={Object.assign({},inp,{width:160})}/>
+        <input placeholder="note (optional)" value={profF.note||''} onChange={function(e){var n=Object.assign({},profF);n.note=e.target.value;setProfF(n);}} style={Object.assign({},inp,{width:180})}/>
+        <input type="number" placeholder="streams (10)" value={profF.n||''} onChange={function(e){var n=Object.assign({},profF);n.n=e.target.value;setProfF(n);}} style={Object.assign({},inp,{width:110})}/>
+        <input type="number" placeholder="seed each (100)" value={profF.seed||''} onChange={function(e){var n=Object.assign({},profF);n.seed=e.target.value;setProfF(n);}} style={Object.assign({},inp,{width:130})}/>
+        <button disabled={busy} onClick={createProfile} style={{background:C.accent+'22',border:'1px solid '+C.accent+'66',color:C.accent,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10,fontWeight:700}}>Create</button>
+        <button onClick={function(){setConfirm(null);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:10}}>Cancel</button>
+      </div>}
+      {confirm==='delprof'&&<div style={{marginTop:8,padding:'9px 11px',background:C.warn+'10',border:'1px solid '+C.warn+'44',borderRadius:6}}>
+        <div style={{color:C.warn,fontSize:10,fontFamily:F,fontWeight:700}}>Delete this profile?</div>
+        <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:2}}>Removes every stream, trade and capital record in it. Export first if you want the history. Not undoable.</div>
+        <div style={{display:'flex',gap:6,marginTop:6}}>
+          <button disabled={busy} onClick={deleteProfile} style={{background:C.warn+'22',border:'1px solid '+C.warn+'66',color:C.warn,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10,fontWeight:700}}>Yes, delete</button>
+          <button onClick={function(){setConfirm(null);}} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'4px 13px',cursor:'pointer',fontFamily:F,fontSize:10}}>Cancel</button>
+        </div>
+      </div>}
+    </div>
+    <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:14}}>Independent streams. Each rolls its own realised profit into its next trade; a loss is taken on the rolled balance, not the seed.</div>
     {err&&<div style={{padding:'7px 11px',background:C.warn+'15',border:'1px solid '+C.warn+'40',borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:12}}>{err}</div>}
 
     {totals&&<div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
@@ -13793,6 +13872,15 @@ function CompoundTrackerPage(p){
           })()}
         </div>;
       })}
+    </div>
+
+    <div style={{marginTop:14,padding:'10px 12px',background:C.bgCard,border:'1px dashed '+C.border,borderRadius:8,
+        display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+      <span style={{fontSize:9,color:C.txtDim,fontFamily:F,fontWeight:700}}>ADD A STREAM</span>
+      <input placeholder="label (optional)" value={addF.label||''} onChange={function(e){var n=Object.assign({},addF);n.label=e.target.value;setAddF(n);}} style={Object.assign({},inp,{width:170})}/>
+      <input type="number" placeholder="starting capital (100)" value={addF.amt||''} onChange={function(e){var n=Object.assign({},addF);n.amt=e.target.value;setAddF(n);}} style={Object.assign({},inp,{width:170})}/>
+      <button disabled={busy||pid==null} onClick={addBucket} style={{background:C.blue+'22',border:'1px solid '+C.blue+'66',color:C.blue,borderRadius:5,padding:'5px 13px',cursor:'pointer',fontFamily:F,fontSize:11,fontWeight:700}}>+ Add stream</button>
+      <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>Added to this profile. New capital is logged as an injection, so it never reads as profit.</span>
     </div>
 
     {trades&&trades.length>0&&<div style={{marginTop:18}}>
