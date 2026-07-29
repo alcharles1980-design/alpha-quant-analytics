@@ -14449,6 +14449,9 @@ function MostActivesPage(p){
   // tab does not have to hunt down eleven separate `session!=='shortlist'` gates and miss one —
   // exactly the 'fixed two of three call sites' failure §5.1a warns about.
   var isPanelTab=(session==='shortlist'||session==='livetrade');
+  var s_q=useState(''),query=s_q[0],setQuery=s_q[1];
+  var s_ql=useState(null),lookup=s_ql[0],setLookup=s_ql[1];
+  var s_qb=useState(false),lookupBusy=s_qb[0],setLookupBusy=s_qb[1];
   // When the next auto-refresh is due, so the UI can count down to it. Set wherever an interval is
   // scheduled AND again after each fire, because the cadence differs per tab (30s RTH / 90s
   // pre+after / 180s overnight / 60s Most Traded Now / 90s AI Predictor).
@@ -15021,6 +15024,22 @@ function MostActivesPage(p){
 
   // Governs the extended session columns (GAP %, the two x-AVERAGE ratios, SESSIONS/BASIS). Both
   // the overnight and pre-market tables carry these, so both views show them; RTH does not.
+  useEffect(function(){
+    var q=(query||'').trim().toUpperCase();
+    if(q.length<1){setLookup(null);return;}
+    var cancelled=false;
+    var id=setTimeout(function(){
+      setLookupBusy(true);
+      fetch(SB_URL+'/rest/v1/rpc/most_actives_lookup',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({p_ticker:q})})
+        .then(function(r){return r.ok?r.json():[];})
+        .then(function(j){if(!cancelled){setLookup(j);setLookupBusy(false);}})
+        .catch(function(){if(!cancelled){setLookup([]);setLookupBusy(false);}});
+    },350);   // debounce: one request per pause, not one per keystroke
+    return function(){cancelled=true;clearTimeout(id);};
+  },[query]);
+
   var isOvernightView=(session==='overnight')||(session==='premarket')||(session==='aftermarket');
   // Quote age past which the top of book is no longer meaningfully "live". Measured across a full
   // overnight universe: median quote age 230s, but p90 3,649s and max 246,288s — illiquid names
@@ -15107,7 +15126,12 @@ function MostActivesPage(p){
   if(actives){for(var hb=0;hb<actives.length;hb++){var hbv=actives[hb].avgTrades;if(typeof hbv==='number'&&isFinite(hbv)&&hbv>0){hasAnyBaseline=true;break;}}}
 
   // Filter actives by price, market cap, and asset type
+  var qUp=(query||'').trim().toUpperCase();
+  // A ticker search bypasses the Top-N cap and the trade-count filters. Typing a symbol means
+  // "show me this name", and silently hiding it because it fell below a threshold would look
+  // exactly like the stock not being in the session at all.
   var filtered=actives?actives.filter(function(a){
+    if(qUp)return String(a.symbol||'').toUpperCase().indexOf(qUp)>=0;
     var pr=a.price||0;
     var mnP=parseFloat(minPrice)||0;
     var mxP=parseFloat(maxPrice)||Infinity;
@@ -15173,7 +15197,7 @@ function MostActivesPage(p){
   // here as a display cap. (For RTH/My Lists topN is passed to Alpaca and already limits the fetch.)
   // Applying it AFTER filtering is the point: Top 100 means 100 rows that actually pass the filters.
   var fetchesWholeSession=(session==='overnight'||session==='premarket'||session==='aftermarket');
-  var filteredCapped=(fetchesWholeSession&&filtered.length>topN)?filtered.slice(0,topN):filtered;
+  var filteredCapped=(!qUp&&fetchesWholeSession&&filtered.length>topN)?filtered.slice(0,topN):filtered;
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
   // Two-line sortable header: main label on top, plain-language qualifier beneath, plus a title
   // tooltip spelling out exactly what the column measures. The overnight table carries several
@@ -15258,6 +15282,16 @@ function MostActivesPage(p){
           in the flex row, which forced it onto a line of its own on narrow screens and wasted a
           full row. Everything now packs left and wraps only when genuinely out of width. */}
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <input value={query} onChange={function(e){setQuery(e.target.value);}}
+            placeholder="search ticker…"
+            style={{background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:11,fontWeight:700,
+              border:'1px solid '+(query?C.accent+'88':C.border),borderRadius:6,padding:'5px 8px',width:130,
+              textTransform:'uppercase'}}/>
+          {query&&<button onClick={function(){setQuery('');}} title="Clear"
+            style={{position:'absolute',right:4,background:'transparent',border:'none',color:C.txtDim,
+              cursor:'pointer',fontSize:12,padding:'0 3px'}}>{'\u00D7'}</button>}
+        </div>
         {!isPanelTab&&<div style={{display:'flex',gap:4}}>
           {[10,20,50,100].map(function(n){
             return <button key={n} onClick={function(){setTopN(n);}}
@@ -15763,6 +15797,45 @@ function MostActivesPage(p){
     </div>}
 
     {/* Most Actives Table */}
+    {query&&query.trim().length>0&&<div style={Object.assign({},card,{marginBottom:12})}>
+      <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+        <div style={{color:C.gold,fontSize:12,fontFamily:F,fontWeight:700,letterSpacing:0.5}}>
+          {query.trim().toUpperCase()+' \u00B7 across all sessions'}
+        </div>
+        <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>{lookupBusy?'looking up…':(lookup?(lookup.length+' session'+(lookup.length===1?'':'s')):'')}</div>
+      </div>
+      {(!lookupBusy&&lookup&&lookup.length===0)&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginTop:7}}>
+        Not present in the latest overnight, pre-market or after-market scan. It may simply not have traded enough to make those lists, or the symbol may be wrong.
+      </div>}
+      {lookup&&lookup.length>0&&<div style={{overflowX:'auto',marginTop:8}}>
+        <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
+          <thead><tr>{['Session','Date','Rank','Trades','Volume','Move %','Gap %','Close','vs avg trades','vs avg vol',''].map(function(h,i){
+            return <th key={i} style={{textAlign:i<2?'left':'right',padding:'4px 8px',color:C.txtDim,fontSize:7,
+              letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>{h}</th>;})}
+          </tr></thead>
+          <tbody>
+            {lookup.map(function(x,i){
+              var cur=(x.session_type===session);
+              return <tr key={i} style={cur?{background:C.accent+'0C'}:null}>
+                <td style={{padding:'3px 8px',color:cur?C.accent:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{x.session_type}</td>
+                <td style={{padding:'3px 8px',color:C.txtDim,fontSize:8.5,borderBottom:'1px solid '+C.border+'44'}}>{x.session_date}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtBright,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{'#'+x.rank_in_session}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{fmtVol(Number(x.trades))}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{fmtVol(Number(x.volume))}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:Number(x.pct_move)>=0?C.accent:C.warn,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{x.pct_move==null?'\u2014':(Number(x.pct_move)>=0?'+':'')+Number(x.pct_move).toFixed(2)+'%'}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:x.gap_pct==null?C.txtDim:(Number(x.gap_pct)>=0?C.accent:C.warn),borderBottom:'1px solid '+C.border+'44'}}>{x.gap_pct==null?'\u2014':(Number(x.gap_pct)>=0?'+':'')+Number(x.gap_pct).toFixed(2)+'%'}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{x.close==null?'\u2014':'$'+Number(x.close).toFixed(2)}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:Number(x.rel_trades)>=100?C.accent:C.txtDim,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{x.rel_trades==null?'\u2014':Number(x.rel_trades)+'%'}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'44'}}>{x.rel_volume==null?'\u2014':Number(x.rel_volume)+'%'}</td>
+                <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,fontSize:8,borderBottom:'1px solid '+C.border+'44'}}>{x.is_partial?'in progress':''}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+        <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>Each session is looked up against <b>its own</b> latest scan date, not a shared "today" — the overnight session beginning 8pm ET is stamped the following calendar date while pre and after-market are not, so forcing one date would show nothing for whichever had rolled. The highlighted row is the tab you are on. Searching also overrides the Top-N cap and the trade-count filters below, so a name is shown even when the current thresholds would exclude it.</div>
+      </div>}
+    </div>}
+
     {!isPanelTab&&filteredCapped&&filteredCapped.length>0&&<div style={card}>
       <div style={{color:C.txtBright,fontSize:10,fontWeight:700,fontFamily:F,marginBottom:8}}>
         {session==='premarket'?'Pre-Market Activity (4:00-9:30 AM ET)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':isOvernightView?'Overnight Activity (BOATS 8PM-4AM)':session==='aftermarket'?'After-Market Activity (4:00-8:00 PM ET)':'Most Active Stocks'} ({filteredCapped.length}{filtered.length>filteredCapped.length?' of '+filtered.length+' matching':(actives&&filtered.length<actives.length?' of '+actives.length:'')})</div>

@@ -996,6 +996,29 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v675 — Most Actives: ticker search with cross-session lookup (Jul 29 2026)
+
+Search box in the control strip. Typing a symbol does two things:
+
+**Filters the current table** — and **overrides the Top-N cap and the trade-count filters**. Typing a
+ticker means "show me this name"; hiding it because it fell below a threshold would look identical to
+the stock not being in the session at all.
+
+**Shows it across every session** via `most_actives_lookup(ticker)` — rank, trades, volume, move, gap,
+close and relative-to-average figures for overnight, pre-market and after-market, with the current tab
+highlighted. Debounced 350ms, so one request per pause rather than per keystroke.
+
+**Each session is looked up against its OWN latest scan date, not a shared "today".** The overnight
+session beginning 20:00 ET is stamped the *following* calendar date (§5.1c) while pre/after-market are
+not — verified live, NVDA returned overnight and pre-market on **2026-07-29** and after-market on
+**2026-07-28**. Forcing one date would silently return nothing for whichever session had rolled, which
+is the same defect class as the `shortlist_signal` `dt-1` bug.
+
+A miss says the name is not in the latest scans and offers the two reasons (didn't trade enough, or
+wrong symbol) rather than showing an empty table.
+
+---
+
 ### v674 — Compounding Tracker: profiles (Jul 29 2026)
 
 Independent tracker setups selected from a dropdown, so a different strategy gets its own streams and
