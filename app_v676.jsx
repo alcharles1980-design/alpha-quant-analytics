@@ -15197,6 +15197,17 @@ function MostActivesPage(p){
   // here as a display cap. (For RTH/My Lists topN is passed to Alpaca and already limits the fetch.)
   // Applying it AFTER filtering is the point: Top 100 means 100 rows that actually pass the filters.
   var fetchesWholeSession=(session==='overnight'||session==='premarket'||session==='aftermarket');
+  // Exact match first, then prefix, then substring. Substring matching is kept because it is useful
+  // for discovery ("KO" surfacing KORU), but burying the exact symbol under a longer one that merely
+  // contains it makes a lookup feel broken — searching KO put KORU above KO.
+  if(qUp&&filtered.length>1){
+    filtered=filtered.slice().sort(function(a,b){
+      var A=String(a.symbol||'').toUpperCase(),B=String(b.symbol||'').toUpperCase();
+      var ra=(A===qUp)?0:(A.indexOf(qUp)===0?1:2), rb=(B===qUp)?0:(B.indexOf(qUp)===0?1:2);
+      if(ra!==rb)return ra-rb;
+      return A.length-B.length;      // shorter symbols first within a rank
+    });
+  }
   var filteredCapped=(!qUp&&fetchesWholeSession&&filtered.length>topN)?filtered.slice(0,topN):filtered;
   var doTblSort=function(col){if(tblSort===col)setTblDesc(!tblDesc);else{setTblSort(col);setTblDesc(true);}};
   // Two-line sortable header: main label on top, plain-language qualifier beneath, plus a title
@@ -15832,7 +15843,7 @@ function MostActivesPage(p){
             })}
           </tbody>
         </table>
-        <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>Each session is looked up against <b>its own</b> latest scan date, not a shared "today" — the overnight session beginning 8pm ET is stamped the following calendar date while pre and after-market are not, so forcing one date would show nothing for whichever had rolled. The highlighted row is the tab you are on. Searching also overrides the Top-N cap and the trade-count filters below, so a name is shown even when the current thresholds would exclude it.</div>
+        <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>Each session is looked up against <b>its own</b> latest scan date, not a shared "today" — the overnight session beginning 8pm ET is stamped the following calendar date while pre and after-market are not, so forcing one date would show nothing for whichever had rolled. The highlighted row is the tab you are on. Searching also overrides the Top-N cap and the trade-count filters below, so a name is shown even when the current thresholds would exclude it. Matching is by substring so a partial symbol surfaces related names, but an exact match is always listed first.</div>
       </div>}
     </div>}
 

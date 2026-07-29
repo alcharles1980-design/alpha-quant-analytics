@@ -996,6 +996,19 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v676 — Most Actives: exact ticker match sorts first (Jul 29 2026)
+
+Searching `KO` listed **KORU above KO**. Substring matching is deliberate — a partial symbol
+surfacing related names is useful — but burying the exact symbol under a longer one that merely
+contains it makes a lookup feel broken. Matches now rank exact → prefix → substring, shorter symbols
+first within a rank.
+
+Found while verifying v675: the probe reported a filtering failure that was actually its own
+(`tbody tr` matches rows in both the cross-session panel and the main table), but reading the output
+showed the real ordering problem underneath.
+
+---
+
 ### v675 — Most Actives: ticker search with cross-session lookup (Jul 29 2026)
 
 Search box in the control strip. Typing a symbol does two things:
