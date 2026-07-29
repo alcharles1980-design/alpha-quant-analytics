@@ -996,6 +996,36 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v674 — Compounding Tracker: profiles (Jul 29 2026)
+
+Independent tracker setups selected from a dropdown, so a different strategy gets its own streams and
+history rather than being mixed into one book. Create (name, note, stream count, seed) and delete,
+with the last remaining profile protected.
+
+**The old key could not survive profiles.** `compound_buckets.id` was `smallint check (id between 1
+and 99)`; two profiles both want a "Bucket 1". Widened to `integer` with a per-profile `slot` and a
+unique `(profile_id, slot)` index — **FK columns on `compound_trades` and `compound_capital_events`
+widened in the same migration**, or the references break.
+
+All five read/admin functions became profile-scoped and were **dropped rather than replaced** —
+`create or replace` across a differing signature leaves an overload behind, which is the `PGRST203`
+bug found in v673. Two new: `compound_add_bucket` (allocates the slot **server-side**, because two
+clicks computing `max(slot)+1` locally collide on the unique index) and `compound_create_profile`.
+
+The trade log is filtered to the selected profile's buckets — without it, every profile's history
+showed under whichever profile was selected.
+
+**Regression fixed, and it was mine.** The "+ Add stream" control shipped in v669 and was deleted in
+**v670**, when the control-bar rewrite replaced the region containing it. The `addBucket` handler and
+its state survived; only the button vanished — so the feature was dead with no error. **Preflight
+checks duplicates and routes, not orphaned handlers**, so nothing caught it. Restored at the bottom of
+the setup.
+
+Verified: creating a 3-stream profile at $250, adding a 4th at $500, then switching back left Default
+untouched at 10 streams / $1,000. 14/14 assertions.
+
+---
+
 ### v668–v673 — Compounding Tracker (Jul 28 2026)
 
 New page: a manual trade journal where **each stream keeps its own books** and rolls its own realised
