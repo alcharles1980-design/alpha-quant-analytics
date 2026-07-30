@@ -109,7 +109,15 @@ cd <repo> && ls app_v*.jsx | sort -V | tail -1 && git log --oneline -10
 ```bash
 ./scripts/handoff-gap-check.sh          # committed, runnable; expands §9 heading ranges
 # -> "no handoff gaps in window", or a list of versions that shipped with no §9 entry
+
+./scripts/prod-check.sh                 # what is actually ALIVE in production
+# -> live app version vs repo, every RPC, the Edge Function, table row counts
 ```
+
+**Run BOTH.** `handoff-gap-check` and `preflight` verify the **code**; `prod-check` verifies the
+**running system**. Structure passing says nothing about behaviour (§5.1a), and a schema or RPC can
+be renamed underneath working code. Neither substitutes for the browser harness
+(`scripts/verify-app.js`) when a *feature's behaviour* is in question.
 
 The script is in the repo rather than pasted here because the obvious one-liner is
 **wrong**: `comm` rejects `sort -n` ordering, and §9 headings use en-dash ranges
@@ -2376,6 +2384,44 @@ fixed in v558. The stray `:` file was NOT actually gone — this line claimed it
 file stayed tracked for many versions. Really removed in v621; its name literally contained
 newlines, so `rm -- ':'` silently matched nothing and only `find -maxdepth 1 -name ':*' -print0 |
 xargs -0` worked.)*
+
+---
+
+## 10a. Production inventory — verified Jul 30 2026
+
+Everything running without anyone present. **Re-verify with `./scripts/prod-check.sh` plus the cron
+query below; do not trust this list on its own.**
+
+**44 pg_cron jobs active.** The ones this session touched or depends on:
+
+| job | schedule (UTC) | what |
+|---|---|---|
+| **51** | `*/2 0-9 * * *` | `overnight-level-scan` → fills `hidden_levels` (§9c) |
+| 24 | `*/5 0-8 * * *` | overnight-actives live scan |
+| 29 | `*/3 8-13 * * 1-5` | pre-market actives |
+| 34 | `*/3 20-23 * * 1-5` | after-market actives |
+| 38 | `7 * * * *` | `data_integrity_check()` → `integrity_log` |
+| **40** | `*/5 * * * *` | **alert-dispatcher** — see below |
+| 21 | `30 1 * * 2-6` | chop-scan-daily |
+| 26 | `20 */6 * * *` | db size guard |
+
+```sql
+select jobid, jobname, schedule, active from cron.job order by jobid;
+select jobid, status, start_time, return_message
+  from cron.job_run_details where start_time > now() - interval '2 hours' order by start_time desc;
+```
+
+**Alert infrastructure already exists and is UNUSED.** `alert_schedules` (name, send_at_et,
+days_of_week, session_type, top_n, min_score, active), `alert_recipients` (phone, channel,
+opted_in), `alert_log` — **all three empty**, with job 40 dispatching every 5 minutes. That is the
+scaffolding for §10 item 1 (revisit alerting); it does not need building from scratch.
+
+**Register state at handoff:** 31 levels, 27 visits, session 2026-07-30. Job 51 has **zero
+failures**. By day it correctly does nothing — the Edge Function returns
+`{"skipped":"outside overnight session"}`, which is the expected response outside 20:00–04:00 ET.
+
+**Storage:** the free-plan 512 MB cap still applies (§5.2). `hidden_levels` is tiny by design and
+per-print detail is fetched live rather than stored.
 
 ---
 

@@ -49,6 +49,17 @@ what is missing is a notification when a known level is re-hit, which is the act
 Second is **§10 item 4: the size ladder.** One night of 1/5/10/25/100-share probes answers whether
 this scales past a curiosity, and it is the cheapest unanswered question in the whole subsystem.
 
+### Extra safety added this session
+
+`./scripts/prod-check.sh` — verifies the RUNNING system (live app version vs repo, every RPC, the
+Edge Function, table counts), not just the code. **Run it alongside the gap check at session start;
+§1 now says so.** Its own first version produced three FALSE failures by posting `{}` to RPCs that
+take required arguments — fixed, because a health check that cries wolf is worse than none.
+
+**Useful discovery while verifying:** `alert_schedules` / `alert_recipients` / `alert_log` already
+exist and are empty, with cron job 40 dispatching every 5 minutes. Revisit alerting (§10 item 1) has
+scaffolding already — see §10a.
+
 ### Read first
 
 **§9c** for the hidden-liquidity subsystem, **§10** for what is open *and* for the four directional
