@@ -34,6 +34,7 @@ verification block below before writing any code.
 | 10 | Known open items | What is still broken or unfinished. |
 | 11 | How the user works | Terse, empirical, root-cause. |
 | 9b | **Most Actives — current state** | The page under active development: tabs, feeds, what is exact vs approximate. |
+| 9c | **Overnight hidden liquidity** | The subsystem: what it is, the at-touch rule, components, what is not built. |
 | 11a | Context loss in long sessions | Why `git log` beats recollection. |
 | 11b | Tooling — verify, don't assert | A wrong claim about my own capabilities, and the rule it earned. |
 | 11c | **Connectors & the deploy path** | What is connected, how code reaches production, why `BUILD_TS` misleads. |
@@ -2115,7 +2116,109 @@ cadence from `trades/latest`, with MOVE % and GAP % recomputed so the row stays 
 
 ---
 
+## 9c. Overnight hidden liquidity — the subsystem (Jul 30 2026)
+
+**What it is.** Overnight (20:00–04:00 ET) the SIP is closed, so market makers who price off the
+consolidated tape stop quoting and the lit book on BOATS goes very wide. Wholesalers keep pricing
+from their own models, and participants rest orders **inside** that spread without displaying them.
+Three prices therefore exist at once for the same stock, and the gap between them is capturable.
+
+**The worked example (verified from public data, user's own trade).** U, 2026-07-29, 03:46 ET:
+book frozen at **31.58 / 32.00** for all 207 quote updates. Bought **31.88** from an internaliser
+(off-exchange, reported to the FINRA TRF at 04:00 ET as **73 one-share prints, exchange D, extended
+hours**), sold **31.95** into a hidden buyer on BOATS (**71 one-share prints in 17 seconds**).
+$0.07/share, no directional exposure.
+
+**The cleanest specimen found since:** HOOD @ 88.99 — **500 prints, 1.78s, position 0.826 constant
+(min = median = max), ONE book state, zero at the touch**, $0.46 spread. A hidden buyer 38c above the
+displayed bid, invisible to anyone watching the quote.
+
+### The rule that makes it work
+
+**Position in spread, measured at EVERY print.** `pos` 0 = at the bid, 1 = at the ask.
+- **inside the spread** (0.05–0.95) → hidden liquidity → the signal
+- **at the touch** (≤0.02 or ≥0.98) → a *visible* order being consumed → worthless
+
+This separated **422 real matches from 320 false ones** in testing. `SOXL 683 prints @ 92.00` met
+every numeric criterion and was junk: 3c spread, price *equal* to the bid. Enforced inside
+`register_level()` so no caller can skip it.
+
+### Components
+
+| piece | where |
+|---|---|
+| scanner | Supabase Edge Function **`overnight-level-scan`** |
+| schedule | **pg_cron job 51**, `*/2 0-9 * * *` — covers EDT *and* EST; the function checks the ET hour and returns early outside the session, so **DST needs no cron change** |
+| storage | `hidden_levels` (one row per level) · `hidden_level_visits` (one per burst) |
+| write API | `register_level(...)` — at-touch rejection lives here |
+| read API | `hidden_levels_view()` · `hidden_level_visits_view(level)` — bounded inside the function (§5.1b) |
+| viewer | AQA → **Hidden Liquidity Levels** (v677–v681) |
+| research | `research/overnight/` |
+
+**Discovery, not reaction.** A burst says a resting order exists; the tradeable moment is the
+**revisit**. AAOI 76.72 was hit **31 separate times across 69 minutes**. Levels therefore persist in
+the register after their burst ends, and `visits` counts the re-hits.
+
+### Measured facts worth keeping
+
+- **`feed=boats` on the HISTORICAL endpoint is LIVE on Algo Trader Plus** — measured 0.4s old. The
+  brief's "15-minute delay" is wrong. It also takes **400 symbols per request in 0.42s**, so the
+  websocket's 30-channel (15-symbol) cap is irrelevant — the whole universe is scannable by REST.
+- Real-time endpoints take `feed=overnight`; historical takes `feed=boats`. Historical rejects
+  `overnight` with **400 invalid feed**.
+- Burst durations: median **0.66s**, and 25% are under 100ms. U at 17s is a far-tail event.
+- **60% of bursts see more prints at the same price within 60s** — but that figure is inflated by the
+  detector fragmenting one episode into several. Treat as unconfirmed.
+- Internalised fills appear on the **SIP tape the following morning**, exchange `D`, batch-stamped at
+  the TRF open (`08:00:22.000` UTC), flagged `T` extended-hours and `I` odd-lot. **The tape never
+  names the wholesaler** — Rule 606(b)(1) is the only per-order route to that.
+
+### Not built
+
+**Revisit alerting** — the register records visits but nothing notifies on a re-hit, which is the
+actual trigger. **Multi-night persistence** — `hidden_level_visits` was empty until 30 Jul, so
+whether edge decays by the 20th visit is unmeasured.
+
+---
+
 ## 10. Known open items
+
+> **NEW, TOP OF LIST (Jul 30 2026)**
+>
+> **1. Revisit alerting is not built.** The level register records `visits`, but nothing notifies
+> when a known level is re-hit — and the re-hit *is* the trade. AAOI 76.72 was hit 31 times in 69
+> minutes; the first burst was discovery, the other 30 were opportunity. See §9c.
+>
+> **2. Multi-night level persistence is unmeasured.** `hidden_level_visits` was empty until 30 Jul,
+> so "does the edge survive to the 20th visit" has no data. Needs several sessions.
+>
+> **3. The 60%-persistence figure is inflated.** It counted the detector rediscovering the *same*
+> episode after fragmenting it. Real but overstated — re-derive with episode grouping before it is
+> used for anything.
+>
+> **4. Fill probability at SIZE is unknown.** Everything measured is 1-share. A wholesaler pricing
+> 1 share inside a 132bps spread costs them nothing; 100 shares may route differently or not fill.
+> The test is cheap — ladder 1/5/10/25/100-share probes and record fills.
+
+### Directional strategies — TESTED AND REJECTED, do not re-run without new evidence
+
+Four independent attempts, all landing in the same place. Recorded so the work is not repeated:
+
+| test | result |
+|---|---|
+| buy close / sell next swing high (§9a) | **−0.25%/trade**, negative in every metric quintile |
+| overnight close→open, volatility-tilted | Q5−Q1 **+0.1651%** pair 1 → **+0.0026%** pair 2. Tilt does not replicate. |
+| liquidity concentration | one-year gradient **vanished** over four years; t=2.41 at best, and 2022–23 were **negative** |
+| high-beta / momentum selection | highest arithmetic return, **worst geometric** — $100 → $90.50. Variance drag exceeds any edge found. |
+
+**The through-line:** volatility persists at **r = 0.964**; direction does not (**r = −0.041**).
+Strategies that need direction fail; strategies that monetise movement do not. That is why the
+hidden-liquidity work (§9c) is a better fit — it is spread capture, not a directional bet.
+
+**Also measured:** the overnight effect is real as accounting — close→open carries **80% of total
+return** — but as a *strategy* it is regime-dependent and marginal after costs.
+
+
 
 > **Read `integrity_log` before trusting anything (§1).** As of Jul 27 2026 it held
 > **48 WARN and 13 FAIL in 48 hours, entirely unread.** Two distinct issues, both real:

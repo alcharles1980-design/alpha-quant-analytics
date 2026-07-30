@@ -1,41 +1,47 @@
 # In flight
 
 **Purpose:** what is underway *right now*, so a session that loses context can resume instead of
-rediscovering. Committed work is already safe — every version tonight survived context loss intact
-because its commit message carried the full diagnosis. **This file covers the gap between "measured"
-and "committed".**
+rediscovering. Committed work is already safe — every version survives in its commit message.
+**This file covers the gap between "measured" and "committed".**
 
-**Update it when you start something non-trivial. Clear it when you ship.** If it is stale, trust
-`git log` over it and say so.
+**Update it when you start something non-trivial. Clear it when you ship.** If it looks stale,
+trust `git log` over it.
 
 ---
 
 ## Status: IDLE
 
-Last cleared: 2026-07-27, after v658 (ON PACE confidence band).
+Last cleared: 2026-07-30 04:20 ET, after v681.
 
-Nothing in flight. Next session: run §1 of `CLAUDE.md`, which includes
-`./scripts/handoff-gap-check.sh` and the `integrity_log` query.
+**App at v681.** Gap check and preflight clean, nothing unpushed.
 
----
+### What was built this session
 
-## Template
+- **v655–v667** Most Actives live columns on all four session tabs; ⚡ Most Traded Now; MV Charts
+  true-range-by-hour in 1-hour and 5-minute bins.
+- **v668–v674** Compounding Tracker: per-bucket accounting, profiles, data management, chain
+  integrity.
+- **v675–v676** Most Actives ticker search with cross-session lookup.
+- **v677–v681** Hidden Liquidity Levels page + the whole overnight subsystem (**§9c**).
 
-```
-## Status: ACTIVE — <one line: what and why>
+### Running unattended right now
 
-Started: <date/time ET>
-Asked for: <the user's actual request, in their words>
+| job | schedule | what |
+|---|---|---|
+| **pg_cron 51** | `*/2 0-9 * * *` | `overnight-level-scan` Edge Function → fills `hidden_levels` |
 
-MEASURED SO FAR (facts that would be expensive to re-obtain):
-- <number, where it came from, what it means>
+Verified firing on its own: two consecutive runs, both 200, ~1s each. **Nothing else from this
+session runs without being invoked.**
 
-DECIDED:
-- <choice, and the reason, so it is not re-litigated>
+### Where to pick up
 
-NEXT STEP:
-- <the single next action>
+Highest value is **§10 item 1: revisit alerting.** The register already stores everything needed;
+what is missing is a notification when a known level is re-hit, which is the actual trading trigger.
 
-NOT YET DONE / KNOWN GAPS:
-- <what is unverified>
-```
+Second is **§10 item 4: the size ladder.** One night of 1/5/10/25/100-share probes answers whether
+this scales past a curiosity, and it is the cheapest unanswered question in the whole subsystem.
+
+### Read first
+
+**§9c** for the hidden-liquidity subsystem, **§10** for what is open *and* for the four directional
+strategies already tested and rejected — do not re-run those without new evidence.
