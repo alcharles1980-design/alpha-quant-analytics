@@ -996,6 +996,34 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v677 — Hidden Liquidity Levels page (Jul 30 2026)
+
+Viewer for the overnight hidden-liquidity register. Ranked table of levels with a per-level visit
+history on click, session date picker, min-edge / min-spread / side filters, 45s auto-refresh.
+
+**What a level is:** a price where many prints executed at **one exact price, one side, inside the
+spread**, while the displayed book did not move — a resting hidden order being consumed.
+
+**The rejection rule is the whole thing.** Prints at `pos` 0.000 or 1.000 sit *on* the quote: a
+visible order being taken, not hidden liquidity. Enforced in `register_level()` so no caller can skip
+it. In testing this separated **422 real matches from 320 false ones** — `SOXL 683 prints @ 92.00`
+met every numeric criterion and was worthless (3c spread, price = bid).
+
+Reads via `hidden_levels_view()` / `hidden_level_visits_view()`, both **bounded inside the function**
+(§5.1b — PostgREST caps RPC delivery at 1,000 and the client cannot lift it). The session default
+handles the overnight date roll (§5.1c).
+
+> **The page is a VIEWER. Nothing writes to `hidden_levels` unless the scanner is running**, and the
+> scanner currently lives only in a sandbox — see §10. An empty table means the scanner is off, not
+> that the market is quiet. The page says so rather than showing a blank grid.
+
+**Schema note / mistake worth recording:** `hidden_levels` **already existed** when I wrote
+`register_level` against invented column names. `create table if not exists` silently did nothing, so
+every call failed with `42703` while the engine reported "registered 0" **with no visible error**.
+Always inspect `information_schema.columns` for a table you did not just create in the same session.
+
+---
+
 ### v676 — Most Actives: exact ticker match sorts first (Jul 29 2026)
 
 Searching `KO` listed **KORU above KO**. Substring matching is deliberate — a partial symbol
