@@ -996,6 +996,19 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v681 — Hidden Levels: default sort by print count (Jul 30 2026)
+
+Default ordering is now **most prints first** rather than highest edge. The level hit hardest is
+the one with the most evidence behind it; edge remains the tiebreak and every column still sorts.
+
+**Changed in BOTH places, deliberately.** The client sort and the RPC's `ORDER BY` have to agree,
+because `hidden_levels_view()` truncates at `LIMIT 900` **on the RPC's ordering** — sorting
+client-side after a differently ordered truncation would silently drop the very rows being ranked.
+That is the §5.1b failure mode wearing a different hat: the visible result looks sorted and is
+computed over the wrong population.
+
+---
+
 ### v680 — Hidden Levels: timestamps in Eastern time (Jul 30 2026)
 
 All four timestamp displays on the page — level first/last seen, visit history, and the per-print

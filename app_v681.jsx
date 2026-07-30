@@ -13397,7 +13397,8 @@ function HiddenLevelsPage(p){
     return 'ET';
   })();
 
-  var s12=useState({col:'best_edge',dir:'desc'}),sort=s12[0],setSort=s12[1];
+  var s12=useState({col:'total_prints',dir:'desc'})   /* default: most prints first — the level
+    that was hit hardest is the one with the most evidence behind it */,sort=s12[0],setSort=s12[1];
   var s13=useState({col:null,dir:'asc'}),psort=s13[0],setPsort=s13[1];
 
   var load=async function(){
