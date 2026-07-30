@@ -996,6 +996,27 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v678 — Hidden Levels: every print, on demand (Jul 30 2026)
+
+Clicking a level now loads **every print in that window** from the tape — timestamp to the
+microsecond, gap from the previous print, price, size, conditions, and the bid/ask/spread/position
+each one executed into. Prints at the level price are highlighted; the rest give context.
+
+**Fetched live, never stored.** Storing tick data for every level would be the Jul 22 quota incident
+again (§5.2) — this pulls from the historical BOATS endpoint through `alpaca-proxy` on click, so the
+detail is always exactly what printed and the 512 MB cap is untouched.
+
+`POS` renders red when a print sat **on** the bid or ask rather than inside the spread, so the
+distinction that separates hidden liquidity from an ordinary visible order being consumed is visible
+per print rather than only in the aggregate.
+
+**Caught before shipping:** the route rendered `<HiddenLevelsPage onBack=…/>` without `alpKey` /
+`alpSecret`, so every fetch would have failed with "Alpaca keys not loaded yet". Checked the prop
+against the call site the way `MostActivesPage` is wired — the same class of miss as `p.polyKey` in
+v664.
+
+---
+
 ### v677 — Hidden Liquidity Levels page (Jul 30 2026)
 
 Viewer for the overnight hidden-liquidity register. Ranked table of levels with a per-level visit

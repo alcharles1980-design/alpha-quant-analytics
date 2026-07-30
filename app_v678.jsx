@@ -13363,6 +13363,10 @@ function HiddenLevelsPage(p){
   var s6=useState(true),auto=s6[0],setAuto=s6[1];
   var s7=useState(0),nextAt=s7[0],setNextAt=s7[1];
   var s8=useState({minEdge:0,minSpread:0,side:'ALL'}),f=s8[0],setF=s8[1];
+  var s9=useState(null),prints=s9[0],setPrints=s9[1];
+  var s10=useState(null),printErr=s10[0],setPrintErr=s10[1];
+  var s11=useState(false),printBusy=s11[0],setPrintBusy=s11[1];
+  var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
 
   var load=async function(){
     try{
@@ -13384,8 +13388,56 @@ function HiddenLevelsPage(p){
     return function(){clearInterval(iv);};
   },[auto,date]);
 
+  var loadPrints=async function(row){
+    if(!p.alpKey||!p.alpSecret){setPrintErr('Alpaca keys not loaded yet.');return;}
+    setPrintBusy(true); setPrints(null); setPrintErr(null);
+    try{
+      // Widen the window slightly either side so the burst's edges are visible in context.
+      var t0=new Date(new Date(row.first_seen).getTime()-3000).toISOString().slice(0,19)+'Z';
+      var t1=new Date(new Date(row.last_seen).getTime()+3000).toISOString().slice(0,19)+'Z';
+      var path='/v2/stocks/'+encodeURIComponent(row.ticker)+'/trades?feed=boats&limit=10000&start='+t0+'&end='+t1;
+      var tr=[],guard=0;
+      while(path&&guard<8){
+        var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
+        if(!r.ok)throw new Error('trades '+r.status);
+        var j2=await r.json(); tr=tr.concat(j2.trades||[]); guard++;
+        path=j2.next_page_token?(path.split('&page_token')[0]+'&page_token='+encodeURIComponent(j2.next_page_token)):null;
+      }
+      // quotes too, so each print can be shown against the book it executed into
+      var qpath='/v2/stocks/'+encodeURIComponent(row.ticker)+'/quotes?feed=boats&limit=10000&start='+t0+'&end='+t1;
+      var qq=[],g2=0;
+      while(qpath&&g2<8){
+        var r2=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
+          'X-Alpaca-Path':qpath,'X-Alpaca-Base':'data'}});
+        if(!r2.ok)break;
+        var j3=await r2.json(); qq=qq.concat(j3.quotes||[]); g2++;
+        qpath=j3.next_page_token?(qpath.split('&page_token')[0]+'&page_token='+encodeURIComponent(j3.next_page_token)):null;
+      }
+      qq.sort(function(a,b){return a.t<b.t?-1:1;});
+      var qt=qq.map(function(x){return Date.parse(x.t);});
+      tr.sort(function(a,b){return a.t<b.t?-1:1;});
+      var out=[],prevT=null;
+      for(var k=0;k<tr.length;k++){
+        var t=tr[k], tt=Date.parse(t.t);
+        var lo=0,hi=qt.length-1,idx=-1;
+        while(lo<=hi){var m=(lo+hi)>>1; if(qt[m]<=tt){idx=m;lo=m+1;}else hi=m-1;}
+        var b=idx>=0?qq[idx]:null;
+        var pos=(b&&b.ap>b.bp&&b.bp>0)?((t.p-b.bp)/(b.ap-b.bp)):null;
+        out.push({t:t.t,p:t.p,s:t.s,c:(t.c||[]).join(','),
+          gap:prevT==null?null:(tt-prevT),
+          bid:b?b.bp:null,ask:b?b.ap:null,
+          spread:(b&&b.ap>b.bp)?(b.ap-b.bp):null,pos:pos,
+          at:Math.abs(t.p-Number(row.price))<1e-9});
+        prevT=tt;
+      }
+      setPrints(out);
+    }catch(e){setPrintErr(String(e.message||e));}
+    setPrintBusy(false);
+  };
   var openLevel=async function(row){
-    setSel(row); setVisits(null);
+    setSel(row); setVisits(null); setPrints(null); setPrintErr(null);
+    loadPrints(row);
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/hidden_level_visits_view',{method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
@@ -13509,6 +13561,49 @@ function HiddenLevelsPage(p){
           </tbody>
         </table>
       </div>}
+      {/* EVERY PRINT in the window, fetched on demand — nothing is stored, so the 512MB
+          free-plan cap is untouched and the detail is always exactly what the tape says. */}
+      <div style={{marginTop:14,borderTop:'1px solid '+C.border,paddingTop:10}}>
+        <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+          <div style={{color:C.txtBright,fontSize:11,fontFamily:F,fontWeight:700}}>Every print in this window</div>
+          <div style={{color:C.txtDim,fontSize:8,fontFamily:F}}>
+            {printBusy?'loading tape\u2026':(prints?(prints.filter(function(x){return x.at;}).length+' at '+Number(sel.price).toFixed(4)+' of '+prints.length+' total prints'):'')}
+          </div>
+        </div>
+        {printErr&&<div style={{color:C.warn,fontSize:9,fontFamily:F,marginTop:6}}>{printErr}</div>}
+        {prints&&prints.length>0&&<div style={{marginTop:8,maxHeight:520,overflowY:'auto',overflowX:'auto',border:'1px solid '+C.border,borderRadius:6}}>
+          <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:9}}>
+            <thead style={{position:'sticky',top:0,background:C.bgDeep}}><tr>
+              {['#','TIMESTAMP (UTC)','GAP','PRICE','SIZE','COND','BID','ASK','SPREAD','POS',''].map(function(h,k){
+                return <th key={k} style={{textAlign:k<2?'left':'right',padding:'4px 8px',color:C.txtDim,
+                  fontSize:7,letterSpacing:0.5,borderBottom:'1px solid '+C.border,fontWeight:700,
+                  background:C.bgDeep}}>{h}</th>;})}
+            </tr></thead>
+            <tbody>
+              {prints.map(function(x,k){
+                return <tr key={k} style={{background:x.at?C.gold+'0E':'transparent'}}>
+                  <td style={{padding:'2px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{k+1}</td>
+                  <td style={{padding:'2px 8px',color:C.txtBright,fontFamily:'monospace',borderBottom:'1px solid '+C.border+'22'}}>{String(x.t).slice(11,26)}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{x.gap==null?'\u2014':(x.gap<1000?(x.gap+'ms'):((x.gap/1000).toFixed(2)+'s'))}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:x.at?C.gold:C.txt,fontWeight:x.at?700:400,borderBottom:'1px solid '+C.border+'22'}}>{Number(x.p).toFixed(4)}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'22'}}>{x.s}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.txtDim,fontSize:8,borderBottom:'1px solid '+C.border+'22'}}>{x.c}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{x.bid==null?'\u2014':Number(x.bid).toFixed(2)}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{x.ask==null?'\u2014':Number(x.ask).toFixed(2)}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{x.spread==null?'\u2014':'$'+Number(x.spread).toFixed(3)}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+C.border+'22',
+                      color:x.pos==null?C.txtDim:((x.pos<=0.02||x.pos>=0.98)?C.warn:C.accent)}}>{x.pos==null?'\u2014':Number(x.pos).toFixed(3)}</td>
+                  <td style={{padding:'2px 8px',textAlign:'right',color:C.gold,fontSize:8,borderBottom:'1px solid '+C.border+'22'}}>{x.at?'\u25C0 level':''}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>}
+        {prints&&prints.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6}}>No prints returned for this window.</div>}
+        <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>
+          Fetched live from the tape when you open a level, not stored {'\u2014'} so this is always exactly what printed. Highlighted rows are prints <b>at the level price</b>; the others are shown for context. POS is red when a print sat <i>on</i> the bid or ask rather than inside the spread.
+        </div>
+      </div>
       <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>
         POS is where the price sat between bid and ask: 0 = at the bid, 1 = at the ask. Anything at 0 or 1 is rejected before it reaches this table {'\u2014'} that is a visible order being consumed, not hidden liquidity. STATES counts how many times the book changed during the burst; 1 means it never moved, which is the cleanest signature.
       </div>
@@ -37929,7 +38024,7 @@ function App(){
     {page==='gexprofile'&&<GexOptionsProfilePage alpKey={alpKey} alpSecret={alpSecret} initialSymbol={deepTk} onBack={function(){setPage('home');}}/>}
     {page==='hedgecalc'&&<HedgeCalcPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='nextdayrange'&&<NextDayRangePage apiKey={pgKey} alpKey={alpKey} alpSecret={alpSecret} sb={getSbHeaders} supaUrl={SB_URL} onBack={function(){setPage('home');}}/>}
-    {page==='hiddenlevels'&&<HiddenLevelsPage onBack={function(){setPage('home');}}/>}
+    {page==='hiddenlevels'&&<HiddenLevelsPage alpKey={alpKey} alpSecret={alpSecret} onBack={function(){setPage('home');}}/>}
     {page==='compound'&&<CompoundTrackerPage onBack={function(){setPage('home');}}/>}
     {page==='mostactives'&&<MostActivesPage devView={devView} alpKey={alpKey} alpSecret={alpSecret} pgKey={pgKey} onBack={function(){setPage('home');}}/>}
     {page==='fullmarketscan'&&<FullMarketScanPage pgKey={pgKey} onBack={function(){setPage('home');}}/>}
