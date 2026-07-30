@@ -11,56 +11,48 @@ trust `git log` over it.
 
 ## Status: IDLE
 
-Last cleared: 2026-07-30 04:20 ET, after v681.
+Last cleared: 2026-07-30, after a documentation-reconciliation pass (no app change).
 
-**App at v681.** All three checks clean — run them first:
+**App at v681.** Two commands cover the checks — `system-check.sh` already runs `handoff-gap-check`
+and `preflight` inside it, so there is no need to run those separately:
 
 ```bash
-./scripts/system-check.sh        # LIVE system: deploy, RPCs, cron, edge function
-./scripts/handoff-gap-check.sh   # versions shipped without a §9 entry
-npm run preflight                # version skew, routes, duplicate definitions
+./scripts/system-check.sh    # code + DB objects + cron + Edge Function (wraps gap-check + preflight)
+./scripts/prod-check.sh      # the running app: version, every RPC, Edge Function, table row counts
 ```
 
-See **§11e** for what each catches and is blind to.
+See **§11e** for what each catches and is blind to. **Neither verifies behaviour** — that needs
+`scripts/verify-app.js` (§5.7a).
 
-### What was built this session
+### Where to pick up
 
-- **v655–v667** Most Actives live columns on all four session tabs; ⚡ Most Traded Now; MV Charts
-  true-range-by-hour in 1-hour and 5-minute bins.
-- **v668–v674** Compounding Tracker: per-bucket accounting, profiles, data management, chain
-  integrity.
-- **v675–v676** Most Actives ticker search with cross-session lookup.
-- **v677–v681** Hidden Liquidity Levels page + the whole overnight subsystem (**§9c**).
+**§10 item 1: revisit alerting.** Read **§9c** for the subsystem and **§8a** for the existing alert
+tables before planning anything. Two constraints established Jul 30:
+
+- **The scaffolding only half fits.** `alert_recipients` and `alert_log` are reusable.
+  `alert_schedules` and cron job 40 are **not** — they are schedule-shaped (`send_at_et`,
+  `days_of_week`), this is event-shaped, and job 40's 5-minute cadence is far too slow for bursts
+  with a 0.66s median. Table in §8a.
+- **The threshold cannot be calibrated yet.** Register holds 31 levels, 27 visits, `max(visits) = 2`,
+  only 4 levels revisited — one night. §5.6a: ship the mechanism, leave the threshold unset until
+  §10 item 2 has several nights behind it.
+- **Clear the duplicate `alert_recipient_upsert` / `alert_recipient_delete` overloads first** —
+  still live as of Jul 30, and directly in this path (§8a).
+
+**Second: §10 item 4, the size ladder.** One night of 1/5/10/25/100-share probes answers whether
+this scales past a curiosity. Cheapest unanswered question in the subsystem.
 
 ### Running unattended right now
 
 | job | schedule | what |
 |---|---|---|
-| **pg_cron 51** | `*/2 0-9 * * *` | `overnight-level-scan` Edge Function → fills `hidden_levels` |
+| **pg_cron 51** | `*/2 0-9 * * *` | `overnight-level-scan` → fills `hidden_levels` (§9c) |
+| **pg_cron 40** | `*/5 * * * *` | `alert_dispatch_due()` — dormant no-op, 0 schedules/recipients |
 
-Verified firing on its own: two consecutive runs, both 200, ~1s each. **Nothing else from this
-session runs without being invoked.**
-
-### Where to pick up
-
-Highest value is **§10 item 1: revisit alerting.** The register already stores everything needed;
-what is missing is a notification when a known level is re-hit, which is the actual trading trigger.
-
-Second is **§10 item 4: the size ladder.** One night of 1/5/10/25/100-share probes answers whether
-this scales past a curiosity, and it is the cheapest unanswered question in the whole subsystem.
-
-### Extra safety added this session
-
-`./scripts/prod-check.sh` — verifies the RUNNING system (live app version vs repo, every RPC, the
-Edge Function, table counts), not just the code. **Run it alongside the gap check at session start;
-§1 now says so.** Its own first version produced three FALSE failures by posting `{}` to RPCs that
-take required arguments — fixed, because a health check that cries wolf is worse than none.
-
-**Useful discovery while verifying:** `alert_schedules` / `alert_recipients` / `alert_log` already
-exist and are empty, with cron job 40 dispatching every 5 minutes. Revisit alerting (§10 item 1) has
-scaffolding already — see §10a.
+44 cron jobs total, all active, all succeeded in the last 24h. Job 51: 66 runs, zero failures.
+Storage **251 MB / 49%** of the 512 MB free-plan cap (§5.2).
 
 ### Read first
 
-**§9c** for the hidden-liquidity subsystem, **§10** for what is open *and* for the four directional
+**§9c** for the hidden-liquidity subsystem. **§10** for what is open *and* for the four directional
 strategies already tested and rejected — do not re-run those without new evidence.

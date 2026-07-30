@@ -29,9 +29,11 @@ verification block below before writing any code.
 | 6 | Route/menu parity | Stated as an invariant; `npm run preflight` asserts it. |
 | 7 | Core cycle engine | **CRITICAL** — do not alter without reading. |
 | 8 | Backend shape | Tables, crons, Edge Functions. Free plan, 512 MB hard cap. |
+| 8a | **Alerting system** | Exists, dormant, and only half-reusable for §10 item 1. Read before building alerts. |
 | **9** | **Recent work** | Newest first, v637+. One entry per version — no exceptions, or the gap check goes blind. Older entries: `docs/CHANGELOG-ARCHIVE.md`. |
 | 9a | Research: persistence testing | What is forecastable and what is not. Read before any metric drives capital. |
 | 10 | Known open items | What is still broken or unfinished. |
+| 10a | **Production inventory** | Everything running unattended: 44 cron jobs, the register, storage headroom. |
 | 11 | How the user works | Terse, empirical, root-cause. |
 | 9b | **Most Actives — current state** | The page under active development: tabs, feeds, what is exact vs approximate. |
 | 9c | **Overnight hidden liquidity** | The subsystem: what it is, the at-touch rule, components, what is not built. |
@@ -39,7 +41,7 @@ verification block below before writing any code.
 | 11b | Tooling — verify, don't assert | A wrong claim about my own capabilities, and the rule it earned. |
 | 11c | **Connectors & the deploy path** | What is connected, how code reaches production, why `BUILD_TS` misleads. |
 | 11d | **Making context loss harmless** | It will happen. Commit measurements when taken; keep `docs/IN-FLIGHT.md`. |
-| 11e | **The three checks** | What each catches and is blind to. Run all three at session start. |
+| 11e | **The check scripts** | There are FOUR; `system-check` wraps two of them. Run it + `prod-check`. |
 | 12 | Sandbox capabilities | Tools and libraries available. |
 
 **Two commands do most of the checking:**
@@ -55,9 +57,13 @@ project has produced both within the same hour.
 
 ---
 
-## 0. Bootstrap a brand-new environment (verified cold, Jul 27 2026)
+## 0. Bootstrap a brand-new environment
 
-Every step below was run against a fresh `git clone` into an empty directory.
+**Last re-verified cold Jul 30 2026.** The Jul 27 pass claimed this section was verified against a
+fresh clone into an empty directory — it cannot have been, because step 1 asserted the repo was
+public and an unauthenticated clone fails immediately. **"Verified cold" is a claim like any other:
+if the steps below have not been run start to finish in an empty directory, do not re-add the
+phrase.**
 
 ```bash
 # 1. Clone. The repo is PRIVATE — a PAT is REQUIRED. Ask the user for a fresh
@@ -123,25 +129,28 @@ cd <repo> && ls app_v*.jsx | sort -V | tail -1 && git log --oneline -10
 **Reconcile the log against this document before doing anything else:**
 
 ```bash
-./scripts/handoff-gap-check.sh          # committed, runnable; expands §9 heading ranges
-# -> "no handoff gaps in window", or a list of versions that shipped with no §9 entry
-
-./scripts/prod-check.sh                 # what is actually ALIVE in production
-# -> live app version vs repo, every RPC, the Edge Function, table row counts
+./scripts/system-check.sh               # wraps gap-check + preflight, adds the LIVE-system checks
+./scripts/prod-check.sh                 # what is actually ALIVE: app version, RPCs, Edge Function, rows
 ```
 
-**Run BOTH.** `handoff-gap-check` and `preflight` verify the **code**; `prod-check` verifies the
-**running system**. Structure passing says nothing about behaviour (§5.1a), and a schema or RPC can
-be renamed underneath working code. Neither substitutes for the browser harness
-(`scripts/verify-app.js`) when a *feature's behaviour* is in question.
+**Run BOTH — and note `system-check` already runs `handoff-gap-check` and `preflight` inside it**,
+so those do not need running separately (§11e; the file previously described an inconsistent trio,
+naming a different three in three places). `system-check` verifies the **code plus the objects**;
+`prod-check` exercises the **running system**. Structure passing says nothing about behaviour
+(§5.1a), and a schema or RPC can be renamed underneath working code. **Neither substitutes for the
+browser harness** (`scripts/verify-app.js`) when a *feature's behaviour* is in question.
 
-The script is in the repo rather than pasted here because the obvious one-liner is
+`handoff-gap-check.sh` is still worth calling directly as the very first thing after a clone: it is
+pure bash and runs before `npm install` (§0 step 2).
+
+The gap-check script is in the repo rather than pasted here because the obvious one-liner is
 **wrong**: `comm` rejects `sort -n` ordering, and §9 headings use en-dash ranges
 (`### v648–v650`) that a naive `grep -oE '^### v[0-9]+'` truncates to the first
 version, so it reported 26 gaps where only 2 existed. A check that cries wolf gets
-ignored (§5.6), so it was calibrated against real data until it read clean.
+ignored (§5.6a), so it was calibrated against real data until it read clean.
 **Every version needs its own `### vNNN` heading** for the check to stay honest —
-folding one version into another entry's prose makes it invisible.
+folding one version into another entry's prose makes it invisible. **It does not check
+ordering** — see §9.
 
 > **`git log` is the source of truth for what shipped — not recollection, and not
 > this file.** Long sessions lose context: three versions were once committed from
@@ -235,7 +244,7 @@ Ask for a **fresh short-lived PAT** and tell the user to revoke it after the ses
    standing "1 uncommitted change" WARN. Found Jul 30 2026 with the lock file stuck at
    **6.3.2** against a `package.json` of **6.8.1** — ~49 versions of drift, harmless in itself
    (no dependency changed, only the version field) but a check that always warns is a check
-   that gets ignored (§5.6). Easiest correct order: bump `package.json`, run `npm install`,
+   that gets ignored (§5.6a). Easiest correct order: bump `package.json`, run `npm install`,
    commit whatever it rewrites.
 4. `npm install` if `node_modules` is absent (not committed), then `npm run build`
 5. **`npm run preflight`** — version consistency (app_vN vs the `build.js` banner
@@ -734,6 +743,41 @@ Two alternatives were built or costed and **rejected on 27 Jul 2026**:
   the working one localised the fix faster than reading any of them cold, and confirmed the
   correct shape rather than inventing it.
 
+### 5.6a Alarms and thresholds — the rule this file kept relying on and never stated (Jul 30 2026)
+
+**Added because it was cited before it existed — five times, by two different sessions.** §5.6 is
+about ordering and scoping. It was nonetheless cited as the authority for "a check that cries wolf
+gets ignored" (§1), "alarms are proven by deliberately breaking the file" (§6) and "freshness must
+stay silent when a session is legitimately closed" (§10) — **none of which it says** — and then
+twice more on Jul 30 for threshold calibration. The rules were real, load-bearing, and written down
+nowhere. All five now point here.
+
+**The class of defect matters more than the five instances.** These references *resolve* — §5.6
+exists — so no link check can catch them; the reference is semantically wrong while being
+structurally valid. **When citing a section, open it and confirm it says the thing.** An automated
+audit of all 35 cross-references in this file reported zero unresolved and missed every one of these.
+
+- **Calibrate from measured variation, never from a round number that feels safe.** AQA session row
+  counts move **+10.7% / −17.8%** day to day, which is why coverage alarms sit at **70% WARN /
+  50% FAIL**. An alarm placed inside normal variation fires constantly.
+- **An alarm that always fires is equivalent to no alarm.** Three live examples: `integrity_log`
+  held **48 WARN and 13 FAIL in 48 hours, entirely unread** (§10); `system-check` carried a standing
+  "1 uncommitted change" WARN for ~49 versions because the sweep never bumped `package-lock.json`
+  (§4 step 3); and `pace curve: aftermarket` fires on **100% of hourly runs** — 48 of 48 on Jul 30 —
+  so it is both useless as a signal and the noise any new WARN must be spotted against (§10).
+  In each case the noise was the defect, not the thing being reported.
+- **Make checks context-aware.** Freshness must stay silent when a session is legitimately closed.
+  This is *still not honoured for weekends* — see §10, it is the source of most of that unread log.
+- **Prove the alarm fires before trusting it.** Deliberately break the input, watch it go red,
+  repair, watch it go green. §6 and §11e both record alarms proven this way; a check that has only
+  ever printed PASS is unproven (§4a rule 2's logic applied to monitoring).
+- **Guards refuse, not warn.** `rebuild_pace_curve()` raises on truncated input rather than building
+  from partial data. A warning that the caller can ignore is not a guard.
+- **Keep thresholds consistent across related checks.** A health check at 99% against a rebuild gate
+  at 95% flagged healthy curves peaking at 98.96% as FAIL.
+- **When there is not enough data to calibrate, ship the mechanism and leave the threshold unset**
+  rather than guessing one. This is the current position on revisit alerting — §10 item 1.
+
 ### 5.7 Server limits → always have a browser fallback
 
 CF Workers: 300s CPU / 128 MB. Supabase Edge Functions: 150s. Heavy stocks (SOXL
@@ -851,7 +895,7 @@ match. The invariant is: **zero nav keys without a route, and orphan routes
 exactly `cheatsheet` + `glanceapi`.** `npm run preflight` asserts precisely that.
 
 **The three preflight alarms are proven, not assumed** — each was fired by
-deliberately breaking the file, then repaired and re-verified clean (§5.6):
+deliberately breaking the file, then repaired and re-verified clean (§5.6a):
 - version skew: banner set to v651 against `app_v652.jsx` → caught
 - routing: injected a `ghostpage` menu key with no branch → caught
 - duplicates: injected a second `smaSeries` 1,000 lines away in the same
@@ -2274,7 +2318,7 @@ whether edge decays by the 20th visit is unmeasured.
 >   `alert_recipient_upsert` / `alert_recipient_delete` overloads first — they are still live and
 >   sit directly in this path.
 > - **The trigger threshold cannot be calibrated yet.** The register holds **31 levels, 27 visits,
->   `max(visits) = 2`, and only 4 levels revisited at all** — one session of data. §5.6 rule 1 says
+>   `max(visits) = 2`, and only 4 levels revisited at all** — one session of data. §5.6a says
 >   thresholds come from observed variation, never a guess, and there is not yet enough variation
 >   to observe. **Build the dispatch path now; leave the threshold as the one deliberately unset
 >   parameter** until item 2 has several nights behind it. Shipping a guessed threshold here
@@ -2318,7 +2362,7 @@ return** — but as a *strategy* it is regime-dependent and marginal after costs
 > premarket/aftermarket/overnight on Jul 25–26 (Sat/Sun), e.g. *"1144 min since last write
 > (session LIVE)"* — the check believes the session is live at the weekend. This item was
 > previously recorded as affecting only market holidays (~9 days/yr); it is **weekends too**,
-> so roughly 110 days a year, which is why the log is full of noise nobody reads. §5.6 rule 2
+> so roughly 110 days a year, which is why the log is full of noise nobody reads. §5.6a
 > already says freshness must stay silent when a session is legitimately closed — that rule is
 > not being honoured for Sat/Sun.
 >
@@ -2328,6 +2372,20 @@ return** — but as a *strategy* it is regime-dependent and marginal after costs
 > equally trustworthy everywhere. ON PACE now carries a confidence band derived from `curve_spread`,
 > greying and marking cells when the projection could land in a >2.5x range. See the v658 entry.
 > **The WARN in `integrity_log` is expected and is not a defect to chase.**
+>
+> **But measure how often it fires before calling it harmless.** Re-checked Jul 30 2026:
+> **48 WARN / 0 FAIL in 48 hours, and all 48 are this one check** — it fires on every single hourly
+> run, i.e. 100% of the time. By §5.6a that is functionally the same as no alarm on that check, and
+> worse, a permanently-red line is what any *new* WARN now has to be noticed against. The 13 FAILs
+> recorded above were the weekend freshness bug (item 1) and correctly did not recur midweek.
+>
+> **Not fixed — it is a design call, not a bug.** Three options: suppress it when
+> `curve_spread` is within the after-market's own structural range (it peaks at 46.7 pts vs RTH's
+> 16.3, so the current threshold is effectively "is this the after-market session"), downgrade it to
+> INFO since v658 already surfaces the uncertainty in the UI where it matters, or leave it and
+> accept that `integrity_log` needs filtering by `check_name` to be readable. **Decide before
+> building any notification path on top of `integrity_log`** — §10 item 1 would otherwise inherit a
+> channel that is already 100% noise.
 
 ### Resolved Jul 24 2026
 - **Most Actives median columns were blank** (MED TRADES / MED VOL / `rel_*_med`). Root cause
@@ -2657,15 +2715,37 @@ apart, for want of that check.
 
 ---
 
-## 11e. The three checks, and what each can and cannot see (Jul 30 2026)
+## 11e. The check scripts — there are FOUR, and two of them are enough (Jul 30 2026)
 
-Run all three at session start. They cover different failure classes and **none subsumes another**.
+> **CORRECTED Jul 30 2026.** This section was titled "the three checks" and said they **"cover
+> different failure classes and none subsumes another"**. That was wrong on both counts, and the
+> file disagreed with itself in three places about which three: §1 named gap-check + prod-check,
+> this section named gap-check + preflight + system-check, and `docs/IN-FLIGHT.md` named a third
+> combination. A cold-start session gets a different instruction depending on which it reads first.
+
+**`system-check.sh` runs `handoff-gap-check.sh` and `npm run preflight` internally** (lines 83–85) —
+so it *does* subsume two of the four, and "run all three" meant running both of those twice.
+
+**Run these two. Together they cover everything below:**
+
+```bash
+./scripts/system-check.sh    # wraps gap-check + preflight, and adds the live-system checks
+./scripts/prod-check.sh      # the running app: deployed version, every RPC, Edge Function, row counts
+```
+
+The individual scripts remain useful on their own — `handoff-gap-check.sh` needs no `npm install`
+and works the instant a clone lands, which is why §0 step 2 still calls it directly.
 
 | | command | catches | blind to |
 |---|---|---|---|
-| **1** | `./scripts/handoff-gap-check.sh` | versions shipped with no §9 entry | anything not version-shaped |
-| **2** | `npm run preflight` | version skew, route/menu parity, duplicate definitions | **behaviour** — it verifies structure only |
-| **3** | `./scripts/system-check.sh` | deployed≠repo, duplicate RPC signatures, cron scheduled-but-failing, Edge Function down | code correctness |
+| 1 | `handoff-gap-check.sh` | versions shipped with no §9 entry | anything not version-shaped; **ordering** — an entry 28 versions out of place passes (§9) |
+| 2 | `npm run preflight` | version skew, route/menu parity, duplicate definitions | **behaviour** — structure only; also orphaned handlers (the v674 regression) |
+| 3 | `system-check.sh` | 1 + 2, plus deployed≠repo, duplicate RPC signatures, cron scheduled-but-failing, Edge Function down | code correctness |
+| 4 | `prod-check.sh` | live app version, every RPC responding, Edge Function, table row counts | whether any of it is *correct* — a 200 is not a right answer |
+
+**Neither 3 nor 4 subsumes the other:** 3 counts function signatures and checks cron; 4 exercises
+the RPCs and counts rows. **Nothing here verifies behaviour** — that still needs
+`scripts/verify-app.js` (§5.7a).
 
 **Why 3 exists.** Every one of these has happened here, and all were **invisible** to 1 and 2:
 - a `pg_cron` job built with a **NULL auth header** — scheduled, active, failing silently every 2 min
