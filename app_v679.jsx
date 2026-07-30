@@ -13367,6 +13367,8 @@ function HiddenLevelsPage(p){
   var s10=useState(null),printErr=s10[0],setPrintErr=s10[1];
   var s11=useState(false),printBusy=s11[0],setPrintBusy=s11[1];
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+  var s12=useState({col:'best_edge',dir:'desc'}),sort=s12[0],setSort=s12[1];
+  var s13=useState({col:null,dir:'asc'}),psort=s13[0],setPsort=s13[1];
 
   var load=async function(){
     try{
@@ -13452,6 +13454,19 @@ function HiddenLevelsPage(p){
     if(Number(x.med_spread||0)<Number(f.minSpread||0))return false;
     return true;
   });
+  // Sorting runs over the FILTERED set, and nulls always sort last regardless of direction —
+  // a missing value is not "smallest" (same rule as the Most Traded Now table, v662).
+  var TEXTCOLS={ticker:1,side:1};
+  view=view.slice().sort(function(a,b){
+    var k=sort.col,d=(sort.dir==='asc')?1:-1;
+    var av=a[k],bv=b[k];
+    if(TEXTCOLS[k])return d*String(av||'').localeCompare(String(bv||''));
+    av=(av==null||av==='')?null:Number(av); bv=(bv==null||bv==='')?null:Number(bv);
+    if(av==null&&bv==null)return 0;
+    if(av==null)return 1;
+    if(bv==null)return -1;
+    return d*(av-bv);
+  });
   var inp={background:C.bgDeep,color:C.txtBright,fontFamily:F,fontSize:11,
     border:'1px solid '+C.border,borderRadius:5,padding:'4px 7px'};
 
@@ -13495,12 +13510,24 @@ function HiddenLevelsPage(p){
     </div>}
     {rows&&rows.length>0&&<div style={{overflowX:'auto'}}>
       <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
-        <thead><tr>{[['SYMBOL',''],['PRICE','level'],['SIDE','resting'],['EDGE $','vs visible'],
-          ['SPREAD $','at burst'],['BPS',''],['POS','in spread'],['PRINTS',''],['SHARES',''],
-          ['VISITS','bursts'],['SPAN','seconds'],['BOOK','states'],['TOUCH','%'],['LAST','min ago']].map(function(h,i){
-          return <th key={i} style={{textAlign:i<3?'left':'right',padding:'5px 8px',color:i===3?C.gold:C.txtDim,
-            fontSize:7,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,fontWeight:700}}>
-            {h[0]}{h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;})}
+        <thead><tr>{[['SYMBOL','','ticker'],['PRICE','level','price'],['SIDE','resting','side'],
+          ['EDGE $','vs visible','best_edge'],['SPREAD $','at burst','med_spread'],['BPS','','spread_bps'],
+          ['POS','in spread','med_pos'],['PRINTS','','total_prints'],['SHARES','','total_shares'],
+          ['VISITS','bursts','visits'],['SPAN','seconds','span_s'],['BOOK','states','book_states'],
+          ['TOUCH','%','at_touch_pct'],['LAST','min ago','seen_min_ago']].map(function(h,i){
+          var key=h[2],active=(sort.col===key);
+          return <th key={i} onClick={function(){
+              // same column flips direction; a new column starts DESCENDING for numbers
+              // (every measure here is "how much") and ASCENDING for text.
+              setSort(active?{col:key,dir:(sort.dir==='desc'?'asc':'desc')}
+                            :{col:key,dir:TEXTCOLS[key]?'asc':'desc'});
+            }}
+            style={{textAlign:i<3?'left':'right',padding:'5px 8px',color:active?C.gold:C.txtDim,
+            fontSize:7,letterSpacing:0.5,textTransform:'uppercase',
+            borderBottom:'1px solid '+(active?C.gold+'66':C.border),fontWeight:700,
+            cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>
+            {h[0]}{active?<span style={{marginLeft:3}}>{sort.dir==='desc'?'\u25BC':'\u25B2'}</span>:null}
+            {h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;})}
         </tr></thead>
         <tbody>
           {view.map(function(x){
@@ -13574,13 +13601,32 @@ function HiddenLevelsPage(p){
         {prints&&prints.length>0&&<div style={{marginTop:8,maxHeight:520,overflowY:'auto',overflowX:'auto',border:'1px solid '+C.border,borderRadius:6}}>
           <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:9}}>
             <thead style={{position:'sticky',top:0,background:C.bgDeep}}><tr>
-              {['#','TIMESTAMP (UTC)','GAP','PRICE','SIZE','COND','BID','ASK','SPREAD','POS',''].map(function(h,k){
-                return <th key={k} style={{textAlign:k<2?'left':'right',padding:'4px 8px',color:C.txtDim,
-                  fontSize:7,letterSpacing:0.5,borderBottom:'1px solid '+C.border,fontWeight:700,
-                  background:C.bgDeep}}>{h}</th>;})}
+              {[['#',null],['TIMESTAMP (UTC)','t'],['GAP','gap'],['PRICE','p'],['SIZE','s'],
+                ['COND','c'],['BID','bid'],['ASK','ask'],['SPREAD','spread'],['POS','pos'],['',null]].map(function(h,k){
+                var key=h[1],active=(key&&psort.col===key);
+                return <th key={k} onClick={key?function(){
+                    setPsort(active?{col:key,dir:(psort.dir==='asc'?'desc':'asc')}:{col:key,dir:'asc'});
+                  }:null}
+                  style={{textAlign:k<2?'left':'right',padding:'4px 8px',color:active?C.gold:C.txtDim,
+                  fontSize:7,letterSpacing:0.5,borderBottom:'1px solid '+(active?C.gold+'66':C.border),fontWeight:700,
+                  background:C.bgDeep,cursor:key?'pointer':'default',userSelect:'none',whiteSpace:'nowrap'}}>
+                  {h[0]}{active?<span style={{marginLeft:3}}>{psort.dir==='desc'?'\u25BC':'\u25B2'}</span>:null}</th>;})}
             </tr></thead>
             <tbody>
-              {prints.map(function(x,k){
+              {(function(){
+                if(!psort.col)return prints;
+                var TXT={t:1,c:1};
+                return prints.slice().sort(function(a,b){
+                  var k2=psort.col,d=(psort.dir==='asc')?1:-1;
+                  var av=a[k2],bv=b[k2];
+                  if(TXT[k2])return d*String(av||'').localeCompare(String(bv||''));
+                  av=(av==null)?null:Number(av); bv=(bv==null)?null:Number(bv);
+                  if(av==null&&bv==null)return 0;
+                  if(av==null)return 1;
+                  if(bv==null)return -1;
+                  return d*(av-bv);
+                });
+              })().map(function(x,k){
                 return <tr key={k} style={{background:x.at?C.gold+'0E':'transparent'}}>
                   <td style={{padding:'2px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{k+1}</td>
                   <td style={{padding:'2px 8px',color:C.txtBright,fontFamily:'monospace',borderBottom:'1px solid '+C.border+'22'}}>{String(x.t).slice(11,26)}</td>
@@ -13601,7 +13647,7 @@ function HiddenLevelsPage(p){
         </div>}
         {prints&&prints.length===0&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:6}}>No prints returned for this window.</div>}
         <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:7,lineHeight:1.6}}>
-          Fetched live from the tape when you open a level, not stored {'\u2014'} so this is always exactly what printed. Highlighted rows are prints <b>at the level price</b>; the others are shown for context. POS is red when a print sat <i>on</i> the bid or ask rather than inside the spread.
+          Click any column to sort; click again to reverse. Default order is chronological, which is how a burst reads. Fetched live from the tape when you open a level, not stored {'\u2014'} so this is always exactly what printed. Highlighted rows are prints <b>at the level price</b>; the others are shown for context. POS is red when a print sat <i>on</i> the bid or ask rather than inside the spread.
         </div>
       </div>
       <div style={{fontSize:8,color:C.txtDim,fontFamily:F,marginTop:8,lineHeight:1.6}}>

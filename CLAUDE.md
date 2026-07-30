@@ -996,6 +996,20 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v679 — Hidden Levels: both tables sortable (Jul 30 2026)
+
+Every column on the level list **and** on the per-print breakdown sorts; click again to reverse.
+Active column marked gold with a direction arrow.
+
+Rules carried over from v662 so behaviour is consistent across the app:
+- **Nulls sort last in both directions** — a missing value is not "smallest".
+- A **new numeric column starts descending** (every measure here is "how much"); text starts
+  ascending. Same column flips.
+- Sorting runs over the **filtered** set, and on the print table the default is **chronological** —
+  that is how a burst actually reads, so it is only abandoned when the user asks for something else.
+
+---
+
 ### v678 — Hidden Levels: every print, on demand (Jul 30 2026)
 
 Clicking a level now loads **every print in that window** from the tape — timestamp to the
