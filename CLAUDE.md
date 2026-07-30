@@ -996,6 +996,26 @@ selected. Verified: 80 rows after clicking.
 
 ---
 
+### v680 — Hidden Levels: timestamps in Eastern time (Jul 30 2026)
+
+All four timestamp displays on the page — level first/last seen, visit history, and the per-print
+breakdown — now render in **Eastern time** rather than UTC, with the column header showing the live
+abbreviation (`TIMESTAMP (EDT)` / `(EST)`) rather than asserting one.
+
+**Formatted with `Intl` and `timeZone: 'America/New_York'`, never a fixed offset.** A hardcoded
+−4/−5 is wrong for roughly eight months of the year — the v633 banner bug — and this needs no code
+change across the November and March switches.
+
+**Sub-second precision is carried over from the ISO string**, because `Intl` does not format
+fractions and the microseconds are the point here: burst gaps are measured in milliseconds. Prints
+render to 6 digits, visit history to 3.
+
+Verified against both DST states before shipping: `2026-07-30T07:13:45Z → 03:13:45 EDT`,
+`2026-01-15T07:13:45Z → 02:13:45 EST`, and the session open `00:00 UTC → 20:00 ET the previous
+evening`.
+
+---
+
 ### v679 — Hidden Levels: both tables sortable (Jul 30 2026)
 
 Every column on the level list **and** on the per-print breakdown sorts; click again to reverse.

@@ -13367,6 +13367,36 @@ function HiddenLevelsPage(p){
   var s10=useState(null),printErr=s10[0],setPrintErr=s10[1];
   var s11=useState(false),printBusy=s11[0],setPrintBusy=s11[1];
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
+  // ET rendering. Intl with America/New_York, NEVER a fixed offset — a hardcoded -4/-5 is
+  // wrong for roughly eight months of the year and was the v633 banner bug. This also keeps
+  // EST/EDT correct across the November and March switches without a code change.
+  var etFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',
+    minute:'2-digit',second:'2-digit',hour12:false});
+  var etDayFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric'});
+  // Sub-second precision is carried over from the ISO string: Intl does not format fractions,
+  // and the microseconds matter here — burst gaps are measured in milliseconds.
+  var etTime=function(iso,digits){
+    if(!iso)return '\u2014';
+    try{
+      var out=etFmt.format(new Date(iso));
+      if(digits){
+        var m=String(iso).match(/\.(\d+)/);
+        if(m)out+='.'+(m[1]+'000000').slice(0,digits);
+      }
+      return out;
+    }catch(e){return String(iso).slice(11,19);}
+  };
+  var etDay=function(iso){ try{return etDayFmt.format(new Date(iso));}catch(e){return '';} };
+  // Which abbreviation is in force right now, so the header is not merely asserted.
+  var etZone=(function(){
+    try{
+      var parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'short'})
+        .formatToParts(new Date());
+      for(var k=0;k<parts.length;k++)if(parts[k].type==='timeZoneName')return parts[k].value;
+    }catch(e){}
+    return 'ET';
+  })();
+
   var s12=useState({col:'best_edge',dir:'desc'}),sort=s12[0],setSort=s12[1];
   var s13=useState({col:null,dir:'asc'}),psort=s13[0],setPsort=s13[1];
 
@@ -13561,7 +13591,7 @@ function HiddenLevelsPage(p){
         {sel.ticker+' @ '+Number(sel.price).toFixed(4)+'  \u00B7  '+(sel.side==='ASK'?'hidden buyer resting':'hidden seller resting')}
       </div>
       <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:3}}>
-        {'first seen '+String(sel.first_seen).slice(11,19)+'  \u00B7  last '+String(sel.last_seen).slice(11,19)
+        {'first seen '+etTime(sel.first_seen)+' '+etZone+'  \u00B7  last '+etTime(sel.last_seen)+'  \u00B7  '+etDay(sel.first_seen)
          +'  \u00B7  '+sel.visits+' burst'+(sel.visits===1?'':'s')+'  \u00B7  '+sel.total_prints+' prints  \u00B7  '+sel.total_shares+' shares'}
       </div>
       {!visits&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:8}}>Loading visits{'\u2026'}</div>}
@@ -13573,7 +13603,7 @@ function HiddenLevelsPage(p){
           <tbody>{visits.map(function(v,i){
             return <tr key={i}>
               <td style={{padding:'3px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'33'}}>{i+1}</td>
-              <td style={{padding:'3px 8px',color:C.txtBright,borderBottom:'1px solid '+C.border+'33'}}>{String(v.seen_at).slice(11,23)}</td>
+              <td style={{padding:'3px 8px',color:C.txtBright,borderBottom:'1px solid '+C.border+'33'}}>{etTime(v.seen_at,3)}</td>
               <td style={{padding:'3px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'33'}}>{v.prints}</td>
               <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'33'}}>{v.shares}</td>
               <td style={{padding:'3px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'33'}}>{Number(v.span_s||0).toFixed(2)}</td>
@@ -13601,7 +13631,7 @@ function HiddenLevelsPage(p){
         {prints&&prints.length>0&&<div style={{marginTop:8,maxHeight:520,overflowY:'auto',overflowX:'auto',border:'1px solid '+C.border,borderRadius:6}}>
           <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:9}}>
             <thead style={{position:'sticky',top:0,background:C.bgDeep}}><tr>
-              {[['#',null],['TIMESTAMP (UTC)','t'],['GAP','gap'],['PRICE','p'],['SIZE','s'],
+              {[['#',null],['TIMESTAMP ('+etZone+')','t'],['GAP','gap'],['PRICE','p'],['SIZE','s'],
                 ['COND','c'],['BID','bid'],['ASK','ask'],['SPREAD','spread'],['POS','pos'],['',null]].map(function(h,k){
                 var key=h[1],active=(key&&psort.col===key);
                 return <th key={k} onClick={key?function(){
@@ -13629,7 +13659,7 @@ function HiddenLevelsPage(p){
               })().map(function(x,k){
                 return <tr key={k} style={{background:x.at?C.gold+'0E':'transparent'}}>
                   <td style={{padding:'2px 8px',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{k+1}</td>
-                  <td style={{padding:'2px 8px',color:C.txtBright,fontFamily:'monospace',borderBottom:'1px solid '+C.border+'22'}}>{String(x.t).slice(11,26)}</td>
+                  <td style={{padding:'2px 8px',color:C.txtBright,fontFamily:'monospace',borderBottom:'1px solid '+C.border+'22'}}>{etTime(x.t,6)}</td>
                   <td style={{padding:'2px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'22'}}>{x.gap==null?'\u2014':(x.gap<1000?(x.gap+'ms'):((x.gap/1000).toFixed(2)+'s'))}</td>
                   <td style={{padding:'2px 8px',textAlign:'right',color:x.at?C.gold:C.txt,fontWeight:x.at?700:400,borderBottom:'1px solid '+C.border+'22'}}>{Number(x.p).toFixed(4)}</td>
                   <td style={{padding:'2px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'22'}}>{x.s}</td>
