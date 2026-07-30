@@ -39,6 +39,7 @@ verification block below before writing any code.
 | 11b | Tooling — verify, don't assert | A wrong claim about my own capabilities, and the rule it earned. |
 | 11c | **Connectors & the deploy path** | What is connected, how code reaches production, why `BUILD_TS` misleads. |
 | 11d | **Making context loss harmless** | It will happen. Commit measurements when taken; keep `docs/IN-FLIGHT.md`. |
+| 11e | **The three checks** | What each catches and is blind to. Run all three at session start. |
 | 12 | Sandbox capabilities | Tools and libraries available. |
 
 **Two commands do most of the checking:**
@@ -124,9 +125,12 @@ folding one version into another entry's prose makes it invisible.
 > being unable to account for its own commits (§11a). Two rules follow:
 > 1. **A version in the log and absent from §9 is a gap to fill**, using the
 >    commit message, before starting new work.
-> 2. **Read `docs/IN-FLIGHT.md`** — anything mid-investigation, with the measurements already
+> 2. **Run `./scripts/system-check.sh`** — verifies the LIVE system, not just the code: deployed
+>    version vs repo, one signature per RPC, scheduled jobs actually succeeding, the Edge Function
+>    responding. Repo-level checks cannot see any of that, and every one of those has failed here.
+> 3. **Read `docs/IN-FLIGHT.md`** — anything mid-investigation, with the measurements already
 >    taken. Trust `git log` over it if they disagree.
-> 3. **Before "discovering" a bug, check it is not already fixed.** The highest
+> 4. **Before "discovering" a bug, check it is not already fixed.** The highest
 >    `app_vN.jsx` and the last few commit messages answer that in seconds. The
 >    same defect was once diagnosed twice, an hour apart, for exactly this reason.
 
@@ -2513,6 +2517,34 @@ Run §1. It reconciles `git log` against §9 and reads `integrity_log`. Then rea
 `docs/IN-FLIGHT.md`. **`git log` outranks recollection, and both outrank this file.** Before
 "discovering" a bug, check the last few commits — the same defect was diagnosed twice, an hour
 apart, for want of that check.
+
+---
+
+## 11e. The three checks, and what each can and cannot see (Jul 30 2026)
+
+Run all three at session start. They cover different failure classes and **none subsumes another**.
+
+| | command | catches | blind to |
+|---|---|---|---|
+| **1** | `./scripts/handoff-gap-check.sh` | versions shipped with no §9 entry | anything not version-shaped |
+| **2** | `npm run preflight` | version skew, route/menu parity, duplicate definitions | **behaviour** — it verifies structure only |
+| **3** | `./scripts/system-check.sh` | deployed≠repo, duplicate RPC signatures, cron scheduled-but-failing, Edge Function down | code correctness |
+
+**Why 3 exists.** Every one of these has happened here, and all were **invisible** to 1 and 2:
+- a `pg_cron` job built with a **NULL auth header** — scheduled, active, failing silently every 2 min
+- **two overloads** of `compound_bucket_state`, then of `register_level` — `create or replace` across
+  a differing signature *adds* an overload and PostgREST returns `PGRST203`
+- `compound_reset` / `compound_clear_trades` **dead from the API** (unqualified DELETE) while working
+  through MCP — the buttons rendered perfectly and did nothing
+- a deployed version behind the repo after a failed push
+
+**Alarms proven, not assumed (§4a).** A second signature of `most_actives_lookup` was created
+deliberately: the check reported `FAIL … 2 SIGNATURES` and exited **1**. Removed, re-verified clean.
+
+**Reads the app source for `SB_KEY`** rather than needing configuration, and depends on two read-only
+helpers: `pg_function_signature_count(name)` and `cron_job_status()`. The cron check only expects a
+run in the last 24h from jobs that fire at least daily — flagging weekly vacuums buried the one line
+that mattered under eleven that did not.
 
 ---
 

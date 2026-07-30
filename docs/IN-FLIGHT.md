@@ -13,7 +13,15 @@ trust `git log` over it.
 
 Last cleared: 2026-07-30 04:20 ET, after v681.
 
-**App at v681.** Gap check and preflight clean, nothing unpushed.
+**App at v681.** All three checks clean — run them first:
+
+```bash
+./scripts/system-check.sh        # LIVE system: deploy, RPCs, cron, edge function
+./scripts/handoff-gap-check.sh   # versions shipped without a §9 entry
+npm run preflight                # version skew, routes, duplicate definitions
+```
+
+See **§11e** for what each catches and is blind to.
 
 ### What was built this session
 
