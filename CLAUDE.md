@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v652 · Jul 27 2026
+**Status at last update:** v681 · Jul 30 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -60,8 +60,12 @@ project has produced both within the same hour.
 Every step below was run against a fresh `git clone` into an empty directory.
 
 ```bash
-# 1. Clone. The repo is PUBLIC — no credentials needed.
-git clone https://github.com/alcharles1980-design/alpha-quant-analytics.git && cd alpha-quant-analytics
+# 1. Clone. The repo is PRIVATE — a PAT is REQUIRED. Ask the user for a fresh
+#    short-lived token and tell them to revoke it when the session ends.
+git clone https://x-access-token:<PAT>@github.com/alcharles1980-design/alpha-quant-analytics.git \
+  && cd alpha-quant-analytics
+git remote set-url origin https://github.com/alcharles1980-design/alpha-quant-analytics.git
+#    ^ strip the token from .git/config immediately; re-add it only for the push.
 
 # 2. This works IMMEDIATELY, before any install — it is pure bash:
 ./scripts/handoff-gap-check.sh          # any version shipped without a §9 entry
@@ -75,6 +79,18 @@ npm run build                            # writes dist/index.html
 mkdir -p ~/pwtest && cd ~/pwtest && npm install playwright-core
 #    then use scripts/verify-app.js — it resolves playwright from ~/pwtest automatically
 ```
+
+> **This block said "the repo is PUBLIC — no credentials needed" until Jul 30 2026, and it was
+> wrong** — §2 said PRIVATE the whole time, so the file contradicted itself and §0 is the half a
+> cold start actually follows. Corrected after an unauthenticated clone failed on a fresh sandbox.
+>
+> **The failure mode is misleading, so recognise it:** `git clone` does not say "private", it asks
+> for a username and dies with `could not read Username for 'https://github.com'`. Worse, the
+> obvious next probe — `curl https://api.github.com/repos/...` — can return **403 with a rate-limit
+> body**, because a shared sandbox IP has usually burnt the 60/hour unauthenticated quota. That 403
+> looks like a permissions answer and is not one. **Settle it with an authenticated call** and read
+> the `private` field; anything less is guessing. (§4a rule 4: prove the instrument before believing
+> what it tells you.)
 
 **The build is reproducible.** A cold clone produced a `dist/index.html` **byte-identical** to the
 committed one once the `BUILD_TS` stamp is normalised. If yours differs by more than the timestamp,
@@ -184,7 +200,7 @@ guessed. Sister project: **mbot** (live grid bot on Alpaca, separate repo/Supaba
 
 - **Repo:** `github.com/alcharles1980-design/alpha-quant-analytics` — **PRIVATE**
 - **Live:** `https://alpha-quant-analytics.alcharles1980.workers.dev/`
-- **Scale:** ~34,100 lines / 2.9 MB in one `app_vN.jsx`; 85 nav pages + 2 hidden
+- **Scale:** **38,415 lines / 3.1 MB** in one `app_vN.jsx` (measured v681); **88 nav pages** + 2 hidden
   sub-pages (`cheatsheet`, `glanceapi`), 13 stage sections
 
 ---
@@ -213,7 +229,14 @@ Ask for a **fresh short-lived PAT** and tell the user to revoke it after the ses
 1. `cp app_vN.jsx app_vN+1.jsx` and **delete the old file**
 2. **`build.js` hardcodes the version in the `BUILD_TS` banner — bump it too.**
    Miss this and the app deploys as N+1 but *displays* N.
-3. `package.json` version
+3. `package.json` version — **and `package-lock.json`, which has its own copy in two
+   places** (top-level `version` and `packages[""].version`). `npm install` rewrites them
+   anyway, so skipping this leaves the tree permanently dirty and `system-check` reporting a
+   standing "1 uncommitted change" WARN. Found Jul 30 2026 with the lock file stuck at
+   **6.3.2** against a `package.json` of **6.8.1** — ~49 versions of drift, harmless in itself
+   (no dependency changed, only the version field) but a check that always warns is a check
+   that gets ignored (§5.6). Easiest correct order: bump `package.json`, run `npm install`,
+   commit whatever it rewrites.
 4. `npm install` if `node_modules` is absent (not committed), then `npm run build`
 5. **`npm run preflight`** — version consistency (app_vN vs the `build.js` banner
    vs `package.json`), route/menu parity, and scope-aware duplicate definitions.
@@ -870,10 +893,11 @@ change all eight.
 
 ## 8. Backend shape (verify, don't trust)
 
-**Supabase `haeqzegdlwryvaecanrn`** — ~193 MB / 38% of cap; ~60 tables; ~35 pg_cron
-jobs (4 session-actives scanners, chop scan + price refresh, regime-classify, IV
-logger, staggered 3:30–3:41 AM cleanups, Sunday 4 AM vacuums, `db_size_guard` every
-6h); ~18 Edge Functions (`batch-analyze`, `chop-price-refresh`, `regime-classify`,
+**Supabase `haeqzegdlwryvaecanrn`** — **251 MB / 49% of cap; 44 pg_cron jobs, all active**
+(measured Jul 30 2026 — the previous figures, 193 MB and ~35 jobs, drifted within days; re-measure,
+do not quote these); ~60 tables. The jobs cover 4 session-actives scanners, the overnight
+level scan, chop scan + price refresh, regime-classify, IV logger, staggered 3:30–3:41 AM
+cleanups, Sunday 4 AM vacuums and `db_size_guard` every 6h; ~18 Edge Functions (`batch-analyze`, `chop-price-refresh`, `regime-classify`,
 `iv-logger`, `overnight-/premarket-/aftermarket-actives`, `tipranks-sync` + probes).
 
 Convention: `cached_*` tables have **RLS off**, anon-key readable, `SECURITY DEFINER`
@@ -933,9 +957,35 @@ pg_cron **job 40, `select public.alert_dispatch_due();` every 5 minutes.**
 **It sends predictor shortlists** (session + top_n + min_score), not integrity results — so §10's
 "integrity results have no notification path" remains accurate.
 
-**It is completely dormant:** 0 schedules, 0 recipients, 0 log rows. Job 40 has therefore been a
-no-op every 5 minutes since it was added. Harmless, but it is a scheduled job doing nothing, and on
-this connection-pool budget (§5.2b) anything on a 5-minute timer deserves to be deliberate.
+**It is completely dormant:** 0 schedules, 0 recipients, 0 log rows — **re-verified Jul 30 2026**.
+Job 40 has therefore been a no-op every 5 minutes since it was added. Harmless, but it is a
+scheduled job doing nothing, and on this connection-pool budget (§5.2b) anything on a 5-minute
+timer deserves to be deliberate.
+
+> **THIS SCAFFOLDING IS SCHEDULE-SHAPED, AND REVISIT ALERTING (§10 item 1) IS EVENT-SHAPED. Read
+> this before assuming it can simply be reused.** Confirmed against
+> `information_schema.columns`, Jul 30 2026 — half of it fits and half of it does not:
+>
+> | piece | reusable for revisit alerting? |
+> |---|---|
+> | `alert_recipients` (phone, channel, opted_in, last_sent, last_error) | **yes** — delivery is delivery |
+> | `alert_log` (sent_at, schedule_id, recipients, delivered, failed, body) | **yes**, though `schedule_id` would need to mean something else or go null |
+> | `alert_schedules` (`send_at_et`, `days_of_week`, `session_type`, `top_n`, `min_score`) | **no** — every column answers *when to send a digest*, none answers *what event fires this* |
+> | `alert_dispatch_due()` + job 40 | **no at this cadence** — it wakes every 5 minutes; the median burst is **0.66s** and 25% are under 100ms (§9c) |
+>
+> The existing model is "at 09:15 ET on weekdays, send the top N predictor names above score X".
+> The requirement is "the instant a known level is re-hit, tell me". Those are different triggers,
+> and forcing the second into the first's schema means either a 5-minute worst-case delay on a
+> sub-second event or a `session_type` column quietly repurposed to mean something it does not say.
+> **Reuse the recipient and log layer; expect to write the trigger.**
+
+> **FINDING, still open — the duplicate overloads below have NOT been fixed.** Re-verified
+> Jul 30 2026 via `pg_get_function_identity_arguments`: `alert_recipient_upsert` still exists as
+> both `(p_phone,p_label,p_active)` and `(p_phone,p_label,p_active,p_channel)`, and
+> `alert_recipient_delete` as both `(p_phone)` and `(p_phone,p_channel)`. Nothing is broken today
+> because the app always passes `p_channel` — but this sits directly in the path of §10 item 1,
+> and the *next* caller written without `p_channel` gets `PGRST203`. Clear them before building
+> on this subsystem, not after.
 
 > **FINDING, not fixed — duplicate RPC overloads.** `alert_recipient_upsert` and
 > `alert_recipient_delete` each exist in TWO signatures, with and without `p_channel`:
@@ -961,53 +1011,14 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 
 > **Cross-reference entries by VERSION, never by position.** "the entry above/below" breaks the moment §9 is reordered or an entry is archived — which is exactly what happened to the v641/v642 pair when this section was sorted into descending order.
 
-### v653–v654 — Most Actives: live columns on the PRE-MARKET tab (Jul 27 2026)
-
-BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on **pre-market** as well as
-overnight, each from the venue that IS that session's book. Verified live at 04:20 ET with
-pre-market in session: 79 rows, all 7 columns populated, all requests `feed=sip`, nesting
-invariant held on 79/79.
-
-**FEED CHOICE, measured with pre-market live — not assumed:**
-
-| feed | quote age | verdict |
-|---|---|---|
-| `sip` | **1.8–7.8s** | live, two-sided, no 403 |
-| `boats` | 921s | froze at 04:00; residual book is nonsense (AAPL 333.75 / **383.82**) |
-| `iex` | 2.5 days | `ap:0` — one-sided, infinite spread |
-
-**Reusing BOATS on pre-market would have rendered a ~15% spread on AAPL.** The standing
-"SIP 403s for today's data" rule applies to historical **bar** requests, not to
-latest-quote/trade or the intraday tape — both verified serving today's data.
-
-**THE COUNT SOURCE MUST DIFFER BY FEED, and this is the subtle part:**
-- **BOATS 1-min bars EXCLUDE odd lots** — missed a median 37.5% of overnight trades
-  (COIN: 99 on the tape, 0 in bars), so overnight counts the **raw tape** (§v652).
-- **SIP 1-min bars INCLUDE odd lots.** Verified per-minute, like for like: 24/24, 78/78,
-  88/88, 77/77, 49/49 — **exact**, on names whose flow was 66–89% odd lots. So pre-market
-  counts from **bars**, which is both cheap and exact.
-- The SIP tape is infeasible anyway: 8 symbols over 15 minutes returned 80,650 trades across
-  9 pages and 8.2 MB.
-
-Full 1,246-name pre-market sweep using bars: **9 requests, ~583 KB**. Window semantics are
-identical on both paths (complete minutes only), so the columns mean the same thing on either
-tab. The per-minute buffer is dropped on feed change, so overnight counts can never be summed
-into a pre-market row.
-
-**NEW API TRAP — `end=` is INCLUSIVE for bars and EXCLUSIVE for trades.** Comparing the two
-over the same nominal window makes bars look 16% high, or (with an unsettled newest bar) 6–33%
-low. Both are artifacts of the comparison, not the data. Compare **per minute**, never by
-summing a range. This is §5.1c again: prove the comparison before declaring a fault.
-
-**v654 — clicking the ALREADY-ACTIVE tab blanked the table.** The handler ran
-`setSession(s); setActives(null)` unconditionally, so clicking the current tab cleared the rows
-while leaving `session` unchanged — the loader effect's dependency array never fired and nothing
-refetched. Measured 79 rows → 0 rows, 0 headers, no error, no recovery. It survived because every
-test switched *between* tabs; and Most Actives defaults to whichever session is live, so **the
-most likely tab for a user to click is exactly the one that broke.** Now a no-op when already
-selected. Verified: 80 rows after clicking.
-
----
+> **§9 is DESCENDING, newest first — and nothing enforces it.** `handoff-gap-check.sh` expands
+> heading ranges and asks only *does an entry exist for each shipped version*; it never looks at
+> **order**. Found Jul 30 2026 with **`v653–v654` sitting at the very top of §9, above v681** —
+> gap check clean, preflight clean, and the first entry a cold-start session read was 28 versions
+> stale. Moved back between v655 and the v652-era entries. **When adding an entry, put it at the
+> top and check the heading below it is the next version down.** This is the same class as §11e's
+> point about what each check is blind to: passing every automated check says nothing about
+> whether the document is readable in the order a human will read it.
 
 ### v681 — Hidden Levels: default sort by print count (Jul 30 2026)
 
@@ -1094,9 +1105,15 @@ Reads via `hidden_levels_view()` / `hidden_level_visits_view()`, both **bounded 
 (§5.1b — PostgREST caps RPC delivery at 1,000 and the client cannot lift it). The session default
 handles the overnight date roll (§5.1c).
 
-> **The page is a VIEWER. Nothing writes to `hidden_levels` unless the scanner is running**, and the
-> scanner currently lives only in a sandbox — see §10. An empty table means the scanner is off, not
-> that the market is quiet. The page says so rather than showing a blank grid.
+> **The page is a VIEWER. Nothing writes to `hidden_levels` unless the scanner is running.** An
+> empty table means the scanner is off, not that the market is quiet. The page says so rather than
+> showing a blank grid.
+>
+> ~~The scanner currently lives only in a sandbox.~~ **SUPERSEDED the same day** — it was
+> productionised as pg_cron **job 51** hitting the `overnight-level-scan` Edge Function; see §9c
+> and §10a. Left visible rather than deleted because the stale sentence read as current guidance
+> for a day: **a §9 entry is a snapshot of one version, not a statement of present fact.** When
+> §9 and §9c/§10a disagree, the subsystem and inventory sections win.
 
 **Schema note / mistake worth recording:** `hidden_levels` **already existed** when I wrote
 `register_level` against invented column names. `create table if not exists` silently did nothing, so
@@ -1570,6 +1587,54 @@ than stale.
 *Correction to the v655 commit message:* it states "it is 04:50 ET". That was wrong — the deploy ran
 at **17:25 ET**. The verification limit it describes still stands: RTH's own session was closed, so
 behaviour during RTH hours remains unobserved.
+
+---
+
+### v653–v654 — Most Actives: live columns on the PRE-MARKET tab (Jul 27 2026)
+
+BID / SPREAD / ASK / LAST TRADE / TRADES 1M-5M-15M now render on **pre-market** as well as
+overnight, each from the venue that IS that session's book. Verified live at 04:20 ET with
+pre-market in session: 79 rows, all 7 columns populated, all requests `feed=sip`, nesting
+invariant held on 79/79.
+
+**FEED CHOICE, measured with pre-market live — not assumed:**
+
+| feed | quote age | verdict |
+|---|---|---|
+| `sip` | **1.8–7.8s** | live, two-sided, no 403 |
+| `boats` | 921s | froze at 04:00; residual book is nonsense (AAPL 333.75 / **383.82**) |
+| `iex` | 2.5 days | `ap:0` — one-sided, infinite spread |
+
+**Reusing BOATS on pre-market would have rendered a ~15% spread on AAPL.** The standing
+"SIP 403s for today's data" rule applies to historical **bar** requests, not to
+latest-quote/trade or the intraday tape — both verified serving today's data.
+
+**THE COUNT SOURCE MUST DIFFER BY FEED, and this is the subtle part:**
+- **BOATS 1-min bars EXCLUDE odd lots** — missed a median 37.5% of overnight trades
+  (COIN: 99 on the tape, 0 in bars), so overnight counts the **raw tape** (§v652).
+- **SIP 1-min bars INCLUDE odd lots.** Verified per-minute, like for like: 24/24, 78/78,
+  88/88, 77/77, 49/49 — **exact**, on names whose flow was 66–89% odd lots. So pre-market
+  counts from **bars**, which is both cheap and exact.
+- The SIP tape is infeasible anyway: 8 symbols over 15 minutes returned 80,650 trades across
+  9 pages and 8.2 MB.
+
+Full 1,246-name pre-market sweep using bars: **9 requests, ~583 KB**. Window semantics are
+identical on both paths (complete minutes only), so the columns mean the same thing on either
+tab. The per-minute buffer is dropped on feed change, so overnight counts can never be summed
+into a pre-market row.
+
+**NEW API TRAP — `end=` is INCLUSIVE for bars and EXCLUSIVE for trades.** Comparing the two
+over the same nominal window makes bars look 16% high, or (with an unsettled newest bar) 6–33%
+low. Both are artifacts of the comparison, not the data. Compare **per minute**, never by
+summing a range. This is §5.1c again: prove the comparison before declaring a fault.
+
+**v654 — clicking the ALREADY-ACTIVE tab blanked the table.** The handler ran
+`setSession(s); setActives(null)` unconditionally, so clicking the current tab cleared the rows
+while leaving `session` unchanged — the loader effect's dependency array never fired and nothing
+refetched. Measured 79 rows → 0 rows, 0 headers, no error, no recovery. It survived because every
+test switched *between* tabs; and Most Actives defaults to whichever session is live, so **the
+most likely tab for a user to click is exactly the one that broke.** Now a no-op when already
+selected. Verified: 80 rows after clicking.
 
 ---
 
@@ -2201,6 +2266,20 @@ whether edge decays by the 20th visit is unmeasured.
 > when a known level is re-hit — and the re-hit *is* the trade. AAOI 76.72 was hit 31 times in 69
 > minutes; the first burst was discovery, the other 30 were opportunity. See §9c.
 >
+> **Two constraints, both measured Jul 30 2026 — read before building:**
+>
+> - **The existing alert scaffolding only half fits.** `alert_recipients` and `alert_log` are
+>   reusable; `alert_schedules` and job 40 are **not**, because they are schedule-shaped and this
+>   is event-shaped. Table-by-table breakdown in §8a. Also clear the duplicate
+>   `alert_recipient_upsert` / `alert_recipient_delete` overloads first — they are still live and
+>   sit directly in this path.
+> - **The trigger threshold cannot be calibrated yet.** The register holds **31 levels, 27 visits,
+>   `max(visits) = 2`, and only 4 levels revisited at all** — one session of data. §5.6 rule 1 says
+>   thresholds come from observed variation, never a guess, and there is not yet enough variation
+>   to observe. **Build the dispatch path now; leave the threshold as the one deliberately unset
+>   parameter** until item 2 has several nights behind it. Shipping a guessed threshold here
+>   produces exactly the alarm-that-cries-wolf this file keeps warning about.
+>
 > **2. Multi-night level persistence is unmeasured.** `hidden_level_visits` was empty until 30 Jul,
 > so "does the edge survive to the 20th visit" has no data. Needs several sessions.
 >
@@ -2413,12 +2492,24 @@ select jobid, status, start_time, return_message
 
 **Alert infrastructure already exists and is UNUSED.** `alert_schedules` (name, send_at_et,
 days_of_week, session_type, top_n, min_score, active), `alert_recipients` (phone, channel,
-opted_in), `alert_log` — **all three empty**, with job 40 dispatching every 5 minutes. That is the
-scaffolding for §10 item 1 (revisit alerting); it does not need building from scratch.
+opted_in), `alert_log` — **all three empty**, with job 40 dispatching every 5 minutes.
 
-**Register state at handoff:** 31 levels, 27 visits, session 2026-07-30. Job 51 has **zero
-failures**. By day it correctly does nothing — the Edge Function returns
-`{"skipped":"outside overnight session"}`, which is the expected response outside 20:00–04:00 ET.
+> **Correction, Jul 30 2026.** This paragraph previously ended "it does not need building from
+> scratch", which overstates it. The **delivery** layer does not; the **trigger** does — job 40
+> and `alert_schedules` are schedule-shaped and revisit alerting is event-shaped. See the table
+> in §8a before planning the work.
+
+**Register state at handoff:** 31 levels, 27 visits, session 2026-07-30, **`max(visits) = 2` with
+only 4 levels revisited** — one night of data, not enough to calibrate a threshold against (§10
+item 1). Job 51 has **zero failures**: 66 successful runs in 24h. By day it correctly does nothing —
+the Edge Function returns `{"skipped":"outside overnight session"}`, which is the expected response
+outside 20:00–04:00 ET.
+
+> **`prod-check.sh` and `system-check.sh` call this Edge Function differently and you will notice
+> the disagreement.** `prod-check` posts `{}` and gets the `skipped` response; `system-check` posts
+> `?force=1` and gets a real `{"ok":true,...}` scan. Both are correct. Seen out of context — one
+> "skipped at et_hour 17", the other "ok at et_hour 18" — it reads like a broken session gate. It
+> is not. §4a rule 4 again: prove the comparison before declaring a fault.
 
 **Storage:** the free-plan 512 MB cap still applies (§5.2). `hidden_levels` is tiny by design and
 per-print detail is fetched live rather than stored.

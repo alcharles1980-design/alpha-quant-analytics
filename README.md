@@ -28,9 +28,13 @@ are kept out of here.
 
 ## Quick start
 
+**This repo is PRIVATE** — a bare `git clone` fails with `could not read Username`, not with
+anything that says "private". Use a PAT, then strip it from the remote:
+
 ```bash
-git clone https://github.com/alcharles1980-design/alpha-quant-analytics.git
+git clone https://x-access-token:<PAT>@github.com/alcharles1980-design/alpha-quant-analytics.git
 cd alpha-quant-analytics
+git remote set-url origin https://github.com/alcharles1980-design/alpha-quant-analytics.git
 ./scripts/handoff-gap-check.sh   # works immediately — pure bash, no dependencies
 npm install
 npm run preflight                # version skew · route parity · duplicate definitions
