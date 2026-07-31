@@ -1064,6 +1064,42 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v683 — Hidden Levels: Recent bursts panel (Jul 30 2026)
+
+`hidden_levels_view` shows **levels**; this shows the **events that create them**. A level says a
+resting order existed at some point tonight. A burst says it was being consumed a minute ago —
+which is the question a live session actually asks.
+
+**New RPC `recent_bursts(p_minutes default 10)`.** Joins `hidden_level_visits` to `hidden_levels`
+and adds what the visits table cannot express on its own: `visit_no`, `level_visits`, `is_revisit`
+and `prev_gap_s`. **`is_revisit` is the column that matters** — burst 1 is discovery, burst 2+ is
+the trade (§9c). Re-hits render on a gold row with `RE-HIT n/m` and the gap in seconds.
+
+**Bounded inside the function** (§5.1b — PostgREST caps RPC delivery at 1,000 and the client cannot
+lift it). `p_minutes` is clamped to 1..240; null falls back to 10. Verified: 0 → 1min, 99999 →
+240min, null → 10.
+
+> **A two-stage ORDER BY, and the reason for it.** The first version ordered
+> `(visit_no > 1) desc, seen_at desc` so that a truncation could never drop a re-hit. Correct for
+> the bound, wrong for the panel: **a re-hit from 38.5 minutes ago rendered above bursts from 2
+> minutes ago**, in a panel labelled "most recent". Now ranked by significance *inside* a subquery
+> to decide what survives the limit, then re-sorted `seen_at desc` *outside* for display. Both
+> properties, no conflict.
+> **Only visible in the browser** — the RPC was returning exactly what it was asked for.
+
+**Panel is deliberately independent of the SESSION date picker.** It always means "what has just
+happened", so browsing a past session must not repaint it with that night's bursts as though they
+were live. Refreshes on the page's existing 45s auto-refresh cycle; window chips 5/10/30/60m.
+
+**Verified in a headless browser, both branches:**
+- 11 rendered rows == 11 rows in the RPC payload **the page itself consumed**; `payload[0]`
+  (SOXL, edge 0.05, 112 prints, visit 1/1) matches rendered row 0 field for field.
+- At 60m: **123 rendered == 123 payload**, two RE-HIT rows present and matching the DB.
+- Re-hit styling proven *distinct*, not merely present: row background
+  `rgba(255,176,32,0.07)` vs `rgba(0,0,0,0)`, visit cell `rgb(255,176,32)` vs `rgb(160,184,208)`.
+  **A highlight nobody has watched fire is not a highlight** (§5.6a applied to UI).
+- Zero page errors.
+
 ### v682 — Recharts was never loading. `prop-types` was missing (Jul 30 2026)
 
 **The console error logged as §10 item 5 yesterday was not cosmetic and I called it wrong.** I wrote

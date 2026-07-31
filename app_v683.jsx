@@ -13400,8 +13400,25 @@ function HiddenLevelsPage(p){
   var s12=useState({col:'total_prints',dir:'desc'})   /* default: most prints first — the level
     that was hit hardest is the one with the most evidence behind it */,sort=s12[0],setSort=s12[1];
   var s13=useState({col:null,dir:'asc'}),psort=s13[0],setPsort=s13[1];
+  // Recent-bursts tape. Deliberately independent of the SESSION date picker above: this panel
+  // always means "what has just happened", so browsing a past session must not make it show
+  // bursts from that night as though they were live.
+  var s14=useState(null),bursts=s14[0],setBursts=s14[1];
+  var s15=useState(10),bwin=s15[0],setBwin=s15[1];
+  var s16=useState(null),bErr=s16[0],setBErr=s16[1];
 
+  var loadBursts=async function(mins){
+    try{
+      var w=(mins==null?bwin:mins);
+      var r=await fetch(SB_URL+'/rest/v1/rpc/recent_bursts',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({p_minutes:Number(w)||10})});
+      if(!r.ok)throw new Error('bursts '+r.status);
+      setBursts(await r.json()); setBErr(null);
+    }catch(e){setBErr(String(e.message||e));}
+  };
   var load=async function(){
+    loadBursts();
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/hidden_levels_view',{method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
@@ -13533,6 +13550,63 @@ function HiddenLevelsPage(p){
       </div>
       <button onClick={load} style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,padding:'4px 11px',cursor:'pointer',fontFamily:F,fontSize:9}}>Refresh</button>
       <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>{rows?(view.length+' of '+rows.length+' levels'):''}</span>
+    </div>
+
+    {/* ---- RECENT BURSTS: the live tape. hidden_levels_view shows LEVELS; this shows the
+         individual events that create them, newest first. A level says a resting order existed
+         at some point tonight; a burst says it was being consumed a minute ago. ---- */}
+    <div style={{border:'1px solid '+C.border,borderRadius:8,padding:'10px 12px',marginBottom:16,background:C.bgCard}}>
+      <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',marginBottom:7}}>
+        <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700}}>Recent bursts</div>
+        <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>LAST</span>
+        {[5,10,30,60].map(function(m){
+          var on=(Number(bwin)===m);
+          return <div key={m} onClick={function(){setBwin(m);loadBursts(m);}}
+            style={{cursor:'pointer',padding:'3px 9px',borderRadius:5,fontSize:9,fontFamily:F,fontWeight:700,
+              background:on?C.accent+'22':'transparent',border:'1px solid '+(on?C.accent+'66':C.border),
+              color:on?C.accent:C.txtDim}}>{m+'m'}</div>;
+        })}
+        <span style={{fontSize:8,color:C.txtDim,fontFamily:F,marginLeft:2}}>{bursts?(bursts.length+' burst'+(bursts.length===1?'':'s')):''}</span>
+        <span style={{fontSize:8,color:C.txtDim,fontFamily:F,opacity:0.75}}>{'\u00B7 live \u2014 not tied to the session picker'}</span>
+      </div>
+
+      {bErr&&<div style={{color:C.warn,fontSize:10,fontFamily:F,padding:'4px 0'}}>{bErr}</div>}
+      {!bursts&&!bErr&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'8px 0'}}>Loading{'\u2026'}</div>}
+      {bursts&&bursts.length===0&&<div style={{color:C.txtDim,fontSize:10,fontFamily:F,padding:'8px 0',lineHeight:1.6}}>
+        Nothing in the last {bwin} minutes. The scanner only runs 20:00{'\u2013'}04:00 ET, and even mid-session a quiet window is normal {'\u2014'} bursts are episodic, not continuous.
+      </div>}
+
+      {bursts&&bursts.length>0&&<div style={{overflowX:'auto'}}>
+        <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
+          <thead><tr>{['AGO','SYMBOL','PRICE','SIDE','EDGE $','BPS','POS','PRINTS','SHARES','SPAN s','VISIT','GAP s'].map(function(h,i){
+            return <th key={i} style={{textAlign:(i===1||i===3)?'left':'right',padding:'4px 8px',color:C.txtDim,
+              fontSize:7,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,
+              fontWeight:700,whiteSpace:'nowrap'}}>{h}</th>;})}
+          </tr></thead>
+          <tbody>
+            {bursts.map(function(b,i){
+              // The re-hit is the trade (see the subsystem notes): burst 1 is discovery, burst 2+
+              // is the tradeable event. Highlighted so it cannot be missed while scanning.
+              var re=!!b.is_revisit;
+              var bd='1px solid '+C.border+'33';
+              return <tr key={b.level_id+'_'+b.seen_at+'_'+i} style={{background:re?C.gold+'12':'transparent'}}>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd,whiteSpace:'nowrap'}}>{b.secs_ago==null?'\u2014':(Number(b.secs_ago)<90?Math.round(Number(b.secs_ago))+'s':(Number(b.secs_ago)/60).toFixed(1)+'m')}</td>
+                <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{b.ticker}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(b.price).toFixed(4)}</td>
+                <td style={{padding:'4px 8px',borderBottom:bd,whiteSpace:'nowrap'}}><span style={{color:b.side==='ASK'?C.accent:C.blue,fontWeight:700}}>{b.side==='ASK'?'hidden BUYER':'hidden SELLER'}</span></td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.accent,fontWeight:700,borderBottom:bd}}>{'$'+Number(b.edge_usd||0).toFixed(3)}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{b.spread_bps==null?'\u2014':Number(b.spread_bps).toFixed(0)}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{b.pos==null?'\u2014':Number(b.pos).toFixed(3)}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{b.prints}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{b.shares}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{Number(b.span_s||0).toFixed(1)}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,whiteSpace:'nowrap',color:re?C.gold:C.txtDim,fontWeight:re?700:400}}>{re?('RE-HIT '+b.visit_no+'/'+b.level_visits):'first'}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:re?C.gold:C.txtDim,borderBottom:bd}}>{b.prev_gap_s==null?'\u2014':Number(b.prev_gap_s).toFixed(0)}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
     </div>
 
     {!rows&&!err&&<div style={{color:C.txtDim,fontSize:11,fontFamily:F,padding:'14px 0'}}>Loading{'\u2026'}</div>}
