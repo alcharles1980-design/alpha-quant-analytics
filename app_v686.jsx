@@ -13595,6 +13595,11 @@ function HiddenLevelsPage(p){
       label, <i>not</i> evidence the convention is right. Roughly 1 in 5 levels lands under 0.25, where a
       small move in pos flips the label {'\u2014'} and since EDGE is computed from the side, a flipped label
       also changes which subtraction the edge used.
+      <div style={{marginTop:5,opacity:0.9}}>
+        <b style={{color:C.gold}}>{'\u2260'}</b> on SPREAD $ means <i>median ask {'\u2212'} median bid</i> does not equal the
+        <i> median per-print spread</i>: the book moved during the burst. Rows flagged this way carry
+        ~161 book states on average against ~51 for rows that reconcile.
+      </div>
     </div>
     {err&&<div style={{padding:'7px 11px',background:C.warn+'15',border:'1px solid '+C.warn+'40',borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:10}}>{err}</div>}
 
@@ -13647,10 +13652,15 @@ function HiddenLevelsPage(p){
 
       {bursts&&bursts.length>0&&<div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
-          <thead><tr>{['AGO','SYMBOL','PRICE','SIDE','SIDE CONF','EDGE $','BPS','POS','PRINTS','SHARES','SPAN s','VISIT','GAP s'].map(function(h,i){
-            return <th key={i} style={{textAlign:(i===1||i===3)?'left':'right',padding:'4px 8px',color:C.txtDim,
+          <thead><tr>{[['AGO',''],['SYMBOL',''],['BID','median'],['PRICE','level'],['ASK','median'],
+            ['SPREAD $','median'],['BPS',''],['SIDE','resting'],['SIDE CONF','|pos-.5|x2'],['EDGE $','vs visible'],
+            ['POS','in spread'],['PRINTS',''],['SHARES',''],['SPAN s',''],['VISIT',''],['GAP s','']]
+            .map(function(h,i){
+            var left=(h[0]==='SYMBOL'||h[0]==='SIDE');
+            return <th key={i} style={{textAlign:left?'left':'right',padding:'4px 8px',color:C.txtDim,
               fontSize:7,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,
-              fontWeight:700,whiteSpace:'nowrap'}}>{h}</th>;})}
+              fontWeight:700,whiteSpace:'nowrap'}}>{h[0]}
+              {h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;})}
           </tr></thead>
           <tbody>
             {bursts.map(function(b,i){
@@ -13664,13 +13674,32 @@ function HiddenLevelsPage(p){
                   outline:selected?'1px solid '+C.accent+'66':'none'}}>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd,whiteSpace:'nowrap'}}>{b.secs_ago==null?'\u2014':(Number(b.secs_ago)<90?Math.round(Number(b.secs_ago))+'s':(Number(b.secs_ago)/60).toFixed(1)+'m')}</td>
                 <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{b.ticker}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.blue,borderBottom:bd}}>{b.bid==null?'\u2014':Number(b.bid).toFixed(4)}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(b.price).toFixed(4)}</td>
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.accent,borderBottom:bd}}>{b.ask==null?'\u2014':Number(b.ask).toFixed(4)}</td>
+                {(function(){
+                  // SPREAD $ is the median of the PER-PRINT spread; BID/ASK are independent medians.
+                  // median(ask) - median(bid) != median(ask - bid) whenever the book moved during the
+                  // burst, so these legitimately fail to reconcile on ~11% of rows. Measured Jul 30:
+                  // rows that disagree average 161 book states against 51 for rows that agree -- the
+                  // mismatch IS the book moving. Flagged rather than hidden or papered over, because
+                  // a spread that cannot be reproduced from the bid and ask beside it looks like a bug.
+                  var moved=(b.bid!=null&&b.ask!=null&&b.spread_usd!=null&&
+                             Math.abs((Number(b.ask)-Number(b.bid))-Number(b.spread_usd))>0.0002);
+                  return <td title={moved?('book moved during the burst: median ask - median bid = '
+                      +(Number(b.ask)-Number(b.bid)).toFixed(4)+', median per-print spread = '
+                      +Number(b.spread_usd).toFixed(4)):''}
+                    style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,whiteSpace:'nowrap',
+                      color:moved?C.gold:C.txt}}>
+                    {b.spread_usd==null?'\u2014':('$'+Number(b.spread_usd).toFixed(4))}
+                    {moved?<span style={{fontSize:8,marginLeft:2,opacity:0.9}}>{'\u2260'}</span>:null}</td>;
+                })()}
+                <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{b.spread_bps==null?'\u2014':Number(b.spread_bps).toFixed(0)}</td>
                 <td style={{padding:'4px 8px',borderBottom:bd,whiteSpace:'nowrap'}}><span style={{color:b.side==='ASK'?C.accent:C.blue,fontWeight:700}}>{b.side==='ASK'?'hidden BUYER':'hidden SELLER'}</span></td>
                 <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,whiteSpace:'nowrap',color:sideBand(b._sideconf).c}}>
                   {b._sideconf==null?'\u2014':Number(b._sideconf).toFixed(2)}
                   <span style={{fontSize:7,opacity:0.85,marginLeft:4}}>{sideBand(b._sideconf).w}</span></td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.accent,fontWeight:700,borderBottom:bd}}>{'$'+Number(b.edge_usd||0).toFixed(3)}</td>
-                <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{b.spread_bps==null?'\u2014':Number(b.spread_bps).toFixed(0)}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{b.pos==null?'\u2014':Number(b.pos).toFixed(3)}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{b.prints}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{b.shares}</td>

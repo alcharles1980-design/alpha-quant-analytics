@@ -1064,6 +1064,41 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v686 — Recent bursts: BID / ASK / SPREAD $, and a reconciliation flag (Jul 30 2026)
+
+The RPC already returned `bid`, `ask` and `spread_usd`; the tape just wasn't rendering them. Added
+with **BID / PRICE / ASK adjacent** so the print's place in the book reads at a glance, and
+`SPREAD $` beside `BPS`. 13 columns to 16.
+
+> **Header alignment is now driven by the LABEL, not the column index.** The old rule was
+> `textAlign: (i===1||i===3) ? 'left' : 'right'`. Inserting BID at index 2 would have shifted SIDE
+> out from under its own alignment rule and mis-aligned the header against the body — silently, with
+> no error. Index-based styling in a table whose columns can move is a latent bug.
+
+> **THE SPREAD DOES NOT ALWAYS RECONCILE WITH THE BID AND ASK, AND THAT IS CORRECT.** The scanner
+> stores three independent medians: `med(bid)`, `med(ask)`, `med(per-print spread)`. **medians do
+> not distribute over subtraction** — `median(ask) - median(bid) != median(ask - bid)` whenever the
+> book moved during the burst.
+>
+> Measured over 517 rows: **458 reconcile, 59 (11.4%) do not**, max divergence **$1.14**. And the
+> divergence is not noise — rows that disagree carry **161 book states on average against 51 for
+> rows that agree, 3.1x more.** The mismatch *is* the book moving.
+>
+> So it is **flagged, not hidden and not papered over**: a gold `!=` marker with a hover explaining
+> both figures. A spread that cannot be reproduced from the bid and ask printed beside it looks
+> exactly like a bug, and the honest fix is to say why it isn't one. Papering over it — by
+> displaying `ask - bid` instead — would have destroyed a free book-instability signal.
+
+**Verified in the browser at the 60m window:** 16 headers == 16 cells per row (**aligned**),
+`bid <= price <= ask` on all **72** rows, rendered bid/ask match the payload the page consumed, and
+the reconciliation flag fired on **exactly the 3 non-reconciling rows** — no row flagged that
+reconciles, no mismatch left unflagged. Zero page errors.
+
+> The first run of this check reported the MU row as an arithmetic failure. It was not: the test
+> asserted `ask - bid == spread`, which is the wrong invariant. Rewritten to assert the **flagging**
+> is correct rather than that the numbers reconcile. Third time this session that a failing check
+> turned out to be the check (§4a rule 4).
+
 ### v685 — SIDE CONF: the buyer/seller label is an inference, and now says so (Jul 30 2026)
 
 **The side label was carrying more weight than its evidence.** The tape has no aggressor flag, so
