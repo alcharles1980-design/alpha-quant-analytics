@@ -33,9 +33,14 @@ tables before planning anything. Two constraints established Jul 30:
   `alert_schedules` and cron job 40 are **not** — they are schedule-shaped (`send_at_et`,
   `days_of_week`), this is event-shaped, and job 40's 5-minute cadence is far too slow for bursts
   with a 0.66s median. Table in §8a.
-- **The threshold cannot be calibrated yet.** Register holds 31 levels, 27 visits, `max(visits) = 2`,
-  only 4 levels revisited — one night. §5.6a: ship the mechanism, leave the threshold unset until
-  §10 item 2 has several nights behind it.
+- **The counter it depends on was broken and is now fixed** (Jul 30, §9c). `visits` counted scanner
+  re-detections: 90% of recorded revisits were artifacts of the 150s lookback overlapping the 120s
+  cadence. Fixed in `register_level()`, historical rows repaired, invariant
+  `sum(visits) == count(hidden_level_visits)` now exact.
+- **The threshold still cannot be calibrated.** Post-fix: 340 levels, 350 visits, 9 revisited,
+  max 3 — one night. §5.6a: ship the mechanism, leave the threshold unset until §10 item 2 has
+  several nights behind it. Genuine revisit gaps ran 179s–2,391s, median ~486s; no artifact
+  exceeded 96.4s.
 - **Clear the duplicate `alert_recipient_upsert` / `alert_recipient_delete` overloads first** —
   still live as of Jul 30, and directly in this path (§8a).
 

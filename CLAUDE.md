@@ -1064,6 +1064,32 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### BACKEND FIX — `visits` counted scanner re-detections, not re-hits (Jul 30 2026)
+
+No app version: the change is `register_level()` + `overnight-level-scan` v2, with `app_v681.jsx`
+untouched. Full detail in **§9c**; the short version, because this one invalidated a headline number.
+
+The scanner's `LOOKBACK_S = 150` deliberately overlaps its own 120s cadence so no burst falls
+between sweeps. `register_level()` had no idempotency guard, so a burst in that overlap was
+registered twice — and a burst longer than `MAX_SPAN_S` was emitted as fragments and counted again.
+Measured on 392 live rows: **37 exact duplicates + 28 overlapping fragments vs 7 genuine revisits.
+90% artifact.** The empty band between 96.4s and 179.1s is what made the classification safe.
+
+`register_level()` now tests true interval overlap against any existing visit and merges without
+incrementing; every level column is recomputed from `hidden_level_visits` after each write, so
+`med_*` are real medians rather than the `(old+new)/2` decaying average they were. Historical rows
+repaired: 392 → 335, revisited 70 → 8. Unique index on `(level_id, seen_at)` as a backstop.
+`overnight-level-scan` v2 additionally reports `truncated_chunks` — the tape fetch could previously
+exhaust its page budget and drop data with a 200 and no signal.
+
+**Proven, not asserted:** four cases through the real RPC in a rolled-back transaction (exact
+duplicate, overlapping window, out-of-order duplicate, genuine revisit) plus the at-touch rejection;
+then two deliberately overlapping live scans back to back, after which
+`sum(visits) == count(hidden_level_visits)` **exactly (350 = 350)**, with 0 duplicate bursts.
+
+**This is why §10 item 3's "60% persistence" is withdrawn rather than corrected.** The scanner was
+measuring itself.
+
 ### v681 — Hidden Levels: default sort by print count (Jul 30 2026)
 
 Default ordering is now **most prints first** rather than highest edge. The level hit hardest is
@@ -2280,6 +2306,41 @@ every numeric criterion and was junk: 3c spread, price *equal* to the bid. Enfor
 **revisit**. AAOI 76.72 was hit **31 separate times across 69 minutes**. Levels therefore persist in
 the register after their burst ends, and `visits` counts the re-hits.
 
+> **`visits` DID NOT MEAN THAT UNTIL Jul 30 2026 — it counted scanner re-detections. FIXED.**
+> The scanner's `LOOKBACK_S = 150` deliberately exceeds its own 120s cron cadence so no burst falls
+> between sweeps. `register_level()` had no idempotency guard, so every burst in that 30s overlap
+> was registered **twice**, and any burst longer than `MAX_SPAN_S` was emitted as consecutive
+> fragments and counted again.
+>
+> **Measured on 392 live rows before the fix — classify each visit by the gap to the previous one:**
+>
+> | kind | n | gap |
+> |---|---|---|
+> | exact duplicate (identical `seen_at` to the microsecond) | **37** | 0.0s |
+> | overlapping window (fragment of one episode) | **28** | 4.8 – 96.4s |
+> | **genuine revisit** | **7** | 179.1 – 2390.5s |
+>
+> **90% of recorded revisits were artifacts.** Note the empty band between **96.4s and 179.1s** —
+> no ambiguous cases, which is what makes the classification safe to automate: an overlap can never
+> exceed `LOOKBACK_S`, so anything beyond it is real.
+>
+> **The fix is in `register_level()`, not the scanner.** It now tests true interval overlap against
+> any existing visit — `new_start <= v.seen_at AND p_seen >= v.seen_at - v.span_s` — and merges the
+> windows without incrementing. Do **not** "fix" this by shrinking `LOOKBACK_S`: that trades
+> duplicate detections for missed ones, which is the worse failure.
+>
+> Two further consequences of the same root cause, both fixed in the same pass:
+> `total_prints` was inflated identically (SPCX showed 108 from 54 real prints), and `med_pos` /
+> `med_spread` / `med_edge` were computed as `(old + new)/2` on conflict — **a decaying average with
+> 50% weight on the newest sample, not a median**. All level columns are now recomputed from
+> `hidden_level_visits` after every write, so there is one source of truth and nothing to drift.
+> `first_seen` now means the start of the first burst; it previously held the burst's *last* print.
+>
+> **Invariant to check, and the cheapest possible test:**
+> `sum(hidden_levels.visits) == count(hidden_level_visits)`. It was 400 vs 392 before the fix
+> (8 levels predating the visits table), and is exact now. A unique index on
+> `(level_id, seen_at)` is the structural backstop.
+
 ### Measured facts worth keeping
 
 - **`feed=boats` on the HISTORICAL endpoint is LIVE on Algo Trader Plus** — measured 0.4s old. The
@@ -2288,8 +2349,11 @@ the register after their burst ends, and `visits` counts the re-hits.
 - Real-time endpoints take `feed=overnight`; historical takes `feed=boats`. Historical rejects
   `overnight` with **400 invalid feed**.
 - Burst durations: median **0.66s**, and 25% are under 100ms. U at 17s is a far-tail event.
-- **60% of bursts see more prints at the same price within 60s** — but that figure is inflated by the
-  detector fragmenting one episode into several. Treat as unconfirmed.
+- ~~**60% of bursts see more prints at the same price within 60s.**~~ **WITHDRAWN Jul 30 2026** —
+  that figure was the double-counting above, not a market fact. Anything "within 60s" is inside the
+  detector's own overlap window and cannot be distinguished from re-detection. **The measured
+  revisit rate after the fix is 9 of 340 levels (2.6%), max 3 visits** — two orders of magnitude
+  below the withdrawn figure. Genuine revisit gaps run 179s to 2,391s, median ~486s.
 - Internalised fills appear on the **SIP tape the following morning**, exchange `D`, batch-stamped at
   the TRF open (`08:00:22.000` UTC), flagged `T` extended-hours and `I` odd-lot. **The tape never
   names the wholesaler** — Rule 606(b)(1) is the only per-order route to that.
@@ -2317,23 +2381,35 @@ whether edge decays by the 20th visit is unmeasured.
 >   is event-shaped. Table-by-table breakdown in §8a. Also clear the duplicate
 >   `alert_recipient_upsert` / `alert_recipient_delete` overloads first — they are still live and
 >   sit directly in this path.
-> - **The trigger threshold cannot be calibrated yet.** The register holds **31 levels, 27 visits,
->   `max(visits) = 2`, and only 4 levels revisited at all** — one session of data. §5.6a says
->   thresholds come from observed variation, never a guess, and there is not yet enough variation
->   to observe. **Build the dispatch path now; leave the threshold as the one deliberately unset
->   parameter** until item 2 has several nights behind it. Shipping a guessed threshold here
->   produces exactly the alarm-that-cries-wolf this file keeps warning about.
+> - **The trigger threshold cannot be calibrated yet — but the signal is now trustworthy.**
+>   Post-fix (Jul 30 2026, mid-session): **340 levels, 350 visits, 9 revisited, max 3.** Before the
+>   `register_level()` fix the same data read as 70 revisited — 90% of it the scanner seeing its own
+>   overlap (§9c). A revisit alert built on the old counter would have fired mostly on artifacts.
+>   §5.6a still applies to the *threshold*: one session is not enough variation to calibrate against,
+>   so **build the dispatch path and leave the threshold the one deliberately unset parameter**
+>   until item 2 has several nights behind it.
+>   **Useful shape for choosing it later:** genuine revisit gaps ran **179s to 2,391s, median ~486s**,
+>   and no artifact exceeded 96.4s — so any rule of the form "second visit ≥ N seconds after the
+>   first" is safe for N well above `LOOKBACK_S`, and 2.6% of levels qualifying is a plausible
+>   alerting volume rather than a firehose.
 >
 > **2. Multi-night level persistence is unmeasured.** `hidden_level_visits` was empty until 30 Jul,
 > so "does the edge survive to the 20th visit" has no data. Needs several sessions.
 >
-> **3. The 60%-persistence figure is inflated.** It counted the detector rediscovering the *same*
-> episode after fragmenting it. Real but overstated — re-derive with episode grouping before it is
-> used for anything.
+> **3. ~~The 60%-persistence figure is inflated.~~ RESOLVED Jul 30 2026 — and it was worse than
+> "inflated".** Root cause found and fixed in `register_level()`: the scanner's 150s lookback
+> overlaps its own 120s cadence, and nothing deduplicated, so 37 exact duplicates and 28 overlapping
+> fragments were counted against just 7 genuine revisits — **90% artifact**. The figure is
+> **withdrawn, not corrected**; anything "within 60s" sits inside the detector's own overlap window
+> and is unmeasurable by construction. Post-fix rate: **9 of 340 levels (2.6%)**. See §9c.
 >
 > **4. Fill probability at SIZE is unknown.** Everything measured is 1-share. A wholesaler pricing
 > 1 share inside a 132bps spread costs them nothing; 100 shares may route differently or not fill.
 > The test is cheap — ladder 1/5/10/25/100-share probes and record fills.
+>
+> **The scanner cannot measure this for you.** It filters `t.s <= 10`, so a 25- or 100-share probe
+> is invisible to it by design. The ladder needs its own capture path — read fills from the broker,
+> not from `hidden_levels`.
 
 ### Directional strategies — TESTED AND REJECTED, do not re-run without new evidence
 
@@ -2557,9 +2633,12 @@ opted_in), `alert_log` — **all three empty**, with job 40 dispatching every 5 
 > and `alert_schedules` are schedule-shaped and revisit alerting is event-shaped. See the table
 > in §8a before planning the work.
 
-**Register state at handoff:** 31 levels, 27 visits, session 2026-07-30, **`max(visits) = 2` with
-only 4 levels revisited** — one night of data, not enough to calibrate a threshold against (§10
-item 1). Job 51 has **zero failures**: 66 successful runs in 24h. By day it correctly does nothing —
+**Register state:** re-measured mid-session 2026-07-31 (the session opening 20:00 ET on the 30th is
+stamped the following date — §5.1c): **340 levels, 350 visits, 9 revisited, max 3**, and
+`sum(visits) == count(hidden_level_visits)` exactly. The earlier figures in this section (31 levels,
+27 visits) were a *daytime* snapshot taken while the scanner was idle — **do not read a quiet-hours
+count as the subsystem's size.** Still one night of data, so not enough to calibrate a threshold
+against (§10 item 1). Job 51 has **zero failures**: 66 successful runs in 24h. By day it correctly does nothing —
 the Edge Function returns `{"skipped":"outside overnight session"}`, which is the expected response
 outside 20:00–04:00 ET.
 
