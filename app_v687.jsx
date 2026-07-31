@@ -13717,7 +13717,8 @@ function HiddenLevelsPage(p){
     {rows&&rows.length===0&&<div style={{color:C.txtDim,fontSize:11,fontFamily:F,padding:'14px 0'}}>
       No levels registered for this session. The register only fills while the scanner is running against a live overnight session (20:00{'\u2013'}04:00 ET).
     </div>}
-    {rows&&rows.length>0&&<div style={{overflowX:'auto'}}>
+    {rows&&rows.length>0&&<div style={{overflowX:'auto',overflowY:'auto',maxHeight:'55vh',
+      border:'1px solid '+C.border+'55',borderRadius:6}}>
       <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
         <thead><tr>{[['SYMBOL','','ticker'],['PRICE','level','price'],['SIDE','resting','side'],
           ['SIDE CONF','|pos-.5|x2','_sideconf'],
@@ -13735,7 +13736,9 @@ function HiddenLevelsPage(p){
             style={{textAlign:i<3?'left':'right',padding:'5px 8px',color:active?C.gold:C.txtDim,
             fontSize:7,letterSpacing:0.5,textTransform:'uppercase',
             borderBottom:'1px solid '+(active?C.gold+'66':C.border),fontWeight:700,
-            cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>
+            cursor:'pointer',userSelect:'none',whiteSpace:'nowrap',
+            position:'sticky',top:0,zIndex:2,background:C.bg,
+            boxShadow:'inset 0 -1px 0 '+(active?C.gold+'66':C.border)}}>
             {h[0]}{active?<span style={{marginLeft:3}}>{sort.dir==='desc'?'\u25BC':'\u25B2'}</span>:null}
             {h[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{h[1]}</div>:null}</th>;})}
         </tr></thead>

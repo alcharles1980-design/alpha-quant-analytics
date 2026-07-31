@@ -1064,6 +1064,40 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v687 — Hidden Levels: cap the levels table, sticky header (Jul 30 2026)
+
+**Measured before designing.** The page was **12,299px — 13.7 screens at a 900px viewport — and the
+levels table was 11,425px of it, 93%.** Clicking a burst opened the detail panel at **y=12,131**, so
+the tape you clicked from was 12,000px behind you and every drill-in cost a round trip. The problem
+was never length; it was the *distance between the thing you click and the thing it opens*.
+
+**One change:** wrap the levels table in `maxHeight:'55vh'` with `overflowY:'auto'` and make its
+header row `position:'sticky'`. **Result: 12,299px → 1,303px. 13.7 screens → 1.4, a 9.4x reduction.**
+All 552 rows are still there — the scroll moved from the document into the table.
+
+> **`borderCollapse:'collapse'` breaks sticky header borders.** In collapse mode borders are painted
+> by the TABLE, not the cell, so a sticky `th` loses its bottom rule as rows scroll underneath. Fixed
+> with `boxShadow:'inset 0 -1px 0 ...'`, which the cell draws itself. The original `borderBottom` is
+> kept so short tables that never scroll are unchanged. The sort indicator's gold rule is mirrored in
+> the shadow colour so an active column still reads as active.
+
+**Verified in the browser:** pane scrolls internally; after scrolling it 3,000px the header sits
+**1px from the pane top and is still visible**; sorting by EDGE $ still returns descending
+(6.01, 5.59, 4.09, 3.67...); the bursts wrapper is confirmed **unmodified** (`maxHeight: none`);
+zero page errors.
+
+> **§11a EVENT — a complete redesign appeared in the working tree that I had no record of writing.**
+> 54 insertions: two-column master/detail, sticky detail pane, a collapsible caveat, the bursts tape
+> capped at 30vh and the levels table at 36vh. Coherent, matching a proposal I had made, uncommitted,
+> unbuilt, never rendered, and absent from HEAD, the original clone and production.
+>
+> **It was discarded, not shipped.** It did substantially more than the user had approved — including
+> capping the bursts section he had specifically called good and compact — and used 36vh where he had
+> asked for 55vh. The §11a rule held: **stop and reconcile against `git log` before acting.** Checking
+> `git status`, `git show HEAD:`, the original clone and the live build took under a minute and turned
+> "why is this already here?" into a decision the user could make. Verified afterwards that the
+> working file was byte-identical to HEAD before starting.
+
 ### v686 — Recent bursts: BID / ASK / SPREAD $, and a reconciliation flag (Jul 30 2026)
 
 The RPC already returned `bid`, `ask` and `spread_usd`; the tape just wasn't rendering them. Added
