@@ -13407,6 +13407,32 @@ function HiddenLevelsPage(p){
   var s15=useState(10),bwin=s15[0],setBwin=s15[1];
   var s16=useState(null),bErr=s16[0],setBErr=s16[1];
   var detailRef=useRef(null);
+  // SIDE CONFIDENCE.
+  // What it measures: how far `pos` sits from the 0.5 threshold that ASSIGNS the side.
+  // What it does NOT measure: whether the buyer/seller CONVENTION is correct. The scanner calls
+  // pos>=0.5 a hidden buyer; the standard quote rule (a print above the mid is buyer-initiated,
+  // so the RESTING side is the seller) would invert every label on this page. That convention
+  // rests on one verified fill -- U @ 31.95, pos 0.881, where the user was the counterparty.
+  // A level at pos 0.51 and one at 0.49 receive OPPOSITE labels on a two-point difference in a
+  // ratio whose denominator is an overnight spread. This column exists to make that visible.
+  // Bands are the observed quartiles of |pos-0.5|*2 over 514 levels (p25 0.231, p50 0.446,
+  // p75 0.678), not round numbers -- an alarm calibrated by guess is noise.
+  var sideConf=function(pos){
+    if(pos==null||pos==='')return null;
+    var v=Math.abs(Number(pos)-0.5)*2;
+    return (isFinite(v))?Math.min(1,v):null;
+  };
+  var sideBand=function(v){
+    if(v==null)return {w:'\u2014',c:C.txtDim};
+    if(v<0.25)return {w:'coinflip',c:C.warn};
+    if(v<0.68)return {w:'fair',c:C.txt};
+    return {w:'firm',c:C.accent};
+  };
+  // Attached to every row at load time, NOT held in a side map: the table comparator reads
+  // row[sortKey], so a value that lives anywhere else sorts as null and the header silently lies.
+  var withConf=function(arr,posKey){
+    return (arr||[]).map(function(r){ r._sideconf=sideConf(r[posKey]); return r; });
+  };
 
   var loadBursts=async function(mins){
     try{
@@ -13415,7 +13441,7 @@ function HiddenLevelsPage(p){
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
         body:JSON.stringify({p_minutes:Number(w)||10})});
       if(!r.ok)throw new Error('bursts '+r.status);
-      setBursts(await r.json()); setBErr(null);
+      setBursts(withConf(await r.json(),'pos')); setBErr(null);
     }catch(e){setBErr(String(e.message||e));}
   };
   var load=async function(){
@@ -13425,7 +13451,7 @@ function HiddenLevelsPage(p){
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
         body:JSON.stringify(date?{p_date:date}:{})});
       if(!r.ok)throw new Error('levels '+r.status);
-      setRows(await r.json()); setErr(null);
+      setRows(withConf(await r.json(),'med_pos')); setErr(null);
     }catch(e){setErr(String(e.message||e));}
   };
   useEffect(function(){load();},[date]);
@@ -13559,6 +13585,17 @@ function HiddenLevelsPage(p){
     <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:12,lineHeight:1.6,maxWidth:900}}>
       Price levels on the overnight tape where many prints executed at one exact price, one side, <b>inside the spread</b> while the displayed book did not move {'\u2014'} the signature of a resting hidden order being consumed. Prints sitting <i>at</i> the bid or ask are excluded: that is a visible order being taken, not hidden liquidity.
     </div>
+    <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:12,lineHeight:1.6,maxWidth:900,
+      borderLeft:'2px solid '+C.warn+'66',paddingLeft:9}}>
+      <b style={{color:C.warn}}>buyer/seller is an INFERENCE, not an observation.</b> The tape carries no
+      aggressor flag, so the side is assigned purely from position in spread: <i>pos {'\u2265'} 0.5 {'\u2192'} hidden buyer</i>.
+      The standard quote rule {'\u2014'} a print above the mid is buyer-initiated, so the <i>resting</i> side is the
+      seller {'\u2014'} would <b>invert every label on this page</b>. The current convention rests on one verified
+      fill. <b>SIDE CONF</b> is |pos{'\u2212'}0.5|{'\u00D7'}2: how far the level sits from the 0.5 threshold that decides the
+      label, <i>not</i> evidence the convention is right. Roughly 1 in 5 levels lands under 0.25, where a
+      small move in pos flips the label {'\u2014'} and since EDGE is computed from the side, a flipped label
+      also changes which subtraction the edge used.
+    </div>
     {err&&<div style={{padding:'7px 11px',background:C.warn+'15',border:'1px solid '+C.warn+'40',borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:10}}>{err}</div>}
 
     <div style={{display:'flex',gap:7,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
@@ -13610,7 +13647,7 @@ function HiddenLevelsPage(p){
 
       {bursts&&bursts.length>0&&<div style={{overflowX:'auto'}}>
         <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
-          <thead><tr>{['AGO','SYMBOL','PRICE','SIDE','EDGE $','BPS','POS','PRINTS','SHARES','SPAN s','VISIT','GAP s'].map(function(h,i){
+          <thead><tr>{['AGO','SYMBOL','PRICE','SIDE','SIDE CONF','EDGE $','BPS','POS','PRINTS','SHARES','SPAN s','VISIT','GAP s'].map(function(h,i){
             return <th key={i} style={{textAlign:(i===1||i===3)?'left':'right',padding:'4px 8px',color:C.txtDim,
               fontSize:7,letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid '+C.border,
               fontWeight:700,whiteSpace:'nowrap'}}>{h}</th>;})}
@@ -13629,6 +13666,9 @@ function HiddenLevelsPage(p){
                 <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{b.ticker}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(b.price).toFixed(4)}</td>
                 <td style={{padding:'4px 8px',borderBottom:bd,whiteSpace:'nowrap'}}><span style={{color:b.side==='ASK'?C.accent:C.blue,fontWeight:700}}>{b.side==='ASK'?'hidden BUYER':'hidden SELLER'}</span></td>
+                <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,whiteSpace:'nowrap',color:sideBand(b._sideconf).c}}>
+                  {b._sideconf==null?'\u2014':Number(b._sideconf).toFixed(2)}
+                  <span style={{fontSize:7,opacity:0.85,marginLeft:4}}>{sideBand(b._sideconf).w}</span></td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.accent,fontWeight:700,borderBottom:bd}}>{'$'+Number(b.edge_usd||0).toFixed(3)}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{b.spread_bps==null?'\u2014':Number(b.spread_bps).toFixed(0)}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{b.pos==null?'\u2014':Number(b.pos).toFixed(3)}</td>
@@ -13651,6 +13691,7 @@ function HiddenLevelsPage(p){
     {rows&&rows.length>0&&<div style={{overflowX:'auto'}}>
       <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
         <thead><tr>{[['SYMBOL','','ticker'],['PRICE','level','price'],['SIDE','resting','side'],
+          ['SIDE CONF','|pos-.5|x2','_sideconf'],
           ['EDGE $','vs visible','best_edge'],['SPREAD $','at burst','med_spread'],['BPS','','spread_bps'],
           ['POS','in spread','med_pos'],['PRINTS','','total_prints'],['SHARES','','total_shares'],
           ['VISITS','bursts','visits'],['SPAN','seconds','span_s'],['BOOK','states','book_states'],
@@ -13678,6 +13719,9 @@ function HiddenLevelsPage(p){
               <td style={{padding:'4px 8px',color:C.gold,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{Number(x.price).toFixed(4)}</td>
               <td style={{padding:'4px 8px',borderBottom:'1px solid '+C.border+'44'}}>
                 <span style={{color:x.side==='ASK'?C.accent:C.blue,fontWeight:700}}>{x.side==='ASK'?'hidden BUYER':'hidden SELLER'}</span></td>
+              <td style={{padding:'4px 8px',textAlign:'right',borderBottom:'1px solid '+C.border+'44',whiteSpace:'nowrap',color:sideBand(x._sideconf).c}}>
+                {x._sideconf==null?'\u2014':Number(x._sideconf).toFixed(2)}
+                <span style={{fontSize:7,opacity:0.85,marginLeft:4}}>{sideBand(x._sideconf).w}</span></td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.accent,fontWeight:700,borderBottom:'1px solid '+C.border+'44'}}>{'$'+Number(x.best_edge||0).toFixed(3)}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:'1px solid '+C.border+'44'}}>{'$'+Number(x.med_spread||0).toFixed(3)}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:'1px solid '+C.border+'44'}}>{x.spread_bps==null?'\u2014':Number(x.spread_bps).toFixed(0)}</td>
@@ -13699,6 +13743,8 @@ function HiddenLevelsPage(p){
     {sel&&<div ref={detailRef} style={{marginTop:16,padding:'12px 14px',background:C.bgCard,border:'1px solid '+C.accent+'44',borderRadius:8}}>
       <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700}}>
         {sel.ticker+' @ '+Number(sel.price).toFixed(4)+'  \u00B7  '+(sel.side==='ASK'?'hidden buyer resting':'hidden seller resting')}
+        <span style={{fontSize:8.5,fontWeight:400,marginLeft:8,color:sideBand(sideConf(sel.med_pos)).c}}>
+          {'side conf '+(sideConf(sel.med_pos)==null?'\u2014':sideConf(sel.med_pos).toFixed(2))+' '+sideBand(sideConf(sel.med_pos)).w}</span>
       </div>
       <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:3}}>
         {sel._burst

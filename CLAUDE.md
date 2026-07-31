@@ -1064,6 +1064,55 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v685 — SIDE CONF: the buyer/seller label is an inference, and now says so (Jul 30 2026)
+
+**The side label was carrying more weight than its evidence.** The tape has no aggressor flag, so
+the scanner assigns it from one number: `p_side = med_pos >= 0.5 ? "ASK" : "BID"`, rendered as
+hidden BUYER / hidden SELLER. That is a threshold on position in spread, nothing more.
+
+> **The standard quote rule would invert every label on the page.** Lee-Ready: a print above the
+> mid is buyer-initiated, so the *aggressor* is the buyer and the **resting side is the seller** —
+> giving `pos >= 0.5` = hidden SELLER. The app assumes the opposite (a hidden buyer must beat the
+> displayed bid to attract sellers, so it rests high in the spread). Both are coherent; `pos` alone
+> cannot arbitrate.
+>
+> **Evidence for the current convention is one verified fill** — U @ 31.95, `pos 0.881`, where the
+> user was the counterparty and the resting side was demonstrably a buyer. The HOOD 88.99
+> "specimen" is **not** a second point: its hidden-buyer characterisation is this app's own
+> inference, so citing it is circular.
+>
+> **One point in favour of keeping the convention:** the quote rule assumes the mid approximates
+> fair value. Overnight spreads run 20–40bps and one level tonight printed **1011bps**. The mid is
+> not a fair-value proxy here, so the textbook rule's central assumption is violated.
+
+**Why it is not cosmetic: `edge` is derived from the side.**
+`edge = pos >= 0.5 ? (price - bid) : (ask - price)`. At `pos 0.9` the app reports 0.9 × spread; if
+the label is inverted the true improvement is 0.1 × spread. **A ninefold overstatement, in the
+direction that flatters the strategy.** The side assumption propagates into every number the page
+ranks on.
+
+**SIDE CONF = |pos − 0.5| × 2.** Distance from the threshold that *decides* the label — explicitly
+**not** evidence the convention is right, and the page says so in a warning block above the tables.
+Bands are the observed quartiles over 514 levels (p25 **0.231**, p50 0.446, p75 **0.678**), not
+round numbers (§5.6a): `< 0.25 coinflip` · `0.25–0.68 fair` · `>= 0.68 firm`.
+**~1 in 5 levels sits under 0.25**, where a small move in `pos` flips the label — and with it, which
+subtraction `edge` used.
+
+Added to the bursts tape, the levels table (sortable) and the detail panel.
+
+**Verified in the browser:** 11 cells hand-recomputed against the payload the page itself consumed,
+**0 mismatches**; bands `coinflip 140 / fair 237 / firm 123` across 500 rows; sorting descending
+confirmed on the levels table; caveat block rendered; zero page errors.
+
+> **The value is attached to the row at load time, not held in a side map.** The comparator reads
+> `row[sortKey]`, so a sortable header backed by a lookup sorts by null and lies silently — the
+> exact v581 regression. `withConf()` stamps `_sideconf` onto every row in both loaders.
+
+> **My first verification reported 14 of 14 cells mismatched. The app was fine; the test was wrong.**
+> `innerText` concatenates the number and band word without whitespace (`"0.14coinflip"`), so
+> `split(' ')[0]` returned the whole string. §4a rule 4 — prove the comparison before believing the
+> fault. Had I trusted it, I would have "fixed" correct code.
+
 ### v684 — Recent bursts are clickable, scoped to the burst (Jul 30 2026)
 
 Clicking a burst opens the same detail panel the levels table uses, but **the print window is the
