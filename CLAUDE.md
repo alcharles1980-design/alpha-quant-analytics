@@ -1064,6 +1064,44 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v684 — Recent bursts are clickable, scoped to the burst (Jul 30 2026)
+
+Clicking a burst opens the same detail panel the levels table uses, but **the print window is the
+burst's own extent** (`seen_at - span_s .. seen_at`, padded 3s each side), not the level's whole
+life. That distinction is the entire point of the feature.
+
+> **Measured on a real re-hit.** AAPL 313.80, visit 2 of 2, `prev_gap_s` **8,462s** (2.35 hours).
+> Clicking the burst fetched a **119-second** window — span 112.54s + 6s padding, confirmed against
+> the outbound request. The level-click path would have fetched `first_seen..last_seen`, roughly
+> **8,575 seconds — about 72x wider** — pulling in the discovery burst and 2.3 hours of dead tape
+> to show you one re-hit. On a re-hit, "the level's prints" is the wrong question.
+
+**The panel header changes language when opened from a burst**, because the numbers change meaning.
+A level says *"first seen 22:41 · 2 bursts · 78 prints"*; a burst says
+*"burst 22:51:40.040 EDT · visit 2 of 2 · RE-HIT, 8462s after the previous · 39 prints · span
+112.5s"*. Reusing the level wording would have attached the level's vocabulary to one episode's
+figures — populated, plausible, wrong (§5.1a).
+
+Implementation is a shape adapter, not a fork: `openBurst()` maps a burst row onto the level shape
+`loadPrints()` already expects, with `first_seen` synthesised from `seen_at - span_s`. The visits
+sub-table still loads off `level_id`, so the burst view keeps the level's full history for context.
+
+**`scrollIntoView` on open is not decoration.** The detail panel renders below the levels table,
+which is currently ~400 rows. Without it, clicking a burst at the top of the page appears to do
+nothing at all.
+
+**Verified in the browser, both branches:**
+- discovery burst — TSLA 314.31, span 47.0s → window **53s** vs expected 52.99s; panel read
+  `visit 1 of 1 · discovery`; prints panel showed **30 at 314.3100**, matching the burst's own
+  `prints: 30` exactly.
+- re-hit — AAPL as above, window **119s vs expected 118.54s**, header carrying the RE-HIT wording
+  and the 8,462s gap.
+- Zero page errors on either path.
+
+> Prints-at-price rendered slightly exceeds the burst's own count (42 vs 39, 30 vs 30). **Expected,
+> not drift:** the scanner counts only prints of `s <= 10` (§10 item 4), the panel shows every print
+> at that price. The panel number should always be >= the burst number.
+
 ### v683 — Hidden Levels: Recent bursts panel (Jul 30 2026)
 
 `hidden_levels_view` shows **levels**; this shows the **events that create them**. A level says a

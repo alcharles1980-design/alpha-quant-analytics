@@ -13406,6 +13406,7 @@ function HiddenLevelsPage(p){
   var s14=useState(null),bursts=s14[0],setBursts=s14[1];
   var s15=useState(10),bwin=s15[0],setBwin=s15[1];
   var s16=useState(null),bErr=s16[0],setBErr=s16[1];
+  var detailRef=useRef(null);
 
   var loadBursts=async function(mins){
     try{
@@ -13484,6 +13485,37 @@ function HiddenLevelsPage(p){
       setPrints(out);
     }catch(e){setPrintErr(String(e.message||e));}
     setPrintBusy(false);
+  };
+  // Open a single BURST. Deliberately different from openLevel: the print window is scoped to
+  // THIS burst (seen_at - span_s .. seen_at) rather than the level's whole life. Clicking a
+  // re-hit that happened 20 minutes after discovery should show the re-hit's prints, not both
+  // episodes plus the dead time between them.
+  var openBurst=async function(b){
+    var span=Number(b.span_s||0);
+    var end=new Date(b.seen_at).getTime();
+    var shaped={
+      id:b.level_id, _burst:true, _burstKey:b.level_id+'_'+b.seen_at,
+      _visitNo:b.visit_no, _isRevisit:!!b.is_revisit, _prevGap:b.prev_gap_s,
+      ticker:b.ticker, price:b.price, side:b.side,
+      first_seen:new Date(end-span*1000).toISOString(),
+      last_seen:b.seen_at,
+      visits:b.level_visits, total_prints:b.prints, total_shares:b.shares,
+      med_pos:b.pos, med_spread:b.spread_usd, med_edge:b.edge_usd, best_edge:b.edge_usd,
+      book_states:b.book_states, at_touch_pct:b.at_touch_pct,
+      span_s:b.span_s, spread_bps:b.spread_bps
+    };
+    setSel(shaped); setVisits(null); setPrints(null); setPrintErr(null);
+    loadPrints(shaped);
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/rpc/hidden_level_visits_view',{method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({p_level:b.level_id})});
+      if(r.ok)setVisits(await r.json());
+    }catch(e){}
+    // The detail panel renders below the levels table, which can be hundreds of rows long. Without
+    // this, clicking a burst at the top of the page appears to do nothing.
+    setTimeout(function(){ try{ if(detailRef.current&&detailRef.current.scrollIntoView)
+      detailRef.current.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} },60);
   };
   var openLevel=async function(row){
     setSel(row); setVisits(null); setPrints(null); setPrintErr(null);
@@ -13589,7 +13621,10 @@ function HiddenLevelsPage(p){
               // is the tradeable event. Highlighted so it cannot be missed while scanning.
               var re=!!b.is_revisit;
               var bd='1px solid '+C.border+'33';
-              return <tr key={b.level_id+'_'+b.seen_at+'_'+i} style={{background:re?C.gold+'12':'transparent'}}>
+              var selected=(sel&&sel._burstKey===(b.level_id+'_'+b.seen_at));
+              return <tr key={b.level_id+'_'+b.seen_at+'_'+i} onClick={function(){openBurst(b);}}
+                style={{cursor:'pointer',background:selected?C.accent+'1E':(re?C.gold+'12':'transparent'),
+                  outline:selected?'1px solid '+C.accent+'66':'none'}}>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd,whiteSpace:'nowrap'}}>{b.secs_ago==null?'\u2014':(Number(b.secs_ago)<90?Math.round(Number(b.secs_ago))+'s':(Number(b.secs_ago)/60).toFixed(1)+'m')}</td>
                 <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{b.ticker}</td>
                 <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(b.price).toFixed(4)}</td>
@@ -13661,13 +13696,21 @@ function HiddenLevelsPage(p){
       </table>
     </div>}
 
-    {sel&&<div style={{marginTop:16,padding:'12px 14px',background:C.bgCard,border:'1px solid '+C.accent+'44',borderRadius:8}}>
+    {sel&&<div ref={detailRef} style={{marginTop:16,padding:'12px 14px',background:C.bgCard,border:'1px solid '+C.accent+'44',borderRadius:8}}>
       <div style={{color:C.txtBright,fontSize:12,fontFamily:F,fontWeight:700}}>
         {sel.ticker+' @ '+Number(sel.price).toFixed(4)+'  \u00B7  '+(sel.side==='ASK'?'hidden buyer resting':'hidden seller resting')}
       </div>
       <div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:3}}>
-        {'first seen '+etTime(sel.first_seen)+' '+etZone+'  \u00B7  last '+etTime(sel.last_seen)+'  \u00B7  '+etDay(sel.first_seen)
-         +'  \u00B7  '+sel.visits+' burst'+(sel.visits===1?'':'s')+'  \u00B7  '+sel.total_prints+' prints  \u00B7  '+sel.total_shares+' shares'}
+        {sel._burst
+          /* Opened from the bursts tape: every number below describes THIS burst, not the level's
+             life, so the label must not say "first seen" or "N bursts" -- those would be the
+             level's language attached to a single episode's figures. */
+          ?('burst '+etTime(sel.last_seen,3)+' '+etZone+'  \u00B7  '+etDay(sel.last_seen)
+            +'  \u00B7  visit '+sel._visitNo+' of '+sel.visits
+            +(sel._isRevisit?('  \u00B7  RE-HIT, '+Number(sel._prevGap||0).toFixed(0)+'s after the previous'):'  \u00B7  discovery')
+            +'  \u00B7  '+sel.total_prints+' prints  \u00B7  '+sel.total_shares+' shares  \u00B7  span '+Number(sel.span_s||0).toFixed(1)+'s')
+          :('first seen '+etTime(sel.first_seen)+' '+etZone+'  \u00B7  last '+etTime(sel.last_seen)+'  \u00B7  '+etDay(sel.first_seen)
+            +'  \u00B7  '+sel.visits+' burst'+(sel.visits===1?'':'s')+'  \u00B7  '+sel.total_prints+' prints  \u00B7  '+sel.total_shares+' shares')}
       </div>
       {!visits&&<div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginTop:8}}>Loading visits{'\u2026'}</div>}
       {visits&&visits.length>0&&<div style={{marginTop:9,overflowX:'auto'}}>
