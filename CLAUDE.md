@@ -1090,6 +1090,27 @@ then two deliberately overlapping live scans back to back, after which
 **This is why §10 item 3's "60% persistence" is withdrawn rather than corrected.** The scanner was
 measuring itself.
 
+**THE APP NEEDED NO CHANGE — BUT TWO OF ITS COLUMNS WERE BROKEN AND ARE NOW FIXED.** `first_seen`
+previously held the first burst's *last* print, and the Hidden Levels page depends on it twice.
+Verified in a headless browser against the live app, not reasoned about:
+
+- **`SPAN SECONDS` read `0.0` on almost every row.** `hidden_levels_view` computes
+  `last_seen - first_seen`; with both set to the same instant on any single-visit level, the column
+  was structurally zero. Now **312 of 323 rendered rows are positive, median 26.8s** — the 11 zeros
+  are genuine sub-millisecond bursts (§9c: 25% are under 100ms). The rendered count matches the RPC
+  exactly.
+- **The raw-print panel was fetching the wrong window** — `loadPrints` requests
+  `first_seen - 3s .. last_seen + 3s`, which under the old semantics was a **6-second window centred
+  on the burst's END**. Confirmed live on a 69-second burst (21:46:16 → 21:47:25): the panel now
+  returns **407 prints at the level price out of 734 in window**, where the old window
+  (21:47:22–21:47:28) covered **3 of 69 seconds — about 4% of the burst.** It never errored; it
+  showed a plausible handful of prints at the right price. Textbook §5.1a.
+
+**Generalise this.** A column whose *meaning* changes needs the same treatment as a column whose
+*name* changes: grep every consumer. Both of these were downstream of one timestamp, neither was
+touched by the migration, and the DB-level invariant check (`sum(visits) == count(visits rows)`)
+would have passed forever without noticing either.
+
 ### v681 — Hidden Levels: default sort by print count (Jul 30 2026)
 
 Default ordering is now **most prints first** rather than highest edge. The level hit hardest is
@@ -2402,6 +2423,16 @@ whether edge decays by the 20th visit is unmeasured.
 > fragments were counted against just 7 genuine revisits — **90% artifact**. The figure is
 > **withdrawn, not corrected**; anything "within 60s" sits inside the detector's own overlap window
 > and is unmeasurable by construction. Post-fix rate: **9 of 340 levels (2.6%)**. See §9c.
+>
+> **5. A global console error fires on EVERY page** —
+> `TypeError: Cannot read properties of undefined (reading 'oneOfType')`. Confirmed Jul 30 2026 in a
+> headless browser on `(home)`, `#hiddenlevels` and `#mostactives`: it throws on load, before any
+> page-specific code, so it is global and long-standing rather than anything recent. Nothing visibly
+> breaks — tables render and the data is correct. It is almost certainly a UMD library reaching for
+> a global `PropTypes` that is not loaded.
+> **Worth fixing anyway, for the §5.6a reason:** a console that is never clean is a console nobody
+> reads, and it is the noise any *real* page error now has to be spotted against. Cheap to find —
+> bisect the CDN script tags in `build.js`.
 >
 > **4. Fill probability at SIZE is unknown.** Everything measured is 1-share. A wholesaler pricing
 > 1 share inside a 132bps spread costs them nothing; 100 shares may route differently or not fill.
