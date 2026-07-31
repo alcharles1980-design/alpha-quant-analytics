@@ -75,7 +75,7 @@ const dups = [];
 // Deterministic: count function-valued `var` declarators per RESOLVED scope.
 // An earlier draft used babel's constantViolations, which reported 15 phantom
 // collisions on a clean file (same line listed twice) — a check that cries wolf
-// gets ignored (§5.6), so it was replaced rather than tuned.
+// gets ignored (§5.6a), so it was replaced rather than tuned.
 const perScope = new Map();
 traverse(ast, {
   VariableDeclarator(p2) {

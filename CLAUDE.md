@@ -1064,6 +1064,44 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v682 — Recharts was never loading. `prop-types` was missing (Jul 30 2026)
+
+**The console error logged as §10 item 5 yesterday was not cosmetic and I called it wrong.** I wrote
+"nothing visibly breaks" on the evidence that tables rendered. They did — because **tables are not
+charts**. `window.Recharts` was `undefined` on every page load.
+
+**Root cause.** Recharts' UMD build reads a **global `PropTypes`** and does not bundle it. React 18
+dropped `React.PropTypes` and nothing else supplied it, so Recharts threw
+`Cannot read properties of undefined (reading 'oneOfType')` *while evaluating* and never defined its
+global. Proved in isolation rather than inferred — same page, same React/ReactDOM, prop-types the
+only variable:
+
+| | `window.Recharts` | error |
+|---|---|---|
+| without prop-types | **undefined** | `reading 'oneOfType'` |
+| with prop-types first | **object, 54 exports, 7/7 needed components** | none |
+
+**Note the path.** `prop-types` ships its UMD at the **package root** —
+`prop-types@15.8.1/prop-types.min.js` — not under `/umd/` like react does. The first attempt used
+`/umd/` by analogy and 404'd; it was caught only because the fix was tested before it was shipped.
+
+**The fallback could not have caught this, and that is the deeper bug.** The loader hung its retry
+off `rs.onerror`, which fires only when a script fails to **download**. Recharts downloaded fine
+(200), threw during evaluation, and `onload` fired anyway — so `go()` ran, the app booted, and the
+fallback never triggered. It now checks whether the global **materialised**
+(`typeof Recharts!=="undefined" && Recharts.AreaChart`) rather than whether the request succeeded.
+**Generalise: a health check on a 200 is not a health check.** Same class as verifying
+`delivered == expected` after a fetch (§5.1b) and `next_page_token is null` after a page (§9c).
+
+**Blast radius was small by luck, not design.** Recharts is used in exactly one page —
+`HourlyPredictionPage`, via `RC.AreaChart` and six siblings. One of its two call sites already
+guarded with `hasCharts=!!RC.AreaChart`; the other did not. The app-level guard
+`var RC=typeof Recharts!=="undefined"?Recharts:{}` is what kept the failure quiet enough to survive
+this long.
+
+Verified on the built artifact before pushing: `PropTypes` object, `Recharts` object with 54
+exports, `AreaChart` present, **zero page errors**, banner `v682`.
+
 ### BACKEND FIX — `visits` counted scanner re-detections, not re-hits (Jul 30 2026)
 
 No app version: the change is `register_level()` + `overnight-level-scan` v2, with `app_v681.jsx`
@@ -2424,15 +2462,11 @@ whether edge decays by the 20th visit is unmeasured.
 > **withdrawn, not corrected**; anything "within 60s" sits inside the detector's own overlap window
 > and is unmeasurable by construction. Post-fix rate: **9 of 340 levels (2.6%)**. See §9c.
 >
-> **5. A global console error fires on EVERY page** —
-> `TypeError: Cannot read properties of undefined (reading 'oneOfType')`. Confirmed Jul 30 2026 in a
-> headless browser on `(home)`, `#hiddenlevels` and `#mostactives`: it throws on load, before any
-> page-specific code, so it is global and long-standing rather than anything recent. Nothing visibly
-> breaks — tables render and the data is correct. It is almost certainly a UMD library reaching for
-> a global `PropTypes` that is not loaded.
-> **Worth fixing anyway, for the §5.6a reason:** a console that is never clean is a console nobody
-> reads, and it is the noise any *real* page error now has to be spotted against. Cheap to find —
-> bisect the CDN script tags in `build.js`.
+> **5. ~~A global console error fires on EVERY page.~~ FIXED in v682 — and it was not cosmetic.**
+> `window.Recharts` was `undefined` on every load: the UMD build needs a global `PropTypes` that
+> nothing supplied. I originally logged this as "nothing visibly breaks" on the strength of tables
+> rendering, which was the wrong evidence — tables are not charts. Root cause, proof and the
+> loader-fallback bug it exposed are in the v682 entry in §9.
 >
 > **4. Fill probability at SIZE is unknown.** Everything measured is 1-share. A wholesaler pricing
 > 1 share inside a 132bps spread costs them nothing; 100 shares may route differently or not fill.

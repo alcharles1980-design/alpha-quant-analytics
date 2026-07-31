@@ -25,7 +25,7 @@ new Intl.DateTimeFormat('en-US', {
 }).formatToParts(now).forEach(p => { tsParts[p.type] = p.value; });
 const buildTS = `${tsParts.month} ${tsParts.day}, ${tsParts.year} ` +
   `${tsParts.hour}:${tsParts.minute} ${tsParts.dayPeriod} ${tsParts.timeZoneName}`;
-const finalCode = 'var BUILD_TS="v681 | Built: ' + buildTS + '";\n' + result.code;
+const finalCode = 'var BUILD_TS="v682 | Built: ' + buildTS + '";\n' + result.code;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -49,12 +49,26 @@ button:active{transform:scale(0.93)!important;opacity:0.6!important;}
 </style>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<!-- Recharts' UMD build reads a GLOBAL PropTypes and does not bundle it. Without this tag it
+     throws "Cannot read properties of undefined (reading 'oneOfType')" while evaluating, leaving
+     window.Recharts undefined and every chart dead. Note the path: prop-types ships at the package
+     ROOT, not under /umd/ like react does. Static tag in <head> so it is guaranteed to have run
+     before the body script appends Recharts. -->
+<script crossorigin src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
 </head>
 <body ontouchstart="">
 <div id="root"></div>
 <script>
+// The fallback below used to hang off onerror ALONE, which only fires when the script fails to
+// DOWNLOAD. Recharts' real failure mode was the opposite: it downloaded fine (200), threw while
+// evaluating, and onload fired anyway -- so the fallback never ran and the app booted chartless
+// with only a console error. Check whether the global actually MATERIALISED, not merely that the
+// request succeeded. Same class as verifying delivered == expected after a fetch.
+var rechartsReady=function(){return typeof Recharts!=="undefined"&&Recharts&&Recharts.AreaChart;};
 var rs=document.createElement("script");rs.src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js";rs.crossOrigin="anonymous";
-rs.onload=function(){go();};rs.onerror=function(){var s2=document.createElement("script");s2.src="https://unpkg.com/recharts@2.7.3/umd/Recharts.js";s2.crossOrigin="anonymous";s2.onload=function(){go();};s2.onerror=function(){go();};document.head.appendChild(s2);};
+rs.onload=function(){if(rechartsReady()){go();return;}loadFallback();};
+rs.onerror=function(){loadFallback();};
+function loadFallback(){var s2=document.createElement("script");s2.src="https://unpkg.com/recharts@2.7.3/umd/Recharts.js";s2.crossOrigin="anonymous";s2.onload=function(){go();};s2.onerror=function(){go();};document.head.appendChild(s2);}
 document.head.appendChild(rs);
 function go(){try{
 ${finalCode}

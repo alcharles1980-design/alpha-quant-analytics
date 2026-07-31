@@ -7,7 +7,7 @@ git log --format='%s' | grep -oE '^v[0-9]+' | tr -d v | sort -n -u > /tmp/_ship
 # then expand heading ranges like "### v648-v650" into 648 649 650.
 # Scan the handoff AND the archive: entries older than ~15 versions live in
 # docs/CHANGELOG-ARCHIVE.md, and reading only CLAUDE.md would report every archived
-# version as a gap — a check that cries wolf gets ignored (§5.6).
+# version as a gap — a check that cries wolf gets ignored (§5.6a).
 cat CLAUDE.md docs/CHANGELOG-ARCHIVE.md 2>/dev/null \
  | grep -oE '^### v[0-9]+(–|-)?v?[0-9]*' \
  | sed 's/–/-/g; s/^### v//; s/-v/-/' \
