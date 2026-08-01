@@ -1064,6 +1064,51 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v688 — Narrow Range Screener (new page) (Aug 1 2026)
+
+Menu item under **Essential Tools**, route `narrowrange`, new page. Finds stocks oscillating inside
+a band around a **flat** moving average: enough amplitude to trade, no net direction.
+
+**Four metrics, all measured RELATIVE TO THE SMA LINE**, from 30 days of hourly RTH bars
+(147 bars/ticker, ET hours 9–15 — extended-hours hourly bars are thin and would distort every one):
+
+| metric | definition | filter |
+|---|---|---|
+| `lnh` | median % swing low → next swing high, for lows at/below the line | ≥ 2.0 |
+| `overlap` | fraction of bars whose high–low **straddles** the line | ≥ 0.32 / 0.267 |
+| `persist` | fraction of bars on the dominant side. 0.5 balanced, 1.0 never crosses | ≤ 0.65 / 0.70 |
+| `drift` | % change of the line itself | ±5.0 |
+
+> **THE SOURCE SCREENER'S OVERLAP THRESHOLDS RETURN ZERO ROWS HERE, AND THAT IS NOT A BUG.**
+> `≥0.6/0.5` passes **2 of 2,408** names — its overlap is normalised differently. Recalibrated from
+> the observed distribution to **0.32/0.267 → 142 names**, against that screener's 140.
+> **The evidence it is a rescaling rather than a fit to one number:** the implied factor is
+> consistent across *both* windows independently — `0.60/0.32 = 1.875`, `0.50/0.267 = 1.873`.
+> The other three filters transferred unchanged (they pass 1,679 / 2,081 / 1,862 alone).
+> Defaults are the calibrated values; every threshold stays parameterised on the RPC and editable
+> in the UI, and the page states this in a gold note rather than hiding it.
+
+**Data:** `narrow_range_screener` (2,408 of 2,497 tickers; 89 lacked history), RPC
+`narrow_range_view()` bounded at 900 inside the function (§5.1b). **Bars are computed in memory and
+NOT stored** — ~500k rows would be ~100MB against limited headroom (§5.2, the `daily_returns`
+incident). Composite `nr_score` weights amplitude 40 / overlap 30 / persistence 20 / drift 10, with
+`lnh` capped at 15 before scaling so an unbounded percent cannot swamp three 0..1 fractions and turn
+the ranking into a volatility sort.
+
+**Fetch notes:** Alpaca returned transient 503s under back-to-back requests — not size-related
+(batches of 5/10/20/40 all returned 200 when paced). Fixed with 0.35s pacing plus per-batch error
+isolation, so one bad batch is recorded for retry rather than killing a 2,500-ticker run. Every
+batch verified `next_page_token` null.
+
+**Verified in the browser:** 13 columns, **128 rendered == 128 in the RPC payload**, sticky header,
+zero page errors, and loosening overlap 0.32 → 0.25 moved 128 → 157 rows — **the filters were proven
+to filter, not merely to render**. Invariants checked in DB: no `persist < 0.5` (structurally
+impossible), no negative `lnh`, overlap range identical to the computed file.
+
+> **Known gaps, stated rather than left to be discovered:** this is a **one-off snapshot dated
+> 2026-08-01 with no scheduled refresh**, and there is **no liquidity floor** — thin names can rank.
+> Both are surfaced in a footer on the page.
+
 ### BURST VERIFICATION — confirming a burst against the TRF (Jul 31 2026)
 
 **Named capability, tooling committed at `tools/burst-verification/`** (see its README for method,
