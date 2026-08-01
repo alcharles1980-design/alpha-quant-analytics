@@ -1064,6 +1064,26 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v690 — Narrow Range Screener: Yahoo / Multi View quick links (Aug 1 2026)
+
+LINKS column after SYMBOL, using the **same markup as Most Actives** — `Y` to
+`finance.yahoo.com/quote/TICKER` and `\u2197` to the `#multiviewcharts:TICKER` deep link, both
+`target="_blank"` with `rel="noopener noreferrer"`. Reused rather than reinvented so the two pages
+behave identically.
+
+> **The column is deliberately NOT sortable, and that needed explicit handling.** Its `COLS` entry
+> carries a null sort key, the header's onClick returns early, and its cursor is `default` rather
+> than `pointer`. Without that, the header would set `sort.col` to a key no row has, the comparator
+> would read `row[undefined]` for every row, and the table would silently reorder into
+> null-comparison order — a sortable-looking header that scrambles the table. Same family as the
+> v581 side-map regression: the comparator reads `row[sortKey]`, so any header must have real data
+> behind it or be inert by construction.
+
+**Verified in the browser:** 2 anchors on the first row, hrefs
+`https://finance.yahoo.com/quote/DFTX` and `#multiviewcharts:DFTX` — **checked to contain that
+row's own symbol**, not a hardcoded one; `target`/`rel` correct on both; clicking the LINKS header
+leaves row order **unchanged**; cursor `default`. Column renders on both timeframes.
+
 ### v689 — Narrow Range Screener: hourly / daily timeframes (Aug 1 2026)
 
 Toggle on the page. **Hourly** = 30 days of RTH hourly bars (~147/ticker, 2,408 tickers).

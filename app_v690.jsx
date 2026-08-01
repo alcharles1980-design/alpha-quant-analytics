@@ -13400,7 +13400,7 @@ function NarrowRangePage(p){
     </div>;
   };
 
-  var COLS=[['SYMBOL','','ticker'],['PRICE','','last_close'],['SCORE','composite','nr_score'],
+  var COLS=[['SYMBOL','','ticker'],['LINKS','',null],['PRICE','','last_close'],['SCORE','composite','nr_score'],
     ['L\u2192NH 10','% swing','lnh_sma10'],['L\u2192NH 20','%','lnh_sma20'],
     ['OVERLAP 10','straddles','overlap_sma10'],['OVERLAP 20','','overlap_sma20'],
     ['PERSIST 10','one-sided','persist_sma10'],['PERSIST 20','','persist_sma20'],
@@ -13512,11 +13512,12 @@ function NarrowRangePage(p){
       border:'1px solid '+C.border+'55',borderRadius:6}}>
       <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
         <thead><tr>{COLS.map(function(c,i){
-          var active=(sort.col===c[2]);
-          return <th key={i} onClick={function(){setSort({col:c[2],dir:(active&&sort.dir==='desc')?'asc':'desc'});}}
+          var active=(c[2]&&sort.col===c[2]);
+          return <th key={i} onClick={function(){if(!c[2])return;setSort({col:c[2],dir:(active&&sort.dir==='desc')?'asc':'desc'});}}
             style={{textAlign:i===0?'left':'right',padding:'5px 8px',color:active?C.gold:C.txtDim,
               fontSize:7,letterSpacing:0.5,textTransform:'uppercase',fontWeight:700,cursor:'pointer',
               userSelect:'none',whiteSpace:'nowrap',position:'sticky',top:0,zIndex:2,background:C.bg,
+              cursor:c[2]?'pointer':'default',
               boxShadow:'inset 0 -1px 0 '+(active?C.gold+'66':C.border)}}>
             {c[0]}{active?(sort.dir==='desc'?' \u25BE':' \u25B4'):''}
             {c[1]?<div style={{fontSize:6.5,opacity:0.7,fontWeight:400}}>{c[1]}</div>:null}</th>;})}
@@ -13527,6 +13528,14 @@ function NarrowRangePage(p){
             var flat=Math.abs(Number(r.drift_sma10))<=1.5;
             return <tr key={r.ticker+i}>
               <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{r.ticker}</td>
+              <td style={{padding:'2px 6px',whiteSpace:'nowrap',borderBottom:bd}}>
+                <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" title="Yahoo Finance"
+                  style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+(C.purple||'#a855f7')+'60',borderRadius:3,
+                    color:C.purple||'#a855f7',fontSize:10,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
+                <a href={'#multiviewcharts:'+r.ticker} target="_blank" rel="noopener noreferrer" title="Multi View Charts"
+                  style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,
+                    color:C.blue,fontSize:10,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
+              </td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{'$'+Number(r.last_close).toFixed(2)}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(r.nr_score).toFixed(1)}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.accent,fontWeight:700,borderBottom:bd}}>{Number(r.lnh_sma10).toFixed(2)}</td>
