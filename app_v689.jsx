@@ -13363,16 +13363,22 @@ function NarrowRangePage(p){
   var s6=useState(''),q=s6[0],setQ=s6[1];
   // Thresholds are state, not constants: the defaults below are CALIBRATED to this app's own
   // metric scale, not copied from the source screener. See the note rendered above the table.
-  var s7=useState({lnh10:2.0,lnh20:2.0,ov10:0.32,ov20:0.267,ps10:0.65,ps20:0.70,dr:5.0,px:0});
+  // Defaults are PER TIMEFRAME and are not a rescaling of one another. Daily is a different
+  // regime: median L->NH 7.30% against hourly's 2.82%, median |drift| 2.77 against 1.57. Applying
+  // the hourly floors to daily passes 230 names instead of 141 and the screen stops discriminating.
+  var DEF={H:{lnh10:2.0,lnh20:2.0,ov10:0.32,ov20:0.267,ps10:0.65,ps20:0.70,dr:5.0,px:0},
+           D:{lnh10:5.0,lnh20:5.0,ov10:0.34,ov20:0.284,ps10:0.65,ps20:0.70,dr:9.0,px:0}};
+  var s8=useState('H'),tf=s8[0],setTf=s8[1];
+  var s7=useState(DEF.H);
   var f=s7[0],setF=s7[1];
 
-  var load=async function(ff,so){
-    var g=ff||f, s=(so===undefined?stocksOnly:so);
+  var load=async function(ff,so,tt){
+    var g=ff||f, s=(so===undefined?stocksOnly:so), tv=(tt||tf);
     setBusy(true);
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/narrow_range_view',{method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
-        body:JSON.stringify({p_lnh10:Number(g.lnh10),p_lnh20:Number(g.lnh20),
+        body:JSON.stringify({p_timeframe:tv,p_lnh10:Number(g.lnh10),p_lnh20:Number(g.lnh20),
           p_overlap10:Number(g.ov10),p_overlap20:Number(g.ov20),
           p_persist10:Number(g.ps10),p_persist20:Number(g.ps20),
           p_drift:Number(g.dr),p_stocks_only:s,p_min_price:Number(g.px)})});
@@ -13425,8 +13431,8 @@ function NarrowRangePage(p){
 
     <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginBottom:8,lineHeight:1.7,maxWidth:940}}>
       Stocks oscillating inside a band around a <b>flat</b> moving average {'\u2014'} enough amplitude to trade,
-      no net direction. All four metrics are measured <b>relative to the SMA line</b> on 30 days of
-      hourly RTH bars (147 bars/ticker):
+      no net direction. All four metrics are measured <b>relative to the SMA line</b>, on
+      {tf==='H'?' 30 days of hourly RTH bars (~147 bars/ticker)':' 1 year of daily bars (~252 bars/ticker)'}:
       <div style={{marginTop:5,paddingLeft:10,lineHeight:1.8}}>
         <b>L{'\u2192'}NH</b> median % from a swing low to the next swing high {'\u2014'} the tradeable amplitude<br/>
         <b>Overlap</b> fraction of bars whose high{'\u2013'}low <i>straddles</i> the line {'\u2014'} price keeps crossing it<br/>
@@ -13442,10 +13448,33 @@ function NarrowRangePage(p){
       normalised differently. Recalibrated from the observed distribution to <b>0.32/0.267</b>, which yields 142
       names against that screener's 140. The implied scale factor is consistent across both windows
       (0.60/0.32 = 1.875, 0.50/0.267 = 1.873), so this is a rescaling rather than a fit to one number.
+      <div style={{marginTop:5,opacity:0.95}}>
+        <b style={{color:C.gold}}>Hourly and daily have separate defaults, not scaled copies.</b> Daily is a
+        different regime {'\u2014'} median L{'\u2192'}NH <b>7.30%</b> against hourly's <b>2.82%</b>, median
+        |drift| 2.77 against 1.57. Running daily on the hourly floors passes 230 names instead of 141 and the
+        screen stops discriminating. Each set is calibrated on its own distribution: hourly
+        <b> {'\u2265'}2.0 / 0.32 / {'\u00B1'}5</b>, daily <b>{'\u2265'}5.0 / 0.34 / {'\u00B1'}9</b>.
+        Switching the toggle swaps the thresholds with it.
+      </div>
     </div>
 
     <div style={{display:'flex',gap:9,flexWrap:'wrap',alignItems:'flex-end',marginBottom:10,
       padding:'9px 11px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:8}}>
+      <div style={{display:'flex',flexDirection:'column',gap:2}}>
+        <span style={{fontSize:7,color:C.txtDim,fontFamily:F,letterSpacing:0.5,textTransform:'uppercase'}}>Timeframe</span>
+        <div style={{display:'flex',gap:0,border:'1px solid '+C.border,borderRadius:5,overflow:'hidden'}}>
+          {[['H','HOURLY'],['D','DAILY']].map(function(x){
+            var on=(tf===x[0]);
+            return <div key={x[0]} onClick={function(){
+                if(tf===x[0])return;
+                // swap BOTH the timeframe and its calibrated thresholds together
+                setTf(x[0]); setF(DEF[x[0]]); load(DEF[x[0]],undefined,x[0]);
+              }}
+              style={{cursor:'pointer',padding:'4px 11px',fontSize:9,fontFamily:F,fontWeight:700,
+                background:on?C.gold+'26':'transparent',color:on?C.gold:C.txtDim}}>{x[1]}</div>;})}
+        </div>
+        <span style={{fontSize:6.5,color:C.txtDim,opacity:0.7,fontFamily:F}}>{tf==='H'?'30d \u00B7 1h':'1y \u00B7 1d'}</span>
+      </div>
       {num('lnh10','L\u2192NH 10','0.5','\u2265')}
       {num('lnh20','L\u2192NH 20','0.5','\u2265')}
       {num('ov10','Overlap 10','0.01','\u2265')}
@@ -13462,7 +13491,7 @@ function NarrowRangePage(p){
         style={{background:C.accent+'22',border:'1px solid '+C.accent+'66',color:C.accent,borderRadius:5,
           padding:'5px 14px',cursor:busy?'default':'pointer',fontFamily:F,fontSize:10,fontWeight:700}}>
         {busy?'Running\u2026':'Apply'}</button>
-      <button onClick={function(){var d={lnh10:2.0,lnh20:2.0,ov10:0.32,ov20:0.267,ps10:0.65,ps20:0.70,dr:5.0,px:0};setF(d);load(d);}}
+      <button onClick={function(){var d=DEF[tf];setF(d);load(d);}}
         style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,
           padding:'5px 11px',cursor:'pointer',fontFamily:F,fontSize:9}}>Reset</button>
       <input placeholder="filter symbol" value={q} onChange={function(e){setQ(e.target.value);}}
@@ -13518,8 +13547,8 @@ function NarrowRangePage(p){
     </div>}
 
     {rows&&rows.length>0&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:7,lineHeight:1.6,maxWidth:940}}>
-      Snapshot computed from 30 days of hourly RTH bars over 2,408 tickers. <b>This is a one-off scan, not a
-      live feed</b> {'\u2014'} it does not refresh on a schedule yet. No liquidity floor is applied, so thin names
+      Snapshot: {tf==='H'?'30 days of hourly RTH bars over 2,408 tickers':'1 year of daily bars over 2,455 tickers'}.
+      <b> This is a one-off scan, not a live feed</b> {'\u2014'} it does not refresh on a schedule yet. No liquidity floor is applied, so thin names
       can rank; sort by MCAP or set a minimum price to screen them out.
     </div>}
   </div>;

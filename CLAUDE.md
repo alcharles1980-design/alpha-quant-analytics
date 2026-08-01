@@ -1064,6 +1064,45 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v689 — Narrow Range Screener: hourly / daily timeframes (Aug 1 2026)
+
+Toggle on the page. **Hourly** = 30 days of RTH hourly bars (~147/ticker, 2,408 tickers).
+**Daily** = **1 year** of daily bars (~252/ticker, 2,455 tickers). Daily needs the longer window
+because 30 days is only ~21 daily bars — too few for SMA20 plus rolling stats.
+
+> **THE TWO TIMEFRAMES HAVE SEPARATE DEFAULTS, AND THIS IS THE WHOLE POINT.** Daily is a different
+> regime, not a rescaling: median L→NH **7.30%** against hourly's **2.82%** (2.6x), median |drift|
+> **2.77** against **1.57** (1.76x). Running daily on the hourly floors passes **230** names instead
+> of 141 — it would still render a plausible table while having largely stopped discriminating,
+> which is the §5.1a failure shape. Each set is calibrated on its own distribution to land near 140:
+>
+> | | L→NH | overlap | drift | → names |
+> |---|---|---|---|---|
+> | hourly | ≥2.0 | ≥0.32 / 0.267 | ±5.0 | 142 |
+> | daily | ≥5.0 | ≥0.34 / 0.284 | ±9.0 | 141 |
+>
+> Persistence is unchanged — its distribution is nearly identical across timeframes (p50 0.558 vs
+> 0.568), which is itself a useful check that the metric measures what it claims.
+
+**Switching the toggle swaps the thresholds with it.** Leaving hourly floors on a daily scan is the
+single most likely way to get a wrong-but-plausible result here, so it is not left to the user.
+
+`nr_score`'s L→NH cap is per-timeframe too (15 hourly, 25 daily): a fixed 15 saturates on daily
+(median 7.3, p90 17.3) and flattens the ranking toward constant.
+
+**Schema:** `timeframe` column ('H'/'D'), unique index on `(scan_date, ticker, timeframe)`.
+`narrow_range_view(p_timeframe, ...)` takes null thresholds and fills per-timeframe defaults inside
+the function, so the caller cannot accidentally mix them.
+
+> The old function was **dropped explicitly** before recreating. `create or replace` across a
+> different signature ADDS an overload and PostgREST then 300s with PGRST203 (§5.4). Verified after:
+> **exactly 1 signature.**
+
+**Verified in the browser:** hourly 128 rendered == 128 payload; toggle to daily → **137 == 137**,
+threshold inputs re-read `5, 5, 0.34, 0.284, 0.65, 0.7, 9`, page copy switched to "1 year of daily
+bars", zero page errors. RPC paths checked directly: `H` 142 / `D` 141 all-types, no-arg defaults to
+H, an invalid timeframe falls back to H rather than returning empty.
+
 ### v688 — Narrow Range Screener (new page) (Aug 1 2026)
 
 Menu item under **Essential Tools**, route `narrowrange`, new page. Finds stocks oscillating inside
