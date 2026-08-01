@@ -1,3 +1,7 @@
 node_modules/
 dist/
 .DS_Store
+
+# burst-verification working files
+tools/burst-verification/__pycache__/
+tools/burst-verification/data_*.json

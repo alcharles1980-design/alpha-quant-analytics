@@ -1064,6 +1064,57 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### BURST VERIFICATION — confirming a burst against the TRF (Jul 31 2026)
+
+**Named capability, tooling committed at `tools/burst-verification/`** (see its README for method,
+validation cases and gotchas). Not app code; no version bump.
+
+Takes a burst the scanner claims and confirms it against the 04:00 ET TRF batch as a second
+witness. Answers what the register cannot: did a second feed see this, when did the off-venue flow
+at this price actually execute, and was it visible in real time or invisible until 04:00.
+
+> **The trick.** TRF prints carry **report** timestamps, not execution timestamps — a whole
+> overnight session lands in ~5 minutes at 04:00 with **no out-of-sequence marker**. The feeds
+> therefore cannot be joined on time. But **the size multiset survives the reporting delay**:
+> `{550x1, 180x1, 93x1, 100x3, 50x6, 2x3, 1x58}` is a fingerprint, and matching it against BOATS
+> prints at the same price recovers the execution window **to the second** from data whose clock
+> looked erased. HOOD 87.28 on 2026-07-31: 73 TRF prints, 73 BOATS prints, identical multiset,
+> execution 07:25:20–40Z, reporting delay 38.4 min.
+
+**Two methods, not interchangeable.** `classify()` gives exact fingerprint matches and recovers
+execution time, but is valid **only on isolated bursts**. `size_excess()` is robust at any scale but
+recovers no time and is a **lower bound**. Across 21 symbols on 2026-07-30 — 224,256 TRF prints,
+8.1M shares — **19.7% of prints and 22.6% of shares were genuinely internalised**, i.e. never
+appeared on any venue in real time. That supersedes the earlier count-only figures, which caught
+only prices with zero BOATS presence and missed excess at shared prices, where most of it hides.
+
+> **`classify()` failed silently at scale before it was caught.** It first reported SOXL at 99.2%
+> internalised against a count-based 5.3%, and a 332-minute median delay for NVDA. Both false: it
+> demands one contiguous window matching the entire TRF group at a price, and SOXL at 93.00 has
+> BOATS prints across 60 distinct minutes. **A method validated on clean isolated cases can produce
+> plausible wrong numbers at scale rather than errors** (§5.1a). Caught only because 99.2% vs 5.3%
+> was too large to ignore — not by any check.
+
+**Validation set, re-run before trusting any change** (all four currently PASS): U 31.95 echo /
+U 31.88 internalised — the only *labelled* ground truth in the system, since the user was the
+counterparty; HOOD 87.28 echo; HOOD 87.31 the 524-print burst, no counterpart.
+
+**What it does NOT establish: side.** Three approaches have now failed on one root cause — no
+aggressor flag on the tape, no execution time on the TRF. The overnight SIP returns `trades: null`
+during the BOATS session, so cross-venue price comparison is impossible by construction. A
+price-distribution version came out at **chance (13/16, 44.8%; high-conf 50.0%)** — noise from
+8-hour drift, not inversion. **The user's own fills remain the only source carrying both side and
+execution time.**
+
+> **Correction owed to §9c:** it records the TRF batch as stamped at a single instant
+> (`08:00:22.000 UTC`). That is only the FIRST print's timestamp — the batch runs to ~08:05 with
+> distinct nanosecond stamps per print. The batching is real; the single-timestamp detail is wrong
+> and would send a session hunting a signature that does not exist.
+
+> **Unverified assumption, stated so it does not harden into fact:** that Blue Ocean is an ATS and
+> therefore re-reports to a TRF. Inferred from the 71/71 and 73/73 matches, never checked against
+> FINRA's ATS list. FINRA OTC Transparency would settle it.
+
 ### v687 — Hidden Levels: cap the levels table, sticky header (Jul 30 2026)
 
 **Measured before designing.** The page was **12,299px — 13.7 screens at a 900px viewport — and the
