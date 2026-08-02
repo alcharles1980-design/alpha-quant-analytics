@@ -1064,6 +1064,51 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v692 — Band Prediction (new page) (Aug 2 2026)
+
+Menu item under Essential Tools, route `bandprediction`. Next-session price band for a mechanical
+grid. **Not a direction forecast** — the centre is always the last close.
+
+**The target is the EXCURSION, not sigma:** `max(|H/prev_close − 1|, |L/prev_close − 1|)`.
+Parkinson and Garman–Klass measure `ln(H/L)`, the bar's *internal* range, and are **blind to the
+overnight gap — which is exactly what breaks a band.**
+
+```
+forecast = 0.1·mean(exc,5) + 0.3·mean(exc,20) + 0.3·mean(exc,60) + 0.3·mean(exc,120)
+band     = close ± k · forecast      k = 1.60 / 2.12 / 3.38  →  87 / 95 / 99%
+```
+
+> **Backtested over 359,330 ticker-days, validated on 180,836 unseen ones.** Every lookback
+> combination landed within **7%** of every other; multi-timescale beat the best single window (20d)
+> by ~1%; windows under 15 days were clearly worse. Out-of-sample the k values slightly
+> **over**-covered (90.7 / 96.8 / 99.3), which is the safe direction. **Lookback selection is not
+> where the leverage is** — the forecast's own error is ~40%.
+
+> **The prompt's k table was wrong and this corrects it.** Its k=1.5 → 87% is normal-CDF coverage of
+> the *terminal* price, but a band must contain the whole *path*. Measured: k=1.5 contains the day's
+> range **57.0%** of the time, not 87%. Every k in that table wants multiplying by ~1.6.
+
+**REGIME / CONF columns — the part that makes the band usable.** The forecast weights the 5-day at
+only 0.1, so when recent volatility moves sharply the band lags reality. `regime_ratio = 5d/120d`
+classifies EXPANDING / stable / COMPRESSING; `term_slope` flags a clean monotonic ramp (a real
+regime change) versus a jumbled order (noise); `confidence` is the spread across the four windows —
+when they agree the weighting is irrelevant, when they disagree the answer depends on weights nobody
+can justify. Live examples: **CRDO** dispersion 0.18 *high* / **BE** 0.61 *low, EXPANDING FAST 1.79*
+/ **NIO** *COMPRESSING FAST 0.68, monotonic down*.
+
+> **Bounded INSIDE the function, and this one bit during verification.** The first version returned
+> ~2,400 rows and PostgREST delivered exactly **1,000** — the page read "1000 of 1000 symbols" and
+> looked complete. Now `limit 900` with `order by forecast desc`, so a truncated result drops the
+> *calmest* names rather than an arbitrary alphabetical slice (§5.1b).
+
+**Verified in the browser:** 17 columns, **900 rendered == 900 in the payload**, BE's band matches
+the RPC field-for-field, the coverage toggle 87→99 widened $170.46 → $131.12, and the COMPRESSING
+filter returned 126 rows **all of which were actually compressing** — the filter was proven to
+filter. Zero page errors.
+
+> **Stated on the page: no band survives an earnings gap.** The remedy is smaller size, not a wider
+> k. WORST is highlighted when a single session needed >3× the forecast.
+
 ### NRS AUTO-REFRESH — daily job, incremental (Aug 2 2026)
 
 `.github/workflows/nrs-refresh.yml` + `nrs-refresh.js`. Weekdays 21:20 UTC (17:20 ET, after the
