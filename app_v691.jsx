@@ -13366,8 +13366,13 @@ function NarrowRangePage(p){
   // Defaults are PER TIMEFRAME and are not a rescaling of one another. Daily is a different
   // regime: median L->NH 7.30% against hourly's 2.82%, median |drift| 2.77 against 1.57. Applying
   // the hourly floors to daily passes 230 names instead of 141 and the screen stops discriminating.
-  var DEF={H:{lnh10:2.0,lnh20:2.0,ov10:0.32,ov20:0.267,ps10:0.65,ps20:0.70,dr:5.0,px:0},
-           D:{lnh10:5.0,lnh20:5.0,ov10:0.34,ov20:0.284,ps10:0.65,ps20:0.70,dr:9.0,px:0}};
+  // The user's original thresholds, identical on both timeframes. The previous per-timeframe
+  // sets (H 0.32/0.267, D 5.0/0.34/+-9) were fitted to compensate for a bug in how the metrics
+  // were computed -- they measured across the whole 147-bar window instead of the lookback, which
+  // diluted every metric toward its mean. With the metrics correctly smoothed these thresholds
+  // work as written, so the fitted numbers are deleted rather than adjusted.
+  var DEF={H:{lnh10:2.0,lnh20:2.0,ov10:0.6,ov20:0.5,ps10:0.65,ps20:0.70,dr:5.0,px:0},
+           D:{lnh10:2.0,lnh20:2.0,ov10:0.6,ov20:0.5,ps10:0.65,ps20:0.70,dr:5.0,px:0}};
   var s8=useState('H'),tf=s8[0],setTf=s8[1];
   var s7=useState(DEF.H);
   var f=s7[0],setF=s7[1];
@@ -13405,7 +13410,7 @@ function NarrowRangePage(p){
     ['OVERLAP 10','straddles','overlap_sma10'],['OVERLAP 20','','overlap_sma20'],
     ['PERSIST 10','one-sided','persist_sma10'],['PERSIST 20','','persist_sma20'],
     ['DRIFT 10','% of line','drift_sma10'],['DRIFT 20','%','drift_sma20'],
-    ['SWINGS','n','swings_sma10'],['MCAP','','market_cap']];
+    ['BARS','n','bars'],['MCAP','','market_cap']];
 
   var view=(rows||[]).filter(function(r){
     return !q || (r.ticker||'').toLowerCase().indexOf(q.toLowerCase())>=0;
@@ -13434,28 +13439,20 @@ function NarrowRangePage(p){
       no net direction. All four metrics are measured <b>relative to the SMA line</b>, on
       {tf==='H'?' 30 days of hourly RTH bars (~147 bars/ticker)':' 1 year of daily bars (~252 bars/ticker)'}:
       <div style={{marginTop:5,paddingLeft:10,lineHeight:1.8}}>
-        <b>L{'\u2192'}NH</b> median % from a swing low to the next swing high {'\u2014'} the tradeable amplitude<br/>
-        <b>Overlap</b> fraction of bars whose high{'\u2013'}low <i>straddles</i> the line {'\u2014'} price keeps crossing it<br/>
-        <b>Persist</b> fraction of bars on the dominant side. 0.5 = perfectly balanced, 1.0 = never crosses<br/>
-        <b>Drift</b> % change of the line itself {'\u2014'} near zero means flat
+        <b>Overlap</b> % of each bar's range overlapping the previous bar's {'\u2014'} high = coiling in place<br/>
+        <b>Persist</b> % of bars making a <i>higher high</i> than the one before {'\u2014'} low = not pushing on<br/>
+        <b>L{'\u2192'}NH</b> % from the previous bar's low to this bar's high {'\u2014'} the tradeable amplitude<br/>
+        <b>Drift</b> per-bar % change {'\u2014'} near zero means going nowhere
       </div>
     </div>
 
     <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:10,lineHeight:1.6,maxWidth:940,
-      borderLeft:'2px solid '+C.gold+'66',paddingLeft:9}}>
-      <b style={{color:C.gold}}>Overlap thresholds are calibrated to THIS metric, not imported.</b> The source
-      screener's {'\u2265'}0.6/0.5 passes <b>2 of 2,408</b> names here and returns an empty screen {'\u2014'} its overlap is
-      normalised differently. Recalibrated from the observed distribution to <b>0.32/0.267</b>, which yields 142
-      names against that screener's 140. The implied scale factor is consistent across both windows
-      (0.60/0.32 = 1.875, 0.50/0.267 = 1.873), so this is a rescaling rather than a fit to one number.
-      <div style={{marginTop:5,opacity:0.95}}>
-        <b style={{color:C.gold}}>Hourly and daily have separate defaults, not scaled copies.</b> Daily is a
-        different regime {'\u2014'} median L{'\u2192'}NH <b>7.30%</b> against hourly's <b>2.82%</b>, median
-        |drift| 2.77 against 1.57. Running daily on the hourly floors passes 230 names instead of 141 and the
-        screen stops discriminating. Each set is calibrated on its own distribution: hourly
-        <b> {'\u2265'}2.0 / 0.32 / {'\u00B1'}5</b>, daily <b>{'\u2265'}5.0 / 0.34 / {'\u00B1'}9</b>.
-        Switching the toggle swaps the thresholds with it.
-      </div>
+      borderLeft:'2px solid '+C.accent+'66',paddingLeft:9}}>
+      <b style={{color:C.accent}}>Every metric is a per-bar value, then smoothed.</b> The raw measure is computed
+      for each bar, and the <b>SMA10</b> / <b>SMA20</b> columns are its simple moving average over the last
+      10 or 20 periods {'\u2014'} hours on the hourly view, days on the daily. The filter applies to the
+      <i>smoothed</i> number, and both windows must pass, so a name has to look right on the short and the
+      longer view at once.
     </div>
 
     <div style={{display:'flex',gap:9,flexWrap:'wrap',alignItems:'flex-end',marginBottom:10,
@@ -13547,7 +13544,7 @@ function NarrowRangePage(p){
               <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,fontWeight:flat?700:400,
                 color:flat?C.accent:C.txt}}>{Number(r.drift_sma10).toFixed(2)}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{Number(r.drift_sma20).toFixed(2)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.swings_sma10}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.bars}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{fmtMcap(r.market_cap)}</td>
             </tr>;
           })}

@@ -1064,6 +1064,57 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v691 — Narrow Range Screener REBUILT on correctly smoothed metrics (Aug 1 2026)
+
+**The original implementation was wrong and the user caught it.** Every metric must be a **raw
+per-bar value, then smoothed with an SMA over the lookback (10 or 20 periods)**, with the threshold
+applied to the *smoothed* number. v688–v690 instead computed an SMA of *price* and then measured the
+metrics across the **entire 147-bar window**.
+
+> **Why that produced plausible-but-wrong output.** Averaging across 147 bars pulls every metric
+> toward its mean. Overlap topped out at **0.66** where it should reach **1.00**; the user's
+> `≥0.6` threshold passed **2 of 2,408** names and the screen returned nothing. I then "calibrated"
+> it to 0.32/0.267 and justified it with a consistent 1.875 factor across both windows — **that
+> factor was real arithmetic measuring my own bug.** I fitted around the error instead of finding
+> it. The daily 5.0/0.34/±9 set was the same mistake compounded. Both are **deleted, not adjusted**.
+>
+> **The tell I missed:** a `≤0.65` threshold on a metric quantised to 0.1 steps is impossible by
+> construction. A threshold that cannot be met is evidence the definition is wrong, not that the
+> threshold needs moving.
+
+**Correct raw per-bar series** (`nrs_compute(timeframe)`):
+
+| metric | raw per-bar value |
+|---|---|
+| overlap | `|[l,h] ∩ [prev_l,prev_h]| / (h-l)` — share of this bar overlapping the last |
+| persist | `1 if h > prev_h else 0` — made a higher high |
+| lnh | `(h / prev_l - 1) × 100` — prior bar's low to this bar's high |
+| drift | `(c / prev_c - 1) × 100` — this bar's % change |
+
+Each is then `avg(...) filter (where rn > tot-10 / -20)` — the SMA over the lookback.
+
+**VALIDATED AGAINST THE USER'S ACTUAL OUTPUT, not a match count.** Hourly returns **159** names
+against the source screener's 140, and **27 of the 50 symbols visible in the user's Telegram
+screenshot are in that set** — ARM, MRVL, COHR, ALAB, NBIS, IONQ, APLD, SITM, RMBS, AMKR, TEM,
+ENPH, VIAV, PWR and 13 others. 49 of the 50 are in the universe, so the misses are not coverage.
+The screenshot showed 50 of 140, so the true comparison set is larger; remaining differences are
+most likely RTH-only bars here vs extended hours there.
+
+> **Method note worth keeping:** for several rounds I tested definitions against a 96-ticker sample
+> where the answer hinged on 1 vs 6 tickers — differences of 25 vs 140 extrapolated names that were
+> pure noise. **Backfilling the full universe first is what made the question answerable.** Testing
+> a hypothesis against a sample that cannot discriminate between hypotheses is worse than not
+> testing.
+
+**Verified:** RPC reproduces a hand-computed AAPL persistence (`SMA10 0.6000`, `SMA20 0.5000`) from
+a printed 20-bar table; single function signature; 2,410 hourly + 2,485 daily rows; overlap now
+spans 0–1.000. Browser: 121 rendered == 121 payload, thresholds read `2,2,0.6,0.5,0.65,0.7,5`
+identical on both timeframes, loosening overlap 0.6→0.25 moved 121→826.
+
+> **Open:** daily returns 391 all-types against hourly's 159 at identical thresholds. That is now a
+> genuine regime difference rather than an artefact, so daily may warrant its own values — but they
+> should be chosen by the user against real output, not fitted to hit a number.
+
 ### v690 — Narrow Range Screener: Yahoo / Multi View quick links (Aug 1 2026)
 
 LINKS column after SYMBOL, using the **same markup as Most Actives** — `Y` to
