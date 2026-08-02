@@ -1,0 +1,53 @@
+name: Narrow Range Screener Refresh
+
+on:
+  schedule:
+    # 17:20 ET weekdays = 21:20 UTC (EDT). Comfortably after the close so the last RTH hourly
+    # bar and the day's daily bar both exist. Runs the daily timeframe first (cheap), then hourly.
+    - cron: '20 21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      timeframe:
+        description: 'H, D, or both'
+        required: false
+        default: 'both'
+      lookback_days:
+        description: 'Days of bars to re-fetch (small overlap re-upserts safely)'
+        required: false
+        default: '5'
+
+concurrency:
+  group: nrs-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Measured: daily ~1 min, hourly ~2.5 min. 30 is generous headroom for a slow Alpaca day
+    # without letting a hung run burn the Actions allowance.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Refresh daily timeframe
+        if: ${{ inputs.timeframe == 'D' || inputs.timeframe == 'both' || inputs.timeframe == '' }}
+        run: node nrs-refresh.js --timeframe D
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
+          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
+          NRS_LOOKBACK_DAYS: ${{ inputs.lookback_days || '5' }}
+
+      - name: Refresh hourly timeframe
+        if: ${{ inputs.timeframe == 'H' || inputs.timeframe == 'both' || inputs.timeframe == '' }}
+        run: node nrs-refresh.js --timeframe H
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
+          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
+          NRS_LOOKBACK_DAYS: ${{ inputs.lookback_days || '5' }}

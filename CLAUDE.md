@@ -1064,6 +1064,44 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### NRS AUTO-REFRESH — daily job, incremental (Aug 2 2026)
+
+`.github/workflows/nrs-refresh.yml` + `nrs-refresh.js`. Weekdays 21:20 UTC (17:20 ET, after the
+close). Daily timeframe then hourly. **Measured: daily 53s, hourly 152s.**
+
+**Incremental because the bars are stored.** Fetches only the last ~5 days and upserts on the
+primary key; `nrs_purge` (job 52) ages out the tail. **Storage is FLAT in steady state** — hourly
++7 bars/ticker/day in and 7 out at the 30-day edge, daily +1/-1 at 400 days, scans +1/-1 at 7 days.
+DB sits ~330 MB. A full re-fetch of the hourly window was **2,079 requests / ~19 min**; incremental
+is **~322 / ~2.6 min**.
+
+> **Compute and write happen SERVER-SIDE via `nrs_refresh_scan(tf)`, and that is not an
+> optimisation.** The first version had the job call `nrs_compute()` over REST and post the rows
+> back. PostgREST caps every response at 1,000 rows, so a 2,410-ticker scan would have **silently
+> written 1,000 and looked successful**. Keeping the rows inside the database removes the cap and
+> the round-trip. §5.1b: the fix lives inside the function.
+
+> **`statement_timeout` is set per-function, not per-role.** anon carries 3s (authenticated 8s);
+> `nrs_compute` scans 655k daily bars and needs longer. `nrs_refresh_scan` and `nrs_purge` each
+> declare `set statement_timeout to '300s'`, scoped to that call — relaxing the role would have
+> lifted the limit for every query in the app.
+
+**Two bugs the local test caught before this was ever scheduled:**
+> 1. **Universe anchored on `current_date` matched nothing** — the runner's clock read 2026-08-02
+>    while the last universe scan was 2026-08-01. Now anchors on `max(scan_date)`.
+> 2. **The fallback path silently truncated to 512 tickers.** It read with `limit=5000`, PostgREST
+>    returned 1,000, and two timeframes deduped to 512. Worse, the completeness guard compares
+>    against `tickers.length` — so a truncated universe would have made a truncated run look
+>    **complete**. Now paginates with `Range` headers and **refuses to run below 1,000 tickers**,
+>    treating that as the truncation signature rather than a small universe.
+
+**Guards that fail the run (exit 1), not warn:** fewer than 80% of the universe computed; any
+failed batch; any batch that hit the page budget. Pacing 350ms with exponential backoff — the
+transient 503s are request-rate, not size (batches of 5/10/20/40 all return 200 when paced).
+
+**Secrets required:** `SUPABASE_URL`, `SUPABASE_KEY`, `ALPACA_KEY`, `ALPACA_SECRET`. The first two
+already exist for the nightly pipeline; **the Alpaca pair may need adding.**
+
 ### v691 — Narrow Range Screener REBUILT on correctly smoothed metrics (Aug 1 2026)
 
 **The original implementation was wrong and the user caught it.** Every metric must be a **raw
