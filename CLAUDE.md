@@ -1064,6 +1064,51 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
 
+### v693 — Evening Swing Screen (new page) (Aug 2 2026)
+
+Menu item under Essential Tools, route `eveningswing`. Ranks tonight's closes by signals that
+historically preceded a next-session **upward excursion** — for laddering in this evening. Scored on
+the day's decline, close position in range, range expansion vs 20-day, and down-streak.
+
+> **THIS SCREEN GENERATES CYCLES. IT DOES NOT PREDICT DIRECTION, and the page says so.**
+> Measured over 650,616 ticker-days: a down ≥5% close reaches +3% next day **50.3%** of the time
+> against a **19.5%** baseline. But **the mirror test** shows most of the raw signal is volatility:
+> a *+5%* day produces nearly the same next-day range (4.58% vs 5.83%) at less than half the skew
+> (+1.39 vs +3.36). Range is not direction.
+
+> **LAST-MONTH CONTROL — the honest failure.** The directional edge compressed hard: skew **+0.54 vs
+> +0.08** control, against the year's **+3.36 vs +0.44** — an advantage of +0.46 where the year showed
+> +2.92, a 6x compression. **The cycle edge held**: 47.3% reached +3% vs 24.8% control. Backtested
+> top-5 picks over 21 sessions hit +3% on **45.7%** of days but with **negative net skew (−0.17%)** —
+> they fell about as far as they rose. Survivable if cycling levels, not if holding directionally.
+> All of this is on the page rather than in a footnote.
+
+**`%STUCK` is the column that stops this being a falling-knife screen.** It is the share of that
+stock's ladder still holding unsold inventory after a 12-month fixed-grid simulation. Tonight WU
+scores highest (22.5) but is **89.9% stuck** — persistent decline, not oscillation. IOVA scores 17.3
+with **8.92 cyc/level and 27.8% stuck** — the signal firing on a name that actually cycles.
+
+**New table `nrs_grid_stats`** (2,233 tickers): fixed 0.3% ladder across each stock's full 12-month
+range, never re-centred, stateful engine with SELL evaluated before BUY. Holds `cyc_per_level`,
+`stuck_pct`, `max_one_level`, and `best_tp` from an 11-point TP sweep on hourly bars.
+
+> **The TP sweep result worth remembering: the optimum is 2–3%, not 5–10%.** Averaged over 2,208
+> tickers, daily compounded return per level peaks at **0.221%** at TP 2–3% and falls to **0.150%** at
+> TP 10% — cycles collapse from 2.23/level to 0.31 and the larger per-cycle gain does not compensate.
+> Flat plateau 1.5–4%. Since the engine forbids same-bar round trips (penalising small TPs
+> specifically), the true optimum is likely **below** 2–3%, not above.
+
+**Verified in the browser:** 15 columns, **300 rendered == 300 in the payload**, top row matches the
+RPC field-for-field, both warning blocks present, and **both filters proven to filter** — CLEAN
+LADDER returned 162 rows with max %stuck 44.9 (all <45), HIGH CYCLERS returned 105 rows with min
+cyc/level 4.0. Zero page errors.
+
+> Two test failures during verification were **the test, not the app**: header lookup used
+> `indexOf('SCORE')` against a header carrying a sort arrow (`'SCORE ▾'`), and the `%stuck` cell
+> rounded to whole numbers so 44.9 displayed as "45" and looked like the `<45` filter had leaked.
+> The first was a test fix; the second was a real display/filter inconsistency and the cell now shows
+> one decimal.
+
 ### v692 — Band Prediction (new page) (Aug 2 2026)
 
 Menu item under Essential Tools, route `bandprediction`. Next-session price band for a mechanical
