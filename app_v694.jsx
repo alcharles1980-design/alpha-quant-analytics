@@ -13357,17 +13357,19 @@ function AlertingSystemPage(p){
 function EveningSwingPage(p){
   var s1=useState(null),rows=s1[0],setRows=s1[1];
   var s2=useState(null),err=s2[0],setErr=s2[1];
-  var s3=useState(''),q=s3[0],setQ=s3[1];
-  var s4=useState({col:'score',dir:'desc'}),sort=s4[0],setSort=s4[1];
-  var s5=useState('all'),qf=s5[0],setQf=s5[1];
-  var s6=useState(false),busy=s6[0],setBusy=s6[1];
+  var s3=useState(false),busy=s3[0],setBusy=s3[1];
+  var s4=useState({col:'edge_score',dir:'desc'}),sort=s4[0],setSort=s4[1];
+  var s5=useState(''),q=s5[0],setQ=s5[1];
+  var s6=useState({mcap:10,drop:5}),f=s6[0],setF=s6[1];
+  var s7=useState(true),posOnly=s7[0],setPosOnly=s7[1];
 
-  var load=async function(){
-    setBusy(true);
+  var load=async function(g){
+    var v=g||f; setBusy(true);
     try{
       var r=await fetch(SB_URL+'/rest/v1/rpc/evening_swing_screen',{method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
-        body:JSON.stringify({p_limit:300})});
+        body:JSON.stringify({p_limit:300,p_min_mcap:Number(v.mcap)*1e9,
+          p_min_adv:2e7,p_min_drop:Number(v.drop)})});
       if(!r.ok)throw new Error('evening_swing_screen '+r.status);
       setRows(await r.json()); setErr(null);
     }catch(e){setErr(String(e.message||e));}
@@ -13375,24 +13377,15 @@ function EveningSwingPage(p){
   };
   useEffect(function(){load();},[]);
 
-  // %stuck is the column that separates a bounce candidate from a falling knife: a ladder that
-  // ended the year 90% stuck was buying a decline, not oscillating. Colour it accordingly.
-  var stuckColor=function(v){
-    if(v==null)return C.txtDim;
-    if(v>=70)return C.warn; if(v>=45)return C.gold; return C.accent;
-  };
-  var sigColor=function(s){
-    if(!s)return C.txtDim;
-    if(s.indexOf('STRONG')===0)return C.accent;
-    if(s.indexOf('strong')===0)return C.gold;
-    return C.txtDim;
-  };
+  var COLS=[['SYMBOL','','ticker'],['LINKS','',null],['CLOSE','entry','close'],
+    ['DAY %','','day_ret_pct'],['CLOSE POS','in range','close_pos'],['RANGE','vs 20d','range_ratio'],
+    ['OWN 1d','mean %','own_1d_mean'],['1d WIN','%','own_1d_pct_pos'],
+    ['OWN 2d','mean %','own_2d_mean'],['2d WIN','%','own_2d_pct_pos'],
+    ['n','obs','own_n_obs'],['SCORE','','edge_score'],['SIGNAL','','signal'],['MCAP','','market_cap']];
 
   var view=(rows||[]).filter(function(r){
     if(q && (r.ticker||'').toLowerCase().indexOf(q.toLowerCase())<0)return false;
-    if(qf==='strong' && (r.signal||'').toLowerCase().indexOf('strong')<0)return false;
-    if(qf==='clean'  && !(r.grid_stuck_pct!=null && Number(r.grid_stuck_pct)<45))return false;
-    if(qf==='cyclers'&& !(r.grid_cyc_per_level!=null && Number(r.grid_cyc_per_level)>=4))return false;
+    if(posOnly && !(Number(r.own_1d_mean)>0))return false;
     return true;
   });
   if(sort.col){
@@ -13403,15 +13396,8 @@ function EveningSwingPage(p){
       return sort.dir==='asc'?x-y:y-x;
     });
   }
-  var mcap=function(v){ if(v==null)return '\u2014'; var n=Number(v);
-    return n>=1e12?'$'+(n/1e12).toFixed(2)+'T':n>=1e9?'$'+(n/1e9).toFixed(1)+'B':'$'+(n/1e6).toFixed(0)+'M'; };
-
-  var COLS=[['SYMBOL','','ticker'],['LINKS','',null],['CLOSE','','close'],
-    ['DAY %','','day_ret_pct'],['CLOSE POS','0=on low','close_pos'],['RANGE','vs 20d','range_ratio'],
-    ['STREAK','down days','down_streak'],['SCORE','','score'],['SIGNAL','','signal'],
-    ['HIT +3%','historical','hist_hit3_pct'],
-    ['CYC/LVL','grid history','grid_cyc_per_level'],['%STUCK','ladder trapped','grid_stuck_pct'],
-    ['BEST TP','','grid_best_tp'],['MCAP','','market_cap'],['ADV','','adv_dollars']];
+  var mc=function(v){ if(v==null)return '\u2014'; var n=Number(v);
+    return n>=1e12?'$'+(n/1e12).toFixed(2)+'T':(n>=1e9?'$'+(n/1e9).toFixed(1)+'B':'$'+(n/1e6).toFixed(0)+'M'); };
 
   return <div style={{padding:'0 14px 30px'}}>
     <div style={{display:'flex',alignItems:'center',gap:10,margin:'12px 0 6px'}}>
@@ -13421,62 +13407,86 @@ function EveningSwingPage(p){
     </div>
 
     <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginBottom:8,lineHeight:1.7,maxWidth:960}}>
-      Stocks whose close tonight historically preceded an <b>upward excursion</b> next session {'\u2014'} for
-      laddering in this evening. Scored on the day's decline, where it closed inside its range, range
-      expansion vs the 20-day average, and consecutive down days.
+      Stocks that closed down hard today, for a <b>short mean-reversion hold</b>.
+      <div style={{marginTop:5,paddingLeft:10,lineHeight:1.8}}>
+        <b>Entry</b> tonight's close &nbsp;{'\u00B7'}&nbsp; <b>Exit</b> the close 1 or 2 sessions later
+        &nbsp;{'\u00B7'}&nbsp; <b>no price target, no stop</b>
+      </div>
+      <div style={{marginTop:5}}>
+        Measured on $10B+ caps, n=4,701 signal trades: <b>1-day hold +0.562%</b> against a
+        <b> +0.092%</b> baseline {'\u2014'} an edge of <b>+0.47pp</b>, 56.3% positive.
+        2-day hold +0.986% vs +0.180%, edge +0.81pp.
+      </div>
     </div>
 
     <div style={{color:C.txtDim,fontSize:9,fontFamily:F,marginBottom:10,lineHeight:1.6,maxWidth:960,
-      borderLeft:'2px solid '+C.warn+'66',paddingLeft:9}}>
-      <b style={{color:C.warn}}>This screen generates CYCLES. It does not predict direction.</b> Measured over
-      650,616 ticker-days: a down{'\u2265'}5% close reaches +3% the next day <b>50.3%</b> of the time against a
-      <b> 19.5%</b> baseline. But the mirror test shows most of the raw signal is volatility, not
-      mean-reversion {'\u2014'} a <i>+5%</i> day produces nearly the same next-day range (4.58% vs 5.83%) at less
-      than half the skew.
-      <div style={{marginTop:5,opacity:0.95}}>
-        <b style={{color:C.gold}}>Last-month control:</b> the directional edge compressed hard {'\u2014'} skew
-        +0.54 vs +0.08 control, against the year's +3.36 vs +0.44. The <i>cycle</i> edge held: 47.3% reached
-        +3% vs 24.8% control. Top-5 picks over 21 sessions hit +3% on <b>45.7%</b> of days but with
-        <b> negative net skew</b>: they fell about as far as they rose. Survivable if you are cycling levels,
-        not if you are holding directionally.
+      borderLeft:'2px solid '+C.gold+'66',paddingLeft:9}}>
+      <b style={{color:C.gold}}>Why there is no take-profit.</b> Every fixed target tested <i>reduced</i>
+      expectancy. At a 10% target the 37% of trades that hit went on to average <b>+24.5%</b> by day 5 {'\u2014'}
+      capping them discards the right tail that is the edge. A 1% target hits <b>89.7%</b> of the time and
+      still loses money, because the 10% that miss average <b>{'\u2212'}13%</b>.
+      <div style={{marginTop:5}}>
+        <b style={{color:C.gold}}>Why 1{'\u2013'}2 days.</b> Edge per day held decays 5{'\u00D7'}: day 1 contributes
+        +0.47pp, day 2 another +0.34pp, and days 3{'\u2013'}20 combined only +0.95pp. The win rate is <b>flat at
+        ~55%</b> at every horizon {'\u2014'} holding longer does not improve the odds, only the size of both outcomes.
       </div>
-      <div style={{marginTop:5,opacity:0.95}}>
-        <b style={{color:C.accent}}>Read %STUCK before acting on SCORE.</b> It is the share of that stock's
-        ladder still holding unsold inventory after a 12-month fixed-grid simulation. A high score with 90%
-        stuck is a stock in persistent decline {'\u2014'} the bounce signal is firing on a falling knife.
+      <div style={{marginTop:5}}>
+        <b style={{color:C.warn}}>Why $10B+ is the default.</b> The raw universe-wide figure was +5.98% over
+        5 days. That was <b>survivorship</b>: micro-caps, in a universe defined by <i>today's</i> membership,
+        showed a <b>+28.9% baseline</b> 5-day return {'\u2014'} the ones that fell and delisted are simply absent.
+        Excluding them the edge is ~+0.5 to +1.0pp, and it holds across all three sub-periods tested, on
+        mean and median, in names too large to drop out of the sample.
+      </div>
+      <div style={{marginTop:5,opacity:0.85}}>
+        <b>OWN 1d / OWN 2d</b> are each stock's own history after <i>its</i> down closes ({'\u2248'}120 observations),
+        not the universe average. A qualifying drop on a stock whose own record is negative is not a setup.
+        Caveat: the sample period was a rising market throughout.
       </div>
     </div>
 
-    <div style={{display:'flex',gap:9,flexWrap:'wrap',alignItems:'center',marginBottom:10,
+    <div style={{display:'flex',gap:9,flexWrap:'wrap',alignItems:'flex-end',marginBottom:10,
       padding:'9px 11px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:8}}>
-      {[['all','ALL'],['strong','STRONG SIGNAL'],['clean','CLEAN LADDER <45% stuck'],['cyclers','HIGH CYCLERS \u22654/lvl']].map(function(x){
-        var on=(qf===x[0]);
-        return <div key={x[0]} onClick={function(){setQf(x[0]);}}
-          style={{cursor:'pointer',padding:'3px 10px',borderRadius:5,fontSize:9,fontFamily:F,fontWeight:700,
-            background:on?C.gold+'22':'transparent',border:'1px solid '+(on?C.gold+'66':C.border),
-            color:on?C.gold:C.txtDim}}>{x[1]}</div>;})}
+      {[['mcap','Min mcap $B','1'],['drop','Min drop %','0.5']].map(function(x){
+        return <div key={x[0]} style={{display:'flex',flexDirection:'column',gap:2}}>
+          <span style={{fontSize:7,color:C.txtDim,fontFamily:F,letterSpacing:0.5,textTransform:'uppercase'}}>{x[1]}</span>
+          <input type="number" step={x[2]} value={f[x[0]]}
+            onChange={function(e){var g=Object.assign({},f);g[x[0]]=e.target.value;setF(g);}}
+            style={{width:70,background:C.bg,border:'1px solid '+C.border,color:C.txtBright,
+              borderRadius:4,padding:'3px 5px',fontSize:10,fontFamily:F}}/>
+        </div>;})}
+      <button onClick={function(){load();}} disabled={busy}
+        style={{background:C.accent+'22',border:'1px solid '+C.accent+'66',color:C.accent,borderRadius:5,
+          padding:'5px 14px',cursor:busy?'default':'pointer',fontFamily:F,fontSize:10,fontWeight:700}}>
+        {busy?'Running\u2026':'Apply'}</button>
+      <button onClick={function(){var d={mcap:10,drop:5};setF(d);load(d);}}
+        style={{background:'transparent',border:'1px solid '+C.border,color:C.txtDim,borderRadius:5,
+          padding:'5px 11px',cursor:'pointer',fontFamily:F,fontSize:9}}>Reset</button>
+      <div onClick={function(){setPosOnly(!posOnly);}}
+        style={{cursor:'pointer',padding:'4px 10px',borderRadius:5,fontSize:9,fontFamily:F,fontWeight:700,
+          background:posOnly?C.gold+'22':'transparent',border:'1px solid '+(posOnly?C.gold+'66':C.border),
+          color:posOnly?C.gold:C.txtDim}}>{posOnly?'OWN 1d > 0 ONLY':'ALL CANDIDATES'}</div>
       <input placeholder="filter symbol" value={q} onChange={function(e){setQ(e.target.value);}}
         style={{background:C.bg,border:'1px solid '+C.border,color:C.txtBright,borderRadius:5,
           padding:'5px 8px',fontSize:10,fontFamily:F,width:100}}/>
-      <button onClick={load} disabled={busy} style={{background:'transparent',border:'1px solid '+C.border,
-        color:C.txtDim,borderRadius:5,padding:'5px 11px',cursor:busy?'default':'pointer',fontFamily:F,fontSize:9}}>
-        {busy?'Loading\u2026':'Refresh'}</button>
       <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>
-        {rows?(view.length+' of '+rows.length+' candidates'+(rows.length?'  \u00B7  close '+rows[0].session_date:'')):''}</span>
+        {rows?(view.length+' of '+rows.length+' candidates'):''}</span>
     </div>
 
     {err&&<div style={{color:C.warn,fontSize:11,fontFamily:F,padding:'8px 0'}}>{err}</div>}
-    {!rows&&!err&&<div style={{color:C.txtDim,fontSize:11,fontFamily:F,padding:'14px 0'}}>Scoring closes{'\u2026'}</div>}
-    {rows&&rows.length===0&&<div style={{color:C.txtDim,fontSize:11,fontFamily:F,padding:'14px 0'}}>
-      No candidates {'\u2014'} nothing closed down tonight above the liquidity floor.</div>}
+    {!rows&&!err&&<div style={{color:C.txtDim,fontSize:11,fontFamily:F,padding:'14px 0'}}>Scanning{'\u2026'}</div>}
+    {rows&&view.length===0&&<div style={{color:C.txtDim,fontSize:11,fontFamily:F,padding:'14px 0',lineHeight:1.7}}>
+      No candidates. A {f.drop}% drop in a ${f.mcap}B+ name is uncommon {'\u2014'} on a quiet day the screen is
+      correctly empty. Lower the minimum drop or the market-cap floor, but note the floor is what keeps
+      survivorship out of the numbers.
+    </div>}
 
-    {rows&&rows.length>0&&<div style={{overflowX:'auto',overflowY:'auto',maxHeight:'62vh',
+    {rows&&view.length>0&&<div style={{overflowX:'auto',overflowY:'auto',maxHeight:'60vh',
       border:'1px solid '+C.border+'55',borderRadius:6}}>
       <table style={{borderCollapse:'collapse',width:'100%',fontFamily:F,fontSize:10}}>
         <thead><tr>{COLS.map(function(c,i){
           var active=(c[2]&&sort.col===c[2]);
           return <th key={i} onClick={function(){if(!c[2])return;setSort({col:c[2],dir:(active&&sort.dir==='desc')?'asc':'desc'});}}
-            style={{textAlign:(i===0||i===8)?'left':'right',padding:'5px 8px',
+            style={{textAlign:(i===0||i===12)?'left':'right',padding:'5px 8px',
               color:active?C.gold:C.txtDim,fontSize:7,letterSpacing:0.5,textTransform:'uppercase',
               fontWeight:700,cursor:c[2]?'pointer':'default',userSelect:'none',whiteSpace:'nowrap',
               position:'sticky',top:0,zIndex:2,background:C.bg,
@@ -13487,7 +13497,8 @@ function EveningSwingPage(p){
         <tbody>
           {view.map(function(r,i){
             var bd='1px solid '+C.border+'44';
-            return <tr key={r.ticker+i}>
+            var neg=Number(r.own_1d_mean)<=0;
+            return <tr key={r.ticker+i} style={{background:neg?C.warn+'0E':'transparent'}}>
               <td style={{padding:'4px 8px',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{r.ticker}</td>
               <td style={{padding:'2px 6px',whiteSpace:'nowrap',borderBottom:bd}}>
                 <a href={'https://finance.yahoo.com/quote/'+r.ticker} target="_blank" rel="noopener noreferrer" title="Yahoo Finance"
@@ -13495,39 +13506,31 @@ function EveningSwingPage(p){
                     color:C.purple||'#a855f7',fontSize:10,fontWeight:700,textDecoration:'none',marginRight:4,lineHeight:1}}>Y</a>
                 <a href={'#multiviewcharts:'+r.ticker} target="_blank" rel="noopener noreferrer" title="Multi View Charts"
                   style={{display:'inline-block',padding:'2px 4px',border:'1px solid '+C.blue+'60',borderRadius:3,
-                    color:C.blue,fontSize:10,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a>
-              </td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{'$'+Number(r.close).toFixed(2)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.warn,fontWeight:700,borderBottom:bd}}>{Number(r.day_ret_pct).toFixed(1)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,
-                color:Number(r.close_pos)<0.2?C.accent:C.txt}}>{r.close_pos==null?'\u2014':Number(r.close_pos).toFixed(2)}</td>
+                    color:C.blue,fontSize:10,textDecoration:'none',lineHeight:1}}>{'\u2197'}</a></td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtBright,fontWeight:700,borderBottom:bd}}>{'$'+Number(r.close).toFixed(2)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.warn,fontWeight:700,borderBottom:bd}}>{Number(r.day_ret_pct).toFixed(2)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.close_pos==null?'\u2014':Number(r.close_pos).toFixed(2)}</td>
               <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.range_ratio==null?'\u2014':Number(r.range_ratio).toFixed(2)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.down_streak}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(r.score).toFixed(1)}</td>
-              <td style={{padding:'4px 8px',borderBottom:bd,whiteSpace:'nowrap',fontSize:9,fontWeight:700,
-                color:sigColor(r.signal)}}>{r.signal}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.hist_hit3_pct==null?'\u2014':Number(r.hist_hit3_pct).toFixed(1)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,fontWeight:700,
-                color:r.grid_cyc_per_level==null?C.txtDim:(Number(r.grid_cyc_per_level)>=4?C.accent:C.txt)}}>
-                {r.grid_cyc_per_level==null?'\u2014':Number(r.grid_cyc_per_level).toFixed(2)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',borderBottom:bd,fontWeight:700,
-                color:stuckColor(r.grid_stuck_pct)}}>
-                {r.grid_stuck_pct==null?'\u2014':Number(r.grid_stuck_pct).toFixed(1)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>
-                {r.grid_best_tp==null?'\u2014':(Number(r.grid_best_tp)*100).toFixed(2)+'%'}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{mcap(r.market_cap)}</td>
-              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{mcap(r.adv_dollars)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',fontWeight:700,borderBottom:bd,
+                color:neg?C.warn:C.accent}}>{r.own_1d_mean==null?'\u2014':Number(r.own_1d_mean).toFixed(3)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txt,borderBottom:bd}}>{r.own_1d_pct_pos==null?'\u2014':Number(r.own_1d_pct_pos).toFixed(1)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:Number(r.own_2d_mean)<=0?C.warn:C.txt,borderBottom:bd}}>{r.own_2d_mean==null?'\u2014':Number(r.own_2d_mean).toFixed(3)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.own_2d_pct_pos==null?'\u2014':Number(r.own_2d_pct_pos).toFixed(1)}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{r.own_n_obs==null?'\u2014':r.own_n_obs}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.gold,fontWeight:700,borderBottom:bd}}>{Number(r.edge_score).toFixed(2)}</td>
+              <td style={{padding:'4px 8px',borderBottom:bd,whiteSpace:'nowrap',fontSize:9,
+                color:/DEEP/.test(r.signal)?C.warn:C.txt}}>{r.signal}</td>
+              <td style={{padding:'4px 8px',textAlign:'right',color:C.txtDim,borderBottom:bd}}>{mc(r.market_cap)}</td>
             </tr>;
           })}
         </tbody>
       </table>
     </div>}
 
-    {rows&&rows.length>0&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:7,lineHeight:1.6,maxWidth:960}}>
-      HIT +3% is the historical rate for that <i>signal bucket</i> across the full year, not a per-stock
-      figure. CYC/LVL and %STUCK come from a 12-month fixed-ladder simulation at 0.3% spacing. BEST TP is
-      the profit target that maximised compounded return per level for that stock on hourly bars {'\u2014'}
-      universe-wide that optimum sat at <b>2{'\u2013'}3%</b>, and targets of 5{'\u2013'}10% were measurably worse.
+    {rows&&view.length>0&&<div style={{color:C.txtDim,fontSize:8.5,fontFamily:F,marginTop:7,lineHeight:1.6,maxWidth:960}}>
+      Rows tinted red have a <b>negative</b> OWN 1d record {'\u2014'} the stock qualifies on today's drop but has
+      not historically bounced. The edge is roughly <b>+0.5pp per trade</b> over baseline: real and
+      consistent across sub-periods, but small, and measured entirely in a rising market.
     </div>}
   </div>;
 }
