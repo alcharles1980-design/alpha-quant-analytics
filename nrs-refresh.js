@@ -124,6 +124,25 @@ async function fetchBars(syms, start, end) {
   const end = new Date(), start = new Date(Date.now() - LOOKBACK_DAYS * 864e5);
   const si = start.toISOString().replace(/\.\d+/, ''), ei = end.toISOString().replace(/\.\d+/, '');
 
+  // RESUME: skip tickers whose bars are already current. Without this the loop always restarts
+  // at i=0, re-fetches the same leading tickers, and if the process is cut short it can NEVER
+  // reach the tail -- which is exactly how 1,565 of 2,411 tickers ended up stuck on 2026-07-31
+  // hourly bars while the first ~1,000 were current. Each run now advances instead of repeating.
+  let skipped = 0;
+  if (process.env.NRS_RESUME !== '0') {
+    // Via an RPC that groups max(ts) per ticker. A bare `ts >= cutoff` table read cannot use the
+    // (ticker, ts) primary key -- ts is not the leading column -- so it seq-scans 300k+ rows and
+    // times out. The grouped form uses the index and returns ~2,400 rows instead of ~100,000.
+    const cutoff = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10);
+    const rows = await sb('rpc/nrs_fresh_tickers', { method: 'POST',
+      body: JSON.stringify({ p_timeframe: TF, p_since: cutoff }) });
+    const fresh = new Set((rows || []).map(r => r.ticker));
+    const before = tickers.length;
+    tickers = tickers.filter(t => !fresh.has(t));
+    skipped = before - tickers.length;
+    console.log(`resume: ${skipped} tickers already current, ${tickers.length} to fetch`);
+  }
+
   let fetched = 0, written = 0, failed = [], truncated = [];
   for (let i = 0; i < tickers.length; i += BATCH) {
     const chunk = tickers.slice(i, i + BATCH);
@@ -138,9 +157,13 @@ async function fetchBars(syms, start, end) {
       else if (etHour(b.t) >= 9 && etHour(b.t) <= 15) rows.push({ ticker: s, ts: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v });
     }
     fetched += rows.length;
-    for (let j = 0; j < rows.length; j += 2000) {
-      await sb(TABLE, { method: 'POST', body: JSON.stringify(rows.slice(j, j + 2000)), headers: { Prefer: 'resolution=merge-duplicates' } });
-      written += Math.min(2000, rows.length - j);
+    // 500-row writes, not 2,000. A 40-symbol hourly batch over a 16-day window is ~4,500 bars,
+    // and 2,000-row upserts returned 504 upstream request timeout from the gateway. Smaller
+    // writes cost a few more round trips and complete reliably.
+    const WRITE = 500;
+    for (let j = 0; j < rows.length; j += WRITE) {
+      await sb(TABLE, { method: 'POST', body: JSON.stringify(rows.slice(j, j + WRITE)), headers: { Prefer: 'resolution=merge-duplicates' } });
+      written += Math.min(WRITE, rows.length - j);
     }
   }
   console.log(`bars: fetched ${fetched}, written ${written}, failed batches ${failed.length}, truncated ${truncated.length}`);
@@ -158,7 +181,7 @@ async function fetchBars(syms, start, end) {
 
   // A refresh that writes far fewer rows than the universe is a fault, not a quiet Tuesday.
   // A refresh that computes far fewer tickers than the universe is a fault, not a quiet Tuesday.
-  if (scanRows < tickers.length * 0.8)
+  if (scanRows < (tickers.length + skipped) * 0.8)
     { console.error(`FAIL: only ${scanRows} of ${tickers.length} tickers computed`); process.exit(1); }
   if (failed.length || truncated.length) { console.error('FAIL: incomplete fetch'); process.exit(1); }
   console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
