@@ -26000,6 +26000,9 @@ function NextDayRangePage(p){
 }
 
 function ViolentChopScreenerPage(p){
+  // Surfaces a partial/failed paginated load. Previously a failed page broke the loop silently
+  // and the screener rendered whatever had arrived -- exactly 1000 rows looked like a full result.
+  var sLW=useState(null),loadWarning=sLW[0],setLoadWarning=sLW[1];
   // Frozen left columns. Tablet/laptop: #, Ticker, Links, Type, Price (5 cols).
   // Phone: only #, Ticker (2 cols) — keeps the row identity pinned while scrolling
   // L/R without eating the narrow phone width with 5 frozen columns.
@@ -26222,14 +26225,24 @@ function ViolentChopScreenerPage(p){
         while(guard<10){
           var h=getSbHeaders();h['Content-Type']='application/json';
           var r=await fetch(SB_URL+'/rest/v1/rpc/chop_screener_light',{method:'POST',headers:h,body:JSON.stringify({p_scan_date:sd,p_offset:off,p_limit:1000})});
-          if(!r.ok)break;
+          // A failed page used to `break` silently, leaving `all` holding whatever had already
+          // arrived. When page 2 timed out that produced EXACTLY 1000 rows and looked like a
+          // complete result -- indistinguishable from a small universe. Partial data must be
+          // reported, never quietly returned.
+          if(!r.ok){throw new Error('chop page at offset '+off+' failed: HTTP '+r.status);}
           var batch=await r.json();
-          if(!Array.isArray(batch)||batch.length===0)break;
+          if(!Array.isArray(batch)){throw new Error('chop page at offset '+off+' returned '+JSON.stringify(batch).slice(0,120));}
+          if(batch.length===0)break;
           all=all.concat(batch);
           if(batch.length<1000)break;
           off+=1000;guard++;
         }
-      }catch(e){}
+        if(guard>=10){throw new Error('chop pagination hit its 10-page guard at '+all.length+' rows - universe may be truncated');}
+      }catch(e){
+        // Surface it. A screener that silently shows a fraction of the market is worse than one
+        // that shows an error, because the fraction looks like an answer.
+        setLoadWarning('Partial load: '+(e&&e.message?e.message:String(e))+' - showing '+all.length+' rows');
+      }
       // Fallback: if the RPC returned nothing, load directly from the table
       // (avg-only via a lighter select) so the page never hangs on the RPC.
       if(all.length===0){
@@ -26677,6 +26690,10 @@ function ViolentChopScreenerPage(p){
   var resAcross={'4h':1,'1d':1};  // higher timeframes: across-window metric, lookback toggle N/A
 
   return <div>
+    {loadWarning&&<div style={{background:C.warn+'1A',border:'1px solid '+C.warn+'66',borderRadius:6,
+      padding:'7px 11px',marginBottom:8,color:C.warn,fontSize:10,fontFamily:F,lineHeight:1.5}}>
+      <b>{'\u26A0 '}</b>{loadWarning}
+    </div>}
     <Cd glow>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'nowrap',gap:8}}>
         <div style={{color:C.accent,fontSize:13,fontWeight:700,fontFamily:F,letterSpacing:1,flex:'1 1 auto',minWidth:0}}>HOLY GRAIL SCREENER</div>
