@@ -32,10 +32,28 @@ const PACE_MS = 350;
 
 const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_KEY;
-const AK = process.env.ALPACA_KEY;
-const AS = process.env.ALPACA_SECRET;
-for (const [k, v] of Object.entries({ SUPABASE_URL: SB_URL, SUPABASE_KEY: SB_KEY, ALPACA_KEY: AK, ALPACA_SECRET: AS }))
+// Alpaca credentials come from app_config, NOT from GitHub secrets. That is the established
+// pattern for every other job in this system -- the Edge Functions, the overnight level scanner
+// and the BOATS jobs all read alpaca_key / alpaca_secret from the database at runtime.
+// SUPABASE_URL / SUPABASE_KEY are the bootstrap boundary: they are needed to REACH the database,
+// so they must be env. Everything else should come FROM the database, so there is one place to
+// rotate a key rather than two that can drift apart.
+let AK = null, AS = null;
+for (const [k, v] of Object.entries({ SUPABASE_URL: SB_URL, SUPABASE_KEY: SB_KEY }))
   if (!v) { console.error(`missing env ${k}`); process.exit(1); }
+
+async function loadAlpacaCreds() {
+  // Via the get_app_client_keys RPC, NOT a direct table read: app_config has RLS enabled and the
+  // anon key is denied (42501). That denial is correct -- these are live trading credentials --
+  // and this security-definer RPC is the sanctioned way through, the same one the app itself uses.
+  const rows = await sb('rpc/get_app_client_keys', { method: 'POST', body: '{}' });
+  for (const r of rows || []) {
+    if (r.key === 'alpaca_key') AK = r.value;
+    if (r.key === 'alpaca_secret') AS = r.value;
+  }
+  if (!AK || !AS) throw new Error('alpaca_key / alpaca_secret not returned by get_app_client_keys');
+  console.log('alpaca credentials loaded from app_config via get_app_client_keys');
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -79,6 +97,7 @@ async function fetchBars(syms, start, end) {
 
 (async () => {
   const t0 = Date.now();
+  await loadAlpacaCreds();
   // Anchor on the LATEST scan_date, never on "today": the runner's clock and the last successful
   // universe scan routinely differ by a day, and eq.<today> then matches nothing.
   const latest = await sb('cached_oscillation_screener?select=scan_date&order=scan_date.desc&limit=1');
