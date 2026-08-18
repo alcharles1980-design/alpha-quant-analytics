@@ -11,8 +11,18 @@ on:
     # Sector refresh: ~12:30AM ET = 5:30AM UTC, after yahoo-ratings. Refreshes prices + market
     # caps for market_universe_full. Tue-Sat UTC (= Mon-Fri ET trading days).
     - cron: '30 5 * * 2-6'
-    # Hourly: :05 past each hour, 4AM-8PM ET = 9AM-1AM UTC (Mon-Fri)
-    - cron: '5 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0 * * 1-5'
+    # HOURLY CRON REMOVED (2026-08-14). It fired 16x/day x 5 days = 336 runs a month to process
+    # a SINGLE ticker (tickers=ONON) -- one fetch and one prediction per run. At ~3 min a run that
+    # is ~1,000 minutes, half the 2,000-minute monthly free allowance, and it was the single
+    # largest consumer of Actions quota in this repo.
+    #
+    # It also had almost nothing to show for it: the hourly path writes hourly_features, which
+    # was found holding just 2 tickers and stale since April.
+    #
+    # The `hourly` mode itself is KEPT and remains available via workflow_dispatch, so nothing is
+    # lost -- only the unattended 336-runs-a-month schedule is gone. If it is wanted back on a
+    # schedule, put it on a Supabase Edge Function under pg_cron the way the overnight level
+    # scanner runs: same work, separate quota, no Actions minutes.
   workflow_dispatch:
     inputs:
       mode:
@@ -108,8 +118,11 @@ jobs:
                 echo "tickers=ALL" >> $GITHUB_OUTPUT
                 ;;
               *)
-                echo "mode=hourly" >> $GITHUB_OUTPUT
-                echo "tickers=ONON" >> $GITHUB_OUTPUT
+                # The hourly cron was removed, so this wildcard no longer has a legitimate
+                # schedule to catch. Defaulting an UNRECOGNISED schedule to a real mode is how a
+                # stray cron silently starts burning quota -- fail loudly instead.
+                echo "::error::Unrecognised cron schedule '$SCHEDULE' - no mode mapped. Refusing to guess."
+                exit 1
                 ;;
             esac
             echo "start=" >> $GITHUB_OUTPUT
