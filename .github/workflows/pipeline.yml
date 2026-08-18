@@ -58,7 +58,12 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    # Job-level ceiling. The per-mode timeout on the Run pipeline step below is what actually
+    # protects the quota -- this is only the outer bound for the longest legitimate mode
+    # (backfill). Previously 350 for EVERY mode, including the hourly one that runs 336x a month:
+    # a single hung hourly run could burn 350 minutes of a 2,000-minute monthly allowance, and
+    # sixteen of them in a day could exhaust it outright.
+    timeout-minutes: 360
     concurrency:
       group: pipeline-${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.schedule || 'default' }}
       cancel-in-progress: false
@@ -112,7 +117,26 @@ jobs:
             echo "force=false" >> $GITHUB_OUTPUT
           fi
 
+      # Per-mode timeout. Measured/expected runtimes: hourly ~2-5 min, chop-screener ~27 min,
+      # screener ~20 min, yahoo-ratings ~15 min, sector-refresh ~10 min, backfill hours.
+      # Each cap is roughly 2x the expected runtime -- enough headroom for a slow API day, tight
+      # enough that a hung run costs minutes rather than most of the monthly allowance.
+      - name: Resolve timeout for mode
+        id: tmo
+        run: |
+          case "${{ steps.mode.outputs.mode }}" in
+            hourly)                       echo "mins=15"  >> $GITHUB_OUTPUT ;;
+            chop-screener)                echo "mins=60"  >> $GITHUB_OUTPUT ;;
+            screener|yahoo-ratings)       echo "mins=45"  >> $GITHUB_OUTPUT ;;
+            sector-refresh|tipranks-sync) echo "mins=30"  >> $GITHUB_OUTPUT ;;
+            nightly|autotune|mfe)         echo "mins=90"  >> $GITHUB_OUTPUT ;;
+            backfill|backfill-mcap)       echo "mins=340" >> $GITHUB_OUTPUT ;;
+            *)                            echo "mins=60"  >> $GITHUB_OUTPUT ;;
+          esac
+          echo "::notice::Timeout for ${{ steps.mode.outputs.mode }}: $(grep mins= $GITHUB_OUTPUT | tail -1 | cut -d= -f2) min"
+
       - name: Run pipeline
+        timeout-minutes: ${{ fromJSON(steps.tmo.outputs.mins) }}
         run: |
           echo "::notice::Mode: ${{ steps.mode.outputs.mode }}, Tickers: ${{ steps.mode.outputs.tickers }}"
           ARGS="--${{ steps.mode.outputs.mode }} --tickers ${{ steps.mode.outputs.tickers }}"
