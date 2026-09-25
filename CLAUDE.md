@@ -449,7 +449,8 @@ My first cross-source audit reported 10/10 mismatches on a healthy pipeline. Thr
 - **Daily bars don't exist mid-session** — endpoint returns `{"bars":{}}`.
 - **The reference source can be the one with the hole.** Yahoo's chart API returned an all-null bar for
   HON on 2026-09-22 (Sep 25 check), shifting its windows by a day and producing a 1.4pp "mismatch" that
-  was entirely Yahoo's. Before blaming the app, print both sources' raw bars side by side.
+  was entirely Yahoo's. Before blaming the app, print both sources' raw bars side by side. The same 2026-09-22 hole hit **BRK-B too** —
+  a cross-ticker gap, not a one-off; deleting that day from the Alpaca bars reproduced Yahoo's numbers exactly.
 
 Done right, expect small **positive** diffs: all 10 tickers within 0.1–0.7%, every diff
 positive, because the stored snapshot is minutes older than the verification call. That is
@@ -1114,7 +1115,7 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
 
 ## 9. Recent work
 
-**Current: v696** (Sep 25 2026) — **Volatility Rankings (new page)**; see the v696 entry. v694 and v695
+**Current: v697** (Sep 25 2026) — **Volatility Rankings gains the S&P 500**; see v697 and v696. v694 and v695
 shipped with no entry here and were reconstructed from their commit messages on Sep 25 (§11a).
 The paragraph below is the Jul 27 summary it replaces, kept as history.
 
@@ -1136,6 +1137,31 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### v697 — Volatility Rankings: S&P 500 universe (Sep 25 2026)
+
+Universe switch **NASDAQ-100 / S&P 500** on the Volatility Rankings page. New `index_constituents` rows
+`SPX500` (503 names, GICS sectors, as of the 2026-09-21 rebalance) from Wikipedia, **cross-checked against
+the pipeline's own IVV snapshot** (`index_membership`, SP500, 2026-04-27): 13 in / 13 out, every one
+explained — dated additions (HONA, FDXF, MRVL, FLEX, VEEV, FERG, RDDT, BE, ILMN, P), ticker changes
+(BK→BNY, SATS→ECHO) and a merger (AVB + EQR → VMRK). The live IVV CSV could not be used: iShares serves
+an HTML page to datacenter IPs. Class shares use Alpaca's dotted form (BRK.B, BF.B); iShares strips the dot.
+
+**Behaviour:** each universe's result is cached for the session (switching back is instant, no calls);
+Refresh refetches only the visible one; the sector filter resets on switch (NDX list vs GICS names);
+a request token stops a slow load for the previous universe from overwriting the current one and aborts
+its remaining Alpaca calls. Ranks are within the selected universe.
+
+**Verified:** Alpaca dry run of all 503 — 11 chunks, all 200, 503 returned, all ending 2026-09-24, ≤4,500
+bars/page. Headless (new build at the live URL): 503 of 503 rows in 2.6 s / 11 calls, 11 sectors, filter
+reset, sorted; **NVDA and HON identical in both universes** (only rank differs: NVDA 58/102 vs 174/503);
+back to NASDAQ-100 in 0.4 s with 0 calls; race test (switch to S&P, back after 1 s) stayed on NASDAQ-100
+and stopped the S&P load after 5 of 11 calls; zero page errors. S&P-only dotted symbol BRK.B: page =
+independent Python on the same Alpaca bars exactly (1.36 / $6.42 / +3.56); Yahoo differed and was
+reproduced **exactly** by deleting the 09-22 bar Yahoo lacks — see §5.1c.
+
+FULL SWEEP: app_v696 → app_v697, banner v697, package.json 6.9.7 + lock synced, build clean, preflight
+0 failures 0 warnings, 92 nav items all routed.
 
 ### v696 — Volatility Rankings (new page) (Sep 25 2026)
 

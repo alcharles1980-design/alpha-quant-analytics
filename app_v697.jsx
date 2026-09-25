@@ -13717,7 +13717,8 @@ function VolatilityRankingsPage(p){
   // Alpaca SIP daily, adjustment=all. NOT adjustment=split: that leaves spin-offs raw, and HON's Jun 29 2026
   // Honeywell Aerospace (HONA) spin read as a -51% day INSIDE the 3M window (464.42 -> 227.80); =all gives
   // 242.68 -> 227.12 (-6.4%, the real move). Dividend factors only rescale older bars by ~0.1-0.5%, which
-  // leaves ATR% untouched. NOT nrs_bars_daily: that table has whole missing sessions
+  // leaves ATR% untouched. v697 adds the S&P 500 (index_code SPX500, 503 names, GICS sectors) behind a
+  // universe switch; results are cached per universe for the session. NOT nrs_bars_daily: that table has whole missing sessions
   // (Aug 17-26 and Sep 18 2026 absent for every ticker, Sep 16-17 partial) and is not split-adjusted
   // (KLAC 10:1, CRWD 4:1, MNST 2:1 read as -89/-75/-50% days) -- a 5-row "week" there spans 10 days.
   var PROXY='https://alpaca-proxy.alcharles1980.workers.dev';
@@ -13729,7 +13730,13 @@ function VolatilityRankingsPage(p){
   var s6=useState(null),meta=s6[0],setMeta=s6[1];
   var s7=useState('all'),sec=s7[0],setSec=s7[1];
   var s8=useState(0),reload=s8[0],setReload=s8[1];
-  var IDX='NDX100';
+  // Universe switch (v697). Each universe's result is cached for the session, so switching back is instant;
+  // Refresh refetches only the one on screen. reqRef stops a slow load for the PREVIOUS universe from
+  // overwriting the one now selected (and aborts its remaining Alpaca calls).
+  var UNIVERSES=[{code:'NDX100',label:'NASDAQ-100',full:'Nasdaq-100'},{code:'SPX500',label:'S&P 500',full:'S&P 500'}];
+  var s9=useState('NDX100'),idx=s9[0],setIdx=s9[1];
+  var cacheRef=React.useRef({}), reqRef=React.useRef(0);
+  var IDX=idx, UNI=UNIVERSES.filter(function(u){return u.code===idx;})[0];
 
   var mean=function(xs){ if(!xs.length)return null; var s=0; for(var i=0;i<xs.length;i++)s+=xs[i]; return s/xs.length; };
 
@@ -13767,15 +13774,17 @@ function VolatilityRankingsPage(p){
     };
   };
 
-  var load=async function(){
-    setErr(null); setRows(null); setStatus('Loading constituents\u2026');
+  var load=async function(force){
+    var myReq=++reqRef.current, code=IDX, hit=cacheRef.current[code];
+    if(hit&&!force){ setErr(null); setMeta(hit.meta); setRows(hit.rows); setStatus(''); return; }
+    setErr(null); setRows(null); setMeta(null); setStatus('Loading constituents\u2026');
     try{
       var rc=await fetch(SB_URL+'/rest/v1/rpc/get_index_constituents',{method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},
-        body:JSON.stringify({p_index:IDX})});
+        body:JSON.stringify({p_index:code})});
       if(!rc.ok)throw new Error('get_index_constituents '+rc.status);
       var uni=await rc.json();
-      if(!uni.length)throw new Error('No constituents stored for '+IDX);
+      if(!uni.length)throw new Error('No constituents stored for '+code);
       if(!p.alpKey||!p.alpSecret){ setStatus('Waiting for Alpaca keys\u2026'); return; }
 
       // ~130 calendar days covers 64 sessions plus holidays. end = yesterday: SIP 403s today's data on
@@ -13791,7 +13800,8 @@ function VolatilityRankingsPage(p){
         var path=base, guard=0;
         // Follow next_page_token to exhaustion: Alpaca caps a page well below limit=10000.
         while(path){
-          setStatus('Fetching daily bars \u2014 page '+(pages+1)+' ('+nBars+' bars so far)');
+          if(myReq!==reqRef.current)return;   // universe changed mid-load: stop spending calls
+          setStatus('Fetching daily bars \u2014 symbols '+(b+1)+'\u2013'+Math.min(b+50,syms.length)+' of '+syms.length+' ('+nBars+' bars so far)');
           var r=await fetch(PROXY,{headers:{'APCA-API-KEY-ID':p.alpKey,'APCA-API-SECRET-KEY':p.alpSecret,
             'X-Alpaca-Path':path,'X-Alpaca-Base':'data'}});
           if(!r.ok)throw new Error('Alpaca bars '+r.status);
@@ -13812,14 +13822,16 @@ function VolatilityRankingsPage(p){
       var ranked=out.filter(function(r){return r.atr_pct_3m!=null;}).sort(function(a,c){return c.atr_pct_3m-a.atr_pct_3m;});
       ranked.forEach(function(r,i){r.vol_rank=i+1;});
       var dates=out.map(function(r){return r.last_date;}).filter(Boolean).sort();
-      setMeta({n:uni.length, asOf:uni[0].as_of, source:uni[0].source, pages:pages, bars:nBars,
+      var meta2={n:uni.length, asOf:uni[0].as_of, source:uni[0].source, pages:pages, bars:nBars,
         lastDate:dates.length?dates[dates.length-1]:null,
         stale:out.filter(function(r){return r.last_date&&dates.length&&r.last_date<dates[dates.length-1];}).map(function(r){return r.ticker;}),
-        missing:out.filter(function(r){return r.price==null;}).map(function(r){return r.ticker;})});
-      setRows(out); setStatus('');
-    }catch(e){ setErr(String(e.message||e)); setStatus(''); }
+        missing:out.filter(function(r){return r.price==null;}).map(function(r){return r.ticker;})};
+      if(myReq!==reqRef.current)return;
+      cacheRef.current[code]={rows:out,meta:meta2};
+      setMeta(meta2); setRows(out); setStatus('');
+    }catch(e){ if(myReq===reqRef.current){ setErr(String(e.message||e)); setStatus(''); } }
   };
-  useEffect(function(){load();},[p.alpKey,p.alpSecret,reload]);
+  useEffect(function(){load(false);},[p.alpKey,p.alpSecret,idx]);
 
   var sectors=[]; (rows||[]).forEach(function(r){ if(r.sector&&sectors.indexOf(r.sector)<0)sectors.push(r.sector); });
   sectors.sort();
@@ -13860,7 +13872,7 @@ function VolatilityRankingsPage(p){
     </div>
 
     <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginBottom:8,lineHeight:1.7,maxWidth:960}}>
-      Nasdaq-100 ranked by average daily true range over the last <b>3 months</b> and <b>1 week</b>, with average
+      {UNI.full} ranked by average daily true range over the last <b>3 months</b> and <b>1 week</b>, with average
       daily return and period returns.
       <div style={{marginTop:5,paddingLeft:10,lineHeight:1.8}}>
         <b>True range</b> = max(H, prev close) {'\u2212'} min(L, prev close), so overnight gaps count.
@@ -13874,8 +13886,11 @@ function VolatilityRankingsPage(p){
     <div style={{display:'flex',gap:9,flexWrap:'wrap',alignItems:'center',marginBottom:10,
       padding:'9px 11px',background:C.bgCard,border:'1px solid '+C.border,borderRadius:8}}>
       <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>UNIVERSE</span>
-      <div style={{padding:'3px 10px',borderRadius:5,fontSize:9,fontFamily:F,fontWeight:700,
-        background:C.accent+'22',border:'1px solid '+C.accent+'66',color:C.accent}}>NASDAQ-100</div>
+      {UNIVERSES.map(function(u){ var on=u.code===idx;
+        // Sector names differ by index (NDX list vs GICS), so a sector filter cannot carry across.
+        return <div key={u.code} onClick={function(){ if(!on){ setSec('all'); setIdx(u.code); } }}
+          style={{cursor:on?'default':'pointer',padding:'3px 10px',borderRadius:5,fontSize:9,fontFamily:F,fontWeight:700,
+            background:on?C.accent+'22':'transparent',border:'1px solid '+(on?C.accent+'66':C.border),color:on?C.accent:C.txtDim}}>{u.label}</div>; })}
       <span style={{fontSize:8,color:C.txtDim,fontFamily:F,marginLeft:6}}>SECTOR</span>
       <select value={sec} onChange={function(e){setSec(e.target.value);}}
         style={{background:C.bg,border:'1px solid '+C.border,color:C.txtBright,borderRadius:5,padding:'4px 6px',fontSize:9,fontFamily:F}}>
@@ -13885,7 +13900,7 @@ function VolatilityRankingsPage(p){
       <input placeholder="filter symbol / name" value={q} onChange={function(e){setQ(e.target.value);}}
         style={{background:C.bg,border:'1px solid '+C.border,color:C.txtBright,borderRadius:5,
           padding:'5px 8px',fontSize:10,fontFamily:F,width:130}}/>
-      <div onClick={function(){setReload(reload+1);}}
+      <div onClick={function(){load(true);}}
         style={{cursor:'pointer',padding:'3px 10px',borderRadius:5,fontSize:9,fontFamily:F,fontWeight:700,
           border:'1px solid '+C.border,color:C.txtDim}}>{'\u21BB Refresh'}</div>
       <span style={{fontSize:8,color:C.txtDim,fontFamily:F}}>
