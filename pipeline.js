@@ -970,7 +970,7 @@ async function runBackfill(tickers, startDate, endDate, skipExisting) {
         var analysisBody = { ticker, trade_date: date, tp_pct: tpPct, session_type: 'all', total_cycles: result.summary.totalCycles, active_levels: result.summary.activeLevels, total_levels: result.summary.totalLevels, total_trades: trades.length, tick_min: minP, tick_max: maxP, open_price: sharePrice, pre_seed_max: preSeedMax };
         if (ohlc && ohlc.open) { analysisBody.ohlc_open = ohlc.open; analysisBody.ohlc_high = ohlc.high; analysisBody.ohlc_low = ohlc.low; analysisBody.ohlc_close = ohlc.close; analysisBody.ohlc_volume = ohlc.volume; }
         var upsertH = Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=representation' });
-        var aR = await fetch(SB_URL + '/rest/v1/cached_analyses', { method: 'POST', headers: upsertH, body: JSON.stringify(analysisBody) });
+        var aR = await fetch(SB_URL + '/rest/v1/cached_analyses?on_conflict=ticker,trade_date,tp_pct,session_type', { method: 'POST', headers: upsertH, body: JSON.stringify(analysisBody) });
         var analysisId = null;
         if (aR.ok) {
           var aData = await aR.json();
@@ -3578,6 +3578,10 @@ async function runScreener() {
   if (!delR.ok) {
     var delErr = await delR.text();
     console.log('WARN: DELETE failed (' + delR.status + '): ' + delErr.slice(0, 200) + ' — proceeding with upsert anyway');
+    // Safe since Sep 25 2026: the saves below name on_conflict=ticker,scan_date. Before that, merge-duplicates
+    // merged on the surrogate PK `id` (never in the payload), so a failed DELETE turned every insert into a
+    // 409 against UNIQUE(ticker,scan_date); the 2,500 one-row retries then ran past the job timeout and the
+    // run died at "running 90%" with no final status (Sep 25 02:23 run).
   } else {
     console.log('DELETE scan_date=' + scanDate + ' OK — cleared previous rows');
   }
@@ -3595,7 +3599,7 @@ async function runScreener() {
   for (var bi = 0; bi < results.length; bi += BATCH_SIZE) {
     var batch = results.slice(bi, bi + BATCH_SIZE);
     if (bi > 0) await sleep(100); // breathing room for Supabase between batches
-    var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify(batch) });
+    var saveR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?on_conflict=ticker,scan_date', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify(batch) });
     if (saveR.ok) {
       savedCount += batch.length;
       continue;
@@ -3617,7 +3621,7 @@ async function runScreener() {
 
     // ALWAYS retry one row at a time so failures don't block the rest of the batch
     for (var ri = 0; ri < batch.length; ri++) {
-      var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify([batch[ri]]) });
+      var oneR = await fetch(SB_URL + '/rest/v1/cached_oscillation_screener?on_conflict=ticker,scan_date', { method: 'POST', headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify([batch[ri]]) });
       if (oneR.ok) {
         savedCount++;
       } else {
@@ -4059,7 +4063,7 @@ async function runMFE() {
         hr_dist: JSON.stringify(hrDist), hr_dist_3d: JSON.stringify(hrDist3d), hr_dist_1d: JSON.stringify(hrDist1d),
         percentiles: JSON.stringify(pctiles)
       };
-      var saveR = await fetch(SB_URL + '/rest/v1/mfe_daily_optimal', {
+      var saveR = await fetch(SB_URL + '/rest/v1/mfe_daily_optimal?on_conflict=ticker,scan_date', {
         method: 'POST',
         headers: Object.assign({}, sbHeaders(), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }),
         body: JSON.stringify(row)

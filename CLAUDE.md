@@ -718,6 +718,14 @@ drawdown) should use `adjustment=all`.** Positive control: HON across Jun 26 →
 
 ### 5.4 Silent write failures
 
+- **PostgREST `Prefer: resolution=merge-duplicates` without `?on_conflict=` merges on the PRIMARY KEY.**
+  On a table whose PK is a surrogate `id` (never in the payload) with a separate natural UNIQUE key, a
+  re-run is not an upsert — every row 409s (`23505`). Proven Sep 25 2026 through the live API (sentinel
+  row: 409 without, 200-and-merged with). Census found 4 such call sites in `pipeline.js`
+  (`cached_oscillation_screener` ×2, `cached_analyses`, `mfe_daily_optimal`), all fixed. **Any new upsert:
+  name `on_conflict` unless the PK *is* the natural key.** It surfaced when a DELETE of the day's scan
+  timed out and the "upsert anyway" fallback it relied on did not exist.
+
 - **Supabase writes can fail silently under rapid sequential load.** 11 of 22 days
   saved; days 12–22 vanished. The UI showed all 22 (computed in memory). Fix:
   inter-day delays + **read back after writing** (`verifySaveIntegrity`).
@@ -1064,6 +1072,45 @@ timer deserves to be deliberate.
 > pending a decision — dropping them is a one-liner once someone confirms nothing else calls them.
 
 ---
+
+### 8z. Database changes Sep 24–25 2026 (no app version — DB and pipeline only)
+
+Triggered by a full outage on Sep 24 ~21:16 UTC (Postgres stopped accepting TCP connections; project
+restarted 23:21 UTC). Every item below is live; migration names in parentheses.
+
+- **Watchdog** (`db_watchdog`): `db_watchdog_snap()` every 3 min (cron `db-watchdog`) into logged table
+  `db_watchdog` — connections by state, lock waiters, running crons, pg_net queue and response-table size,
+  oldest active query, the 5 longest queries, and a per-source pg_net breakdown when the response log
+  exceeds 2MB. 5-day retention. **Built because pg_net's tables are UNLOGGED: a restart erases the
+  evidence** — the 18.6-minute statement that started the Sep 24 cascade came from the pg_net worker
+  and its queue was gone after the restart.
+- **pg_net response prune** (`net_response_breakdown_and_prune`): `net_response_prune()` hourly at :50
+  deletes responses older than 1h (pg_net's own TTL is 6h; the table was refilling to ~27MB) EXCEPT any
+  still referenced by `_todayq`, unloaded `_bf_raw`, `_pace_raw` or `_fetchq`, so loaders never lose data.
+- **Actives upserts v2** (`actives_baseline_cache_and_aftermarket_v2`, `premarket_overnight_actives_*`):
+  all three `upsert_*_actives` now (a) compute prior-session avg/median baselines once per target into
+  `actives_baseline` (+ `actives_baseline_meta`; rebuilt if >6h old, if the payload carries older dates,
+  or when a write lands in an earlier session), (b) **skip rows whose values did not change** (ON CONFLICT
+  … WHERE row IS DISTINCT FROM), (c) no temp tables. Output proven identical to v1 on real sessions
+  (0 diffs across 2,626 / 2,088 / 1,482 rows); repeat runs write 0 rows; first live overnight run wrote 342
+  of 1,184. Return value unchanged (rows processed). **v1 kept as `upsert_*_actives_v1_backup`.**
+  Side effect: `updated_at` now moves only on rows that changed.
+- **Overnight baseline double-count FIXED (v3, `overnight_actives_v3_candidate_dedupe_baseline`):** the
+  overnight edge function re-sends ~17 prior sessions in every payload and v1 unioned them with the same
+  stored sessions, so every overnight avg/median/rel_* was computed on a doubled, recency-weighted history
+  (NVDA `avg_sessions` 38 vs 21 stored). Stored rows now win; payload history only fills gaps. Verified:
+  NVDA 20 sessions / 16,913.85 avg trades = table-only truth exactly (v1: 37 / 15,697.54).
+- **Chop integrity check** (`chop_scan_integrity_check_et_dates`): now `chop_scan_integrity_check(p_log,
+  p_now)`. It checked `chop_scan_health(current_date)` — **UTC** — while `scan_date` is the **ET** date at
+  run time, so evening-ET scans raised a false "critical 0 rows" most of the next day. Now: freshness =
+  a chop-screener run COMPLETED after the latest weekday 21:30 ET due time (from `pipeline_status`,
+  because the upsert keeps `created_at`), plus `chop_scan_health()` on the latest scan. Positive control:
+  `p_now => '2026-09-22 14:00+00'` reports the real Sep 18–24 outage.
+- **Storage** (`storage_tier1_drop_bloated_indexes_truncate_empty`): 455MB → 390MB. Dropped the three
+  `*_actives_date_relvol` indexes (57MB of bloat, unused — the app orders these tables by `trades`), the
+  redundant `idx_prev_rth_date`, and truncated the empty `cached_daily_optimal_tp` / `optimal_tp_hourly`.
+- **Volatility Rankings** (`volatility_rankings_v1`, `volatility_rankings_constituents_rpc`): table
+  `index_constituents`, RPC `get_index_constituents` — see v696.
 
 ## 9. Recent work
 
@@ -3050,6 +3097,21 @@ whether edge decays by the 20th visit is unmeasured.
 
 ## 10. Known open items
 
+> **NEW (Sep 25 2026) — GitHub Actions refused every SCHEDULED pipeline run Sep 18 08:48 → Sep 24.**
+> Annotation: *"The job was not started because recent account payments have failed or your spending
+> limit needs to be increased."* Jobs died in 3–4 s with no steps, so `pipeline_status` showed nothing
+> and it looked like the schedule had stopped. Cleared by Sep 25 (manual runs succeed). Check Billing &
+> plans; `gh api repos/<repo>/check-runs/<job_id>/annotations` is where the reason lives.
+>
+> **NEW (Sep 25 2026) — the anon key can INSERT and DELETE on unprotected tables.** 68 public tables have
+> no RLS; demonstrated on `cached_oscillation_screener` with a sentinel row. `get_app_client_keys` /
+> `set_app_client_key` are also anon-executable. Needs a decision on how the front end authenticates
+> before locking down (the app reads keys through that RPC).
+>
+> **NEW (Sep 25 2026) — the overnight edge function re-sends ~17 past sessions (~20k rows) in EVERY
+> 5-minute payload.** v3 no longer double-counts them, but sending only the target session would cut
+> the ~27 s run and the RPC's timeout risk.
+>
 > **NEW (Sep 25 2026) — `nrs_bars_daily` gaps and missing split adjustment (§5.1i).** Backfill Aug 17–26
 > and Sep 16–18 2026, and decide how to adjust splits (store adjusted OHLC, or re-fetch with
 > `adjustment=all`). Until then Band Prediction, Narrow Range and Evening Swing read a history with holes
