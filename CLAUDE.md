@@ -447,6 +447,9 @@ My first cross-source audit reported 10/10 mismatches on a healthy pipeline. Thr
 - **Minute bars ≠ daily bars** — summing 1-min bars undercounts vs the daily aggregate
   (−19% observed) because minute bars exclude conditions the daily bar includes.
 - **Daily bars don't exist mid-session** — endpoint returns `{"bars":{}}`.
+- **The reference source can be the one with the hole.** Yahoo's chart API returned an all-null bar for
+  HON on 2026-09-22 (Sep 25 check), shifting its windows by a day and producing a 1.4pp "mismatch" that
+  was entirely Yahoo's. Before blaming the app, print both sources' raw bars side by side.
 
 Done right, expect small **positive** diffs: all 10 tickers within 0.1–0.7%, every diff
 positive, because the stored snapshot is minutes older than the verification call. That is
@@ -693,6 +696,25 @@ Two alternatives were built or costed and **rejected on 27 Jul 2026**:
 - A Durable Object stream relay — written and logic-tested (`trade-relay-worker.js`, **parked, never
   deployed**), rejected as not worth an always-on component and a new failure surface for this
   margin of error.
+
+### 5.1h Alpaca `adjustment=split` leaves spin-offs raw — use `adjustment=all` for range/return stats (Sep 25 2026)
+
+`adjustment=split` adjusts splits only. A **spin-off is not a split**, so the parent's history stays at the
+pre-spin price and the ex-date reads as a crash: HON (Honeywell Aerospace spin, Jun 29 2026) closed
+464.42 → 227.80, a fake **−51%** day and a 237-dollar true range. `adjustment=all` rescales for splits,
+spin-offs and dividends: 242.68 → 227.12 (−6.4%). Dividend factors move older bars by ~0.1–0.5%, which
+leaves ATR% untouched and moves ATR$ negligibly. **Any statistic over a window (returns, true range, ATR,
+drawdown) should use `adjustment=all`.** Positive control: HON across Jun 26 → Jun 29.
+
+### 5.1i `nrs_bars_daily` is not a clean daily-bar history (measured Sep 25 2026)
+
+- **Whole sessions missing:** Aug 17–26 2026 (8 sessions) and Sep 18 have **0 rows for every ticker**;
+  Sep 16–17 are partial (1,409 of ~2,405). A "last 5 rows" window there can span two calendar weeks.
+- **Not split-adjusted:** KLAC Jun 12 (10:1) −89.4%, CRWD Jul 2 (4:1) −74.9%, MNST Aug 11 (2:1) −50.2%.
+- Anything computing over it inherits both: **Band Prediction** (needs ≥130 bars, p99/worst over all
+  history), `nrs_compute`, **Evening Swing**, and `nrs_bars_bulk` (≥250 bars). Open item in §10.
+- Census to re-check: `select d, count(*) from nrs_bars_daily group by d order by d` — every weekday
+  that is not a market holiday should show ~2,400.
 
 ### 5.4 Silent write failures
 
@@ -1045,7 +1067,11 @@ timer deserves to be deliberate.
 
 ## 9. Recent work
 
-**Current: v643** (Jul 27 2026) — **live BOATS bid/ask + sizes on the Most Actives overnight tab**
+**Current: v696** (Sep 25 2026) — **Volatility Rankings (new page)**; see the v696 entry. v694 and v695
+shipped with no entry here and were reconstructed from their commit messages on Sep 25 (§11a).
+The paragraph below is the Jul 27 summary it replaces, kept as history.
+
+**As of v643** (Jul 27 2026) — **live BOATS bid/ask + sizes on the Most Actives overnight tab**
 (v643). Before that, MV Charts gained three stacked distributions — Close → Next High (v641, MFE
 warning block removed in v642), Daily True Range (v640), Daily Return (v637) — plus the Moving Average
 Structure card (v639), current streak state (v638), Fib swing scaled to visible range (v636), and the
@@ -1063,6 +1089,77 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### v696 — Volatility Rankings (new page) (Sep 25 2026)
+
+Menu item under **Essential Tools** (after Evening Swing), route `volrankings`. The Nasdaq-100 ranked by
+average daily **true range** over the last **3 months (63 sessions)** and **1 week (5)**, in % and $,
+plus average daily return (3M, 1W) and period returns (1W / 1M / 3M). Also `TICKS 1W` = 1W ATR$ / $0.01,
+the number of 1¢ grid levels an average day spans (green at ≥300). Sortable, sector filter, search.
+
+**Definitions (on the page):** TR = max(H, prevC) − min(L, prevC), so overnight gaps count; ATR% = TR /
+prevC; simple mean, **not** Wilder-smoothed. Windows are completed sessions ending at the last close.
+Avg ret = mean daily close-to-close %. Ret = last close vs the close 5 / 21 / 63 sessions earlier.
+
+**Data path:** universe from new table **`index_constituents`** (`index_code`, `ticker`, `name`, `sector`,
+`as_of`, `source`; 102 rows `NDX100`, as of 2026-09-19, from Wikipedia) via new RPC
+**`get_index_constituents(p_index)`** (SECURITY DEFINER, anon-executable, read-only). Bars are fetched in the
+browser from **Alpaca SIP daily, `adjustment=all`**, through `alpaca-proxy`, 50 symbols per request,
+`end` = yesterday so every bar is a completed session. Pagination follows `next_page_token` and **throws**
+at a 60-page guard. The page lists any ticker with **no bars** or a **last bar older** than the newest.
+Leading bars under 5% of median volume are dropped (when-issued prints: HONA traded 401–44,010 shares/day
+Jun 15–25 against ~6M regular-way). **Maintenance:** update `index_constituents` when the index changes
+(annual reconstitution in December, plus ad-hoc replacements).
+
+> **Two data sources were rejected, both for silent reasons (§5.1h, §5.1i):**
+> `nrs_bars_daily` has whole missing sessions and is not split-adjusted, and Alpaca `adjustment=split`
+> leaves spin-offs raw — HON's Jun 29 Honeywell Aerospace spin read as a **−51% day inside the 3M
+> window**. `adjustment=all` gives 242.68 → 227.12 (−6.4%, the real move). A draft built on
+> `nrs_bars_daily` (RPC `volatility_rankings`) was dropped in the same session.
+
+**Verified (§4a):** the page's own `metrics()` extracted from source and run in Node vs an independent
+Python implementation on the same Alpaca bars: max diff **2.7e-15**. Vs Yahoo (different source):
+NVDA agrees to 0.001 on every metric; HON disagreed by up to 1.4pp, **explained** — Yahoo has a null bar
+for HON on 2026-09-22 (§5.1c). Dry run of all 102 constituents: 102 returned, all ending 2026-09-24,
+one page per 50-symbol chunk (~4,480 bars vs the 10,000 limit). Headless render of the new build served
+at the live URL (real Supabase + Alpaca): **102 of 102 rows**, 3 proxy calls all 200, zero page errors,
+rendered NVDA and HON cells **equal to the independent recompute digit for digit**, sort toggles
+desc/asc on the clicked column, sector filter and search filter.
+
+> **Two verification traps, both caught:** (1) the first render showed the OLD footer ("split-adjusted")
+> because `dist` was built before the `adjustment=all` edit — rebuilt and re-rendered; read the rendered
+> text, not just the row count. (2) `has_text='RET 1W'` also matches **AVG RET 1W**, which comes first, so
+> the "sort is broken" result was the probe — the v693 `'SCORE ▾'` class. Match header text exactly.
+
+> **Local-build pattern that worked here (supersedes the §5.7a "ship then verify" advice for pages that
+> do not need a local server):** Playwright `page.route(LIVE_URL, fulfill(body=dist/index.html))` serves
+> the new build at the real origin, so Supabase, the Alpaca proxy and CDNs are all live. No http.server.
+
+FULL SWEEP: app_v695 → app_v696, banner v696, package.json 6.9.6 + lock synced (both copies), build
+clean, preflight 0 failures 0 warnings, 92 nav items all routed.
+
+### v695 — Holy Grail: 520x faster page load, and pagination that fails loudly (Aug 14 2026)
+
+*Reconstructed Sep 25 2026 from commit 79fb415 — the entry was never written (§4 step 8).*
+Two bugs. **Slowness:** `chop_screener_light` built eight jsonb extractions in the SELECT list, above
+ORDER BY/OFFSET/LIMIT, so Postgres materialised JSON for all 2,407 rows and discarded all but one page —
+6,200 ms vs 11.9 ms without (and a disk spill). Fix: page first in a CTE, then build JSON for the ≤1,000
+survivors; page 0 12.0s → 2.5s. **Silent partial load:** the page loop did `if(!r.ok)break;` inside a bare
+`catch`, so a timed-out page 2 left exactly 1,000 rows rendered as if complete; failures now throw and a
+banner states what failed and how many rows are shown. Also dropped stale single-argument overloads of
+`chop_screener_light` and `band_prediction` (PGRST203), and set `chop_screener_light` statement_timeout
+to 30s to match its siblings (it inherited anon's 3s).
+
+### v694 — Evening Swing Screen rebuilt on time-based exits (Aug 4 2026)
+
+*Reconstructed Sep 25 2026 from commit 458e751 — the entry was never written (§4 step 8).*
+Entry: tonight's close of a day down ≥5%; exit the close 1 or 2 sessions later; filter market cap ≥$10B;
+no target, no stop. Every fixed take-profit **reduced** expectancy (capping the right tail that is the
+edge). Edge per day decays 5x (day 1 +0.471pp/day → day 20 +0.088); win rate flat ~55% at every horizon.
+The raw +5.98%/5-day universe figure was **survivorship** (micro-caps showed a +28.9% baseline); on $10B+
+(n=4,701): 1-day +0.562% vs +0.092% baseline, 2-day +0.986% vs +0.180%. New table `nrs_hold_stats`
+(per-stock 1/2/3/5-day outcomes after its own down closes); rows whose own 1d mean is negative are tinted
+red and excluded by default.
 
 ### v693 — Evening Swing Screen (new page) (Aug 2 2026)
 
@@ -2953,6 +3050,11 @@ whether edge decays by the 20th visit is unmeasured.
 
 ## 10. Known open items
 
+> **NEW (Sep 25 2026) — `nrs_bars_daily` gaps and missing split adjustment (§5.1i).** Backfill Aug 17–26
+> and Sep 16–18 2026, and decide how to adjust splits (store adjusted OHLC, or re-fetch with
+> `adjustment=all`). Until then Band Prediction, Narrow Range and Evening Swing read a history with holes
+> and fake −50…−89% days for split names. Volatility Rankings (v696) avoids the table for this reason.
+>
 > **NEW, TOP OF LIST (Jul 30 2026)**
 >
 > **1. Revisit alerting is not built.** The level register records `visits`, but nothing notifies
