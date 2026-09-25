@@ -1101,6 +1101,15 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
   stored sessions, so every overnight avg/median/rel_* was computed on a doubled, recency-weighted history
   (NVDA `avg_sessions` 38 vs 21 stored). Stored rows now win; payload history only fills gaps. Verified:
   NVDA 20 sessions / 16,913.85 avg trades = table-only truth exactly (v1: 37 / 15,697.54).
+- **overnight-actives edge function v6** (source now in `supabase/functions/overnight-actives/`, deployed
+  Sep 25 20:19 UTC): fetches and sends the **target session only**. v4 pulled 25 days of BOATS daily bars for
+  ~11,400 symbols every 5 minutes and posted **27,242 rows (2.67 MB) to write 1,441**; the history was 99.6%
+  redundant (on Sep 25 it added 82 sessions for 75 of 1,434 tickers). v6: 1,441 rows / 156 KB, 22.3 s -> ~8 s
+  on replay, and the baseline cache finally persists for the session. **Trap caught in testing:** a BOATS 1Day
+  request whose `start` is exactly the target 00:00Z stamp returns ZERO bars -- the first draft took the
+  "no bars" exit, which reports ok:true, and would have written nothing all night. The window now opens one
+  day early and filters to the target. `history_days` (<=25) restores the old payload for a gap-fill run;
+  `dry_run` reports sizes without writing. Repeat run on the same session rewrote 0 rows.
 - **Chop integrity check** (`chop_scan_integrity_check_et_dates`): now `chop_scan_integrity_check(p_log,
   p_now)`. It checked `chop_scan_health(current_date)` — **UTC** — while `scan_date` is the **ET** date at
   run time, so evening-ET scans raised a false "critical 0 rows" most of the next day. Now: freshness =
