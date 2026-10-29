@@ -1,9 +1,11 @@
 name: Nightly Pipeline
 
 on:
-  schedule:
-    # Nightly: 1AM ET = 6AM UTC (Mon-Fri)
-    - cron: '0 6 * * 1-5'
+  # SCHEDULE MOVED TO SUPABASE pg_cron (Oct 29 2026). GitHub's own `schedule:` trigger ran these
+  # jobs 3-6.5 HOURS late, so heavy writes from several of them landed on top of each other and on
+  # the pre-market scanner. pg_cron job `pipeline-nightly-onon` now dispatches this workflow at 15:25 UTC Mon-Fri via
+  # ops.dispatch_workflow(), and ops.workflow_dispatch_check() alerts if GitHub does not accept it.
+  # Do NOT add a `schedule:` back here, or the job runs twice. See CLAUDE.md §8y.
   workflow_dispatch:
     inputs:
       tickers:

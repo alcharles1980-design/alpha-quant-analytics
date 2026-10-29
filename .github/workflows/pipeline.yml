@@ -1,16 +1,16 @@
 name: Alpha Quant Pipeline
 
 on:
-  schedule:
-    # Screener: 8PM ET = 1AM UTC next day (Mon-Fri → Tue-Sat UTC)
-    - cron: '0 1 * * 2-6'
-    # Chop screener: ~9:30PM ET = 2:30AM UTC, after the screener populates the universe
-    - cron: '30 2 * * 2-6'
-    # Yahoo ratings: ~11PM ET = 4AM UTC, separate slot after chop completes (every day, 7 days a week)
-    - cron: '0 4 * * *'
-    # Sector refresh: ~12:30AM ET = 5:30AM UTC, after yahoo-ratings. Refreshes prices + market
-    # caps for market_universe_full. Tue-Sat UTC (= Mon-Fri ET trading days).
-    - cron: '30 5 * * 2-6'
+  # SCHEDULES MOVED TO SUPABASE pg_cron (Oct 29 2026). GitHub's `schedule:` trigger ran these 3-6.5
+  # HOURS late (the screener routinely started ~06:45 UTC instead of 01:00), so heavy writes piled
+  # into pre-market and chop sometimes ran twice. pg_cron now dispatches each mode at a fixed time,
+  # one at a time, via ops.dispatch_workflow(); ops.workflow_dispatch_check() alerts on any non-204.
+  #   pipeline-screener        00:30 UTC Tue-Sat  screener SP500   (needs YESTERDAY's grouped bars:
+  #                                                                 must stay after 00:00 UTC)
+  #   chop-scan-daily          01:30 UTC Tue-Sat  chop-screener ALL (reads the screener's universe)
+  #   pipeline-sector-refresh  02:45 UTC Tue-Sat  sector-refresh ALL (also uses yesterday's bars)
+  #   pipeline-yahoo-ratings   15:40 UTC daily    yahoo-ratings ALL (session-independent -> RTH)
+  # Do NOT add a `schedule:` back here, or every mode runs twice. See CLAUDE.md §8y.
     # HOURLY CRON REMOVED (2026-08-14). It fired 16x/day x 5 days = 336 runs a month to process
     # a SINGLE ticker (tickers=ONON) -- one fetch and one prediction per run. At ~3 min a run that
     # is ~1,000 minutes, half the 2,000-minute monthly free allowance, and it was the single
