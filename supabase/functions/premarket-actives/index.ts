@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { premarketPlan } from "./et.ts";
 
 // premarket-actives: ranks pre-market (4:00-9:30 AM ET) activity by aggregating SIP MINUTE bars.
 //
@@ -15,6 +16,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // PRIOR CLOSES ARE CACHED. Yesterday's close is static, but this used to refetch all ~2,700 of them
 // on every run — half the API calls and roughly half the ~20s runtime, spent re-fetching constants.
 // They're now read from prev_rth_closes and only fetched when missing (i.e. the first run of a day).
+//
+// SESSION CLOCK (Oct 29 2026): the window, target date and partial flag come from et.ts in ET
+// wall-clock time, so the scan is right on EST as well as EDT. A scheduled call (no session_date)
+// outside 04:00-10:00 ET on a weekday returns {skipped} at once, which is what lets pg_cron cover
+// both seasons' UTC hours. Testing: {"plan_only": true, "now": "<ISO>"} returns the plan for that
+// moment and touches nothing; {"force": true} runs outside the hours.
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -40,6 +47,13 @@ Deno.serve(async (req: Request) => {
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* no body is fine */ }
 
+    const planOnly = body.plan_only === true;
+    const now = planOnly && typeof body.now === "string" ? new Date(body.now as string) : new Date();
+    if (isNaN(now.getTime())) return J({ error: "now is not a valid timestamp" }, 400);
+    const plan = premarketPlan(now, body.session_date, body.force === true);
+    if (planOnly) return J({ ok: true, plan_only: true, now: now.toISOString(), ...plan });
+    if (plan.skip) return J({ ok: true, skipped: plan.skip, et_now: plan.etNow, target: plan.target });
+
     const kr = await fetch(`${SB_URL}/rest/v1/app_config?key=in.(alpaca_key,alpaca_secret)&select=key,value`, { headers: sb });
     if (!kr.ok) return J({ error: `app_config ${kr.status}` }, 500);
     const kj = await kr.json();
@@ -49,10 +63,9 @@ Deno.serve(async (req: Request) => {
     if (!AK || !AS) return J({ error: "alpaca keys missing in app_config" }, 500);
     const alp = { "APCA-API-KEY-ID": AK, "APCA-API-SECRET-KEY": AS };
 
-    const now = new Date();
-    const target = typeof body.session_date === "string" ? body.session_date as string : utcDate(now);
-    const pmStart = `${target}T08:00:00Z`;   // 4:00 AM ET
-    const pmEnd = `${target}T13:29:59Z`;     // 9:29:59 AM ET
+    const target = plan.target;
+    const pmStart = plan.start;   // 4:00 AM ET (08:00Z on EDT, 09:00Z on EST)
+    const pmEnd = plan.end;       // 9:29:59 AM ET
 
     const prevD = new Date(target + "T00:00:00Z");
     do { prevD.setUTCDate(prevD.getUTCDate() - 1); } while (prevD.getUTCDay() === 0 || prevD.getUTCDay() === 6);
@@ -183,8 +196,7 @@ Deno.serve(async (req: Request) => {
       return rec;
     });
 
-    const nowUtcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-    const isPartial = utcDate(now) === target && nowUtcMin < 810;
+    const isPartial = plan.isPartial;   // today's session and before 9:30 AM ET
 
     const rr = await fetch(`${SB_URL}/rest/v1/rpc/upsert_premarket_actives`, {
       method: "POST", headers: sb,
@@ -194,7 +206,7 @@ Deno.serve(async (req: Request) => {
     const written = await rr.json();
 
     return J({
-      ok: true, target, prev_rth_day: prevStr, window: [pmStart, pmEnd],
+      ok: true, target, et_now: plan.etNow, prev_rth_day: prevStr, window: [pmStart, pmEnd],
       universe: universe.length, calls, failed, lastErr: lastErr || undefined,
       prev_from_cache: cachedCount, prev_fetched_calls: prevCalls, prev_failed: prevFailed, prev_stored: prevStored,
       symbols_with_activity: symbols.length, with_prev_close: rows.filter((r) => r.pc != null).length,

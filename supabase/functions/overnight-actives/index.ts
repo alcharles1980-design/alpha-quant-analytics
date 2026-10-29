@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { overnightPlan } from "./et.ts";
 
 // overnight-actives: scans the FULL universe against the Alpaca BOATS (Blue Ocean ATS) overnight
 // feed and ranks by trade count / volume, with relative-volume and relative-trades computed from
@@ -21,6 +22,13 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // cache (actives_baseline) persist for the whole session instead of rebuilding every run.
 // body.history_days (<= 25) restores the old history payload for a one-off gap-fill run.
 // body.dry_run builds the payload and reports its size without writing.
+//
+// SESSION CLOCK (v7, Oct 29 2026): the target session and partial flag come from et.ts in ET
+// wall-clock time. v6 rolled to the next session at 08:00Z and treated 00:00-08:00Z as live, which
+// is right only on EDT; on EST the session runs 01:00-09:00Z, so v6 would have abandoned the last
+// hour of every session and marked it complete at 03:00 ET. A scheduled call (no session_date)
+// outside 20:00-04:00 ET returns {skipped}. Testing: {"plan_only": true, "now": "<ISO>"} returns the
+// plan for that moment and touches nothing; {"force": true} runs outside the hours.
 //
 // Requires the Algo Trader Plus subscription for recent BOATS data.
 
@@ -59,6 +67,13 @@ Deno.serve(async (req: Request) => {
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* no body is fine */ }
 
+    const planOnly = body.plan_only === true;
+    const now = planOnly && typeof body.now === "string" ? new Date(body.now as string) : new Date();
+    if (isNaN(now.getTime())) return J({ error: "now is not a valid timestamp" }, 400);
+    const plan = overnightPlan(now, body.session_date, body.force === true);
+    if (planOnly) return J({ ok: true, plan_only: true, now: now.toISOString(), ...plan });
+    if (plan.skip) return J({ ok: true, skipped: plan.skip, et_now: plan.etNow, target: plan.target });
+
     const kr = await fetch(`${SB_URL}/rest/v1/app_config?key=in.(alpaca_key,alpaca_secret)&select=key,value`, { headers: sb });
     if (!kr.ok) return J({ error: `app_config ${kr.status}` }, 500);
     const kj = await kr.json();
@@ -69,17 +84,10 @@ Deno.serve(async (req: Request) => {
     const alp = { "APCA-API-KEY-ID": AK, "APCA-API-SECRET-KEY": AS };
 
     // Target session. BOATS bars are stamped 00:00Z for the session that BEGAN at 8PM ET the
-    // previous evening, so after 4AM ET (08:00Z) the next session carries tomorrow's stamp.
-    // NOTE: the settle cron passes session_date explicitly precisely because this rollover made it
-    // target TOMORROW at 08:30Z, silently scanning a session that didn't exist yet.
-    const now = new Date();
-    let target = typeof body.session_date === "string" ? body.session_date as string : "";
-    if (!target) {
-      const h = now.getUTCHours();
-      const d = new Date(now);
-      if (h >= 8) d.setUTCDate(d.getUTCDate() + 1);
-      target = utcDate(d);
-    }
+    // previous evening, so from 4AM ET the next session carries tomorrow's stamp (et.ts).
+    // The settle cron passes session_date explicitly (the ET date at 04:05 ET), because by then the
+    // rollover already points at the next session.
+    const target = plan.target;
 
     // Default 0 = target session only (see PAYLOAD above). Capped at the old 25-day window.
     const HIST_DAYS = Math.min(Math.max(Number(body.history_days) || 0, 0), 25);
@@ -211,14 +219,13 @@ Deno.serve(async (req: Request) => {
     const targetRows = rows.filter((r) => r.d === target).length;
     const withPrev = rows.filter((r) => r.d === target && r.pc != null).length;
 
-    // Partial only while inside the live session window (00:00-08:00Z = 8PM-4AM ET) AND scanning
-    // that session. An explicit session_date for a past session must never be marked partial.
-    const hUtc = now.getUTCHours();
-    const isPartial = hUtc < 8 && target === utcDate(now);
+    // Partial only while the target session is trading (20:00-04:00 ET). An explicit session_date
+    // for a past session is never partial.
+    const isPartial = plan.isPartial;
 
     const payload = JSON.stringify({ rows, target_date: target, partial: isPartial });
     const summary = {
-      target, prev_rth_day: prevStr, window: [startStr, endStr], history_days: HIST_DAYS, universe: universe.length,
+      target, et_now: plan.etNow, prev_rth_day: prevStr, window: [startStr, endStr], history_days: HIST_DAYS, universe: universe.length,
       calls, batchesFailed, lastErr: lastErr || undefined,
       prev_from_cache: cachedCount, prev_fetched_calls: prevCalls, prev_failed: prevFailed, prev_stored: prevStored,
       bars_fetched: fetchedBars, bars_total: rows.length, bars_for_target: targetRows, with_prev_close: withPrev, payload_bytes: payload.length,
