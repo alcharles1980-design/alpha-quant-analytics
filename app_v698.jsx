@@ -25,6 +25,13 @@ function getETHourFromMs(ms){
   if(h===24)h=0;
   return isNaN(h)?0:h;
 }
+// UTC ISO timestamp of an ET wall-clock time on an ET date (v698, Oct 29 2026). Use this for every
+// session window: a hard-coded 'T08:00:00.000Z' is 4 AM ET only in summer (EDT) and 3 AM ET in
+// winter (EST). In summer it returns exactly the strings the pages used to hard-code.
+function etIso(dateStr,h,m,s){
+  var off=getETOffset(dateStr);
+  return new Date(Date.UTC(+dateStr.slice(0,4),+dateStr.slice(5,7)-1,+dateStr.slice(8,10),h+off,m||0,s||0)).toISOString();
+}
 function verifyFetchIntegrity(trades,dateStr,etOff){
   var warnings=[];
   if(!trades||trades.length===0)return{ok:false,warnings:['No trades fetched'],hourMap:{},hoursWithData:0};
@@ -7791,7 +7798,7 @@ function BuildDataSetPage(p){
         var allP=[];var allS=[];var allTs=[];
         var fetchWindow=async function(dayStr,tsFrom,tsTo,label){
           var arr={p:[],s:[],ts:[]};
-          var fUrl='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+dayStr+tsFrom+'&timestamp.lt='+dayStr+tsTo+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
+          var fUrl='https://api.polygon.io/v3/trades/'+ticker.toUpperCase()+'?timestamp.gte='+tsFrom+'&timestamp.lt='+tsTo+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;
           var pg=0;
           while(fUrl){
             var fr=await fetch(fUrl);
@@ -7806,13 +7813,13 @@ function BuildDataSetPage(p){
           return arr;
         };
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching pre-market (4-9:30AM ET)...');
-        var w1=await fetchWindow(day,'T08:00:00.000Z','T13:30:00.000Z','[1/3 pre]');
+        var w1=await fetchWindow(day,etIso(day,4,0),etIso(day,9,30),'[1/3 pre]');
         await new Promise(function(w){setTimeout(w,1000);});
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching morning (9:30AM-1PM ET)...');
-        var w2=await fetchWindow(day,'T13:30:00.000Z','T17:00:00.000Z','[2/3 morn]');
+        var w2=await fetchWindow(day,etIso(day,9,30),etIso(day,13,0),'[2/3 morn]');
         await new Promise(function(w){setTimeout(w,1000);});
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Fetching afternoon+post (1-8PM ET)...');
-        var w3=await fetchWindow(day,'T17:00:00.000Z','T23:59:59.000Z','[3/3 aftn]');
+        var w3=await fetchWindow(day,etIso(day,13,0),etIso(day,19,59,59),'[3/3 aftn]');
         allP=w1.p.concat(w2.p).concat(w3.p);allS=w1.s.concat(w2.s).concat(w3.s);allTs=w1.ts.concat(w2.ts).concat(w3.ts);
         setProg('Day '+(di+1)+'/'+days.length+': '+day+' | Total: '+allP.length.toLocaleString()+' ticks');
         await new Promise(function(w){setTimeout(w,2000);});
@@ -8589,8 +8596,8 @@ function FeaturesListPage(p){
       id:'F01',name:'Hour of Day',category:'Temporal',
       what:'The current ET hour (4-19) representing trading session position.',
       why:'Stage 2 data shows optimal TP% follows a strong session-based regime: pre-market favors wider TP% (0.30-0.80%), regular hours favor tight TP% (0.05-0.15%), post-market returns to medium. This is the single strongest predictor, explaining ~60% of TP% variance across all stocks.',
-      calc:'Extract hour from tick timestamp. Convert UTC to ET (UTC-4 for EDT, UTC-5 for EST). Range: 4 (4AM) to 19 (7PM).',
-      code:'var ms = ts > 1e15 ? ts/1e6 : ts > 1e12 ? ts/1e3 : ts;\nvar h = new Date(ms).getUTCHours() - 4;\nif (h < 0) h += 24;\n// h = ET hour (4-19 for trading hours)'
+      calc:'Extract hour from tick timestamp, converted to ET with the IANA zone (America/New_York), so EDT and EST are both right. Range: 4 (4AM) to 19 (7PM).',
+      code:'var ms = ts > 1e15 ? ts/1e6 : ts > 1e12 ? ts/1e3 : ts;\nvar h = getETHourFromMs(ms);   // Intl, DST-safe\n// h = ET hour (4-19 for trading hours)'
     },
     {
       id:'F02',name:'Day of Week',category:'Temporal',
@@ -9855,11 +9862,11 @@ function CalibrateThresholdsPage(p){
           var dd=await r.json();
           var bars=dd.results||[];
           if(bars.length<10){addLog('  -> SKIP (only '+bars.length+' hourly bars)');continue;}
-          // Group by trading date, sum RTH dollar volume only (13:00-20:00 UTC ~ 9-4 ET)
+          // Group by trading date, sum RTH dollar volume only (hourly bars starting 9:00-15:00 ET)
           var byDay={};
           for(var bi=0;bi<bars.length;bi++){
-            var b=bars[bi];var ms=b.t;var dt=new Date(ms);var hr=dt.getUTCHours();
-            if(hr<13||hr>=20)continue;
+            var b=bars[bi];var ms=b.t;var dt=new Date(ms);var hr=getETHourFromMs(ms);
+            if(hr<9||hr>=16)continue;
             var day=dt.toISOString().slice(0,10);
             var dv=(b.vw||b.c||0)*(b.v||0);
             if(!byDay[day])byDay[day]=0;byDay[day]+=dv;
@@ -10003,10 +10010,10 @@ function DollarBarBuilderPage(p){
     try{
       var tk=ticker.toUpperCase();
       var dayStr=date;
-      var tsFrom=rthOnly?'T13:30:00.000Z':'T08:00:00.000Z';
-      var tsTo=rthOnly?'T20:00:00.000Z':'T24:00:00.000Z';
+      var tsFrom=rthOnly?etIso(dayStr,9,30):etIso(dayStr,4,0);
+      var tsTo=rthOnly?etIso(dayStr,16,0):etIso(dayStr,20,0);
       var fetchWin=async function(tsGte,tsLt){var tr=[],u='https://api.polygon.io/v3/trades/'+tk+'?timestamp.gte='+tsGte+'&timestamp.lt='+tsLt+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('Polygon API '+r.status);var d=await r.json();if(d.results)for(var i=0;i<d.results.length;i++){var t=d.results[i];tr.push({price:t.price,size:t.size||0,ts:t.sip_timestamp||t.participant_timestamp});}u=d.next_url?(d.next_url+'&apiKey='+p.apiKey):null;}return tr;};
-      var ticks=await fetchWin(dayStr+tsFrom,dayStr+tsTo);
+      var ticks=await fetchWin(tsFrom,tsTo);
       setProg('Fetched '+ticks.length+' ticks. Computing threshold...');
       var thr=parseFloat(fixedThr);
       if(mode==='auto'){
@@ -10023,7 +10030,7 @@ function DollarBarBuilderPage(p){
           var hR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/hour/'+sd+'/'+ed+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
           if(!hR.ok)throw new Error('Hourly aggs '+hR.status);
           var hD=await hR.json();var hBars=hD.results||[];
-          var dvByDay={};for(var bi=0;bi<hBars.length;bi++){var b=hBars[bi];var dt=new Date(b.t);var hr=dt.getUTCHours();if(hr<13||hr>=20)continue;var dy=dt.toISOString().slice(0,10);var dv=(b.vw||b.c||0)*(b.v||0);if(!dvByDay[dy])dvByDay[dy]=0;dvByDay[dy]+=dv;}
+          var dvByDay={};for(var bi=0;bi<hBars.length;bi++){var b=hBars[bi];var dt=new Date(b.t);var hr=getETHourFromMs(b.t);if(hr<9||hr>=16)continue;var dy=dt.toISOString().slice(0,10);var dv=(b.vw||b.c||0)*(b.v||0);if(!dvByDay[dy])dvByDay[dy]=0;dvByDay[dy]+=dv;}
           var dvs=Object.keys(dvByDay).map(function(k){return dvByDay[k];}).filter(function(v){return v>0;}).sort(function(a,b){return a-b;});
           if(dvs.length<5)throw new Error('Not enough history to calibrate '+tk);
           var recent=dvs.slice(-20);var med=recent[Math.floor(recent.length/2)];var meanADV=recent.reduce(function(a,b){return a+b;},0)/recent.length;
@@ -10433,7 +10440,7 @@ function BuildDollarDataSetPage(p){
           var hR=await fetch('https://api.polygon.io/v2/aggs/ticker/'+tk+'/range/1/hour/'+sd0+'/'+ed0+'?adjusted=true&sort=asc&limit=50000&apiKey='+p.apiKey);
           if(!hR.ok)throw new Error('Hourly aggs '+hR.status);
           var hD=await hR.json();var hBars=hD.results||[];
-          var dvByDay={};for(var bi=0;bi<hBars.length;bi++){var b=hBars[bi];var dt=new Date(b.t);var hr=dt.getUTCHours();if(hr<13||hr>=20)continue;var dy=dt.toISOString().slice(0,10);var dv=(b.vw||b.c||0)*(b.v||0);if(!dvByDay[dy])dvByDay[dy]=0;dvByDay[dy]+=dv;}
+          var dvByDay={};for(var bi=0;bi<hBars.length;bi++){var b=hBars[bi];var dt=new Date(b.t);var hr=getETHourFromMs(b.t);if(hr<9||hr>=16)continue;var dy=dt.toISOString().slice(0,10);var dv=(b.vw||b.c||0)*(b.v||0);if(!dvByDay[dy])dvByDay[dy]=0;dvByDay[dy]+=dv;}
           var dvs=Object.keys(dvByDay).map(function(k){return dvByDay[k];}).filter(function(v){return v>0;}).sort(function(a,b){return a-b;});
           if(dvs.length<5)throw new Error('Not enough history to calibrate '+tk);
           var recent=dvs.slice(-20);var med=recent[Math.floor(recent.length/2)];var meanADV=recent.reduce(function(a,b){return a+b;},0)/recent.length;
@@ -10467,10 +10474,10 @@ function BuildDollarDataSetPage(p){
         var day=dates[di];
         addLog('['+(di+1)+'/'+dates.length+'] '+tk+' '+day+'...');
         try{
-          var tsFrom=rthOnly?'T13:30:00.000Z':'T08:00:00.000Z';
-          var tsTo=rthOnly?'T20:00:00.000Z':'T24:00:00.000Z';
+          var tsFrom=rthOnly?etIso(day,9,30):etIso(day,4,0);
+          var tsTo=rthOnly?etIso(day,16,0):etIso(day,20,0);
           var fetchWin=async function(g,l){var tr=[],u='https://api.polygon.io/v3/trades/'+tk+'?timestamp.gte='+g+'&timestamp.lt='+l+'&limit=50000&sort=timestamp&order=asc&apiKey='+p.apiKey;while(u){var r=await fetch(u);if(!r.ok)throw new Error('Polygon '+r.status);var dd=await r.json();if(dd.results)for(var ii=0;ii<dd.results.length;ii++){var tt=dd.results[ii];tr.push({price:tt.price,size:tt.size||0,ts:tt.sip_timestamp||tt.participant_timestamp});}u=dd.next_url?(dd.next_url+'&apiKey='+p.apiKey):null;}return tr;};
-          var ticks=await fetchWin(day+tsFrom,day+tsTo);
+          var ticks=await fetchWin(tsFrom,tsTo);
           if(ticks.length<10){addLog('  -> '+day+' SKIP (ticks='+ticks.length+')');continue;}
 
           // Day-level context
@@ -10662,7 +10669,7 @@ function DollarCorrelationFinderPage(p){
       var matched=0,unmatched=0;
       dfRows.forEach(function(r){
         var endTs=r.bar_end_ts;if(!endTs)return;
-        var hr=new Date(endTs/1e6).getUTCHours()-4;if(hr<0)hr+=24;
+        var hr=getETHourFromMs(endTs/1e6);
         var k=r.trade_date+'|'+hr;
         var y=bestByDayHour[k];
         if(y==null){unmatched++;return;}
