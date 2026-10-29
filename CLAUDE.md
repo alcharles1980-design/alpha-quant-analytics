@@ -3337,6 +3337,16 @@ whether edge decays by the 20th visit is unmeasured.
 > caller trigger a full scan. Writes are idempotent upserts, so the risk is load, not corruption.
 > Pre-existing. The fix, if wanted, is a shared-secret header, as `nvda-switch` already uses.
 >
+> **NEW (Oct 29 2026) — `baseline drift: premarket / aftermarket` has FAILed every hour since at least
+> Sep 28 (744 + 744 rows in `integrity_log`, all unread), and it is the CHECK that is wrong, not the data.**
+> It compares each row's stored `avg_sessions` with a count of the prior rows that *still exist*. The
+> daily 30-day cleanup (`cleanup_premarket_actives`, `cleanup_aftermarket_actives`) then deletes the
+> oldest sessions, so every session ages into a "mismatch". Measured Oct 29: Oct 26–28 match on every
+> row (`mismatched = 0`); Oct 19–23 mismatch on ~90% of rows, always stored > expected (Oct 23: 17.8 vs
+> 15.5 average). That is exactly the retention signature. Fix: judge only sessions whose whole prior
+> window is still retained, or drop the check. It needs `create or replace` on `data_integrity_check`.
+> Until then it is §5.6a's "alarm that always fires", and it is louder than the after-market pace WARN.
+>
 > **NEW (Oct 29 2026) — leftovers from working without replace/drop:** `public.chop_scan_integrity_check`
 > and `public.trigger_chop_scan()` are superseded and unused (§8y). The `actives_baseline` retention
 > edit (`td - 7` → `td - 1` in the three `upsert_*_actives`) is not in the migration history. Revert =
