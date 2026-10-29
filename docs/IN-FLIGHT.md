@@ -9,20 +9,17 @@ trust `git log` over it.
 
 ---
 
-## Status: WRAPPING UP — Oct 29 2026 (04:48 → ~06:20 UTC)
+## Status: WATCH ONLY — Oct 29 2026 (work 04:48 → 06:25 UTC, all shipped)
 
-Everything planned below is **done and verified**; §8y of CLAUDE.md is the durable write-up and the
-OPS CHANGE (Oct 29) + v698 entries in §9 are the record. What remains is one hand-off step and one
-watch item.
+Everything is shipped and verified. §8y of CLAUDE.md is the durable write-up, and the OPS CHANGE
+(Oct 29) and v698 entries in §9 are the record. The catch-up screener (34.8 min, 2,500/2,500) and
+sector-refresh (4.8 min, 12,595 priced) both completed, and all four dispatches recorded 204.
 
-### Remaining
-1. **Catch-up sector-refresh.** The catch-up screener was dispatched 05:42 UTC (run 40824933065).
-   When it completes, dispatch `select ops.dispatch_workflow('pipeline.yml', '{"mode":"sector-refresh","tickers":"ALL"}'::jsonb);`
-   ONE heavy job at a time (§5.2a). If this note is still here, check `pipeline_status` for a
-   sector-refresh `complete` after 05:42 UTC Oct 29; from Oct 30 the 02:45 UTC job does it daily.
-2. **Watch the first EST sessions** (overnight Sun Nov 1 20:00 EST → pre-market Mon Nov 2 → after-market
-   Mon Nov 2). The queries are at the end of §8y. Expected: last writes at 03:59 / 09:29 / 19:59 ET,
-   `is_partial` false after each settle, the 13 ET-guarded jobs each running once at their ET time.
+### One watch item
+**The first EST sessions:** overnight from Sun Nov 1 20:00 EST, then pre-market and after-market on
+Mon Nov 2. The queries are at the end of §8y. Expected: last writes at 03:59 / 09:29 / 19:59 ET,
+`is_partial` false after each settle, and each of the 13 ET-guarded jobs running once at its ET time.
+Clear this file once that checks out.
 
 ### Done (all verified; detail in CLAUDE.md §8y)
 - Storage 413.7 → 386.8 MB (REINDEX CONCURRENTLY); `actives_baseline` retention `td-7` → `td-1` via a DO
