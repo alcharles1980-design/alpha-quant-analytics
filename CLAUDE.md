@@ -815,6 +815,17 @@ audit of all 35 cross-references in this file reported zero unresolved and misse
   In each case the noise was the defect, not the thing being reported.
 - **Make checks context-aware.** Freshness must stay silent when a session is legitimately closed.
   This is *still not honoured for weekends* — see §10, it is the source of most of that unread log.
+- **Never judge a write that is still in progress.** The chop row-count check ran at :40 every hour
+  against whatever the newest scan held, and the screener writes that scan in batches over 20–40
+  minutes. It logged **11 false criticals in three weeks** ("400 rows vs median 2,412"), every one while
+  a run was writing and every one followed by that run completing. Moving chop to a fixed 01:30 UTC
+  dispatch would have made it nightly. Fixed Oct 30: skip while the run's heartbeat is under 15 minutes
+  old. A run that dies stops heartbeating, so its partial scan is still judged and still alarms.
+- **A check over data that a retention job deletes can only judge what is still fully retained.**
+  `baseline drift` recounted each row's prior sessions from the rows that still existed. The 30-day
+  cleanup then removed the oldest ones, so every session aged into a mismatch: **744 + 744 hourly
+  FAILs, all false**. The check was also the heaviest hourly job (~370 MB of temp writes per run).
+  Replaced Oct 30 by `baseline gap`, which judges only the latest settled session (§5.1d).
 - **Prove the alarm fires before trusting it.** Deliberately break the input, watch it go red,
   repair, watch it go green. §6 and §11e both record alarms proven this way; a check that has only
   ever printed PASS is unproven (§4a rule 2's logic applied to monitoring).
@@ -1015,6 +1026,12 @@ from public/anon and grant only to service_role.**
 Several tables show 0 rows but hold disk (dead-tuple bloat, ~40 MB reclaimable via
 `VACUUM FULL`). Full Stage 1–4 pipeline tables are empty (only ever NVDA/ONON).
 
+> **"Shows 0 rows" must mean `count(*)` = 0, never `pg_stat_user_tables.n_live_tup` = 0.** The
+> statistics reset whenever the project restarts. On Oct 29, 21 hours after a restart, `cached_levels`
+> reported **0 live rows next to 22 MB on disk. `count(*)` returned 225,736.** Truncating "empty"
+> tables on that evidence would have destroyed live data. Count first, and treat the sentence above as
+> unverified until someone does.
+
 **Session scanner cadences** (all ET; the AI Predictor tab polls every 90s on top). Since Oct 29 2026 the
 cron hours cover BOTH UTC offsets and each Edge Function skips calls outside its ET hours (§8y):
 - overnight `*/5 0-8 UTC` = every 5 min, 8 PM–4 AM · settle 4:05 AM (`5 8,9`, ET-guarded)
@@ -1164,7 +1181,12 @@ ET hour (the §5.3 pattern; every command carries a `-- DST guard` comment, so
 | 04:05 | `overnight-actives-settle` (now passes the ET date) |
 | 09:15 · 09:25 · 09:35 · 09:45 | `predictor-snap-0915`, `predictor-snap-0925`, `premarket-actives-settle`, `median-premarket` |
 | 17:10 · 17:20 · 17:30 | `rth-bars-refresh`, `rth-bars-load`, `predictor-outcomes` + `iv_logger_daily` + `chop-price-postclose` |
-| 20:00 · 20:05 · 20:15 | `chop-price-afterhours-close`, `aftermarket-actives-settle` (now passes the ET date), `median-aftermarket` |
+| 20:02 · 20:05 · 20:15 | `chop-price-afterhours-close`, `aftermarket-actives-settle` (now passes the ET date), `median-aftermarket` |
+
+`chop-price-afterhours-close` ran at **20:00** ET until Oct 30, the same minute as `chop-price-hourly`
+(`0 * * * *`). The two deadlocked daily, so it now runs at **20:02** (`2 0,1 * * 2-6`, same guarded
+command). **When adding a job, check what else fires in that minute.** `:00` is the busiest minute
+on this instance.
 
 A minute-by-minute simulation over Oct 19–Nov 16 2026 and Mar 1–22 2027 confirmed each fires
 **exactly once per ET day at the same ET time** on both sides of each change.
@@ -1182,7 +1204,13 @@ records each event once per session), `data_integrity_check` / `session_pace_rat
 was blocked, so these remain and are unused: `public.chop_scan_integrity_check` (job 53 now calls
 `ops.chop_scan_integrity_check`, due 20:15 ET + 150 min instead of 21:30 + 90, which would have false-alarmed
 every EST night) and `public.trigger_chop_scan()` (job 21 now calls `ops.dispatch_workflow`). Drop them
-when convenient. Also in §10.
+when convenient. Also in §10. Since Oct 30 `ops.chop_scan_integrity_check` also **skips a scan that is
+still being written** (§5.6a); SQL in `docs/sql/2026-10-30-chop-check-skip-in-progress.sql`.
+
+**`ops` functions are not executable by anon, authenticated or public** (Oct 30): Postgres grants
+EXECUTE to PUBLIC by default, and `ops` being outside PostgREST's exposed schemas was the only thing
+stopping the anon key. Revoked, default privileges changed for future `ops` functions, granted to
+`service_role`. pg_cron runs them as `postgres`, so the jobs are unaffected (verified on the next runs).
 
 **After the first EST sessions (Sun Nov 1 night, Mon Nov 2), check:**
 ```sql
@@ -1247,7 +1275,8 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
 
 **Current: v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
 backend change in the **OPS CHANGE (Oct 29)** entry, which moved every scheduled job onto pg_cron and
-made the scanners and all ET-timed jobs survive the Nov 1 clock change (§8y).
+made the scanners and all ET-timed jobs survive the Nov 1 clock change (§8y). The **OPS HEALTH CHECK
+(Oct 29 evening)** entry after it removed four false or noisy alarms and a daily deadlock. No app change.
 Before that, v697 (Sep 25): Volatility Rankings gains the S&P 500. v694 and v695 were reconstructed
 from their commit messages on Sep 25 (§11a). The paragraph below is the Jul 27 summary, kept as history.
 
@@ -1269,6 +1298,27 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### OPS HEALTH CHECK — false alarms, a deadlock and `ops` grants (Oct 29 2026, evening)
+
+*No app version. DB only.* Full check after the restart: no freezes since, **1,499 of 1,499 cron runs
+succeeded** (all 175 failures in the prior 24 h were "job startup timeout" inside the freeze, latest
+00:57 ET, so the 23:30 ET cleanups missed one night and catch up by age), every GitHub dispatch today
+returned 204, and tonight's screener (20:30 ET, 25 min) and chop scan (21:30 ET, 19 min) both
+completed. Every change below has its reason and SQL in `docs/sql/2026-10-30-*.sql`.
+
+| # | problem | fix | proof |
+|---|---|---|---|
+| 1 | `baseline drift` FAILed hourly for a month, all false, and wrote ~370 MB of temp files every hour (on an instance whose freezes are IO stalls) | replaced by `baseline gap` | the detection expression finds exactly the 4 known by-design rows across all sessions |
+| 2 | `storage` measured against 512 MiB and WARNed at 70%, i.e. on every run | 500 MB decimal quota, WARN 430 / FAIL 460, matching `db_quota_alert` | 422.5 MB reads OK |
+| 3 | `chop_scan: row_count` judged a scan still being written: 11 false criticals in 3 weeks, and it would have been nightly from now on | skip while the run's heartbeat is < 15 min old | all 11 past alarms fell inside a running scan that then completed; 21:40 ET replay quiet; Sep 22 outage replay still critical |
+| 4 | `chop-price-afterhours-close` and `chop-price-hourly` both at 20:00 ET, deadlocking daily | the first moved to 20:02 | schedule `2 0,1 * * 2-6`, guard unchanged |
+| 5 | `ops` functions executable by PUBLIC (anon blocked only because PostgREST does not expose `ops`) | revoked from public/anon/authenticated, default privileges changed, granted to `service_role` | `has_function_privilege('anon', …)` false; the next cron runs as `postgres` succeeded |
+
+**Two near-misses worth knowing** (lessons in §5.6a and §8): `cached_levels` reported 0 live rows
+beside 22 MB, and `count(*)` was 225,736 (statistics reset at a restart). The in-transaction test of #3
+was cancelled before running; the read-only replay over every past alarm is the evidence instead.
+Open findings are in §10 under "health-check findings".
 
 ### v698 — DST-safe session windows on five research pages (Oct 29 2026)
 
@@ -3337,15 +3387,28 @@ whether edge decays by the 20th visit is unmeasured.
 > caller trigger a full scan. Writes are idempotent upserts, so the risk is load, not corruption.
 > Pre-existing. The fix, if wanted, is a shared-secret header, as `nvda-switch` already uses.
 >
-> **NEW (Oct 29 2026) — `baseline drift: premarket / aftermarket` has FAILed every hour since at least
-> Sep 28 (744 + 744 rows in `integrity_log`, all unread), and it is the CHECK that is wrong, not the data.**
-> It compares each row's stored `avg_sessions` with a count of the prior rows that *still exist*. The
-> daily 30-day cleanup (`cleanup_premarket_actives`, `cleanup_aftermarket_actives`) then deletes the
-> oldest sessions, so every session ages into a "mismatch". Measured Oct 29: Oct 26–28 match on every
-> row (`mismatched = 0`); Oct 19–23 mismatch on ~90% of rows, always stored > expected (Oct 23: 17.8 vs
-> 15.5 average). That is exactly the retention signature. Fix: judge only sessions whose whole prior
-> window is still retained, or drop the check. It needs `create or replace` on `data_integrity_check`.
-> Until then it is §5.6a's "alarm that always fires", and it is louder than the after-market pace WARN.
+> ~~**NEW (Oct 29 2026) — `baseline drift` FAILs every hour, and the check is wrong, not the data.**~~
+> **RESOLVED Oct 30 2026.** It recounted prior sessions from rows the 30-day cleanup had since deleted
+> (Oct 26–28 matched on every row; Oct 19–23 mismatched ~90%, always stored > expected). Replaced by
+> `baseline gap`, the §5.1d invariant on the latest settled session. Its detection expression finds
+> exactly the 4 known by-design rows (`avg_sessions = 1`) across every session, and nothing else.
+> Lesson in §5.6a; SQL in `docs/sql/2026-10-30-integrity-check-baseline-gap.sql`.
+>
+> **NEW (Oct 30 2026) — health-check findings, noted and NOT fixed** (none is urgent):
+> - **Storage: 422.5 MB of the 500 MB quota (84.5%)**, measured after both nightly writers. It holds
+>   level because each scan's freed space is reused, but there is only ~7 MB before `db_quota_alert`'s
+>   430 MB phone WARN. The cheapest lever is `cached_oscillation_screener` retention (3 scans → 2,
+>   cleanup `OFFSET 2` → `OFFSET 1`, ~17–22 MB); the cost is one fewer point of per-ticker regime history
+>   in the app. **The user's decision.** Do not truncate anything on `n_live_tup` evidence (§8).
+> - **`pipeline_status` shows every nightly ONON run as `running`, 0%: 23 of 23 in 30 days.** It
+>   predates the Oct 29 schedule move. Either the job fails after its first status write or `nightly` mode
+>   never writes completion. Read one Actions log before deciding whether the job is worth keeping.
+> - **Stuck `is_partial` rows:** 1–3 per pre-market day, plus whole after-market days left open by
+>   outages. These are symbols that dropped out of the scan before the settle. The upserts skip unchanged
+>   rows with `IS DISTINCT FROM`, so the settle never rewrites them. Coverage treats them as live.
+> - **Slow RPCs on Nano:** `shortlist_signal` 16.6 s, `predictor_snapshot_take` 21 s and
+>   `data_integrity_check` ~9.7 s (now table scans only; the temp spill is gone).
+> - **`hidden_levels` has no purge** (~1 MB a week). Harmless for months; add it to the 03:xx cleanups.
 >
 > **NEW (Oct 29 2026) — leftovers from working without replace/drop:** `public.chop_scan_integrity_check`
 > and `public.trigger_chop_scan()` are superseded and unused (§8y). The `actives_baseline` retention
