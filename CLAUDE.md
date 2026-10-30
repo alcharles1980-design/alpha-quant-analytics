@@ -3407,7 +3407,8 @@ whether edge decays by the 20th visit is unmeasured.
 >   outages. These are symbols that dropped out of the scan before the settle. The upserts skip unchanged
 >   rows with `IS DISTINCT FROM`, so the settle never rewrites them. Coverage treats them as live.
 > - **Slow RPCs on Nano:** `shortlist_signal` 16.6 s, `predictor_snapshot_take` 21 s and
->   `data_integrity_check` ~9.7 s (now table scans only; the temp spill is gone).
+>   `data_integrity_check` 3.5 s in cron (first live run Oct 29 22:07 ET; it was 12.7 s at 21:07, before
+>   the temp spill was removed).
 > - **`hidden_levels` has no purge** (~1 MB a week). Harmless for months; add it to the 03:xx cleanups.
 >
 > **NEW (Oct 29 2026) — leftovers from working without replace/drop:** `public.chop_scan_integrity_check`
