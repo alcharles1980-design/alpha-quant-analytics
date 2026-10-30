@@ -82,7 +82,9 @@ select cron.schedule('chop-scan-integrity', '40 * * * *', $c$select ops.chop_sca
 select cron.schedule('pipeline-screener',       '30 0 * * 2-6',  $c$select ops.dispatch_workflow('pipeline.yml', '{"mode":"screener","tickers":"SP500"}'::jsonb);$c$);
 select cron.schedule('chop-scan-daily',         '30 1 * * 2-6',  $c$select ops.dispatch_workflow('pipeline.yml', '{"mode":"chop-screener","tickers":"ALL"}'::jsonb);$c$);
 select cron.schedule('pipeline-sector-refresh', '45 2 * * 2-6',  $c$select ops.dispatch_workflow('pipeline.yml', '{"mode":"sector-refresh","tickers":"ALL"}'::jsonb);$c$);
-select cron.schedule('pipeline-nightly-onon',   '25 15 * * 1-5', $c$select ops.dispatch_workflow('nightly-pipeline.yml');$c$);
+-- REMOVED Oct 29 2026 22:30 ET at the user's request (historic, not needed): cron.unschedule('pipeline-nightly-onon')
+-- and .github/workflows/nightly-pipeline.yml deleted. Do not re-create.
+-- select cron.schedule('pipeline-nightly-onon',   '25 15 * * 1-5', $c$select ops.dispatch_workflow('nightly-pipeline.yml');$c$);
 select cron.schedule('pipeline-yahoo-ratings',  '40 15 * * *',   $c$select ops.dispatch_workflow('pipeline.yml', '{"mode":"yahoo-ratings","tickers":"ALL"}'::jsonb);$c$);
 select cron.schedule('pipeline-tipranks',       '10 16 * * 1-5', $c$select ops.dispatch_workflow('tipranks-pipeline.yml');$c$);
 select cron.schedule('nrs-refresh-dispatch',    '40 22 * * 1-5', $c$select ops.dispatch_workflow('nrs-refresh.yml');$c$);

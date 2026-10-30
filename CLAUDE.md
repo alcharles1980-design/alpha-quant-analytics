@@ -34,7 +34,7 @@ verification block below before writing any code.
 | **9** | **Recent work** | Newest first, v637+. One entry per version — no exceptions, or the gap check goes blind. Older entries: `docs/CHANGELOG-ARCHIVE.md`. |
 | 9a | Research: persistence testing | What is forecastable and what is not. Read before any metric drives capital. |
 | 10 | Known open items | What is still broken or unfinished. |
-| 10a | **Production inventory** | Everything running unattended: 61 cron jobs, the register, storage headroom. |
+| 10a | **Production inventory** | Everything running unattended: 60 cron jobs, the register, storage headroom. |
 | 11 | How the user works | Terse, empirical, root-cause. |
 | 9b | **Most Actives — current state** | The page under active development: tabs, feeds, what is exact vs approximate. |
 | 9c | **Overnight hidden liquidity** | The subsystem: what it is, the at-touch rule, components, what is not built. |
@@ -1145,7 +1145,6 @@ order by l.id desc limit 20;      -- every row should reach 204 within 10 minute
 | `pipeline-screener` | 00:30 Tue–Sat | screener SP500 | ≤39 min | fetches **yesterday's** grouped bars, so it must run after 00:00 UTC; an evening slot would be a day stale |
 | `chop-scan-daily` | 01:30 Tue–Sat | chop-screener ALL | ≤43 min | reads the screener's universe |
 | `pipeline-sector-refresh` | 02:45 Tue–Sat | sector-refresh ALL | ≤12 min | also uses yesterday's bars |
-| `pipeline-nightly-onon` | 15:25 Mon–Fri | nightly (ONON) | ~15 s | session-independent → RTH, when no extended-hours scanner writes |
 | `pipeline-yahoo-ratings` | 15:40 daily | yahoo-ratings ALL | ~20 min | session-independent |
 | `pipeline-tipranks` | 16:10 Mon–Fri | tipranks-sync | ~15 min | session-independent |
 | `nrs-refresh-dispatch` | 22:40 Mon–Fri | NRS refresh | ~4.5 min | after the 17:10–17:30 ET post-close cluster in both seasons |
@@ -1314,6 +1313,7 @@ completed. Every change below has its reason and SQL in `docs/sql/2026-10-30-*.s
 | 3 | `chop_scan: row_count` judged a scan still being written: 11 false criticals in 3 weeks, and it would have been nightly from now on | skip while the run's heartbeat is < 15 min old | all 11 past alarms fell inside a running scan that then completed; 21:40 ET replay quiet; Sep 22 outage replay still critical |
 | 4 | `chop-price-afterhours-close` and `chop-price-hourly` both at 20:00 ET, deadlocking daily | the first moved to 20:02 | schedule `2 0,1 * * 2-6`, guard unchanged |
 | 5 | `ops` functions executable by PUBLIC (anon blocked only because PostgREST does not expose `ops`) | revoked from public/anon/authenticated, default privileges changed, granted to `service_role` | `has_function_privilege('anon', …)` false; the next cron runs as `postgres` succeeded |
+| 6 | nightly ONON job: 23 of 23 runs in 30 days stuck at `running`, 0%; the user confirmed it is historic and not needed | job 66 `pipeline-nightly-onon` unscheduled, `nightly-pipeline.yml` deleted | 60 cron jobs, none references the workflow; nothing in the app or scripts did |
 
 **Two near-misses worth knowing** (lessons in §5.6a and §8): `cached_levels` reported 0 live rows
 beside 22 MB, and `count(*)` was 225,736 (statistics reset at a restart). The in-transaction test of #3
@@ -3400,9 +3400,12 @@ whether edge decays by the 20th visit is unmeasured.
 >   430 MB phone WARN. The cheapest lever is `cached_oscillation_screener` retention (3 scans → 2,
 >   cleanup `OFFSET 2` → `OFFSET 1`, ~17–22 MB); the cost is one fewer point of per-ticker regime history
 >   in the app. **The user's decision.** Do not truncate anything on `n_live_tup` evidence (§8).
-> - **`pipeline_status` shows every nightly ONON run as `running`, 0%: 23 of 23 in 30 days.** It
->   predates the Oct 29 schedule move. Either the job fails after its first status write or `nightly` mode
->   never writes completion. Read one Actions log before deciding whether the job is worth keeping.
+> - ~~**`pipeline_status` shows every nightly ONON run as `running`, 0%.**~~ **REMOVED Oct 29 22:30 ET**
+>   at the user's request ("historic, old, and not needed"): `cron.unschedule('pipeline-nightly-onon')`
+>   (job 66) and `.github/workflows/nightly-pipeline.yml` deleted. `pipeline.js --nightly` and the
+>   `nightly` mode of `pipeline.yml` are untouched. The 25 leftover `running` rows were not deleted (that
+>   statement was cancelled before running), and `cleanup_pipeline_status` ages them out by Nov 28.
+>   **Do not re-create the job.**
 > - **Stuck `is_partial` rows:** 1–3 per pre-market day, plus whole after-market days left open by
 >   outages. These are symbols that dropped out of the scan before the settle. The upserts skip unchanged
 >   rows with `IS DISTINCT FROM`, so the settle never rewrites them. Coverage treats them as live.
@@ -3680,7 +3683,7 @@ xargs -0` worked.)*
 Everything running without anyone present. **Re-verify with `./scripts/prod-check.sh` plus the cron
 query below; do not trust this list on its own.**
 
-**61 pg_cron jobs active (Oct 29 2026; was 44 on Jul 30).** 13 are ET-guarded and 7 dispatch GitHub
+**60 pg_cron jobs active (Oct 29 2026 after removing `pipeline-nightly-onon`; was 44 on Jul 30).** 13 are ET-guarded and 6 dispatch GitHub
 workflows; both lists are in §8y. The ones most often relevant:
 
 | job | schedule (UTC) | what |
@@ -3817,7 +3820,7 @@ Every Worker reaches production through `.github/workflows/`, using repo secrets
 - **`deploy.yml`** — fires on **every push to main**, builds the app and deploys **five** Workers:
   `alpha-quant-analytics`, `tipranks-proxy`, `alpha-quant-api`, `alpaca-proxy`, `edgar-proxy`.
 - **`deploy-predict.yml`** — path-filtered to `predict-api.js` / `wrangler-predict.toml`.
-- Others: `pipeline.yml`, `nightly-pipeline.yml`, `tipranks-pipeline.yml`.
+- Others: `pipeline.yml`, `tipranks-pipeline.yml`, `nrs-refresh.yml` (`nightly-pipeline.yml` deleted Oct 29 2026).
 
 > **`BUILD_TS` REFLECTS THE LAST PUSH, NOT THE LAST CODE CHANGE.** Because `deploy.yml` runs on every
 > push including docs-only commits, the banner timestamp moves when nothing shipped. **To judge
