@@ -1367,8 +1367,12 @@ was the page itself. Of the 124 tickers new to any list, **38 got data, then not
   requested delays were exactly `[2500, 2500, 15000, 2500, 15000, 2500, 2500, 60000, 2500]`. The
   summary read `TipRanks 5/8 (1 fail, 2 no coverage, 1 recovered on retry)`.
 - **Backfill:** the 68 tickers still missing data were run through the real sync code, with Polygon
-  and `pipeline_status` blocked so prices were not blanked and no fake run was logged. Results are
-  in §10.
+  and `pipeline_status` blocked so prices were not blanked and no fake run was logged. Result: **24
+  saved, 44 marked no coverage (404), 0 refused**, every write 2xx. All four lists now have **0
+  tickers missing**. Tracking: 104 with data, 42 ETFs/funds marked.
+- **Live, real data:** opening the real lists on deployed v699 sent **0 TipRanks requests** (v698
+  re-asked every ETF on every open). That run intercepted writes; its Polygon stub would otherwise
+  have saved 144 blank prices. Block writes in any probe that stubs a data source.
 
 FULL SWEEP: app_v698 → app_v699, banner v699, package.json 6.9.9 + lock synced (both copies), build
 clean, preflight 0 failures 0 warnings. SQL: `docs/sql/2026-10-30-glance-tipranks-nocoverage.sql`.
@@ -3470,11 +3474,21 @@ whether edge decays by the 20th visit is unmeasured.
 > Lesson in §5.6a; SQL in `docs/sql/2026-10-30-integrity-check-baseline-gap.sql`.
 >
 > **NEW (Oct 30 2026) — health-check findings, noted and NOT fixed** (none is urgent):
-> - **Storage: 422.5 MB of the 500 MB quota (84.5%)**, measured after both nightly writers. It holds
->   level because each scan's freed space is reused, but there is only ~7 MB before `db_quota_alert`'s
->   430 MB phone WARN. The cheapest lever is `cached_oscillation_screener` retention (3 scans → 2,
->   cleanup `OFFSET 2` → `OFFSET 1`, ~17–22 MB); the cost is one fewer point of per-ticker regime history
->   in the app. **The user's decision.** Do not truncate anything on `n_live_tup` evidence (§8).
+> - **Storage: 428.9 MB of the 500 MB quota** (Oct 29 23:30 ET, after the v699 TipRanks backfill),
+>   **~1 MB under `db_quota_alert`'s 430 MB phone WARN.** `tipranks_cache` went 13.7 → 16.8 MB
+>   (213 → 258 rows, ~55 KB each) when the Tracking list arrived. The daily sync rewrites every row,
+>   and autovacuum reuses the space, so expect it to hold near there.
+>   **Correction (Oct 30):** this item previously offered `cached_oscillation_screener` retention (3 scans → 2)
+>   as "~17–22 MB". **A DELETE does not shrink the database file.** It frees space for that table's
+>   own reuse, and the quota counts the file. Only `VACUUM FULL` returns it, by writing a full copy
+>   first: about +45 MB temporarily, a peak near 475 MB against the 500 MB stop. It also locks the
+>   table while it runs. **The clean lever is `cached_levels` + `cached_analyses`** (22.5 MB): only
+>   NVDA/ONON analyses for trading days Jan 2025 – Apr 2026, last written Apr 10 2026, i.e. the output
+>   of the retired ONON pipeline. The app treats it as a cache it rebuilds on demand. `TRUNCATE`
+>   releases the files at once with no spike. **The user's decision; not done.** Do not truncate
+>   anything on `n_live_tup` evidence (§8).
+> - **`save_glance_polygon` has three overloads** (7, 11 and 15 arguments). The app and the sync always
+>   pass all 15, so it resolves today, but a caller passing a subset can get `PGRST203` (§11e).
 > - ~~**`pipeline_status` shows every nightly ONON run as `running`, 0%.**~~ **REMOVED Oct 29 22:30 ET**
 >   at the user's request ("historic, old, and not needed"): `cron.unschedule('pipeline-nightly-onon')`
 >   (job 66) and `.github/workflows/nightly-pipeline.yml` deleted. `pipeline.js --nightly` and the
@@ -3804,8 +3818,9 @@ outside 20:00–04:00 ET.
 > "skipped at et_hour 17", the other "ok at et_hour 18" — it reads like a broken session gate. It
 > is not. §4a rule 4 again: prove the comparison before declaring a fault.
 
-**Storage:** the free-plan 512 MB cap still applies (§5.2). `hidden_levels` is tiny by design and
-per-print detail is fetched live rather than stored.
+**Storage:** the free-plan quota is **500,000,000 bytes**, not the 512 MiB this file says elsewhere
+(§10 has the current figure and the levers). `hidden_levels` is tiny by design, and per-print detail is
+fetched live rather than stored.
 
 ---
 
