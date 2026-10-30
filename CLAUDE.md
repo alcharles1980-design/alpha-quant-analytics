@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v698 · Oct 29 2026
+**Status at last update:** v699 · Oct 30 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -520,6 +520,15 @@ feature dropped entirely.
   Actions minutes, Edge Function timeouts (150s), CF Worker limits (300s CPU /
   128 MB), statement timeouts (anon = 3s via PostgREST) — and raise them with the
   user *before* building.
+- **A throttle on one code path is not a throttle** (v699, Oct 30 2026). Stocks at a Glance had a
+  careful 2.5 s sequential TipRanks batch, used when a list opened, while **bulk add** called the
+  fetcher once per pasted ticker with no gap. A 146-ticker paste sent ~60 requests in 20 s, TipRanks
+  refused the rest, and a bare `catch(e){}` turned every refusal into a blank cell. The fix is
+  structural: **one queue per rate-limited API per page, and every caller goes through it**, with the
+  gap measured from the *previous request*, not the previous loop pass. Census the callers first
+  (§4a rule 7). The Refresh button was a fourth caller that cleared the de-duplication map. And
+  **classify outcomes instead of swallowing them**: a refusal is retried and never written, and a
+  "not found" is recorded so it is not asked again (§5.9 TipRanks).
 
 ### 5.2a CONNECTION-POOL PROTOCOL — read this before invoking anything that writes
 
@@ -932,6 +941,14 @@ live app and inspect it:
   quiet (observed ~4h stale), and can return `ap:0`.
 - **SEC EDGAR** 429s aggressively → use the `edgar-proxy` Worker; User-Agent must be
   `Company email` format.
+- **TipRanks (via `tipranks-proxy`)** answers **404 for symbols it does not cover**: ETFs and funds
+  (SPY, QQQ, TLT, the XL sector funds). The proxy passes TipRanks' status through as
+  `{error:true, status}`, so `404` means *no coverage*, while `403` (often "Non-JSON response, likely
+  blocked"), `429` and `5xx` mean *refused*. A 146-ticker burst (~60 requests in 20 s) was refused
+  from about the 60th request on, and a single request a few minutes later succeeded. The ~4 s sequential
+  pace works daily for ~160 tickers. Treat that as a budget, not a guarantee. The proxy edge-caches
+  successes for 10 minutes only.
+  `mark_glance_tipranks_nocoverage(ticker)` records a 404 without ever touching a row that has data.
 - **CORS preflight**: custom headers trigger it — use query params instead (v500).
 - **GitHub Actions:** `checkout@v6`, `setup-node@v6`, Node 24. `node_modules` isn't
   committed — `npm install` before building in a fresh clone.
@@ -1272,7 +1289,9 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
 
 ## 9. Recent work
 
-**Current: v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
+**Current: v699** (Oct 30 2026): **Stocks at a Glance sends every TipRanks request through one paced
+queue**, shows refusals instead of hiding them, and marks ETFs TipRanks does not cover. See the v699
+entry. Before that, **v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
 backend change in the **OPS CHANGE (Oct 29)** entry, which moved every scheduled job onto pg_cron and
 made the scanners and all ET-timed jobs survive the Nov 1 clock change (§8y). The **OPS HEALTH CHECK
 (Oct 29 evening)** entry after it removed four false or noisy alarms and a daily deadlock. No app change.
@@ -1297,6 +1316,62 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### v699 — Stocks at a Glance: one TipRanks queue, visible failures, ETFs marked (Oct 30 2026)
+
+**User report:** created a list ("Tracking", 146 tickers, bulk-pasted at 22:58 ET Oct 29) and "TipRanks
+data has stopped collecting". The daily sync was healthy (155/159 every weekday for 10 days). The cause
+was the page itself. Of the 124 tickers new to any list, **38 got data, then nothing from about the
+60th pasted ticker on** (JNJ, JPM, MSFT, TSLA, WMT...).
+
+**Root cause, three parts:**
+1. **`bulkAdd` called `fetchTicker` per inserted ticker**, firing TipRanks immediately with no gap. The
+   page's paced 2.5 s batch was only used when a list opened, so ~60 requests went out in 20 s and
+   TipRanks refused the rest (lesson in §5.2).
+2. **`fetchTipRanks` swallowed every failure** (`catch(e){}`), so a refusal rendered as a dash,
+   indistinguishable from "TipRanks has no data".
+3. **ETFs are never covered**, and TipRanks answers them with a 404 (§5.9). Nothing ever set
+   `fetched_at` for them, so every list open re-requested every ETF (~40 in Tracking), which by itself
+   is enough to trip the limit.
+
+**Fix:**
+- **One queue for the whole page** (`enqueueTR` / `runTR`). Every caller goes through it: list open,
+  single add, bulk add, Refresh and retries. One request is in flight at a time. The gap is owed from
+  the previous request: 2.5 s after a success or 404, 15 s after a refusal. A refused ticker is
+  re-queued after 1 min, then 3 min, then given up for the day. It is never written, so cached data
+  survives.
+- **`fetchTipRanks` returns `ok` / `none` / `fail`.** A 404 calls the new RPC
+  **`mark_glance_tipranks_nocoverage`**, which sets `fetched_at` only on rows with no TipRanks data.
+  A covered row is refused by the function itself: tested on NVDA (false, untouched) and SPY (true).
+  `switchList` re-checks such rows weekly instead of every 24 h.
+- **A status line** (`data-testid="tr-status"`) shows the counts loaded, not covered, retrying and
+  still refused. It turns warn-coloured when refusals remain after the last retry.
+- **Bulk add** inserts first, then hands the tickers to the Polygon batcher and the queue. The updater
+  that adds each row got its own ticker variable (`var t` read late by a React updater is the §5.5
+  class).
+- **Refresh** no longer clears `pendingTR`. With one queue, clearing it would queue waiting tickers
+  twice.
+- **`pipeline.js --tipranks-sync`** follows the same three outcomes: it marks 404s, backs off 15 s
+  after a refusal, and runs one retry pass after 60 s. Its summary now reads `N fail, N no coverage,
+  N recovered on retry` instead of a single `skip` count that mixed all three.
+
+**Verified (§4a).**
+- **Browser:** the new build was served at the live origin. Every Supabase write, Polygon call and
+  TipRanks call was intercepted and scripted (4 covered, 2 × 404, one refused twice then OK, one always
+  refused). Results: 12 requests with zero spacing violations (gaps 2.51–2.57 s and 15.0 s); retries
+  at +1 min and +3 min; saves exactly for the 5 covered; marks exactly for the two 404s; the
+  always-refused ticker never written; the final status line in `C.warn`; 8 inserts and 8 rows in
+  paste order; Polygon 8 × 3 calls through the batcher; zero page errors and zero un-intercepted
+  writes.
+- **Daily sync:** the real `pipeline.js` ran under a stubbed `fetch` with timers 100× faster, and the
+  requested delays were exactly `[2500, 2500, 15000, 2500, 15000, 2500, 2500, 60000, 2500]`. The
+  summary read `TipRanks 5/8 (1 fail, 2 no coverage, 1 recovered on retry)`.
+- **Backfill:** the 68 tickers still missing data were run through the real sync code, with Polygon
+  and `pipeline_status` blocked so prices were not blanked and no fake run was logged. Results are
+  in §10.
+
+FULL SWEEP: app_v698 → app_v699, banner v699, package.json 6.9.9 + lock synced (both copies), build
+clean, preflight 0 failures 0 warnings. SQL: `docs/sql/2026-10-30-glance-tipranks-nocoverage.sql`.
 
 ### OPS HEALTH CHECK — false alarms, a deadlock and `ops` grants (Oct 29 2026, evening)
 

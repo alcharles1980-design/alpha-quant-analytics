@@ -21038,6 +21038,8 @@ function StocksAtGlancePage(p){
   var s17=useState(''),bulkInput=s17[0],setBulkInput=s17[1];
   var s18=useState(false),bulkAdding=s18[0],setBulkAdding=s18[1];
   var s19=useState(null),bulkResult=s19[0],setBulkResult=s19[1];
+  // TipRanks queue status (v699): {total, ok, none, failed, retrying, queued, active}
+  var s20=useState(null),trStat=s20[0],setTrStat=s20[1];
 
   // ── Supabase helpers ──────────────────────────────────────────────────────
   var sbGet=function(path){return fetch(supaUrl+path,{headers:SB()}).then(function(r){return r.json();});};
@@ -21106,9 +21108,15 @@ function StocksAtGlancePage(p){
         // Only fetch Polygon if not already refreshed this session
         if(!polyRefreshed.current[row.ticker])needPoly.push(row.ticker);
 
-        // Only fetch TipRanks if >24h stale or never fetched
+        // Only fetch TipRanks if >24h stale or never fetched.
+        // v699: a row TipRanks has confirmed it does not cover (a 404, marked by
+        // mark_glance_tipranks_nocoverage; ETFs and funds) carries a real fetched_at with no
+        // score, PT or ratings. Re-check those weekly, not on every open. Rows that never got
+        // data (fetched_at still the 2000-01-01 placeholder) stay due immediately.
         var age=row.fetched_at?now-new Date(row.fetched_at).getTime():Infinity;
-        if(age>=24*60*60*1000)needTR.push(row.ticker);
+        var noTRData=row.smart_score==null&&row.pt_avg==null&&!(row.buy||row.hold||row.sell);
+        var trTTL=noTRData?7*24*60*60*1000:24*60*60*1000;
+        if(age>=trTTL)needTR.push(row.ticker);
       });
 
       setTickers(ts);
@@ -21282,14 +21290,33 @@ function StocksAtGlancePage(p){
   };
 
   // ── Phase 2: TipRanks data (Smart Score, PT, B/H/S) ───────────────────
-  // Called sequentially with delays to avoid TipRanks rate limiting.
-  // Merges into existing rowData (Polygon data already visible).
+  // Called ONLY through the queue below (enqueueTR), never directly, so every
+  // caller shares one 2.5s spacing. Merges into existing rowData.
+  // Returns 'ok' (data saved), 'none' (TipRanks 404: no coverage, e.g. an ETF;
+  // marked so it is not re-asked) or 'fail' (refused/blocked/network: retried).
+  // v699: before this, bulk add called it once per pasted ticker with no gap; on
+  // Oct 29 a 146-ticker paste sent ~60 requests in 20s and TipRanks refused the
+  // rest, while the catch below swallowed every failure silently.
+  var markNoCoverage=function(tkr){
+    fetch(supaUrl+'/rest/v1/rpc/mark_glance_tipranks_nocoverage',{
+      method:'POST',
+      headers:Object.assign({'Content-Type':'application/json'},SB()),
+      body:JSON.stringify({p_ticker:tkr})
+    }).catch(function(){});
+  };
   var fetchTipRanks=async function(tkr){
     try{
       // Fetch from CF Worker proxy
       var proxyBase='https://tipranks-proxy.alcharles1980.workers.dev';
       var trR=await fetch(proxyBase+'?ticker='+tkr+'&endpoint=getData');
       var trD=await trR.json();
+      // The proxy passes TipRanks' status through as {error:true,status}. 404 is
+      // TipRanks saying it has no page for this symbol; anything else is a refusal.
+      if(trD&&trD.error){
+        if(trD.status===404||trR.status===404){markNoCoverage(tkr);return 'none';}
+        return 'fail';
+      }
+      if(!trD||!trD.experts)return 'fail';
 
       // Also save full JSON to tipranks_cache for TipRanks Intelligence page
       if(trD&&trD.experts&&!trD.error){
@@ -21346,34 +21373,89 @@ function StocksAtGlancePage(p){
         });
         saveTR(tkr,trData);
       }
-    }catch(e){/* TipRanks fetch failed — Score/PT/BHS stay as — */}
+      return 'ok';
+    }catch(err2){return 'fail';/* network error or non-JSON reply */}
   };
 
-  // ── Sequential TipRanks batch — feeds universal cache ──────────────────
-  // Does NOT cancel on list switch — completed fetches benefit all lists.
-  // Tracks pending tickers to avoid duplicate concurrent fetches.
+  // ── ONE TipRanks queue for the whole page (v699) ───────────────────────
+  // Every caller (list open, single add, bulk add, retries) goes through this, so
+  // there is exactly one request in flight and a fixed gap between requests, however
+  // many tickers are pasted at once. Does NOT cancel on list switch — completed
+  // fetches feed the shared cache and benefit all lists. pendingTR stops a ticker
+  // being queued twice, including while it waits for a retry.
+  var TR_GAP_MS=2500;              // after a success or a 404 (proxy adds 0.5-2s more)
+  var TR_FAIL_GAP_MS=15000;        // after a refusal: back off before asking again
+  var TR_RETRY_MS=[60000,180000];  // a refused ticker is re-queued after 1 min, then 3 min
   var pendingTR=useRef({});
-  var fetchTipRanksBatch=function(tickerList){
-    // Filter out tickers already being fetched by a previous batch
-    var toFetch=tickerList.filter(function(t){return !pendingTR.current[t];});
-    if(toFetch.length===0)return;
-    toFetch.forEach(function(t){pendingTR.current[t]=true;});
-    (async function(){
-      for(var i=0;i<toFetch.length;i++){
-        await fetchTipRanks(toFetch[i]);
-        delete pendingTR.current[toFetch[i]];
-        // 2.5s delay between calls (CF Worker adds 0.5-2s → 3-4.5s total)
-        if(i<toFetch.length-1){
-          await new Promise(function(resolve){setTimeout(resolve,2500);});
-        }
-      }
-    })();
+  var trQueue=useRef([]);          // [{t: ticker, tries: n}]
+  var trActive=useRef(false);
+  var trLastAt=useRef(0);          // when the previous request finished (ms)
+  var trNextGap=useRef(0);         // gap owed before the next request
+  var trTally=useRef({total:0,ok:0,none:0,failed:0,retrying:0});
+  var publishTR=function(){
+    var tl=trTally.current;
+    setTrStat({total:tl.total,ok:tl.ok,none:tl.none,failed:tl.failed,retrying:tl.retrying,
+      queued:trQueue.current.length,active:trActive.current||trQueue.current.length>0||tl.retrying>0});
   };
+  var runTR=async function(){
+    if(trActive.current)return;
+    trActive.current=true;publishTR();
+    while(trQueue.current.length>0){
+      // The gap is owed from the PREVIOUS request, not from the last loop pass, so a
+      // ticker that arrives just after the queue drained still waits its turn.
+      var owed=trLastAt.current+trNextGap.current-Date.now();
+      if(owed>0)await new Promise(function(resolve){setTimeout(resolve,owed);});
+      if(trQueue.current.length===0)break;
+      var job=trQueue.current.shift();
+      var res=await fetchTipRanks(job.t);
+      trLastAt.current=Date.now();
+      trNextGap.current=res==='fail'?TR_FAIL_GAP_MS:TR_GAP_MS;
+      var tl=trTally.current;
+      if(res==='ok'){tl.ok++;delete pendingTR.current[job.t];}
+      else if(res==='none'){tl.none++;delete pendingTR.current[job.t];}
+      else{
+        job.tries++;
+        if(job.tries<=TR_RETRY_MS.length){
+          tl.retrying++;
+          (function(jb,wait){
+            setTimeout(function(){
+              trTally.current.retrying--;
+              trQueue.current.push(jb);
+              publishTR();
+              runTR();
+            },wait);
+          })(job,TR_RETRY_MS[job.tries-1]);
+        }else{tl.failed++;delete pendingTR.current[job.t];}
+      }
+      publishTR();
+    }
+    trActive.current=false;publishTR();
+  };
+  var enqueueTR=function(tickerList){
+    var tl=trTally.current;
+    // A fresh batch after everything finished starts a fresh tally.
+    if(!trActive.current&&trQueue.current.length===0&&tl.retrying===0){
+      trTally.current={total:0,ok:0,none:0,failed:0,retrying:0};
+    }
+    var added=0;
+    tickerList.forEach(function(tk){
+      if(pendingTR.current[tk])return;
+      pendingTR.current[tk]=true;
+      trQueue.current.push({t:tk,tries:0});
+      added++;
+    });
+    if(added===0)return;
+    trTally.current.total+=added;
+    publishTR();
+    runTR();
+  };
+  // Kept under its old name: switchList calls it for stale/missing tickers.
+  var fetchTipRanksBatch=enqueueTR;
 
-  // ── single ticker add — fetch both immediately ─────────────────────────
+  // ── single ticker add — Polygon now, TipRanks through the shared queue ──
   var fetchTicker=function(tkr){
     fetchPolygon(tkr);
-    fetchTipRanks(tkr);
+    enqueueTR([tkr]);
   };
 
   // ── list CRUD ─────────────────────────────────────────────────────────────
@@ -21448,19 +21530,27 @@ function StocksAtGlancePage(p){
     var unique=[];var seen={};
     raw.forEach(function(t){if(!seen[t]){seen[t]=true;unique.push(t);}});
     var skipped=[];var added=[];var failed=[];
+    // v699: the updater gets its own ticker. `var t` is function-scoped, so an updater
+    // React runs after the loop has moved on would otherwise read a later ticker.
+    var showTicker=function(tk){setTickers(function(prev){return prev.indexOf(tk)>=0?prev:prev.concat([tk]);});};
     for(var i=0;i<unique.length;i++){
       var t=unique[i];
       if(tickers.indexOf(t)>=0){skipped.push(t);continue;}
       try{
         await sbPost('/rest/v1/stocks_watchlist',{ticker:t,list_id:activeId});
         added.push(t);
-        setTickers(function(prev){return prev.concat([t]);});
-        fetchTicker(t);
-      }catch(e){failed.push(t);}
+        showTicker(t);
+      }catch(err2){failed.push(t);}
     }
+    // v699: data is fetched AFTER the inserts, through the same throttles the rest of
+    // the page uses: Polygon in batches of 10 per second, TipRanks one at a time with
+    // a 2.5s gap (about 3-4s per ticker, so ~7 min for 120 new names, in the background).
+    // It used to fire both for every ticker the moment it was inserted.
+    if(added.length>0){fetchPolygonBatch(added);enqueueTR(added);}
     var msg=added.length+' added';
     if(skipped.length>0)msg+=', '+skipped.length+' already in list';
     if(failed.length>0)msg+=', '+failed.length+' failed';
+    if(added.length>0)msg+=' · TipRanks data loads in the background (status below)';
     setBulkResult(msg);
     if(added.length>0)setBulkInput('');
     setBulkAdding(false);
@@ -21700,7 +21790,7 @@ function StocksAtGlancePage(p){
           cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
         {showBulk?'Hide Bulk':'+ Bulk Add'}
       </button>
-      <button onClick={function(){polyRefreshed.current={};pendingTR.current={};setRowData({});fetchPolygonBatch(tickers);fetchTipRanksBatch(tickers);}}
+      <button onClick={function(){polyRefreshed.current={};setRowData({});fetchPolygonBatch(tickers);fetchTipRanksBatch(tickers);/* v699: pendingTR is no longer reset here; the shared queue skips tickers already waiting, and clearing it would queue them twice */}}
         disabled={activeId==null}
         style={{padding:'8px 14px',background:C.bgInput,border:'1px solid '+C.border,borderRadius:6,
           color:C.txt,fontSize:11,fontFamily:F,cursor:'pointer',whiteSpace:'nowrap',opacity:activeId==null?0.4:1}}>
@@ -21757,6 +21847,23 @@ function StocksAtGlancePage(p){
     </div>}
 
     {err&&<div style={{padding:'8px 12px',background:C.warnDim,border:'1px solid '+C.warn,borderRadius:6,color:C.warn,fontSize:10,fontFamily:F,marginBottom:10}}>{err}</div>}
+
+    {/* ── TIPRANKS QUEUE STATUS (v699) — failures used to be silent ─────── */}
+    {trStat&&trStat.total>0&&(function(){
+      var doneN=trStat.ok+trStat.none+trStat.failed;
+      var parts=[];
+      if(trStat.active)parts.push('loading '+doneN+' of '+trStat.total);
+      parts.push(trStat.ok+' loaded');
+      if(trStat.none>0)parts.push(trStat.none+' not covered by TipRanks (ETFs, funds)');
+      if(trStat.retrying>0)parts.push(trStat.retrying+' refused, retrying shortly');
+      if(trStat.failed>0)parts.push(trStat.failed+' still refused after 3 tries; the 12:10 ET daily sync will retry them');
+      var bad=trStat.failed>0;
+      return <div data-testid="tr-status" style={{padding:'6px 12px',background:bad?C.warnDim:C.bgCard,
+          border:'1px solid '+(bad?C.warn:C.border),borderRadius:6,color:bad?C.warn:(trStat.active?C.accent:C.txtDim),
+          fontSize:10,fontFamily:F,marginBottom:10}}>
+        {'TipRanks: '+parts.join(' · ')}
+      </div>;
+    })()}
 
     {/* ── TABLE ────────────────────────────────────────────────────────── */}
     <div style={{background:C.bgCard,border:'1px solid '+C.border,borderRadius:10,overflow:'hidden'}}>

@@ -5655,24 +5655,36 @@ async function runTipRanksSync() {
   // ═══════════════════════════════════════════════════════════════════════
   console.log('\n--- Phase 2: TipRanks refresh ---');
   var PROXY_URL = 'https://tipranks-proxy.alcharles1980.workers.dev';
-  var DELAY_MS = 2500;
-  var success = 0, failed = 0, skipped = 0;
+  var DELAY_MS = 2500;          // after a success or a 404
+  var FAIL_DELAY_MS = 15000;    // after a refusal: back off before asking again
+  var RETRY_WAIT_MS = 60000;    // refused tickers get one more pass after this
+  var success = 0, failed = 0, nocov = 0, retried = 0;
+  var refused = [];
 
-  for (var i = 0; i < tickers.length; i++) {
-    var tk = tickers[i];
-    var pct = 30 + Math.round((i / tickers.length) * 70);
-
+  // v699 (Oct 30 2026): a ticker's outcome is one of three, and they are handled differently.
+  //   'ok'   TipRanks data saved.
+  //   'none' TipRanks 404s the symbol (ETFs and funds: no analyst coverage). Marked with
+  //          mark_glance_tipranks_nocoverage so Stocks at a Glance stops re-requesting it on every
+  //          open. The marker only touches rows that hold no TipRanks data.
+  //   'fail' refused (403/429/5xx, non-JSON "likely blocked") or a network error. NEVER marked and
+  //          never written, so cached data is not overwritten; retried once after the main pass.
+  // Before this, all three were counted as "skip" and the refusals were simply lost until tomorrow.
+  async function syncOne(tk, label) {
     try {
       // Fetch from CF Worker proxy
       var resp = await fetch(PROXY_URL + '?ticker=' + tk + '&endpoint=getData');
       var data = await resp.json();
 
+      if (data && data.error && (data.status === 404 || resp.status === 404)) {
+        await fetch(SB_URL + '/rest/v1/rpc/mark_glance_tipranks_nocoverage', {
+          method: 'POST', headers: sbHeaders(), body: JSON.stringify({ p_ticker: tk })
+        }).catch(function() {});
+        console.log('  ' + label + ' ' + tk + ': no TipRanks coverage (404), marked');
+        return 'none';
+      }
       if (!data || data.error || !data.experts) {
-        console.log('  [' + (i+1) + '/' + tickers.length + '] ' + tk + ': SKIP (no data or error)');
-        skipped++;
-        // Still delay to avoid hammering
-        if (i < tickers.length - 1) await sleep(DELAY_MS);
-        continue;
+        console.log('  ' + label + ' ' + tk + ': REFUSED (' + (data && data.status || resp.status) + ' ' + (data && data.message || 'no experts') + ')');
+        return 'fail';
       }
 
       // Extract Smart Score
@@ -5748,27 +5760,46 @@ async function runTipRanksSync() {
         })
       });
 
-      success++;
-      console.log('  [' + (i+1) + '/' + tickers.length + '] ' + tk + ': OK (score=' + smartScore + ', PT=' + ptAvg + ', B/H/S=' + buys + '/' + holds + '/' + sells + ')');
+      console.log('  ' + label + ' ' + tk + ': OK (score=' + smartScore + ', PT=' + ptAvg + ', B/H/S=' + buys + '/' + holds + '/' + sells + ')');
+      return 'ok';
 
     } catch (e) {
-      failed++;
-      console.log('  [' + (i+1) + '/' + tickers.length + '] ' + tk + ': ERROR ' + e.message);
+      console.log('  ' + label + ' ' + tk + ': ERROR ' + e.message);
+      return 'fail';
     }
+  }
+
+  for (var i = 0; i < tickers.length; i++) {
+    var tk = tickers[i];
+    var pct = 30 + Math.round((i / tickers.length) * 65);
+    var res = await syncOne(tk, '[' + (i+1) + '/' + tickers.length + ']');
+    if (res === 'ok') success++; else if (res === 'none') nocov++; else refused.push(tk);
 
     // Progress update every 10 tickers
     if (i % 10 === 0) {
-      await reportProgress({ mode: 'tipranks-sync', ticker: tk, status: 'running', progress_pct: pct, message: (i+1) + '/' + tickers.length + ' (' + success + ' ok, ' + failed + ' fail, ' + skipped + ' skip)' });
+      await reportProgress({ mode: 'tipranks-sync', ticker: tk, status: 'running', progress_pct: pct, message: (i+1) + '/' + tickers.length + ' (' + success + ' ok, ' + refused.length + ' refused, ' + nocov + ' no coverage)' });
     }
 
-    // Delay between calls
-    if (i < tickers.length - 1) await sleep(DELAY_MS);
+    // Delay between calls; longer after a refusal so a burst limit can clear
+    if (i < tickers.length - 1) await sleep(res === 'fail' ? FAIL_DELAY_MS : DELAY_MS);
+  }
+
+  // One retry pass for refusals, after a pause. A ticker refused twice is left for tomorrow.
+  if (refused.length > 0) {
+    console.log('\n--- Retry pass: ' + refused.length + ' refused ticker(s), after ' + (RETRY_WAIT_MS / 1000) + 's ---');
+    await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'running', progress_pct: 96, message: 'Retrying ' + refused.length + ' refused ticker(s)' });
+    await sleep(RETRY_WAIT_MS);
+    for (var ri2 = 0; ri2 < refused.length; ri2++) {
+      var res2 = await syncOne(refused[ri2], '[retry ' + (ri2+1) + '/' + refused.length + ']');
+      if (res2 === 'ok') { success++; retried++; } else if (res2 === 'none') { nocov++; retried++; } else failed++;
+      if (ri2 < refused.length - 1) await sleep(res2 === 'fail' ? FAIL_DELAY_MS : DELAY_MS);
+    }
   }
 
   console.log('\nDaily sync complete:');
   console.log('  Polygon:  ' + polyOk + ' ok, ' + polyFail + ' fail');
-  console.log('  TipRanks: ' + success + ' ok, ' + failed + ' fail, ' + skipped + ' skip');
-  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'done', progress_pct: 100, message: 'Polygon ' + polyOk + '/' + tickers.length + ' · TipRanks ' + success + '/' + tickers.length + ' (' + failed + ' fail, ' + skipped + ' skip)' });
+  console.log('  TipRanks: ' + success + ' ok, ' + nocov + ' no coverage, ' + failed + ' refused (' + retried + ' recovered on retry)');
+  await reportProgress({ mode: 'tipranks-sync', ticker: 'ALL', status: 'done', progress_pct: 100, message: 'Polygon ' + polyOk + '/' + tickers.length + ' · TipRanks ' + success + '/' + tickers.length + ' (' + failed + ' fail, ' + nocov + ' no coverage, ' + retried + ' recovered on retry)' });
 }
 
 async function main() {
