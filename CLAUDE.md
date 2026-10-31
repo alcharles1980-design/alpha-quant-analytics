@@ -3474,15 +3474,21 @@ whether edge decays by the 20th visit is unmeasured.
 > Lesson in §5.6a; SQL in `docs/sql/2026-10-30-integrity-check-baseline-gap.sql`.
 >
 > **NEW (Oct 30 2026) — health-check findings, noted and NOT fixed** (none is urgent):
-> - **Storage: 428.9 MB of the 500 MB quota** (Oct 29 23:30 ET, after the v699 TipRanks backfill),
->   **~1 MB under `db_quota_alert`'s 430 MB phone WARN.** `tipranks_cache` went 13.7 → 16.8 MB
->   (213 → 258 rows, ~55 KB each) when the Tracking list arrived. The daily sync rewrites every row,
->   and autovacuum reuses the space, so expect it to hold near there.
->   **Correction (Oct 30):** this item previously offered `cached_oscillation_screener` retention (3 scans → 2)
->   as "~17–22 MB". **A DELETE does not shrink the database file.** It frees space for that table's
->   own reuse, and the quota counts the file. Only `VACUUM FULL` returns it, by writing a full copy
->   first: about +45 MB temporarily, a peak near 475 MB against the 500 MB stop. It also locks the
->   table while it runs. **The clean lever is `cached_levels` + `cached_analyses`** (22.5 MB): only
+> - **Storage swings by ~40–50 MB, and the cause is the oscillation screener's nightly rewrite.**
+>   `db_watchdog.db_bytes` (every 3 min) is the history to read. Peak **437.4 MB** (Oct 30 23:30 ET), then
+>   **389.0 MB** three minutes later, flat since (re-measured Oct 31 19:54 ET). Each screener run adds a
+>   ~2,500-row scan (~16 MB, mostly TOAST JSON) beside the old one. At 23:30 ET `cleanup_oscillation_screener`
+>   deleted the old scan (`DELETE 2500`), and autovacuum at 23:31 cut the emptied pages off the end of the
+>   file. **Not guaranteed:** after the Oct 29 cleanup the size did not fall. **So expect 430 MB WARNs on the
+>   nights between a screener run and a truncating vacuum, and do not read one as growth.**
+>   **Two corrections to this item.** (1) It said "a DELETE does not shrink the database file, only
+>   `VACUUM FULL` does". That is too strong. Plain VACUUM releases empty pages at the *end* of a file, which
+>   is the 48 MB above. It cannot release free space in the middle; that still needs `VACUUM FULL`.
+>   (2) It offered screener retention "3 scans → 2" as a lever. **The table already keeps one scan.** The
+>   cleanup's `ORDER BY scan_date DESC OFFSET 2 LIMIT 1` counts **rows**, not dates, so the third row is the
+>   newest scan's own date and everything older goes. Do not "fix" it to keep three: that adds ~32 MB.
+>   `tipranks_cache` went 13.7 → 16.8 MB (213 → 258 rows, ~55 KB each) when the Tracking list arrived.
+>   **The clean lever is `cached_levels` + `cached_analyses`** (22.5 MB): only
 >   NVDA/ONON analyses for trading days Jan 2025 – Apr 2026, last written Apr 10 2026, i.e. the output
 >   of the retired ONON pipeline. The app treats it as a cache it rebuilds on demand. `TRUNCATE`
 >   releases the files at once with no spike. **The user's decision; not done.** Do not truncate
