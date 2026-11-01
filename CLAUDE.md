@@ -519,6 +519,13 @@ feature dropped entirely.
   is the whole heap, and `REINDEX TABLE CONCURRENTLY` shrinks its indexes. Neither needs a full copy.
   Measured Oct 31 2026: 22.4 MB released from `cached_levels` + `cached_analyses` this way. Use it when
   `TRUNCATE` is unavailable; the Supabase connector auto-cancels destructive statements (§10).
+  **`VACUUM FULL` is not cancelled** (ran through `execute_sql` Oct 31 on `hidden_levels` and visits), so
+  a partial purge can be compacted in place. It needs room for one copy of the table's live data and locks
+  the table while it runs. Do it when nothing writes the table.
+- **A retention purge must not cut a window that a recompute-everything job still reads.** The
+  `predictor_outcomes_fill()` case (§10): a daily no-argument call recomputed every snapshot from a 40-day
+  bar window, so trimming the bars would have silently rewritten 1,038 correct outcomes. Before adding any
+  purge, list every reader's lookback and look for jobs that recompute history. Make history final first.
 - **`net._http_response` accumulates silently** (hit 72 MB) — prune periodically.
 - **Generalise:** before ANY task think through storage quotas, API rate limits,
   Actions minutes, Edge Function timeouts (150s), CF Worker limits (300s CPU /
@@ -3520,11 +3527,31 @@ whether edge decays by the 20th visit is unmeasured.
 >     `supabase_admin`, so we cannot compact it.
 >   - *Duplicate index:* `idx_hlv_level` is identical to `idx_hlv_level_seen_uniq` (both
 >     `(level_id, seen_at)`), 0 scans, 0.9 MB.
->   - *Retired tables*, last written Apr 2026: `hourly_features` 4.7 (2 tickers), `minute_oscillation_results`
->     3.4 and `optimal_tp_minute` 3.3 (one scan, Apr 29), and the four NVDA/ONON tables above, 4.7. ~16 MB.
->   - *No purge, growing:* `hidden_levels` + visits 13.5 MB, 65 sessions since Jul 30, ~1 MB/week
->     (multi-night research wants the history). `signal_rth_bars` 12.7 MB, 113 sessions since May 20,
->     ~880 rows/day, read by `shortlist_signal`, `predictor_outcomes_fill`, `rebuild_signal_chains`.
+>   - ~~*Retired tables*~~ **DONE Oct 31 (user-approved), 366.6 → 350.8 MB:** `hourly_features` (NVDA/ONON
+>     to Apr 16), `minute_oscillation_results` + `optimal_tp_minute` (one scan, Apr 29), `cached_seasonality`,
+>     `cached_sessions`, `cached_hourly_cycles`, `cached_hourly_hold_times`. 39,717 rows by REST delete
+>     (same method as `cached_levels`), then `VACUUM` + `REINDEX TABLE CONCURRENTLY`; all 7 tables 40–80 kB,
+>     0 invalid indexes. Pages reading them now show no data. Nothing scheduled writes them.
+>   - ~~*hidden_levels unpurged*~~ **DONE Oct 31 (user-approved), → 343.6 MB:** kept the newest 30
+>     sessions (from 2026-09-18). 35 sessions / 11,487 levels deleted per `session_date` by REST, 11,894
+>     visits went with them (FK cascade). After: 13,591 levels, 14,152 visits, `sum(visits) == count(visits)`,
+>     0 orphans. `VACUUM FULL` on both: 13.5 → 6.3 MB. **New cron job 88 `purge_hidden_levels`**
+>     (`47 3 * * *`, odd minute so it never shares a minute with job 51's even-minute scans) keeps 30
+>     *distinct* session dates. This gives up the multi-night history before Sep 18 (§10 item 2).
+>   - **`signal_rth_bars` NOT trimmed — the delete was blocked in-session.** 12.7 MB, 113 sessions since
+>     May 20, ~880 rows/day, no purge. Lookbacks measured: `shortlist_signal` 20 sessions;
+>     `predictor_outcomes_fill` 40 calendar days; `rebuild_signal_chains` all bars but joins the 30-day
+>     session tables, and is manual (signal_chains last built for Jul 8–23). **The trap:**
+>     `predictor_outcomes_fill()` ran daily with no date and recomputed EVERY snapshot. Trimming to 60
+>     sessions (cutoff 2026-08-06) would have rewritten **1,038 outcomes** (Aug 6 – mid-Sep) every day
+>     against truncated baselines. **Fixed first** (migration `predictor_outcomes_fill_recent_only`,
+>     SQL in `docs/sql/2026-10-31-predictor-outcomes-recent-only.sql`): with no date it now fills only the
+>     last 14 days. Stored outcomes matched a full recompute exactly (0 of 2,789 differed), so freezing them
+>     loses nothing. Outcome checksum before the trim, for comparison: n 2,922 · rel 2,789 · sum_rel
+>     474747.324726 · hits 1,835 · sum_trades 729,440,727. **Remaining, needs the user:** delete
+>     `trade_date < '2026-08-06'` (46,880 rows, 53 dates), `VACUUM FULL`, then schedule a purge keeping
+>     60 distinct dates at `49 3 * * *`. Do not schedule the purge before the delete is approved: it would
+>     perform the same deletion.
 >   - *Stored but never read:* `tipranks_cache.data` is read only for `experts` and `prices` (analyst
 >     timeline, and only if under 24 h old). By uncompressed size `insiders` 12.2, `notRankedExperts` 6.7,
 >     `hedgeFundData` 4.2, `consensuses` 4.0 and two consensus histories 4.3 are ~37% of the JSON, so
@@ -3817,7 +3844,8 @@ xargs -0` worked.)*
 Everything running without anyone present. **Re-verify with `./scripts/prod-check.sh` plus the cron
 query below; do not trust this list on its own.**
 
-**60 pg_cron jobs active (Oct 29 2026 after removing `pipeline-nightly-onon`; was 44 on Jul 30).** 13 are ET-guarded and 6 dispatch GitHub
+**61 pg_cron jobs active (Oct 31 2026: job 88 `purge_hidden_levels` added; 60 after removing
+`pipeline-nightly-onon` on Oct 29; 44 on Jul 30).** 13 are ET-guarded and 6 dispatch GitHub
 workflows; both lists are in §8y. The ones most often relevant:
 
 | job | schedule (UTC) | what |
