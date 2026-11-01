@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v699 · Oct 30 2026
+**Status at last update:** v700 · Nov 1 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -34,10 +34,11 @@ verification block below before writing any code.
 | **9** | **Recent work** | Newest first, v637+. One entry per version — no exceptions, or the gap check goes blind. Older entries: `docs/CHANGELOG-ARCHIVE.md`. |
 | 9a | Research: persistence testing | What is forecastable and what is not. Read before any metric drives capital. |
 | 10 | Known open items | What is still broken or unfinished. |
-| 10a | **Production inventory** | Everything running unattended: 60 cron jobs, the register, storage headroom. |
+| 10a | **Production inventory** | Everything running unattended: 63 cron jobs, the register, storage headroom. |
 | 11 | How the user works | Terse, empirical, root-cause. |
 | 9b | **Most Actives — current state** | The page under active development: tabs, feeds, what is exact vs approximate. |
 | 9c | **Overnight hidden liquidity** | The subsystem: what it is, the at-touch rule, components, what is not built. |
+| 9d | **Cycles returns lists** | The cycles-bot simulator kit (`cycles/`), its nightly/weekly jobs and the page. Read before touching `cycles/`. |
 | 11a | Context loss in long sessions | Why `git log` beats recollection. |
 | 11b | Tooling — verify, don't assert | A wrong claim about my own capabilities, and the rule it earned. |
 | 11c | **Connectors & the deploy path** | What is connected, how code reaches production, why `BUILD_TS` misleads. |
@@ -344,6 +345,15 @@ exception, correct-looking UI, wrong data underneath. Assume silence is the dang
 - **Generic API truncation.** Follow `next_page_token`, set `limit=` high enough,
   verify `end=` behaviour client-side. v486 had hourly charts cut off from exactly
   this (`limit=5000` truncation).
+- **A file cache that only fills what it has never seen keeps a partial file forever** (Nov 1 2026,
+  cycles kit, v700). `ensure_overnight()` pulls overnight bars only for names missing from a session's
+  file. The kit's reference outputs had pulled the night before Fri 30 Oct at 21:28 ET, while it was
+  still trading: **275 names cut off there and 24 missing, and nothing ever re-pulled them**. Every
+  day and week figure built on that night was low ($10bn list 3.73% vs 4.15% on complete data).
+  Proven by reconstruction: rebuilding that partial state reproduced all 319 published rows exactly.
+  **Fix: re-pull recent sessions from scratch on every run** (`run_cycles.refresh_overnight`).
+  **And never cache an empty answer:** Polygon refuses a day's grouped bars before its "end of day",
+  and `build_lists.grouped()` used to save that empty reply as the day's data for good. It now raises.
 
 ### 5.1a Structural checks do not catch behavioural bugs
 
@@ -966,6 +976,14 @@ live app and inspect it:
 - **GitHub's scheduled cron is unreliable** in peak UTC windows → dispatch from
   Supabase pg_cron via `workflow_dispatch` instead. **Done for every scheduled workflow on Oct 29
   2026** (measured 3–6.5 h late over 10 days); no workflow has a `schedule:` block any more. §8y.
+- **Polygon grouped daily refuses a date before Polygon's "end of day"** on this key's plan:
+  `status NOT_AUTHORIZED`, *"Attempted to request today's data before end of day"*, HTTP 200 and an
+  empty `results`. Seen Nov 1 2026 for a future date; the hour a session's bars unlock was not
+  measured. A job that needs a session's grouped bars should run the next morning (the cycles weekly
+  run is Saturday 13:11 UTC for this reason) and must treat an empty reply as a failure.
+- **Polygon grouped daily is revised after the fact.** Pulled again on Nov 1, the 20 sessions behind
+  the kit's 2026-10-30 lists gave ADV up to 1.9% different, and VCSH moved from $7.5m over the $500m
+  cut-off to $1.8m under it. A list built from a cached pull will not exactly match one rebuilt later.
 
 
 ---
@@ -1176,6 +1194,8 @@ order by l.id desc limit 20;      -- every row should reach 204 within 10 minute
 | `pipeline-yahoo-ratings` | 15:40 daily | yahoo-ratings ALL | ~20 min | session-independent |
 | `pipeline-tipranks` | 16:10 Mon–Fri | tipranks-sync | ~15 min | session-independent |
 | `nrs-refresh-dispatch` | 22:40 Mon–Fri | NRS refresh | ~4.5 min | after the 17:10–17:30 ET post-close cluster in both seasons |
+| `cycles-nightly` | 02:11 Tue–Sat | `cycles.yml` mode nightly (v700) | see §9d | after the 20:00 ET close in both seasons; minute 11 shares nothing with the `*/2 */3 */5 */10` jobs |
+| `cycles-weekly` | 13:11 Sat | `cycles.yml` mode full (v700) | see §9d | needs Friday's Polygon grouped bars, refused before "end of day" (§5.9) |
 
 **Session scanners** (`premarket-actives` v3, `aftermarket-actives` v2, `overnight-actives` v7; sources
 in `supabase/functions/`). All three take their target date, window, partial flag and "session over"
@@ -1300,9 +1320,10 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
 
 ## 9. Recent work
 
-**Current: v699** (Oct 30 2026): **Stocks at a Glance sends every TipRanks request through one paced
-queue**, shows refusals instead of hiding them, and marks ETFs TipRanks does not cover. See the v699
-entry. Before that, **v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
+**Current: v700** (Nov 1 2026): **new page Stocks By Cycles Returns % List**, built by a nightly GitHub
+job that runs the user's cycles-bot kit (`cycles/`, §9d). See the v700 entry. Before that, **v699** (Oct 30
+2026): **Stocks at a Glance sends every TipRanks request through one paced queue**, shows refusals instead
+of hiding them, and marks ETFs TipRanks does not cover. Before that, **v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
 backend change in the **OPS CHANGE (Oct 29)** entry, which moved every scheduled job onto pg_cron and
 made the scanners and all ET-timed jobs survive the Nov 1 clock change (§8y). The **OPS HEALTH CHECK
 (Oct 29 evening)** entry after it removed four false or noisy alarms and a daily deadlock. No app change.
@@ -1327,6 +1348,50 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### v700 — Stocks By Cycles Returns % List (new page + nightly job) (Nov 1 2026)
+
+**User request:** a page reproducing the *Average Daily Volume Segmented Stocks List* for the previous day
+and the last week, from the cycles-bot kit the user supplied (`adv_segmented_rankings_kit.zip`). Answers
+to the two questions asked: the week is a **rolling 5 sessions** (8 pm the night before the 5th-last
+session to 8 pm last night, rebuilt nightly), and the format is the **full segmented report** including
+the 52-week columns. The subsystem is described in **§9d**; this entry is the record.
+
+**Shipped:** kit code in `cycles/` (simulator untouched), `roll_rank.py`, `run_cycles.py`,
+`.github/workflows/cycles.yml`, table `cached_cycles_reports` (migration `cached_cycles_reports`), pg_cron
+jobs `cycles-nightly` and `cycles-weekly`, and the page (`CyclesReturnsListPage`, route `cyclesreturns`).
+The page has three views (Previous day / Last 5 sessions / 52 weeks), a picker of the last 15 reports per
+view, the summary table, a pill per list, a ticker filter, sortable columns with the first two frozen,
+collapsible notes, and Yahoo links.
+
+**The standout finding: the kit's own reference day and week figures used an incomplete overnight
+file** (§5.1). The night before Fri 30 Oct had been pulled at 21:28 ET while it was still trading, and
+the kit never re-pulls a file it has seen. On complete data the lists' return at PT 0.5% is higher:
+
+| | $10bn | $5bn | $1bn | $500m |
+|---|---|---|---|---|
+| Fri 30 Oct, reference | 3.73% | 3.27% | 3.27% | 3.52% |
+| Fri 30 Oct, complete overnight | **4.15%** | **3.64%** | **3.50%** | **3.69%** |
+| week 26–30 Oct, reference | 10.80% | 9.71% | 9.87% | 10.05% |
+| week 26–30 Oct, complete | **11.04%** | **9.90%** | **10.03%** | **10.19%** |
+
+**Verified.**
+- `example_run.py` reproduces the reference TQQQ figure exactly.
+- `day_rank.py` on a reconstruction of the reference's partial data state: **319 of 319 rows identical**.
+  On the week: 305 of 319; the other 14 were not traced (most likely another partial night that week).
+- `write_outputs` renders the reference day, week and 52-week reports **byte-identical** to the kit's
+  files (after reading the CSVs with `float_precision='round_trip'`; the default parser moved SPY's
+  $9.08 to $9.07).
+- `roll_rank.py` on 26–30 Oct: identical parquet to `week_rank.py` for that week.
+- 52-week run rebuilt locally from an empty bar store, compared with the reference: *recorded in the follow-up commit*.
+- Page, new build served at the live origin with the three reports intercepted: **all 12 list tables
+  (3 views × 4 lists) render every row equal to the markdown, 0 mismatches** (15 / 21 / 157 / 319
+  rows), headers equal, sort by "Avg weekly return" descending (28.9% … 0.0%), zero page errors, zero
+  writes. Checked at 390 px wide too.
+- First Actions run (mode `full`) and the live page: *recorded in the follow-up commit*.
+
+FULL SWEEP: app_v699 → app_v700, banner v700, package.json 7.0.0 + lock synced (both copies), build
+clean, preflight 0 failures 0 warnings, 93 nav items all routed.
 
 ### v699 — Stocks at a Glance: one TipRanks queue, visible failures, ETFs marked (Oct 30 2026)
 
@@ -3457,6 +3522,60 @@ whether edge decays by the 20th visit is unmeasured.
 
 ---
 
+## 9d. Cycles returns lists — the subsystem (Nov 1 2026, v700)
+
+**What it is.** The page **Stocks By Cycles Returns % List** (`cyclesreturns`, under Essential Tools after
+Violent Chop) shows the user's *Average Daily Volume Segmented Stocks List* reports: the four ADV lists
+($10bn, $5bn, $1bn, $500m of 20-session average daily notional) ranked by the **cycles bot**'s simulated
+return. Three views: **Previous day** (`kind = day`), **Last 5 sessions** (`roll5`) and **52 weeks**
+(`w52`). Every member of every list is shown, in the kit's own segmented format (`cycles/docs/07`).
+Call it "the cycles bot", never "grid bot" (the user's rule).
+
+**The code is the user's kit, copied as given into `cycles/`** (from `adv_segmented_rankings_kit.zip`).
+`botsim.py` is the simulator and **must not change unless the user asks**. Its rules: bot day 8:00 pm →
+8:00 pm ET, overnight included, whole cents, never sells at a loss, $1 per level, return = realised cycle
+profit ÷ time-weighted capital exposed. Headline at profit taker 0.5%; "best" = the PT from a 0.1–2% sweep
+with the highest return after fees ($0.005 per share sold). AQA additions:
+
+| file | what |
+|---|---|
+| `roll_rank.py` | rolling N-session ranking. Same work as `week_rank.py` over any N sessions; equal to it on a Mon–Fri window (checked: identical parquet for 26–30 Oct) |
+| `run_cycles.py` | driver: `nightly` (day + roll5), `weekly52` (lists, analyst snapshot, 52-week run), `full` (both). Publishes and verifies each report |
+| `consist_report.write_outputs` | gained the rolling kind and `top_all` (every name instead of the top N). Day, week and 52-week output stayed byte-identical to the reference |
+| `build_lists.grouped` | raises on an empty or refused Polygon day instead of caching it (§5.1) |
+
+**Data.** Alpaca SIP 1-minute bars 04:00–20:00 ET and BOATS overnight bars (`feed=boats`), with AQA's
+Algo Trader Plus key read from `app_config` through `get_app_client_keys`. Lists from Polygon grouped
+daily. Analyst columns from AQA's own `yahoo_ratings` / `tipranks_cache`: **never call Yahoo or TipRanks
+directly** (the user's rule). Bars are **not** stored in Supabase: they live in the GitHub Actions cache
+(`cycles-bars-*`, ~1.2 GB for 52 weeks), restored on every run so it is never 7 days unused (GitHub evicts
+then). If it is evicted anyway, the next run rebuilds it from scratch (prefill: ~6 min minutes + ~10 min
+overnight on a 2-core box).
+
+**Output.** `public.cached_cycles_reports` (`kind`, `period_start`, `period_end` unique per kind, `snap`,
+`look_start/end`, `price_date`, `title`, `md` = the whole report, `meta`). ~150 KB of markdown per report,
+newest **15 per kind** kept (~7 MB at most). RLS off and anon-writable like every `cached_*` table (§8,
+open item in §10). The page reads it with the anon key and parses the markdown tables.
+
+**Schedule** (§8y). `cycles-nightly` 02:11 UTC Tue–Sat → `cycles.yml` mode `nightly` ranks the session
+that just ended (Mon–Fri). `cycles-weekly` 13:11 UTC Sat → mode `full`: new lists from Friday's grouped
+bars, analyst snapshot, 52-week run, then Friday's day and roll5 again on the new lists (the upsert
+replaces the ones published the night before). Mon–Thu rankings use the previous weekend's lists, which
+is how the kit's own `day_segmented.py` works. Progress and failures go to `pipeline_status`
+(`mode = 'cycles'`). The DB load is two or three row writes per run.
+
+**Every run re-pulls recent overnight files from scratch** (`refresh_overnight`): the last 5 sessions
+nightly, the last 7 weekly. That is the fix for the partial-file trap in §5.1, which is what made the
+kit's reference day and week figures low.
+
+**Verify a change here** with `python3 example_run.py samples/sample_TQQQ_2026-10-26_to_30.csv`
+(reproduces the reference TQQQ figure exactly) and by rendering a reference run: `write_outputs` must
+stay byte-identical to `cycles/reference_outputs/` for day, week and 52 weeks. **Those reference day and
+week figures were computed on a partial overnight file and are low** (see that folder's README); they
+check the code, not the market.
+
+---
+
 ## 10. Known open items
 
 > **NEW (Oct 29 2026) — the database freezes are the free Nano instance's ceiling.** Calm database,
@@ -3844,9 +3963,9 @@ xargs -0` worked.)*
 Everything running without anyone present. **Re-verify with `./scripts/prod-check.sh` plus the cron
 query below; do not trust this list on its own.**
 
-**61 pg_cron jobs active (Oct 31 2026: job 88 `purge_hidden_levels` added; 60 after removing
-`pipeline-nightly-onon` on Oct 29; 44 on Jul 30).** 13 are ET-guarded and 6 dispatch GitHub
-workflows; both lists are in §8y. The ones most often relevant:
+**63 pg_cron jobs active (Nov 1 2026: `cycles-nightly` and `cycles-weekly` added for v700; 61 after
+job 88 `purge_hidden_levels` on Oct 31; 60 after removing `pipeline-nightly-onon` on Oct 29; 44 on
+Jul 30).** 13 are ET-guarded and 8 dispatch GitHub workflows; both lists are in §8y. The ones most often relevant:
 
 | job | schedule (UTC) | what |
 |---|---|---|

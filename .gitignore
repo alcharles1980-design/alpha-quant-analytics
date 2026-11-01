@@ -5,3 +5,10 @@ dist/
 # burst-verification working files
 tools/burst-verification/__pycache__/
 tools/burst-verification/data_*.json
+
+# cycles kit (python)
+__pycache__/
+*.pyc
+*.nbi
+*.nbc
+cycles_data/

@@ -1,0 +1,85 @@
+name: Cycles Returns Lists
+
+# Stocks By Cycles Returns % List (AQA page, v700). Runs the cycles-bot simulator kit in cycles/ and publishes the reports to
+# public.cached_cycles_reports. NO `schedule:` here: pg_cron dispatches it through ops.dispatch_workflow (CLAUDE.md §8y):
+#   cycles-nightly  Tue-Sat 02:11 UTC  mode=nightly  (previous-day + rolling 5-session rankings for Mon-Fri)
+#   cycles-weekly   Sat     13:11 UTC  mode=full     (lists + analyst snapshot + 52-week report, then Friday's rankings again
+#                                                     on the new lists, replacing the ones published the night before)
+# 02:11 UTC is 21:11 EST / 22:11 EDT: after the 20:00 ET close of the extended session in both seasons.
+# The weekly run waits for Saturday morning because the lists need Friday's Polygon grouped daily bars, and this key's plan refuses
+# a day's bars before Polygon's "end of day" (message seen 1 Nov 2026; the hour they unlock was not measured).
+# build_lists.py now raises instead of caching an empty day.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'nightly | weekly52 | full'
+        required: false
+        default: 'nightly'
+      day:
+        description: 'Session to rank (YYYY-MM-DD); default = the latest completed session'
+        required: false
+        default: ''
+
+concurrency:
+  group: cycles
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # nightly ~10 min; weekly with a warm bar cache ~25 min; the first run on an empty cache pulls ~1.2 GB of minute bars.
+    timeout-minutes: 180
+    env:
+      ADV_KIT_DATA: ${{ github.workspace }}/cycles_data
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: cycles/requirements.txt
+      - run: pip install -r cycles/requirements.txt
+
+      # Small state: lists, analyst snapshot, the finished 52-week run folders (stats, weekly results), ranking parquets.
+      - name: Restore run state
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            cycles_data/universe
+            cycles_data/reports
+          key: cycles-state-${{ github.run_id }}
+          restore-keys: cycles-state-
+      # Large: one parquet of 1-minute bars per session (~1.2 GB for 52 weeks) + overnight files. Restored on every run so the cache
+      # stays in use (GitHub evicts caches unused for 7 days); only weekly / full runs save a new one.
+      - name: Restore bar store
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            cycles_data/minutes
+            cycles_data/boats
+          key: cycles-bars-${{ github.run_id }}
+          restore-keys: cycles-bars-
+
+      - name: Run
+        run: python3 cycles/run_cycles.py ${{ inputs.mode || 'nightly' }} ${{ inputs.day && format('--day {0}', inputs.day) || '' }}
+
+      - name: Save bar store
+        if: ${{ success() && (inputs.mode == 'weekly52' || inputs.mode == 'full' || hashFiles('cycles_data/reports/.built_weekly52') != '') }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            cycles_data/minutes
+            cycles_data/boats
+          key: cycles-bars-${{ github.run_id }}
+      - name: Save run state
+        if: ${{ success() }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            cycles_data/universe
+            cycles_data/reports
+          key: cycles-state-${{ github.run_id }}
