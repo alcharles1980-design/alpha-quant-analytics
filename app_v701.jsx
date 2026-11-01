@@ -13811,6 +13811,10 @@ function CyclesReturnsListPage(p){
     position:'sticky',top:0,background:C.bg,zIndex:2,minWidth:62,maxWidth:120,whiteSpace:'normal',lineHeight:1.25,
     boxShadow:'inset 0 -1px 0 '+C.border};
 
+  var PK_NARROW={'Peak (date)':1,'Now':1,'From peak':1};   // v701: tighter padding so these three fit beside Stock on a phone
+  var PK_MON={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+  var peakParts=function(v){ var m=/^(\S+) \((\d{2}) ([A-Z][a-z]{2}) (\d{2})\)$/.exec(String(v||''));
+    if(!m||!PK_MON[m[3]])return null; return {px:m[1],dt:(+m[2])+'/'+PK_MON[m[3]]+'/'+m[4]}; };
   var drawTable=function(t,rowsIn,opts){
     opts=opts||{}; var fz=opts.frozen||0; var lefts=[0,34];
     return <div style={{overflowX:'auto',overflowY:'auto',maxHeight:opts.maxH||'70vh',border:'1px solid '+C.border+'55',borderRadius:6}}>
@@ -13818,7 +13822,8 @@ function CyclesReturnsListPage(p){
         <thead><tr>{t.hdr.map(function(h,ci){
           var act=opts.sortable&&sort&&sort.col===ci;
           var st=Object.assign({},thBase,{cursor:opts.sortable?'pointer':'default',color:act?C.gold:C.txtDim},
-            ci<fz?{left:lefts[ci]||0,zIndex:3}:{}, (ci===0&&fz>1)?{minWidth:34,maxWidth:34,width:34,padding:'5px 4px',boxSizing:'border-box'}:{});
+            ci<fz?{left:lefts[ci]||0,zIndex:3}:{}, (ci===0&&fz>1)?{minWidth:34,maxWidth:34,width:34,padding:'5px 4px',boxSizing:'border-box'}:{},
+            PK_NARROW[h]?{minWidth:50,padding:'5px 5px'}:{});
           return <th key={ci} style={st} onClick={opts.sortable?function(){clickHdr(ci);}:undefined}>{h}{act?(sort.dir==='desc'?' ▾':' ▴'):''}</th>; })}</tr></thead>
         <tbody>{rowsIn.map(function(r,ri){ return <tr key={ri}>{r.map(function(v,ci){
           var h=t.hdr[ci]||''; var isStock=h==='Stock'||h==='List';
@@ -13826,8 +13831,14 @@ function CyclesReturnsListPage(p){
             color:isStock?C.txtBright:cellColor(h,v),fontWeight:isStock?700:400};
           if(ci<fz)Object.assign(st,{position:'sticky',left:lefts[ci]||0,background:C.bg,zIndex:1});
           if(ci===0&&fz>1)Object.assign(st,{minWidth:34,maxWidth:34,width:34,padding:'4px 4px',boxSizing:'border-box',color:C.txtDim});
+          if(PK_NARROW[h])st.padding='4px 5px';
           if(isStock&&h==='Stock')return <td key={ci} style={st}><a href={'https://finance.yahoo.com/quote/'+v.replace('.','-')} target="_blank"
             rel="noopener noreferrer" style={{color:C.txtBright,textDecoration:'none'}}>{v}</a></td>;
+          // v701: "$300.77 (22 Jun 26)" -> "$300.77 22/6/26" (day/month/yy, the report's own order), so Peak, Now and From peak fit
+          // one phone screen. Display only: the row keeps the report's text, so sorting and the ticker filter are unchanged.
+          if(h==='Peak (date)'){ var pk=peakParts(v);
+            if(pk)return <td key={ci} style={st}>{pk.px+' '}<span
+              style={{fontSize:8.5,color:C.txtDim}}>{pk.dt}</span></td>; }
           return <td key={ci} style={st}>{v}</td>; })}</tr>; })}</tbody>
       </table></div>; };
 

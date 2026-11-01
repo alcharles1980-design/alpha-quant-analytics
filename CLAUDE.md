@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v700 · Nov 1 2026
+**Status at last update:** v701 · Nov 1 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -1328,7 +1328,8 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
 
 ## 9. Recent work
 
-**Current: v700** (Nov 1 2026): **new page Stocks By Cycles Returns % List**, built by a nightly GitHub
+**Current: v701** (Nov 1 2026): Stocks By Cycles Returns % List shows the peak date as `25/6/26` so the
+peak, current price and drop fit one phone screen. **v700** (Nov 1 2026): **new page Stocks By Cycles Returns % List**, built by a nightly GitHub
 job that runs the user's cycles-bot kit (`cycles/`, §9d). See the v700 entry. Before that, **v699** (Oct 30
 2026): **Stocks at a Glance sends every TipRanks request through one paced queue**, shows refusals instead
 of hiding them, and marks ETFs TipRanks does not cover. Before that, **v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
@@ -1356,6 +1357,36 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### v701 — Cycles Returns list: compact peak date so Peak / Now / From peak fit a phone (Nov 1 2026)
+
+**User request (from a phone screenshot):** the Peak (date) column was so wide that the peak price,
+the current price and the drop could not be seen in one shot. They asked for a shorter, numeric date.
+
+**Change, display only:** `$2,335.00 (25 Jun 26)` renders as `$2,335.00 25/6/26`: day/month/yy (the
+report's own day-first order), date in smaller dim text, no brackets. The row keeps the report's text,
+so sorting, the ticker filter and the stored markdown are unchanged. `Peak (date)`, `Now` and
+`From peak` also get 5 px side padding and a 50 px minimum width (the other columns keep 7 px and 62).
+
+**Measured at 390 px wide** (the user's phone is ~390 CSS px), new build served at the live origin with
+real data, writes blocked:
+
+| | before | after |
+|---|---|---|
+| Peak column | 134 px | 103–108 px |
+| Now / From peak | 65 / 62 px | 61 / 50 px |
+| frozen columns + Peak + Now + From peak (day, last 5 sessions) | 357 px, **wider than the 334 px table view** | 310–315 px, **fits** |
+| the same on 52 weeks (no # column) | 323 px | 276–281 px |
+
+**Verified:** all 1,533 Peak cells (3 views × 4 lists) equal an independent Python rewrite of the
+published text; sorting on Peak is still descending by price ($2,335.00, $1,213.56, ...); zero page
+errors and zero writes; screenshot at phone size shows Stock, Peak, Now and From peak together.
+**One fix in testing:** the first version separated price and date with a CSS margin only, so the
+cell's text read `$2,335.0025/6/26` (the v647 class: a margin is not a separator for copy, read-out or
+`innerText`). It now carries a real space.
+
+FULL SWEEP: app_v700 → app_v701, banner v701, package.json 7.0.1 + lock (both copies), build clean,
+preflight 0 failures 0 warnings, 93 nav items.
 
 ### v700 — Stocks By Cycles Returns % List (new page + nightly job) (Nov 1 2026)
 
