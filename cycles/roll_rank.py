@@ -1,5 +1,5 @@
 """Rolling N-session cycles ranking for the four ADV lists (AQA page "Stocks By Cycles Returns % List", 1 Nov 2026).
-  python3 roll_rank.py END_SESSION SNAPSHOT [N=5]        e.g. 2026-10-30 2026-10-30
+  python3 roll_rank.py END_SESSION SNAPSHOT [N=5]        e.g. 2026-10-30 2026-10-30 22   (the page runs N=5 and N=22)
 
 The same run as week_rank.py, over any N consecutive sessions instead of a Mon-Fri week: the bot period starts at 8:00 pm ET the evening
 before the first session (the overnight bars filed under that session) and ends at 8:00 pm ET on END_SESSION, fresh start at the first
@@ -7,7 +7,7 @@ bar, lots carried day to day, list base settings (PT 0.5%) plus the profit-taker
 Return = period profit / average daily capital exposed, needs >= $0.50 exposed. Split handling as the weekly runs (the period is put on
 its last session's share basis). When the N sessions are exactly one Mon-Fri week this IS week_rank.py's result (checked 1 Nov 2026:
 identical parquet for 26-30 Oct).
-Writes day_rank/roll_rank_<END>.parquet (same columns as day_rank_<DAY>.parquet; ATR14 from day_rank_<END>.parquet when present) + the sweep."""
+Writes day_rank/roll<N>_rank_<END>.parquet (same columns as day_rank_<DAY>.parquet; ATR14 from day_rank_<END>.parquet when present) + the sweep."""
 import os, sys, datetime as dt, multiprocessing as mp, numpy as np, pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config as C, botsim as BS, consist_report as CR, scan_orig as S
@@ -70,5 +70,5 @@ if __name__ == '__main__':
     endday = f'{OUT}/day_rank_{END}.parquet'
     if os.path.exists(endday): R = R.join(pd.read_parquet(endday)[['atr14p']])
     R.attrs = dict(kind='roll', end=END, days=DAYS, prev=PREV, n=N)
-    os.makedirs(OUT, exist_ok=True); R.to_parquet(f'{OUT}/roll_rank_{END}.parquet'); X.to_parquet(f'{OUT}/roll_rank_sweep_{END}.parquet')
+    os.makedirs(OUT, exist_ok=True); R.to_parquet(f'{OUT}/roll{N}_rank_{END}.parquet'); X.to_parquet(f'{OUT}/roll{N}_rank_sweep_{END}.parquet')
     print('ROLL_DONE', len(R), 'names | small', int(R.small.sum()), '| days', DAYS, '| prior close', PREV, flush=True)

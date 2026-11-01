@@ -3,7 +3,7 @@
 **Purpose:** cold-start context for a new Claude chat. Read this first, then run the
 verification block below before writing any code.
 
-**Status at last update:** v701 · Nov 1 2026
+**Status at last update:** v702 · Nov 1 2026
 
 > **This file goes stale. That is expected.** Version numbers, table lists and
 > feature descriptions drift within days. Treat every specific number here as a
@@ -1328,8 +1328,9 @@ restarted 23:21 UTC). Every item below is live; migration names in parentheses.
 
 ## 9. Recent work
 
-**Current: v701** (Nov 1 2026): Stocks By Cycles Returns % List shows the peak date as `25/6/26` so the
-peak, current price and drop fit one phone screen. **v700** (Nov 1 2026): **new page Stocks By Cycles Returns % List**, built by a nightly GitHub
+**Current: v702** (Nov 1 2026): Stocks By Cycles Returns % List gains a **Last 22 sessions** view (about 4
+weeks), built nightly. **v701** (Nov 1 2026): the peak date shows as `25/6/26` so the peak, current price and
+drop fit one phone screen. **v700** (Nov 1 2026): **new page Stocks By Cycles Returns % List**, built by a nightly GitHub
 job that runs the user's cycles-bot kit (`cycles/`, §9d). See the v700 entry. Before that, **v699** (Oct 30
 2026): **Stocks at a Glance sends every TipRanks request through one paced queue**, shows refusals instead
 of hiding them, and marks ETFs TipRanks does not cover. Before that, **v698** (Oct 29 2026): **DST-safe session windows on five research pages**, shipped with the
@@ -1357,6 +1358,39 @@ which resolved the long-open "VWAP draws nothing" report) and print the real ses
 > top and check the heading below it is the next version down.** This is the same class as §11e's
 > point about what each check is blind to: passing every automated check says nothing about
 > whether the document is readable in the order a human will read it.
+
+### v702 — Cycles Returns list: Last 22 sessions view (about 4 weeks) (Nov 1 2026)
+
+**User request:** "add a last 4 weeks, i.e. 22 sessions filter". New view **Last 22 sessions** beside
+Previous day / Last 5 sessions / 52 weeks: each stock starts fresh at 8:00 pm the evening before the 22nd
+last session and runs all 22 sessions with lots carried, exactly the rolling-5 rules over a longer window.
+
+**Changes.**
+- `run_cycles.nightly` loops over `ROLLS = [(5, 'roll5'), (22, 'roll22')]` and checks each parquet's
+  sessions (count and last day) before rendering. `roll_rank.py` now writes `roll<N>_rank_<END>.parquet`,
+  so the two windows cannot overwrite each other. The 5-session overnight re-pull is unchanged: older
+  nights are complete, and the manifest (§5.1) fills any (night, name) pair never requested.
+- `cached_cycles_reports.kind` check widened to `day / roll5 / roll22 / w52` (migration
+  `cached_cycles_reports_kind_roll22`); no rows changed.
+- Page: a fourth pill and one line of intro text. Everything else (Peak compaction, sort, filter) is
+  generic over kinds.
+
+**Verified.**
+- Local run for 1–30 Oct 2026: 22 sessions, 319 names, 90 s with the overnight top-up.
+- **Independent check through the kit's own driver** (`example_run.py`'s session rule and simulator
+  call on bars exported straight from the raw minute and overnight files): TSLA, SOXL and AAOI cycles,
+  profit and capital **identical** to the page's parquet.
+- Page, new build at the live origin with the roll22 report served from the local render: 4 lists ×
+  every row equal to the markdown (15 / 21 / 157 / 319), headers and summary equal, title and period tag
+  right, pills wrap to two rows at 390 px, 0 page errors, 0 writes.
+- First Actions publication: *recorded in the follow-up commit*.
+
+**Reading the numbers:** a 22-session return is not four weekly returns added up. Return = profit ÷
+average capital, and over 22 sessions capital piles up in unsold lots, so the $10bn list made 12.2% over
+1–30 Oct at PT 0.5% against 11.0% in the single week 26–30 Oct.
+
+FULL SWEEP: app_v701 → app_v702, banner v702, package.json 7.0.2 + lock (both copies), build clean,
+preflight 0 failures 0 warnings, 93 nav items.
 
 ### v701 — Cycles Returns list: compact peak date so Peak / Now / From peak fit a phone (Nov 1 2026)
 
@@ -3581,8 +3615,8 @@ whether edge decays by the 20th visit is unmeasured.
 **What it is.** The page **Stocks By Cycles Returns % List** (`cyclesreturns`, under Essential Tools after
 Violent Chop) shows the user's *Average Daily Volume Segmented Stocks List* reports: the four ADV lists
 ($10bn, $5bn, $1bn, $500m of 20-session average daily notional) ranked by the **cycles bot**'s simulated
-return. Three views: **Previous day** (`kind = day`), **Last 5 sessions** (`roll5`) and **52 weeks**
-(`w52`). Every member of every list is shown, in the kit's own segmented format (`cycles/docs/07`).
+return. Four views: **Previous day** (`kind = day`), **Last 5 sessions** (`roll5`), **Last 22 sessions**
+(`roll22`, about 4 weeks, v702) and **52 weeks** (`w52`). Every member of every list is shown, in the kit's own segmented format (`cycles/docs/07`).
 Call it "the cycles bot", never "grid bot" (the user's rule).
 
 **The code is the user's kit, copied as given into `cycles/`** (from `adv_segmented_rankings_kit.zip`).
@@ -3593,8 +3627,8 @@ with the highest return after fees ($0.005 per share sold). AQA additions:
 
 | file | what |
 |---|---|
-| `roll_rank.py` | rolling N-session ranking. Same work as `week_rank.py` over any N sessions; equal to it on a Mon–Fri window (checked: identical parquet for 26–30 Oct) |
-| `run_cycles.py` | driver: `nightly` (day + roll5), `weekly52` (lists, analyst snapshot, 52-week run), `full` (both). Publishes and verifies each report |
+| `roll_rank.py` | rolling N-session ranking, written to `day_rank/roll<N>_rank_<END>.parquet`. Same work as `week_rank.py` over any N sessions; equal to it on a Mon–Fri window (checked: identical parquet for 26–30 Oct) |
+| `run_cycles.py` | driver: `nightly` (day + every window in `ROLLS`, now 5 and 22 sessions), `weekly52` (lists, analyst snapshot, 52-week run), `full` (both). Publishes and verifies each report |
 | `consist_report.write_outputs` | gained the rolling kind and `top_all` (every name instead of the top N). Day, week and 52-week output stayed byte-identical to the reference |
 | `build_lists.grouped` | raises on an empty or refused Polygon day instead of caching it (§5.1) |
 | `consist_report.ensure_overnight` | pulls every (night, name) not in the manifest `boats/_requested.json`, in runs of 20 sessions; the kit's rule skipped any name seen in one night (§5.1). `pull_boats.py` exits cleanly when a range has no bars |
@@ -3613,7 +3647,7 @@ newest **15 per kind** kept (~7 MB at most). RLS off and anon-writable like ever
 open item in §10). The page reads it with the anon key and parses the markdown tables.
 
 **Schedule** (§8y). `cycles-nightly` 02:11 UTC Tue–Sat → `cycles.yml` mode `nightly` ranks the session
-that just ended (Mon–Fri). `cycles-weekly` 13:11 UTC Sat → mode `full`: new lists from Friday's grouped
+that just ended (Mon–Fri) and the 5- and 22-session windows ending on it. `cycles-weekly` 13:11 UTC Sat → mode `full`: new lists from Friday's grouped
 bars, analyst snapshot, 52-week run, then Friday's day and roll5 again on the new lists (the upsert
 replaces the ones published the night before). Mon–Thu rankings use the previous weekend's lists, which
 is how the kit's own `day_segmented.py` works. Progress and failures go to `pipeline_status`
@@ -3625,8 +3659,9 @@ new to the lists gets its whole year. The first run with the manifest (after the
 predates it) re-requests a year of overnight bars once, about 10 minutes. That is the fix for the partial-file trap in §5.1, which is what made the
 kit's reference day and week figures low.
 
-**Cost.** About 5 minutes per nightly run and 20–30 per weekly run (estimate from the first run), so
-roughly 200–250 GitHub Actions minutes a month on this private repo. That counts against the plan's
+**Cost.** About 5–7 minutes per nightly run (the 22-session window adds ~1.5 min; measured 90 s locally,
+including its overnight top-up) and 20–30 per weekly run, so roughly 250–300 GitHub Actions minutes a month
+on this private repo. That counts against the plan's
 quota (see §10: Actions refused runs for a billing failure in September).
 
 **To check after the first scheduled runs** (not yet observed): the nightly of Tue 3 Nov 02:11 UTC ranks

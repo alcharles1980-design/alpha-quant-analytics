@@ -13726,7 +13726,7 @@ function CyclesReturnsListPage(p){
   // simulator and stores each report's markdown in cached_cycles_reports; this page only parses and draws it, so every column
   // name, number format and note is the kit's own text. Sorting re-orders rows by the number at the start of a cell; it never
   // changes a cell. The report's own order (its ranking) is the default and comes back with "Report order".
-  var KINDS=[{k:'day',label:'Previous day'},{k:'roll5',label:'Last 5 sessions'},{k:'w52',label:'52 weeks'}];
+  var KINDS=[{k:'day',label:'Previous day'},{k:'roll5',label:'Last 5 sessions'},{k:'roll22',label:'Last 22 sessions'},{k:'w52',label:'52 weeks'}];   // roll22 = last 4 weeks (v702)
   var LIST_ORDER=['$10bn','$5bn','$1bn','$500m'];
   var s1=useState('day'),kind=s1[0],setKind=s1[1];
   var s2=useState(null),avail=s2[0],setAvail=s2[1];          // [{id, period_start, period_end, title, generated_at}] newest first
@@ -13850,7 +13850,7 @@ function CyclesReturnsListPage(p){
     </div>
     <div style={{color:C.txtDim,fontSize:10,fontFamily:F,marginBottom:8,lineHeight:1.7,maxWidth:960}}>
       The four ADV segmented lists ranked by the cycles bot's simulated return (cycles): the previous session, the last 5 sessions,
-      and 52 weeks. Built every weeknight after 9 pm ET by the cycles-bot simulator. The lists and the 52-week columns refresh on Saturday morning, and Friday's rankings are then rebuilt on the new lists.
+      the last 22 sessions (about 4 weeks) and 52 weeks. Built every weeknight after 9 pm ET by the cycles-bot simulator. The lists and the 52-week columns refresh on Saturday morning, and Friday's rankings are then rebuilt on the new lists.
     </div>
 
     <div style={{display:'flex',gap:7,flexWrap:'wrap',alignItems:'center',marginBottom:8,padding:'9px 11px',

@@ -1,6 +1,6 @@
 """Driver for the AQA page "Stocks By Cycles Returns % List" (1 Nov 2026). Runs the kit's own scripts and publishes the reports.
 
-  python3 run_cycles.py nightly [--day YYYY-MM-DD]     previous-day ranking + rolling 5-session ranking (needs a finished 52-week run;
+  python3 run_cycles.py nightly [--day YYYY-MM-DD]     previous-day ranking + rolling 5- and 22-session rankings (needs a finished 52-week run;
                                                        builds one first if none is on disk)
   python3 run_cycles.py weekly52 [--end-week MONDAY]   lists for the last completed session, analyst snapshot, 52-week report
   python3 run_cycles.py full                            weekly52 then nightly (the Friday-night run)
@@ -8,14 +8,15 @@
 Environment: SUPABASE_URL + SUPABASE_KEY (the app's project; also used as the analyst source), POLYGON_API_KEY, ADV_KIT_DATA.
 Alpaca keys are read from the app (rpc get_app_client_keys, AQA's Algo Trader Plus account) into this process's environment only;
 they are never printed or written anywhere. Reports are rendered by consist_report.write_outputs (the segmented list format, every name
-in every list) and upserted into public.cached_cycles_reports (kind = day | roll5 | w52), newest KEEP per kind kept."""
+in every list) and upserted into public.cached_cycles_reports (kind = day | roll5 | roll22 | w52), newest KEEP per kind kept."""
 import os, sys, glob, json, shutil, argparse, subprocess, datetime as dt
 import requests, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 KEEP = 15            # reports kept per kind in the database (~0.3 MB of text each)
-ROLL_N = 5           # rolling window, sessions
+ROLL_N = 5           # nightly overnight re-pull window, sessions
+ROLLS = [(5, 'roll5'), (22, 'roll22')]   # rolling rankings published nightly: (sessions, report kind); 22 = 'last 4 weeks' (v702)
 
 
 def sb_headers():
@@ -201,22 +202,25 @@ def nightly(day_arg=None):
     m = json.load(open(f'{RUN}/meta.json')); snap = m['snap']
     day, prev, done = last_done(day_arg)
     syms = sorted(set(pd.read_csv(f'{C.UNIVERSE}/adv_over_500m_{snap}.csv').ticker))
-    sess = done[-(ROLL_N + 1):]                                # prior session + the rolling window
+    sess = done[-(ROLL_N + 1):]                                # prior session + the 5-session window
     status('running', f'nightly {day}: bars', 10)
-    refresh_overnight(sess[1:], syms)
+    refresh_overnight(sess[1:], syms)                          # older nights are complete; roll_rank fills any gap via the manifest
     run(['day_rank.py', day, prev, snap])
-    status('running', f'nightly {day}: rolling {ROLL_N} sessions', 50)
-    run(['roll_rank.py', day, snap, str(ROLL_N)])
     import consist_report as CR
     D = pd.read_parquet(f'{C.REPORTS}/day_rank/day_rank_{day}.parquet')
     chat, out, m, weeks = render(RUN, 'day', dict(df=D, date=day, prev=prev))
     publish('day', chat, m, weeks, day, day, dict(lists=list_returns(D, json.load(open(f'{RUN}/members.json')))))
-    Rr = pd.read_parquet(f'{C.REPORTS}/day_rank/roll_rank_{day}.parquet')
-    a = Rr.attrs or {}
-    start = (a.get('days') or sess[1:])[0]; rprev = a.get('prev') or sess[0]
-    chat, out, m, weeks = render(RUN, 'roll5', dict(df=Rr, kind='roll', start=start, date=day, prev=rprev, n=ROLL_N))
-    publish('roll5', chat, m, weeks, start, day, dict(lists=list_returns(Rr, json.load(open(f'{RUN}/members.json')))))
-    status('complete', f'nightly {day}: day + rolling {ROLL_N} sessions published (lists {snap}, 52-week run {m["tag"]})', 100)
+    for i, (n, kind) in enumerate(ROLLS):
+        status('running', f'nightly {day}: rolling {n} sessions', 40 + 25 * i)
+        run(['roll_rank.py', day, snap, str(n)])
+        Rr = pd.read_parquet(f'{C.REPORTS}/day_rank/roll{n}_rank_{day}.parquet')
+        a = Rr.attrs or {}
+        if not a.get('days') or len(a['days']) != n or a['days'][-1] != day:
+            raise RuntimeError(f'roll{n} parquet for {day} has days {a.get("days")}')
+        chat, out, m, weeks = render(RUN, kind, dict(df=Rr, kind='roll', start=a['days'][0], date=day, prev=a['prev'], n=n))
+        publish(kind, chat, m, weeks, a['days'][0], day, dict(lists=list_returns(Rr, json.load(open(f'{RUN}/members.json')))))
+    status('complete', f'nightly {day}: day + rolling {"/".join(str(n) for n, _ in ROLLS)} sessions published '
+                       f'(lists {snap}, 52-week run {m["tag"]})', 100)
 
 
 if __name__ == '__main__':

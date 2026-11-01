@@ -2,7 +2,7 @@ name: Cycles Returns Lists
 
 # Stocks By Cycles Returns % List (AQA page, v700). Runs the cycles-bot simulator kit in cycles/ and publishes the reports to
 # public.cached_cycles_reports. NO `schedule:` here: pg_cron dispatches it through ops.dispatch_workflow (CLAUDE.md §8y):
-#   cycles-nightly  Tue-Sat 02:11 UTC  mode=nightly  (previous-day + rolling 5-session rankings for Mon-Fri)
+#   cycles-nightly  Tue-Sat 02:11 UTC  mode=nightly  (previous-day + rolling 5- and 22-session rankings for Mon-Fri)
 #   cycles-weekly   Sat     13:11 UTC  mode=full     (lists + analyst snapshot + 52-week report, then Friday's rankings again
 #                                                     on the new lists, replacing the ones published the night before)
 # 02:11 UTC is 21:11 EST / 22:11 EDT: after the 20:00 ET close of the extended session in both seasons.
