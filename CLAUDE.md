@@ -1202,8 +1202,8 @@ order by l.id desc limit 20;      -- every row should reach 204 within 10 minute
 | `pipeline-yahoo-ratings` | 15:40 daily | yahoo-ratings ALL | ~20 min | session-independent |
 | `pipeline-tipranks` | 16:10 Mon–Fri | tipranks-sync | ~15 min | session-independent |
 | `nrs-refresh-dispatch` | 22:40 Mon–Fri | NRS refresh | ~4.5 min | after the 17:10–17:30 ET post-close cluster in both seasons |
-| `cycles-nightly` | 02:11 Tue–Sat | `cycles.yml` mode nightly (v700) | see §9d | after the 20:00 ET close in both seasons; minute 11 shares nothing with the `*/2 */3 */5 */10` jobs |
-| `cycles-weekly` | 13:11 Sat | `cycles.yml` mode full (v700) | see §9d | needs Friday's Polygon grouped bars, refused before "end of day" (§5.9) |
+| `cycles-nightly` | 02:11 Tue–Sat | `cycles.yml` mode nightly (v700) | not yet measured; DB load = 2 row writes | after the 20:00 ET close in both seasons; minute 11 shares nothing with the `*/2 */3 */5 */10` jobs |
+| `cycles-weekly` | 13:11 Sat | `cycles.yml` mode full (v700) | 18 min on an empty cache (Nov 1) | needs Friday's Polygon grouped bars, refused before "end of day" (§5.9) |
 
 **Session scanners** (`premarket-actives` v3, `aftermarket-actives` v2, `overnight-actives` v7; sources
 in `supabase/functions/`). All three take their target date, window, partial flag and "session over"
@@ -1403,7 +1403,15 @@ the kit never re-pulls a file it has seen. On complete data the lists' return at
   (3 views × 4 lists) render every row equal to the markdown, 0 mismatches** (15 / 21 / 157 / 319
   rows), headers equal, sort by "Avg weekly return" descending (28.9% … 0.0%), zero page errors, zero
   writes. Checked at 390 px wide too.
-- First Actions run (mode `full`) and the live page: *recorded in the follow-up commit*.
+- **First Actions run** (mode `full`, dispatched through `ops.dispatch_workflow`, 204, run 41289517330):
+  **18 minutes on an empty bar cache**, all steps green, `pipeline_status` complete, three reports
+  published and read back. Against the local rebuild, **every cell of every name in all four lists of
+  all three reports is identical**. The one difference is VCSH, which fell out of the $500m list (318
+  names, not 319) because Polygon revised its volume after the kit's pull (§5.9). That also moves the
+  $500m summary row slightly.
+- **Live page on the deployed v700, real data (writes blocked):** 12 tables (3 views × 4 lists) equal
+  to the published markdown row for row (15/21/157/318), summary tables and headers equal, pill counts
+  right, footer shows publish time and snapshot, 0 page errors, 0 writes.
 
 FULL SWEEP: app_v699 → app_v700, banner v700, package.json 7.0.0 + lock synced (both copies), build
 clean, preflight 0 failures 0 warnings, 93 nav items all routed.
@@ -3565,8 +3573,8 @@ Algo Trader Plus key read from `app_config` through `get_app_client_keys`. Lists
 daily. Analyst columns from AQA's own `yahoo_ratings` / `tipranks_cache`: **never call Yahoo or TipRanks
 directly** (the user's rule). Bars are **not** stored in Supabase: they live in the GitHub Actions cache
 (`cycles-bars-*`, ~1.2 GB for 52 weeks), restored on every run so it is never 7 days unused (GitHub evicts
-then). If it is evicted anyway, the next run rebuilds it from scratch (prefill: ~6 min minutes + ~10 min
-overnight on a 2-core box).
+then). If it is evicted anyway, the next run rebuilds it from scratch: the first `full` run did exactly that
+in **18 minutes** on GitHub's runner, all steps included.
 
 **Output.** `public.cached_cycles_reports` (`kind`, `period_start`, `period_end` unique per kind, `snap`,
 `look_start/end`, `price_date`, `title`, `md` = the whole report, `meta`). ~150 KB of markdown per report,
@@ -3585,6 +3593,20 @@ nightly, the last 7 weekly. Older nights are filled from the manifest `boats/_re
 new to the lists gets its whole year. The first run with the manifest (after the first Actions run, which
 predates it) re-requests a year of overnight bars once, about 10 minutes. That is the fix for the partial-file trap in §5.1, which is what made the
 kit's reference day and week figures low.
+
+**Cost.** About 5 minutes per nightly run and 20–30 per weekly run (estimate from the first run), so
+roughly 200–250 GitHub Actions minutes a month on this private repo. That counts against the plan's
+quota (see §10: Actions refused runs for a billing failure in September).
+
+**To check after the first scheduled runs** (not yet observed): the nightly of Tue 3 Nov 02:11 UTC ranks
+Mon 2 Nov, the first EST session, and is the first run in `nightly` mode on its own. The weekly of Sat 7
+Nov is the first to build the overnight manifest (one year re-requested once) and the first to rebuild
+the lists from Polygon on a Saturday morning.
+```sql
+select id, status, progress_pct, left(message, 120), updated_at at time zone 'America/New_York' et
+from pipeline_status where mode = 'cycles' order by id desc limit 5;
+select kind, period_start, period_end, snap, generated_at from cached_cycles_reports order by generated_at desc limit 6;
+```
 
 **Verify a change here** with `python3 example_run.py samples/sample_TQQQ_2026-10-26_to_30.csv`
 (reproduces the reference TQQQ figure exactly) and by rendering a reference run: `write_outputs` must
