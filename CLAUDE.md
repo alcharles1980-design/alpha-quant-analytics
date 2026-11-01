@@ -1202,7 +1202,7 @@ order by l.id desc limit 20;      -- every row should reach 204 within 10 minute
 | `pipeline-yahoo-ratings` | 15:40 daily | yahoo-ratings ALL | ~20 min | session-independent |
 | `pipeline-tipranks` | 16:10 Mon–Fri | tipranks-sync | ~15 min | session-independent |
 | `nrs-refresh-dispatch` | 22:40 Mon–Fri | NRS refresh | ~4.5 min | after the 17:10–17:30 ET post-close cluster in both seasons |
-| `cycles-nightly` | 02:11 Tue–Sat | `cycles.yml` mode nightly (v700) | not yet measured; DB load = 2 row writes | after the 20:00 ET close in both seasons; minute 11 shares nothing with the `*/2 */3 */5 */10` jobs |
+| `cycles-nightly` | 02:11 Tue–Sat | `cycles.yml` mode nightly (v700) | 1 min 38 s on a warm cache (Nov 1, with roll22); DB load = 3 row writes | after the 20:00 ET close in both seasons; minute 11 shares nothing with the `*/2 */3 */5 */10` jobs |
 | `cycles-weekly` | 13:11 Sat | `cycles.yml` mode full (v700) | 18 min on an empty cache (Nov 1) | needs Friday's Polygon grouped bars, refused before "end of day" (§5.9) |
 
 **Session scanners** (`premarket-actives` v3, `aftermarket-actives` v2, `overnight-actives` v7; sources
@@ -1383,7 +1383,14 @@ last session and runs all 22 sessions with lots carried, exactly the rolling-5 r
 - Page, new build at the live origin with the roll22 report served from the local render: 4 lists ×
   every row equal to the markdown (15 / 21 / 157 / 319), headers and summary equal, title and period tag
   right, pills wrap to two rows at 390 px, 0 page errors, 0 writes.
-- First Actions publication: *recorded in the follow-up commit*.
+- **First Actions publication** (mode `nightly`, `day=2026-10-30`, run 41293856597): job **1 min 38 s**
+  (run step 73 s), day, roll5 and roll22 published and read back. Published roll22 vs the local render:
+  every cell of every common name identical; the only differences are VCSH (off the $500m list since
+  v700, §5.9) and the rank number of the two names below it (BIL, SGOV: 318 → 317). Day and roll5
+  republished byte for byte the same length as the first run (152,778 / 154,714 chars).
+- **Live page on deployed v702, real data, writes blocked:** the roll22 view's four lists equal the
+  published markdown row for row (15/21/157/318), headers equal, period tag `2026-10-01 to 2026-10-30`,
+  0 page errors, 0 writes.
 
 **Reading the numbers:** a 22-session return is not four weekly returns added up. Return = profit ÷
 average capital, and over 22 sessions capital piles up in unsold lots, so the $10bn list made 12.2% over
@@ -3659,9 +3666,9 @@ new to the lists gets its whole year. The first run with the manifest (after the
 predates it) re-requests a year of overnight bars once, about 10 minutes. That is the fix for the partial-file trap in §5.1, which is what made the
 kit's reference day and week figures low.
 
-**Cost.** About 5–7 minutes per nightly run (the 22-session window adds ~1.5 min; measured 90 s locally,
-including its overnight top-up) and 20–30 per weekly run, so roughly 250–300 GitHub Actions minutes a month
-on this private repo. That counts against the plan's
+**Cost.** About 2 minutes per nightly run (measured Nov 1 with the 22-session window: 1 min 38 s on a warm
+cache) and 20–30 per weekly run (18 on an empty cache), so roughly 150 GitHub Actions minutes a month on
+this private repo. That counts against the plan's
 quota (see §10: Actions refused runs for a billing failure in September).
 
 **To check after the first scheduled runs** (not yet observed): the nightly of Tue 3 Nov 02:11 UTC ranks
