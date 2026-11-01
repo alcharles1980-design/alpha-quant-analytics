@@ -23,6 +23,8 @@ for i in range(0, len(syms), 100):
             for x in bs: x['sym'] = s; rows.append(x)
         tok = j.get('next_page_token')
         if not tok: break
+if not rows:                                                     # AQA, 1 Nov 2026: names with no overnight trades in the range
+    print('BOATS sessions 0 bars 0 symbols 0 of', len(syms)); sys.exit(0)
 X = pd.DataFrame(rows)
 X['t'] = pd.to_datetime(X.t, utc=True).dt.tz_convert('America/New_York').dt.tz_localize(None)
 h = X.t.dt.hour; X = X[(h >= 20) | (h < 4)].copy()

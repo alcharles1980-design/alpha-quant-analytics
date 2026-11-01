@@ -83,18 +83,39 @@ def ensure_minutes(syms, days):
         print('minutes', d, len(need), 'pulled', flush=True)
 
 
+BOATS_REQ = f'{BOATS}/_requested.json'       # session -> names already requested for that night (AQA, 1 Nov 2026)
+
+
+def boats_requested():
+    import json
+    return {k: set(v) for k, v in json.load(open(BOATS_REQ)).items()} if os.path.exists(BOATS_REQ) else {}
+
+
+def boats_mark(req, days, syms):
+    import json
+    for d in days: req[d] = req.get(d, set()) | set(syms)
+    os.makedirs(BOATS, exist_ok=True); tmp = BOATS_REQ + '.tmp'
+    json.dump({k: sorted(v) for k, v in sorted(req.items())}, open(tmp, 'w')); os.replace(tmp, BOATS_REQ)
+
+
 def ensure_overnight(syms, days):
+    """Pull the overnight bars of every (night, name) not requested before. A name with no overnight trades never appears in a night's
+    file, so presence cannot tell "no trades" from "never asked": a manifest of what was requested per night does.
+    AQA fix, 1 Nov 2026. The kit's rule pulled only names absent from EVERY night of the window, so a name present in one night was
+    never pulled for the others. The kit's 52-week reference run had no overnight bars for most of the year for AAOI, APLD, CRDO, IREN,
+    IONQ, WULF, SOFI, SHW, MRNA, SKHY, IEF, CCL and TWLO (removing overnight bars from complete data reproduced its figures exactly).
+    Pulls go in runs of up to 20 sessions, so a year is never held in memory at once. pull_boats.py merges into existing files."""
     if C.OFFLINE: return
-    seen = set(); missing_day = False
-    for d in days:
-        p = f'{BOATS}/{d}.parquet'
-        if os.path.exists(p): seen |= set(pd.read_parquet(p, columns=['sym']).sym)
-        else: missing_day = True
-    miss = set(syms) if missing_day else set(syms) - seen      # thin names miss some nights; only pull names never seen
-    # names with no overnight trading never appear; only pull when a meaningful set is missing
-    if len(miss) > 0:
-        f = f'{HERE}/_boats_need.txt'; open(f, 'w').write('\n'.join(sorted(miss)) + '\n')
-        subprocess.run([sys.executable, os.path.join(C.CODE, 'pull_boats.py'), days[0], days[-1], f], check=False)
+    days = list(days); req = boats_requested()
+    need = {d: set(syms) - req.get(d, set()) for d in days}
+    i = 0
+    while i < len(days):
+        if not need[days[i]]: i += 1; continue
+        chunk = days[i:i + 20]; names = set().union(*(need[d] for d in chunk))
+        f = f'{HERE}/_boats_need.txt'; open(f, 'w').write('\n'.join(sorted(names)) + '\n')
+        r = subprocess.run([sys.executable, os.path.join(C.CODE, 'pull_boats.py'), chunk[0], chunk[-1], f])
+        if r.returncode != 0: raise RuntimeError(f'pull_boats {chunk[0]}..{chunk[-1]} failed ({len(names)} names)')
+        boats_mark(req, chunk, names); i += len(chunk)
 
 
 CONT_GRID = 'cents'; REUSE = False

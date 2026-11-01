@@ -71,21 +71,22 @@ def last_done(day=None):
 
 
 def refresh_overnight(sessions, syms):
-    """Re-pull the overnight (BOATS) files for these sessions from scratch. ensure_overnight() only pulls names it has never seen, so a
-    night first pulled while it was still trading stays cut short for good: the reference outputs of 1 Nov 2026 had the night before
-    Fri 30 Oct ending at 21:28 ET for 275 names and missing for 24 (found 1 Nov 2026 by matching them to full re-pulls)."""
-    import config as C
+    """Re-pull the overnight (BOATS) files for these sessions from scratch. A night pulled while it was still trading stays cut short
+    otherwise: the reference outputs of 1 Nov 2026 had the night before Fri 30 Oct ending at 21:28 ET for 275 names and missing for 24
+    (found 1 Nov 2026 by matching them to full re-pulls)."""
+    import config as C, consist_report as CR
+    req = CR.boats_requested()
     for d in sessions:
         p = f'{C.BOATS}/{d}.parquet'
         if os.path.exists(p): os.remove(p)
-    f = f'{C.REPORTS}/_boats_refresh.txt'; open(f, 'w').write('\n'.join(sorted(syms)) + '\n')
-    run(['pull_boats.py', sessions[0], sessions[-1], f])
+        req.pop(d, None)
+    CR.boats_mark(req, [], [])                                   # save the manifest without those nights
+    CR.ensure_overnight(syms, sessions)
 
 
 def prefill(days, syms, workers=6):
-    """First run on an empty store: pull the session files the kit would pull one by one, in parallel by day (minutes) and in
-    20-session chunks (overnight). consist_report's own ensure_* then finds them and only tops up. Pulling a year of overnight bars in
-    one request set (what ensure_overnight does when any night is missing) holds every row in memory at once."""
+    """First run on an empty store: pull the minute files the kit would pull one by one, in parallel by day. Overnight bars go through
+    consist_report.ensure_overnight, which pulls every (night, name) not yet requested in runs of 20 sessions."""
     import config as C, consist_report as CR
     from concurrent.futures import ThreadPoolExecutor
     if C.OFFLINE: return
@@ -93,10 +94,7 @@ def prefill(days, syms, workers=6):
     if todo:
         print(f'prefill minutes: {len(todo)} sessions x {len(syms)} names', flush=True)
         with ThreadPoolExecutor(workers) as ex: list(ex.map(lambda d: CR.ensure_minutes(syms, [d]), todo))
-    miss = [d for d in days if not os.path.exists(f'{C.BOATS}/{d}.parquet')]
-    if miss:
-        f = f'{C.REPORTS}/_boats_prefill.txt'; open(f, 'w').write('\n'.join(sorted(syms)) + '\n')
-        for i in range(0, len(miss), 20): run(['pull_boats.py', miss[i], miss[min(i + 19, len(miss) - 1)], f])
+    CR.ensure_overnight(syms, days)
 
 
 def newest_run():
@@ -188,6 +186,8 @@ def weekly52(end_week=None):
     for d in (C.M1, C.BOATS):
         for p in glob.glob(f'{d}/*.parquet'):
             if os.path.basename(p)[:10] < keep_from: os.remove(p); n += 1
+    import consist_report as CR
+    req = CR.boats_requested(); CR.boats_mark({k: v for k, v in req.items() if k >= keep_from}, [], [])   # the manifest follows the files
     for p in sorted(glob.glob(f'{C.REPORTS}/out_*_official'))[:-2]: shutil.rmtree(p, ignore_errors=True)
     print('pruned bar files before', keep_from, ':', n, flush=True)
 

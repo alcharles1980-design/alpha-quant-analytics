@@ -352,6 +352,14 @@ exception, correct-looking UI, wrong data underneath. Assume silence is the dang
   day and week figure built on that night was low ($10bn list 3.73% vs 4.15% on complete data).
   Proven by reconstruction: rebuilding that partial state reproduced all 319 published rows exactly.
   **Fix: re-pull recent sessions from scratch on every run** (`run_cycles.refresh_overnight`).
+  **The same helper had a second hole, worse in reach:** it pulled only names absent from *every* night of
+  the window, so a name present in one night was never pulled for the others. The kit's 52-week
+  reference had **no overnight bars for most of the year for 13 names** (AAOI, APLD, CRDO, IREN, IONQ,
+  WULF and SOFI for 47 weeks; SHW, MRNA, SKHY, IEF, CCL, TWLO for fewer). Dropping the overnight bars from
+  complete data reproduced all 394 of those weekly rows exactly. It would have recurred for every new
+  list member, because the nightly re-pull adds the new name to recent nights only. **Presence in a file
+  cannot tell "no trades" from "never asked"**, so `ensure_overnight` now keeps a manifest of what was
+  requested per night (`boats/_requested.json`) and pulls every (night, name) pair not on it.
   **And never cache an empty answer:** Polygon refuses a day's grouped bars before its "end of day",
   and `build_lists.grouped()` used to save that empty reply as the day's data for good. It now raises.
 
@@ -1383,7 +1391,14 @@ the kit never re-pulls a file it has seen. On complete data the lists' return at
   files (after reading the CSVs with `float_precision='round_trip'`; the default parser moved SPY's
   $9.08 to $9.07).
 - `roll_rank.py` on 26–30 Oct: identical parquet to `week_rank.py` for that week.
-- 52-week run rebuilt locally from an empty bar store, compared with the reference: *recorded in the follow-up commit*.
+- **52-week run rebuilt locally from an empty bar store: 15,886 of 16,430 weekly rows identical to the
+  reference.** All 394 differing rows before the last week are the 13 names the reference ran without
+  overnight bars, reproduced exactly by dropping those bars (§5.1). The other 150 are the last week,
+  which used the partial night; on the reconstructed partial night 308 of its 319 rows reproduce (11 not
+  traced). Price, peak and 200-day columns identical for all 319 names. The list-level summary hardly
+  moves: $500m average weekly return 8.9% → 9.0%, weeks at 5% or more 50 → 51 of 52.
+  Per name the 52-week average moves most for AAOI (19.77% → 20.95%), WULF (17.25% → 18.14%) and SKHY
+  (14.26% → 13.18%).
 - Page, new build served at the live origin with the three reports intercepted: **all 12 list tables
   (3 views × 4 lists) render every row equal to the markdown, 0 mismatches** (15 / 21 / 157 / 319
   rows), headers equal, sort by "Avg weekly return" descending (28.9% … 0.0%), zero page errors, zero
@@ -3543,6 +3558,7 @@ with the highest return after fees ($0.005 per share sold). AQA additions:
 | `run_cycles.py` | driver: `nightly` (day + roll5), `weekly52` (lists, analyst snapshot, 52-week run), `full` (both). Publishes and verifies each report |
 | `consist_report.write_outputs` | gained the rolling kind and `top_all` (every name instead of the top N). Day, week and 52-week output stayed byte-identical to the reference |
 | `build_lists.grouped` | raises on an empty or refused Polygon day instead of caching it (§5.1) |
+| `consist_report.ensure_overnight` | pulls every (night, name) not in the manifest `boats/_requested.json`, in runs of 20 sessions; the kit's rule skipped any name seen in one night (§5.1). `pull_boats.py` exits cleanly when a range has no bars |
 
 **Data.** Alpaca SIP 1-minute bars 04:00–20:00 ET and BOATS overnight bars (`feed=boats`), with AQA's
 Algo Trader Plus key read from `app_config` through `get_app_client_keys`. Lists from Polygon grouped
@@ -3565,7 +3581,9 @@ is how the kit's own `day_segmented.py` works. Progress and failures go to `pipe
 (`mode = 'cycles'`). The DB load is two or three row writes per run.
 
 **Every run re-pulls recent overnight files from scratch** (`refresh_overnight`): the last 5 sessions
-nightly, the last 7 weekly. That is the fix for the partial-file trap in §5.1, which is what made the
+nightly, the last 7 weekly. Older nights are filled from the manifest `boats/_requested.json`, so a name
+new to the lists gets its whole year. The first run with the manifest (after the first Actions run, which
+predates it) re-requests a year of overnight bars once, about 10 minutes. That is the fix for the partial-file trap in §5.1, which is what made the
 kit's reference day and week figures low.
 
 **Verify a change here** with `python3 example_run.py samples/sample_TQQQ_2026-10-26_to_30.csv`

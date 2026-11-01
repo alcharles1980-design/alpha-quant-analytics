@@ -9,6 +9,10 @@ was pulled at 21:28 ET while that night was still trading: 275 names stop there 
 day and week figures here are therefore low. Rebuilding that partial data state reproduces
 `day_2026-10-30` exactly (319 of 319 rows); on complete data the lists' return at PT 0.5% is
 $10bn 4.15% / $5bn 3.64% / $1bn 3.50% / $500m 3.69% instead of 3.73 / 3.27 / 3.27 / 3.52%.
+The 52-week run has a second gap of the same kind: 13 names (AAOI, APLD, CRDO, IREN, IONQ, WULF and SOFI
+for 47 weeks; SHW, MRNA, SKHY, IEF, CCL, TWLO for fewer) were simulated with no overnight bars for most of
+the year. A rebuild on complete data matches 15,886 of the 16,430 weekly rows; the 394 differing rows
+before the last week are exactly those names without their overnight bars.
 See CLAUDE.md §9d and §5.1.
 
 The lists are also tied to one Polygon pull: the grouped daily bars were revised later, so rebuilding
