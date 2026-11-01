@@ -3508,6 +3508,30 @@ whether edge decays by the 20th visit is unmeasured.
 >   Left alone, same era (trade dates 2025-01-02 → 2026-04-02), 4.7 MB together: `cached_seasonality`
 >   (NVDA, ONON, plus CCL and NFLX), `cached_sessions` (NVDA, ONON, NFLX), `cached_hourly_cycles` and
 >   `cached_hourly_hold_times` (NVDA, ONON).
+>   **Remaining levers, measured Oct 31 2026 at 366.6 MB** (live bytes = `sum(pg_column_size(t.*))` + 4 per
+>   row, against `pg_relation_size`; index savings are estimates; churn from `pg_stat_user_tables` over
+>   the 2.8 days since the Oct 29 restart). None done yet.
+>   - *Compaction, nothing deleted* (`VACUUM FULL`, locks the table while it runs): `nrs_bars_daily` heap
+>     50.8 MB vs 38.9 live, low churn, so ~12 MB lasting. `actives_baseline` heap 8.0 vs 2.2 live plus a
+>     5.9 MB pkey for 23k rows, ~10 MB. `narrow_range_screener` heap 4.6 vs 2.8 plus 6.0 MB of indexes for
+>     20k rows, ~6 MB. The three `*_actives` tables, ~10 MB, but they take 50–100k updates in 3 days, so it
+>     regrows. `nrs_bars_hourly` 30.6 vs 23.2 is steady-state churn (~31k rows rewritten per refresh), not
+>     reclaimable without a skip-unchanged guard. `cron.job_run_details` (8.4 vs 1.9) is owned by
+>     `supabase_admin`, so we cannot compact it.
+>   - *Duplicate index:* `idx_hlv_level` is identical to `idx_hlv_level_seen_uniq` (both
+>     `(level_id, seen_at)`), 0 scans, 0.9 MB.
+>   - *Retired tables*, last written Apr 2026: `hourly_features` 4.7 (2 tickers), `minute_oscillation_results`
+>     3.4 and `optimal_tp_minute` 3.3 (one scan, Apr 29), and the four NVDA/ONON tables above, 4.7. ~16 MB.
+>   - *No purge, growing:* `hidden_levels` + visits 13.5 MB, 65 sessions since Jul 30, ~1 MB/week
+>     (multi-night research wants the history). `signal_rth_bars` 12.7 MB, 113 sessions since May 20,
+>     ~880 rows/day, read by `shortlist_signal`, `predictor_outcomes_fill`, `rebuild_signal_chains`.
+>   - *Stored but never read:* `tipranks_cache.data` is read only for `experts` and `prices` (analyst
+>     timeline, and only if under 24 h old). By uncompressed size `insiders` 12.2, `notRankedExperts` 6.7,
+>     `hedgeFundData` 4.2, `consensuses` 4.0 and two consensus histories 4.3 are ~37% of the JSON, so
+>     roughly 6 MB of the 15.7 MB stored. `cached_oscillation_screener.cycle_density` is written by the
+>     pipeline and read nowhere (app, SQL), 0.9 MB per scan.
+>   - *Load-bearing, not a lever:* `cached_chop_screener` keeps 2 scans (22 MB) because `chop_scan_health`
+>     takes its row-count baseline from the previous scan.
 > - **`save_glance_polygon` has three overloads** (7, 11 and 15 arguments). The app and the sync always
 >   pass all 15, so it resolves today, but a caller passing a subset can get `PGRST203` (§11e).
 > - ~~**`pipeline_status` shows every nightly ONON run as `running`, 0%.**~~ **REMOVED Oct 29 22:30 ET**
